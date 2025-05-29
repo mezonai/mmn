@@ -4,6 +4,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -20,16 +21,35 @@ func init() {
 		fmt.Println("Error registering contract:", err)
 	}
 }
+func getFreePort() (int, error) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	addr := ln.Addr().(*net.TCPAddr)
+	return addr.Port, nil
+}
 
 func main() {
 	// Command-line flags for P2P configuration.
-	// todo add port rpc server
-	rpcPort := flag.String("rpcPort", "8080", "Address to listen on")                    // should auto gen
-	listenAddr := flag.String("listenAddress", "localhost:8000", "Address to listen on") // should auto gen
-	peerAddrs := flag.String("peerAddresses", "localhost:8001", "Comma-separated list of peer addresses")
+	defaultPort := 0
+	port, err := getFreePort()
+	if err != nil {
+		fmt.Println("Failed to get a free port:", err)
+		port = 8000 // fallback
+	} else {
+		defaultPort = port
+	}
+	listenAddr := flag.String("listenAddress", fmt.Sprintf("localhost:%d", defaultPort), "Address to listen on")
+	rpcPort := flag.String("rpcPort", "8080", "Address to listen on") // should auto gen
+	peerAddrs := flag.String("peerAddresses", "", "Comma-separated list of peer addresses")
 	lightClient := flag.Bool("light", false, "Run in light client mode")
 	flag.Parse()
-	peers := strings.Split(*peerAddrs, ",")
+	peers := []string{}
+	if *peerAddrs != "" {
+		peers = strings.Split(*peerAddrs, ",")
+	}
 
 	// Test Smart Contract Execution.
 	result, err := contract.ExecuteContract("AdditionContract", "add", map[string]interface{}{"a": 10.0, "b": 15.5})
