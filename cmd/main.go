@@ -1,10 +1,8 @@
-// File: main.go
 package main
 
 import (
 	"flag"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -12,6 +10,7 @@ import (
 	"mmm/pkg/blockchain"
 	"mmm/pkg/contract"
 	"mmm/pkg/p2p"
+	"mmm/pkg/utils"
 )
 
 func init() {
@@ -21,20 +20,11 @@ func init() {
 		fmt.Println("Error registering contract:", err)
 	}
 }
-func getFreePort() (int, error) {
-	ln, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return 0, err
-	}
-	defer ln.Close()
-	addr := ln.Addr().(*net.TCPAddr)
-	return addr.Port, nil
-}
 
 func main() {
 	// Command-line flags for P2P configuration.
 	defaultPort := 0
-	port, err := getFreePort()
+	port, err := utils.GetFreePort()
 	if err != nil {
 		fmt.Println("Failed to get a free port:", err)
 		port = 8000 // fallback
@@ -73,6 +63,7 @@ func main() {
 
 	// Create a ledger and initialize balances.
 	ledger := blockchain.NewLedger()
+	ledger["0xa8c4a515Bd59c1610D22594695a8b231849259e2"] = 1000000000000000.0 // test
 	ledger["Alice"] = 100.0
 	ledger["Bob"] = 50.0
 	ledger["Charlie"] = 25.0
@@ -162,7 +153,11 @@ func main() {
 					txPool, difficulty, minerAddress, reward)
 				bc.AddBlock(newBlock)
 				fmt.Println("Auto-mined Block Hash:", newBlock.Hash)
-				ledger.ProcessCoinbaseTransaction(minerAddress, reward)
+				// dont need
+				// ledger.ProcessCoinbaseTransaction(minerAddress, reward)
+				for _, value := range txPool.Transactions {
+					ledger.ProcessTransaction(value)
+				}
 				txPool.Clear()
 			}
 		}
@@ -203,7 +198,7 @@ func main() {
 
 	// Initialize the dynamic contract registry and start the API server.
 	dynamicRegistry := contract.NewDynamicRegistry()
-	apiServer := api.NewServer(bc, ledger, peers, dynamicRegistry)
+	apiServer := api.NewServer(bc, node, txPool, ledger, peers, dynamicRegistry)
 	go apiServer.StartServer(*rpcPort)
 
 	// Prevent main from exiting.

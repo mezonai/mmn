@@ -12,11 +12,19 @@ import (
 
 	"mmm/pkg/blockchain"
 	"mmm/pkg/contract"
+	"mmm/pkg/p2p"
+	"mmm/pkg/utils"
+)
+
+const (
+	nativeCoinDecimals = 18
 )
 
 // Server holds references to the blockchain, ledger, and peer list.
 type Server struct {
 	Blockchain      *blockchain.Blockchain
+	Node            *p2p.Node
+	TxPool          *blockchain.TransactionPool
 	Ledger          blockchain.Ledger
 	PeerList        []string
 	StartTime       time.Time
@@ -24,9 +32,11 @@ type Server struct {
 }
 
 // NewServer creates a new API server instance.
-func NewServer(bc *blockchain.Blockchain, ledger blockchain.Ledger, peers []string, dr *contract.DynamicRegistry) *Server {
+func NewServer(bc *blockchain.Blockchain, node *p2p.Node, txPool *blockchain.TransactionPool, ledger blockchain.Ledger, peers []string, dr *contract.DynamicRegistry) *Server {
 	return &Server{
 		Blockchain:      bc,
+		Node:            node,
+		TxPool:          txPool,
 		Ledger:          ledger,
 		PeerList:        peers,
 		StartTime:       time.Now(),
@@ -359,13 +369,14 @@ func (s *Server) sendRawTransactionHandler(w http.ResponseWriter, r *http.Reques
 	}
 	tx.Print()
 	// todo: Add transaction to chain
-	// from, _ := tx.From()
-	// to, _ := tx.From()
-	// value := tx.GetValue()
-	// nonce := tx.GetNonce()
-	// tx3 := blockchain.NewTransaction(from.String(), to.String(), utils.FormatBigIntWithDecimals(value), int(nonce))
-	// txPool := &blockchain.TransactionPool{}
-	// txPool.AddTransaction(tx3)
+	from, _ := tx.From()
+	to := tx.To
+	value := tx.GetValue()
+	nonce := tx.GetNonce()
+
+	// Create a second block.
+	tx1 := blockchain.NewTransaction(from.String(), to.String(), utils.BigIntToFloat64(value, nativeCoinDecimals), int(nonce))
+	s.TxPool.AddTransaction(tx1)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Successfully"))

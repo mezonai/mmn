@@ -2,18 +2,28 @@ package utils
 
 import (
 	"math/big"
+	"net"
 )
 
-// FormatBigIntWithDecimals formats a big.Int as a decimal string with 6 digits after the decimal point.
-// It assumes the input represents a fixed-point number scaled by 1e6.
-func FormatBigIntWithDecimals(i *big.Int) float64 {
-	// Convert big.Int to big.Float
-	floatVal := new(big.Float).SetInt(i)
+func BigIntToFloat64(i *big.Int, decimals int) float64 {
+	scale := new(big.Float).SetFloat64(float64(1))
+	for j := 0; j < decimals; j++ {
+		scale.Mul(scale, big.NewFloat(10))
+	}
 
-	// Divide by 1e6 (fixed-point scaling)
-	divisor := big.NewFloat(1_000_000)
-	result, _ := new(big.Float).Quo(floatVal, divisor).Float64()
+	f := new(big.Float).SetInt(i)
+	result := new(big.Float).Quo(f, scale)
 
-	// Format to 6 decimal places
-	return result
+	f64, _ := result.Float64()
+	return f64
+}
+
+func GetFreePort() (int, error) {
+	ln, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	addr := ln.Addr().(*net.TCPAddr)
+	return addr.Port, nil
 }
