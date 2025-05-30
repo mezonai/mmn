@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"cryptocypher/pkg/blockchain"
-	"cryptocypher/pkg/contract"
+	"mmm/pkg/blockchain"
+	"mmm/pkg/contract"
 )
 
 // Server holds references to the blockchain, ledger, and peer list.
@@ -343,6 +343,34 @@ func (s *Server) deployContractHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Contract deployed successfully"))
 }
 
+func (s *Server) sendRawTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RawData string `json:"rawData"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request format", http.StatusBadRequest)
+		return
+	}
+	var hexTx = req.RawData
+	var tx blockchain.TxRawTransaction
+	if err := tx.DecodeFromRequest(hexTx); err != nil {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Successfully"))
+	}
+	tx.Print()
+	// todo: Add transaction to chain
+	// from, _ := tx.From()
+	// to, _ := tx.From()
+	// value := tx.GetValue()
+	// nonce := tx.GetNonce()
+	// tx3 := blockchain.NewTransaction(from.String(), to.String(), utils.FormatBigIntWithDecimals(value), int(nonce))
+	// txPool := &blockchain.TransactionPool{}
+	// txPool.AddTransaction(tx3)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Successfully"))
+}
+
 // StartServer starts the API server on the specified port.
 func (s *Server) StartServer(port string) {
 	http.HandleFunc("/chain", s.getChainHandler)
@@ -361,6 +389,7 @@ func (s *Server) StartServer(port string) {
 	http.HandleFunc("/status", s.statusHandler)
 	http.HandleFunc("/metrics", s.metricsHandler)
 	http.HandleFunc("/deployContract", s.deployContractHandler)
+	http.HandleFunc("/sendRawTransaction", s.sendRawTransactionHandler)
 	fmt.Printf("API server listening on port %s\n", port)
 	http.ListenAndServe(":"+port, nil)
 }

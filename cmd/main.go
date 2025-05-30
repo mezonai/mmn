@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"cryptocypher/pkg/api"
-	"cryptocypher/pkg/blockchain"
-	"cryptocypher/pkg/contract"
-	"cryptocypher/pkg/p2p"
+	"mmm/pkg/api"
+	"mmm/pkg/blockchain"
+	"mmm/pkg/contract"
+	"mmm/pkg/p2p"
 )
 
 func init() {

@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"cryptocypher/pkg/blockchain"
+	"mmm/pkg/blockchain"
 )
 
 // Wallet represents a user's wallet with a private key and a public address.
