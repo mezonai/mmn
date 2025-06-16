@@ -15,7 +15,7 @@
 package secp256k1
 
 import (
-	_ "mmm/pkg/crypto/secp256k1/libsecp256k1/include"
-	_ "mmm/pkg/crypto/secp256k1/libsecp256k1/src"
-	_ "mmm/pkg/crypto/secp256k1/libsecp256k1/src/modules/recovery"
+	_ "mmn/pkg/crypto/secp256k1/libsecp256k1/include"
+	_ "mmn/pkg/crypto/secp256k1/libsecp256k1/src"
+	_ "mmn/pkg/crypto/secp256k1/libsecp256k1/src/modules/recovery"
 )

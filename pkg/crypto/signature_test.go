@@ -22,9 +22,9 @@ import (
 	"reflect"
 	"testing"
 
-	"mmm/pkg/common"
-	"mmm/pkg/common/hexutil"
-	"mmm/pkg/common/math"
+	"mmn/pkg/common"
+	"mmn/pkg/common/hexutil"
+	"mmn/pkg/common/math"
 )
 
 var (

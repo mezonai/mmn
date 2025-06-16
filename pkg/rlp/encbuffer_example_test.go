@@ -19,7 +19,7 @@ package rlp_test
 import (
 	"bytes"
 	"fmt"
-	"mmm/pkg/rlp"
+	"mmn/pkg/rlp"
 )
 
 func ExampleEncoderBuffer() {

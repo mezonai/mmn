@@ -20,7 +20,7 @@ package common
 import (
 	"encoding/hex"
 	"errors"
-	"mmm/pkg/common/hexutil"
+	"mmn/pkg/common/hexutil"
 )
 
 // FromHex returns the bytes represented by the hexadecimal string s.

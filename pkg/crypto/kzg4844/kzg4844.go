@@ -24,7 +24,7 @@ import (
 	"reflect"
 	"sync/atomic"
 
-	"mmm/pkg/common/hexutil"
+	"mmn/pkg/common/hexutil"
 )
 
 //go:embed trusted_setup.json

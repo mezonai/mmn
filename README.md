@@ -9,8 +9,8 @@ Node 2:
 go run cmd/main.go -rpcPort="8081" -listenAddress="localhost:8001" -peerAddresses="localhost:8000"
 
 # Build
-go build -o bin/mmm ./cmd
+go build -o bin/mmn ./cmd
 
 # uses cases
 Mezon -> (auto gen wallet) => user has a wallet
-Mezon (wallet) -> create and sign transaction -> send rpc -> mmm node verify commit and broadcast to nodes.
+Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.

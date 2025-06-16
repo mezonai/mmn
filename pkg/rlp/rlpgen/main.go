@@ -27,7 +27,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const pathOfPackageRLP = "mmm/pkg/rlp"
+const pathOfPackageRLP = "mmn/pkg/rlp"
 
 func main() {
 	var (

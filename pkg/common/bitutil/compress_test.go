@@ -22,7 +22,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"mmm/pkg/common/hexutil"
+	"mmn/pkg/common/hexutil"
 )
 
 // Tests that data bitset encoding and decoding works and is bijective.

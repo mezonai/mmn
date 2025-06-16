@@ -27,12 +27,12 @@ import (
 	"hash"
 	"io"
 	"math/big"
-	"mmm/pkg/common"
-	"mmm/pkg/rlp"
+	"mmn/pkg/common"
+	"mmn/pkg/rlp"
 	"os"
 	"sync"
 
-	"mmm/pkg/common/math"
+	"mmn/pkg/common/math"
 
 	"golang.org/x/crypto/sha3"
 )

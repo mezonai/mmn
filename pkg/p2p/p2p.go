@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"mmm/pkg/blockchain"
+	"mmn/pkg/blockchain"
 )
 
 // Message defines the structure for P2P messages.

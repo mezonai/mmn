@@ -23,7 +23,7 @@ import (
 	"math/big"
 	"reflect"
 
-	"mmm/pkg/rlp/internal/rlpstruct"
+	"mmn/pkg/rlp/internal/rlpstruct"
 
 	"github.com/holiman/uint256"
 )

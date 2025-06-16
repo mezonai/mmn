@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"mmm/pkg/common/hexutil"
+	"mmn/pkg/common/hexutil"
 )
 
 type MyType [5]byte

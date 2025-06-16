@@ -26,7 +26,7 @@ import (
 	"sync"
 	"testing"
 
-	"mmm/common/math"
+	"mmn/pkg/common/math"
 
 	"github.com/holiman/uint256"
 )
@@ -237,7 +237,7 @@ var encTests = []encTest{
 		output: "C7C0C1C0C3C0C1C0",
 	},
 	{
-		val:    []string{"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmm", "nnn", "ooo"},
+		val:    []string{"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg", "hhh", "iii", "jjj", "kkk", "lll", "mmn", "nnn", "ooo"},
 		output: "F83C836161618362626283636363836464648365656583666666836767678368686883696969836A6A6A836B6B6B836C6C6C836D6D6D836E6E6E836F6F6F",
 	},
 	{

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 
-	"mmm/pkg/rlp"
+	"mmn/pkg/rlp"
 )
 
 type MyCoolType struct {

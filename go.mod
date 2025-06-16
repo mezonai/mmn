@@ -1,4 +1,4 @@
-module mmm
+module mmn
 
 go 1.23.4
 

@@ -23,7 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"mmm/pkg/rlp/internal/rlpstruct"
+	"mmn/pkg/rlp/internal/rlpstruct"
 )
 
 // typeinfo is an entry in the type cache.

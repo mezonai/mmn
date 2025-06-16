@@ -43,7 +43,7 @@ import (
 	"fmt"
 	"hash"
 
-	ethcrypto "mmm/pkg/crypto"
+	ethcrypto "mmn/pkg/crypto"
 )
 
 var (

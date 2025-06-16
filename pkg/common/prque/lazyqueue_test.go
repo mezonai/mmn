@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"mmm/pkg/common/mclock"
+	"mmn/pkg/common/mclock"
 )
 
 const (

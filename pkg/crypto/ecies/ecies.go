@@ -41,7 +41,7 @@ import (
 	"io"
 	"math/big"
 
-	"mmm/pkg/crypto"
+	"mmn/pkg/crypto"
 )
 
 var (

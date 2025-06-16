@@ -39,7 +39,7 @@ import (
 	"math/big"
 	"testing"
 
-	"mmm/pkg/crypto"
+	"mmn/pkg/crypto"
 )
 
 func TestKDF(t *testing.T) {

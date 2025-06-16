@@ -1,6 +1,6 @@
 package storage
 
-import "mmm/pkg/blockchain"
+import "mmn/pkg/blockchain"
 
 type DB struct {
 	bc     blockchain.Blockchain
