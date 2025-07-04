@@ -10,7 +10,6 @@ type PohRecorder struct {
 	poh            *Poh
 	ticksPerSlot   uint64
 	tickHeight     uint64
-	currentSlot    uint64
 	entries        []Entry
 	mu             sync.Mutex
 	leaderSchedule *LeaderSchedule
@@ -23,7 +22,6 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 		poh:            poh,
 		ticksPerSlot:   ticksPerSlot,
 		tickHeight:     0,
-		currentSlot:    0,
 		entries:        []Entry{},
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
@@ -64,8 +62,6 @@ func (r *PohRecorder) Tick() *Entry {
 	r.entries = append(r.entries, entry)
 
 	r.tickHeight++
-	r.currentSlot = r.tickHeight / r.ticksPerSlot
-
 	return &entry
 }
 
@@ -90,19 +86,7 @@ func (r *PohRecorder) TickHeight() uint64 {
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.currentSlot
-}
-
-// WouldBeLeader determines if this node will become leader within next n ticks
-func (r *PohRecorder) WouldBeLeader(withinNextNTicks uint64) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	targetTick := r.tickHeight + withinNextNTicks
-	targetSlot := targetTick / r.ticksPerSlot
-	leader, hasAssigned := r.leaderSchedule.LeaderAt(targetSlot)
-
-	return hasAssigned && leader == r.myPubkey
+	return r.tickHeight / r.ticksPerSlot
 }
 
 func hashTransactions(txs [][]byte) [32]byte {

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/proto;proto";
+
+// Voting messages
+message VoteRequest {
+  uint64 slot       = 1;
+  bytes  block_hash = 2;
+  string voter_id   = 3;
+  bytes  signature  = 4;
+}
+
+message VoteResponse {
+  bool   ok    = 1;
+  string error = 2;
+}
+
+service VoteService {
+  rpc Vote(VoteRequest) returns (VoteResponse);
+}

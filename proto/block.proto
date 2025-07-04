@@ -1,0 +1,36 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/proto;proto";
+
+import "google/protobuf/timestamp.proto";
+
+message Entry {
+  uint64 num_hashes = 1;
+  bytes hash       = 2;
+  repeated bytes transactions = 3;
+}
+
+message Block {
+  uint64 slot     = 1;
+  bytes prev_hash = 2;
+  repeated Entry entries = 3;
+  string leader_id = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  bytes block_hash = 6;
+  bytes signature  = 7;
+}
+
+message BroadcastResponse {
+  bool ok      = 1;
+  string error = 2;
+}
+
+message SubscribeRequest {
+  string follower_id = 1;
+}
+
+service BlockService {
+  rpc Broadcast(Block) returns (BroadcastResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream Block);
+}
