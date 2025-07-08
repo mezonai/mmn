@@ -28,14 +28,9 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 	}
 }
 
-// RecordTxs records transactions into PoH stream
 func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	if r.poh.RemainingHashes == 1 {
-		return nil, fmt.Errorf("tick required before record")
-	}
 
 	mixin := hashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
@@ -48,7 +43,6 @@ func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
 	return &entry, nil
 }
 
-// Tick advances PoH and records a tick-only entry
 func (r *PohRecorder) Tick() *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -65,7 +59,6 @@ func (r *PohRecorder) Tick() *Entry {
 	return &entry
 }
 
-// DrainEntries flushes all pending entries
 func (r *PohRecorder) DrainEntries() []Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -75,14 +68,6 @@ func (r *PohRecorder) DrainEntries() []Entry {
 	return entries
 }
 
-// TickHeight returns current tick count
-func (r *PohRecorder) TickHeight() uint64 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.tickHeight
-}
-
-// CurrentSlot returns the slot based on tick_height
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()

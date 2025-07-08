@@ -1,58 +1,43 @@
 package mempool
 
-import (
-	"sync"
-)
+import "sync"
 
-// Mempool provides a thread-safe queue for incoming transactions.
 type Mempool struct {
 	mu  sync.Mutex
-	txs [][]byte
+	buf [][]byte
+	max int
 }
 
-// NewMempool creates a new, empty mempool.
-func NewMempool() *Mempool {
-	return &Mempool{
-		txs: make([][]byte, 0),
+func NewMempool(max int) *Mempool {
+	return &Mempool{buf: make([][]byte, 0, max), max: max}
+}
+
+func (mp *Mempool) AddTx(tx []byte) bool {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if len(mp.buf) >= mp.max {
+		return false // drop if full
 	}
+	mp.buf = append(mp.buf, tx)
+	return true
 }
 
-// Add pushes a transaction into the mempool.
-func (m *Mempool) Add(tx []byte) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.txs = append(m.txs, tx)
-}
-
-// Len returns the number of transactions in the mempool.
-func (m *Mempool) Len() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.txs)
-}
-
-// GetBatch returns up to max transactions without removing them.
-func (m *Mempool) GetBatch(max int) [][]byte {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.txs) == 0 {
-		return nil
+// Pull batch of tx (for leader to batch and record)
+func (mp *Mempool) PullBatch(batchSize int) [][]byte {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	n := batchSize
+	if n > len(mp.buf) {
+		n = len(mp.buf)
 	}
-	if len(m.txs) < max {
-		max = len(m.txs)
-	}
-	batch := make([][]byte, max)
-	copy(batch, m.txs[:max])
+	batch := mp.buf[:n]
+	mp.buf = mp.buf[n:]
 	return batch
 }
 
-// RemoveBatch removes the first n transactions from the mempool.
-func (m *Mempool) RemoveBatch(n int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if n >= len(m.txs) {
-		m.txs = m.txs[:0]
-	} else {
-		m.txs = m.txs[n:]
-	}
+// For demo: current number of tx
+func (mp *Mempool) Size() int {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	return len(mp.buf)
 }

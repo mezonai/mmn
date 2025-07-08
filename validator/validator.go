@@ -8,6 +8,7 @@ import (
 
 	"mmn/block"
 	"mmn/blockstore"
+	"mmn/mempool"
 	"mmn/network"
 	"mmn/poh"
 )
@@ -19,6 +20,7 @@ type Validator struct {
 	Recorder     *poh.PohRecorder
 	Service      *poh.PohService
 	Schedule     *poh.LeaderSchedule
+	Mempool      *mempool.Mempool
 	TicksPerSlot uint64
 
 	// Configurable parameters
@@ -31,6 +33,7 @@ type Validator struct {
 	// Slot & entry buffer
 	lastSlot         uint64
 	collectedEntries []poh.Entry
+	stopCh           chan struct{}
 }
 
 // NewValidator constructs a Validator with dependencies, including blockStore.
@@ -45,6 +48,7 @@ func NewValidator(
 	batchSize int,
 	netClient *network.GRPCClient,
 	blockStore *blockstore.BlockStore,
+	mempool *mempool.Mempool,
 ) *Validator {
 	v := &Validator{
 		Pubkey:           pubkey,
@@ -59,6 +63,7 @@ func NewValidator(
 		blockStore:       blockStore,
 		lastSlot:         0,
 		collectedEntries: make([]poh.Entry, 0),
+		Mempool:          mempool,
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -72,7 +77,7 @@ func (v *Validator) isLeader(slot uint64) bool {
 
 // handleEntry buffers entries and assembles a block at slot boundary.
 func (v *Validator) handleEntry(e poh.Entry) {
-	currentSlot := v.Recorder.TickHeight() / v.TicksPerSlot
+	currentSlot := v.Recorder.CurrentSlot()
 
 	// When slot advances, assemble block for lastSlot if we were leader
 	if currentSlot > v.lastSlot && v.isLeader(v.lastSlot) {
@@ -92,7 +97,7 @@ func (v *Validator) handleEntry(e poh.Entry) {
 			fmt.Println("Failed to broadcast block:", err)
 		}
 		// Reset buffer
-		v.collectedEntries = v.collectedEntries[:0]
+		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	}
 
 	// Buffer entries only if leader of current slot
@@ -104,20 +109,53 @@ func (v *Validator) handleEntry(e poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
-// Run starts the validator loop, updating role based on current slot.
 func (v *Validator) Run() {
 	v.Service.Start()
-	fmt.Println("Validator started. Pubkey=", v.Pubkey)
+	defer v.Service.Stop()
+	v.stopCh = make(chan struct{})
+
+	go v.leaderBatchLoop()
 
 	ticker := time.NewTicker(v.PollInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		slot := v.Recorder.TickHeight() / v.TicksPerSlot
-		if v.isLeader(slot) {
-			fmt.Println("Switched to LEADER for slot", slot)
-		} else {
-			fmt.Println("Switched to FOLLOWER for slot", slot)
+	for {
+		select {
+		case <-v.stopCh:
+			return
+		case <-ticker.C:
+			slot := v.Recorder.CurrentSlot()
+			if v.isLeader(slot) {
+				fmt.Println("Switched to LEADER for slot", slot)
+			} else {
+				fmt.Println("Switched to FOLLOWER for slot", slot)
+			}
+		}
+	}
+}
+
+func (v *Validator) leaderBatchLoop() {
+	batchTicker := time.NewTicker(v.PollInterval)
+	defer batchTicker.Stop()
+	for {
+		select {
+		case <-v.stopCh:
+			return
+		case <-batchTicker.C:
+			slot := v.Recorder.CurrentSlot()
+			if !v.isLeader(slot) {
+				continue
+			}
+
+			batch := v.Mempool.PullBatch(v.BatchSize)
+			if len(batch) == 0 {
+				continue
+			}
+			entry, err := v.Recorder.RecordTxs(batch)
+			if err != nil {
+				continue
+			}
+			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(batch), slot, entry.Hash[:6])
 		}
 	}
 }
