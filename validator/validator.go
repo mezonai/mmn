@@ -102,6 +102,7 @@ func (v *Validator) handleEntry(e poh.Entry) {
 
 	// Buffer entries only if leader of current slot
 	if v.isLeader(currentSlot) {
+		fmt.Printf("Adding entry %x\n for slot %d\n", e.Hash, currentSlot)
 		v.collectedEntries = append(v.collectedEntries, e)
 	}
 

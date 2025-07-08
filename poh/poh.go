@@ -105,7 +105,7 @@ func (p *Poh) Run() {
 }
 
 func (p *Poh) AutoHash() {
-	ticker := time.NewTicker(50 * time.Millisecond)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {

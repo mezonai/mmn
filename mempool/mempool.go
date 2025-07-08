@@ -1,6 +1,9 @@
 package mempool
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 type Mempool struct {
 	mu  sync.Mutex
@@ -15,6 +18,7 @@ func NewMempool(max int) *Mempool {
 func (mp *Mempool) AddTx(tx []byte) bool {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
+	fmt.Println("Adding tx", string(tx))
 	if len(mp.buf) >= mp.max {
 		return false // drop if full
 	}

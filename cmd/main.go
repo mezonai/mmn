@@ -56,7 +56,7 @@ func main() {
 
 	// --- PoH ---
 	seed := []byte(self.PubKey)
-	hashesPerTick := uint64(10)
+	hashesPerTick := uint64(5)
 	ticksPerSlot := uint64(4)
 
 	pohEngine := poh.NewPoh(seed, &hashesPerTick)
@@ -91,7 +91,7 @@ func main() {
 	_ = grpcSrv // not used directly, but keeps server running
 
 	// --- Validator ---
-	pollInterval := 100 * time.Millisecond
+	pollInterval := 500 * time.Millisecond
 	batchSize := 100
 	val := validator.NewValidator(
 		self.PubKey, privKey, recorder, pohService, pohSchedule, ticksPerSlot,

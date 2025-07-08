@@ -54,7 +54,6 @@ func (r *PohRecorder) Tick() *Entry {
 	}
 
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
-	r.entries = append(r.entries, entry)
 
 	r.tickHeight++
 	fmt.Printf("Finished Tick: %d\n", r.tickHeight)
