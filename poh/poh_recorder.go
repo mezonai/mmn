@@ -47,6 +47,7 @@ func (r *PohRecorder) Tick() *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	fmt.Println("Starting Tick")
 	pohEntry := r.poh.Tick()
 	if pohEntry == nil {
 		return nil
@@ -56,6 +57,7 @@ func (r *PohRecorder) Tick() *Entry {
 	r.entries = append(r.entries, entry)
 
 	r.tickHeight++
+	fmt.Printf("Finished Tick: %d\n", r.tickHeight)
 	return &entry
 }
 

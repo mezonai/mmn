@@ -110,28 +110,10 @@ func (v *Validator) handleEntry(e poh.Entry) {
 }
 
 func (v *Validator) Run() {
-	v.Service.Start()
-	defer v.Service.Stop()
 	v.stopCh = make(chan struct{})
 
 	go v.leaderBatchLoop()
-
-	ticker := time.NewTicker(v.PollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-v.stopCh:
-			return
-		case <-ticker.C:
-			slot := v.Recorder.CurrentSlot()
-			if v.isLeader(slot) {
-				fmt.Println("Switched to LEADER for slot", slot)
-			} else {
-				fmt.Println("Switched to FOLLOWER for slot", slot)
-			}
-		}
-	}
+	go v.roleMonitorLoop()
 }
 
 func (v *Validator) leaderBatchLoop() {
@@ -156,6 +138,25 @@ func (v *Validator) leaderBatchLoop() {
 				continue
 			}
 			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(batch), slot, entry.Hash[:6])
+		}
+	}
+}
+
+func (v *Validator) roleMonitorLoop() {
+	ticker := time.NewTicker(v.PollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-v.stopCh:
+			return
+		case <-ticker.C:
+			slot := v.Recorder.CurrentSlot()
+			if v.isLeader(slot) {
+				fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
+			} else {
+				fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
+			}
 		}
 	}
 }

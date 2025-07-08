@@ -1,6 +1,7 @@
 package poh
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -20,18 +21,7 @@ func NewPohService(recorder *PohRecorder, interval time.Duration) *PohService {
 }
 
 func (s *PohService) Start() {
-	ticker := time.NewTicker(s.TickInterval)
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				s.tickAndFlush()
-			case <-s.stopCh:
-				return
-			}
-		}
-	}()
+	go s.tickAndFlush()
 }
 
 func (s *PohService) Stop() {
@@ -39,15 +29,23 @@ func (s *PohService) Stop() {
 }
 
 func (s *PohService) tickAndFlush() {
-	entries := s.Recorder.DrainEntries()
-
-	if tickEntry := s.Recorder.Tick(); tickEntry != nil {
-		entries = append(entries, *tickEntry)
-	}
-
-	for _, entry := range entries {
-		if s.OnEntry != nil {
-			s.OnEntry(entry)
+	fmt.Println("Ticking and flushing")
+	ticker := time.NewTicker(s.TickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			entries := s.Recorder.DrainEntries()
+			if tickEntry := s.Recorder.Tick(); tickEntry != nil {
+				entries = append(entries, *tickEntry)
+			}
+			for _, entry := range entries {
+				if s.OnEntry != nil {
+					s.OnEntry(entry)
+				}
+			}
+		case <-s.stopCh:
+			return
 		}
 	}
 }

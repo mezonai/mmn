@@ -1,0 +1,24 @@
+config:
+  self_node:
+    pubkey: "pubkey_1"
+    privkey_path: "privkey_path"
+    network_addr: "network_addr_1"
+
+  peer_nodes:
+    - pubkey: "pubkey_1"
+      network_addr: "network_addr_1"
+    - pubkey: "pubkey_2"
+      network_addr: "network_addr_2"
+    - pubkey: "pubkey_3"
+      network_addr: "network_addr_3"
+
+  leader_schedule:
+    - start_slot: 0
+      end_slot: 9
+      leader: "pubkey_1"
+    - start_slot: 10
+      end_slot: 19
+      leader: "pubkey_2"
+    - start_slot: 20
+      end_slot: 29
+      leader: "pubkey_3"

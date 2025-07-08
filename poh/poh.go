@@ -2,6 +2,7 @@ package poh
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -22,7 +23,8 @@ type Poh struct {
 	TickNumber      uint64
 	SlotStartTime   time.Time
 
-	mu sync.Mutex
+	mu     sync.Mutex
+	stopCh chan struct{}
 }
 
 func NewPoh(seed []byte, hashesPerTickOpt *uint64) *Poh {
@@ -44,7 +46,12 @@ func NewPoh(seed []byte, hashesPerTickOpt *uint64) *Poh {
 		RemainingHashes: hashesPerTick,
 		TickNumber:      0,
 		SlotStartTime:   time.Now(),
+		stopCh:          make(chan struct{}),
 	}
+}
+
+func (p *Poh) Stop() {
+	close(p.stopCh)
 }
 
 func (p *Poh) hashOnce(hash []byte) {
@@ -93,20 +100,25 @@ func (p *Poh) Tick() *PohEntry {
 	return entry
 }
 
-func (p *Poh) RunAutoHash(stopCh <-chan struct{}) {
-	go func() {
-		for {
-			select {
-			case <-stopCh:
-				return
-			default:
-				p.mu.Lock()
-				if p.RemainingHashes > 1 {
-					p.hashOnce(p.Hash[:])
-				}
-				p.mu.Unlock()
-				time.Sleep(time.Microsecond)
+func (p *Poh) Run() {
+	go p.AutoHash()
+}
+
+func (p *Poh) AutoHash() {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-p.stopCh:
+			return
+		case <-ticker.C:
+			p.mu.Lock()
+			fmt.Println("RemainingHashes", p.RemainingHashes)
+			if p.RemainingHashes > 1 {
+				p.hashOnce(p.Hash[:])
 			}
+			p.mu.Unlock()
 		}
-	}()
+	}
 }
