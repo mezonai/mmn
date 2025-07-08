@@ -15,7 +15,8 @@ import (
 type NodeConfig struct {
 	PubKey      string `yaml:"pubkey"`
 	PrivKeyPath string `yaml:"privkey_path"`
-	NetworkAddr string `yaml:"network_addr"`
+	ListenAddr  string `yaml:"listen_addr"`
+	GRPCAddr    string `yaml:"grpc_addr"`
 }
 
 // LeaderSchedule represents a leader schedule entry

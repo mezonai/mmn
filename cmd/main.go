@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"flag"
+	"fmt"
 	"log"
 	"time"
 
@@ -18,8 +20,10 @@ import (
 )
 
 func main() {
+	current_node := flag.String("node", "node1", "The node to run")
+	flag.Parse()
 	// --- Load config from genesis.yml ---
-	cfg, err := config.LoadGenesisConfig("genesis.yml")
+	cfg, err := config.LoadGenesisConfig(fmt.Sprintf("genesis.%s.yml", *current_node))
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -30,8 +34,8 @@ func main() {
 	// --- Prepare peer addresses (excluding self) ---
 	peerAddrs := []string{}
 	for _, p := range peers {
-		if p.NetworkAddr != self.NetworkAddr {
-			peerAddrs = append(peerAddrs, p.NetworkAddr)
+		if p.GRPCAddr != self.GRPCAddr {
+			peerAddrs = append(peerAddrs, p.GRPCAddr)
 		}
 	}
 
@@ -78,7 +82,7 @@ func main() {
 		}
 	}
 	grpcSrv := network.NewGRPCServer(
-		self.NetworkAddr,
+		self.GRPCAddr,
 		pubKeys,
 		blockDir,
 		ld,
@@ -100,7 +104,7 @@ func main() {
 	val.Run()
 
 	// --- API (for tx submission) ---
-	apiSrv := api.NewAPIServer(mp, self.NetworkAddr)
+	apiSrv := api.NewAPIServer(mp, self.ListenAddr)
 	apiSrv.Start()
 
 	// --- Block forever ---

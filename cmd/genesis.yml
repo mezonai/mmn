@@ -1,24 +1,25 @@
 config:
   self_node:
-    pubkey: "pubkey_1"
+    pubkey: "pubkey"
     privkey_path: "privkey_path"
-    network_addr: "network_addr_1"
+    listen_addr: "listen_addr"
+    grpc_addr: "grpc_addr"
 
   peer_nodes:
-    - pubkey: "pubkey_1"
-      network_addr: "network_addr_1"
-    - pubkey: "pubkey_2"
-      network_addr: "network_addr_2"
-    - pubkey: "pubkey_3"
-      network_addr: "network_addr_3"
+    - pubkey: "pubkey1"
+      grpc_addr: "grpc_addr1"
+    - pubkey: "pubkey2"
+      grpc_addr: "grpc_addr2"
+    - pubkey: "pubkey3"
+      grpc_addr: "grpc_addr3"
 
   leader_schedule:
     - start_slot: 0
-      end_slot: 9
-      leader: "pubkey_1"
-    - start_slot: 10
       end_slot: 19
-      leader: "pubkey_2"
-    - start_slot: 20
+      leader: "leader1"
+    - start_slot: 100
       end_slot: 29
-      leader: "pubkey_3"
+      leader: "leader2"
+    - start_slot: 200
+      end_slot: 39
+      leader: "leader3"

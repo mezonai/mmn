@@ -6,15 +6,13 @@ import (
 	"sync"
 )
 
-// Collector lưu các vote và kiểm quorum (2f+1)
 type Collector struct {
 	mu        sync.Mutex
 	votes     map[uint64]map[string]*Vote // slot → voterID → Vote
-	total     int                         // tổng số validator
-	threshold int                         // số vote cần thiết (2f+1)
+	total     int                         // total number of validators
+	threshold int                         // threshold number of votes (2f+1)
 }
 
-// NewCollector khởi với n validator
 func NewCollector(n int) *Collector {
 	f := (n - 1) / 3
 	q := 2*f + 1
@@ -25,7 +23,6 @@ func NewCollector(n int) *Collector {
 	}
 }
 
-// AddVote thêm vote vào bộ đếm, trả về true nếu đạt quorum
 func (c *Collector) AddVote(v *Vote) (bool, error) {
 	if err := v.Validate(); err != nil {
 		return false, err
@@ -51,7 +48,6 @@ func (c *Collector) AddVote(v *Vote) (bool, error) {
 	return false, nil
 }
 
-// VotesForSlot trả về bản copy các vote đã lưu cho slot
 func (c *Collector) VotesForSlot(slot uint64) map[string]*Vote {
 	c.mu.Lock()
 	defer c.mu.Unlock()
