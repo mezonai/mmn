@@ -23,7 +23,7 @@ func main() {
 	current_node := flag.String("node", "node1", "The node to run")
 	flag.Parse()
 	// --- Load config from genesis.yml ---
-	cfg, err := config.LoadGenesisConfig(fmt.Sprintf("genesis.%s.yml", *current_node))
+	cfg, err := config.LoadGenesisConfig(fmt.Sprintf("config/genesis.%s.yml", *current_node))
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// --- Blockstore ---
-	blockDir := "../blockstore/blocks"
+	blockDir := "./blockstore/blocks"
 	bs, err := blockstore.NewBlockStore(blockDir)
 	if err != nil {
 		log.Fatalf("Failed to init blockstore: %v", err)
