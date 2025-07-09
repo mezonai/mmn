@@ -18,12 +18,12 @@ func NewLedger() *Ledger {
 	return &Ledger{state: make(map[string]*Account)}
 }
 
-// Khởi tạo account ban đầu
+// Initialize initial account
 func (l *Ledger) CreateAccount(addr string, balance uint64) {
 	l.state[addr] = &Account{Balance: balance, Nonce: 0}
 }
 
-// Apply transaction vào ledger (sau khi đã verify signature)
+// Apply transaction to ledger (after verifying signature)
 func (l *Ledger) ApplyTx(tx *Transaction) error {
 	from, ok := l.state[tx.From]
 	if !ok {
@@ -40,14 +40,14 @@ func (l *Ledger) ApplyTx(tx *Transaction) error {
 	if tx.Nonce != from.Nonce+1 {
 		return fmt.Errorf("invalid nonce: got %d want %d", tx.Nonce, from.Nonce+1)
 	}
-	// Áp dụng chuyển khoản
+	// Apply transfer
 	from.Balance -= tx.Amount
 	to.Balance += tx.Amount
 	from.Nonce++
 	return nil
 }
 
-// Truy vấn balance
+// Query balance
 func (l *Ledger) Balance(addr string) uint64 {
 	acc, ok := l.state[addr]
 	if !ok {
@@ -56,7 +56,7 @@ func (l *Ledger) Balance(addr string) uint64 {
 	return acc.Balance
 }
 
-// Apply toàn bộ transaction trong block
+// Apply all transactions in block
 func (l *Ledger) ApplyBlock(b *block.Block) error {
 	for _, entry := range b.Entries {
 		for _, rawTx := range entry.Transactions {

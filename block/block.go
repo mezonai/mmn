@@ -11,12 +11,12 @@ import (
 
 type Block struct {
 	Slot      uint64      // Slot number
-	PrevHash  [32]byte    // Hash của block trước
-	Entries   []poh.Entry // Các Entry (tx-entry + tick-only) của slot
-	LeaderID  string      // ID của leader đã produce block này
-	Timestamp time.Time   // Thời điểm assemble
-	BlockHash [32]byte    // Hash của toàn bộ block (bỏ Signature)
-	Signature []byte      // Signature của Leader
+	PrevHash  [32]byte    // Hash of previous block
+	Entries   []poh.Entry // Entries of slot (tx-entry + tick-only)
+	LeaderID  string      // ID of leader that produced this block
+	Timestamp time.Time   // Time of assembly
+	BlockHash [32]byte    // Hash of entire block (without Signature)
+	Signature []byte      // Signature of Leader
 }
 
 func AssembleBlock(

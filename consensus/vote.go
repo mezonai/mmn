@@ -6,15 +6,15 @@ import (
 	"fmt"
 )
 
-// Vote là phiếu bầu cho block của một slot
+// Vote is a vote for a block of a slot
 type Vote struct {
-	Slot      uint64 // slot số bao nhiêu
+	Slot      uint64 // slot number
 	BlockHash [32]byte
-	VoterID   string // leaderID hoặc validatorID
+	VoterID   string // leaderID or validatorID
 	Signature []byte
 }
 
-// serializeVote để ký và verify (bỏ Signature)
+// serializeVote to sign and verify (without Signature)
 func (v *Vote) serializeVote() []byte {
 	data, _ := json.Marshal(struct {
 		Slot      uint64
@@ -28,12 +28,12 @@ func (v *Vote) serializeVote() []byte {
 	return data
 }
 
-// Sign ký vote bằng private key của voter
+// Sign vote with private key of voter
 func (v *Vote) Sign(priv ed25519.PrivateKey) {
 	v.Signature = ed25519.Sign(priv, v.serializeVote())
 }
 
-// VerifySignature kiểm tra chữ ký vote với public key
+// VerifySignature check vote signature with public key
 func (v *Vote) VerifySignature(pub ed25519.PublicKey) bool {
 	return ed25519.Verify(pub, v.serializeVote(), v.Signature)
 }

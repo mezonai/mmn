@@ -19,7 +19,7 @@ type server struct {
 	blockDir      string
 	ledger        *ledger.Ledger
 	voteCollector *consensus.Collector
-	grpcClient    *GRPCClient // để vote ngược lại
+	grpcClient    *GRPCClient // to vote back
 	selfID        string
 	privKey       ed25519.PrivateKey
 	blockStore    *blockstore.BlockStore
