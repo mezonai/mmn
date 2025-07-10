@@ -4,19 +4,26 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
-	"time"
-
 	"mmn/poh"
+	"time"
+)
+
+type BlockStatus uint8
+
+const (
+	BlockPending BlockStatus = iota
+	BlockFinalized
 )
 
 type Block struct {
-	Slot      uint64      // Slot number
-	PrevHash  [32]byte    // Hash of previous block
-	Entries   []poh.Entry // Entries of slot (tx-entry + tick-only)
-	LeaderID  string      // ID of leader that produced this block
-	Timestamp time.Time   // Time of assembly
-	BlockHash [32]byte    // Hash of entire block (without Signature)
-	Signature []byte      // Signature of Leader
+	Slot      uint64
+	PrevHash  [32]byte
+	Entries   []poh.Entry
+	LeaderID  string
+	Timestamp time.Time
+	Hash      [32]byte
+	Signature []byte
+	Status    BlockStatus
 }
 
 func AssembleBlock(
@@ -32,7 +39,7 @@ func AssembleBlock(
 		LeaderID:  leaderID,
 		Timestamp: time.Now(),
 	}
-	b.BlockHash = b.computeHash()
+	b.Hash = b.computeHash()
 	return b
 }
 
@@ -60,10 +67,10 @@ func (b *Block) computeHash() [32]byte {
 }
 
 func (b *Block) Sign(privKey ed25519.PrivateKey) {
-	sig := ed25519.Sign(privKey, b.BlockHash[:])
+	sig := ed25519.Sign(privKey, b.Hash[:])
 	b.Signature = sig
 }
 
 func (b *Block) VerifySignature(pubKey ed25519.PublicKey) bool {
-	return ed25519.Verify(pubKey, b.BlockHash[:], b.Signature)
+	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
 }

@@ -8,6 +8,8 @@ import (
 
 	"mmn/block"
 	"mmn/blockstore"
+	"mmn/consensus"
+	"mmn/ledger"
 	"mmn/mempool"
 	"mmn/network"
 	"mmn/poh"
@@ -29,7 +31,9 @@ type Validator struct {
 
 	netClient  *network.GRPCClient
 	blockStore *blockstore.BlockStore
-
+	ledger     *ledger.Ledger
+	session    *ledger.Session
+	collector  *consensus.Collector
 	// Slot & entry buffer
 	lastSlot         uint64
 	collectedEntries []poh.Entry
@@ -43,12 +47,14 @@ func NewValidator(
 	rec *poh.PohRecorder,
 	svc *poh.PohService,
 	schedule *poh.LeaderSchedule,
+	mempool *mempool.Mempool,
 	ticksPerSlot uint64,
 	pollInterval time.Duration,
 	batchSize int,
 	netClient *network.GRPCClient,
 	blockStore *blockstore.BlockStore,
-	mempool *mempool.Mempool,
+	ledger *ledger.Ledger,
+	collector *consensus.Collector,
 ) *Validator {
 	v := &Validator{
 		Pubkey:           pubkey,
@@ -56,14 +62,17 @@ func NewValidator(
 		Recorder:         rec,
 		Service:          svc,
 		Schedule:         schedule,
+		Mempool:          mempool,
 		TicksPerSlot:     ticksPerSlot,
 		PollInterval:     pollInterval,
 		BatchSize:        batchSize,
 		netClient:        netClient,
 		blockStore:       blockStore,
+		ledger:           ledger,
+		session:          ledger.NewSession(),
 		lastSlot:         0,
 		collectedEntries: make([]poh.Entry, 0),
-		Mempool:          mempool,
+		collector:        collector,
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -82,22 +91,43 @@ func (v *Validator) handleEntry(e poh.Entry) {
 	// When slot advances, assemble block for lastSlot if we were leader
 	if currentSlot > v.lastSlot && v.isLeader(v.lastSlot) {
 		// Retrieve previous block hash from blockStore
-		prevHash := v.blockStore.LatestHash()
+		prevHash := v.blockStore.LatestFinalizedHash()
+
 		blk := block.AssembleBlock(
 			v.lastSlot,
 			prevHash,
 			v.Pubkey,
 			v.collectedEntries,
 		)
+
+		if err := v.ledger.VerifyBlock(blk); err != nil {
+			fmt.Printf("[LEADER] sanity verify fail: %v\n", err)
+			return
+		}
+
 		blk.Sign(v.PrivKey)
 		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
+
 		// Persist then broadcast
-		v.blockStore.AddBlock(blk)
+		v.blockStore.AddBlockPending(blk)
 		if err := v.netClient.BroadcastBlock(context.Background(), network.ToProtoBlock(blk)); err != nil {
 			fmt.Println("Failed to broadcast block:", err)
 		}
+
+		// Self-vote
+		vote := &consensus.Vote{
+			Slot:      blk.Slot,
+			BlockHash: blk.Hash,
+			VoterID:   v.Pubkey,
+		}
+		vote.Sign(v.PrivKey)
+		v.collector.AddVote(vote)
+		if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
+			fmt.Println("Failed to broadcast vote:", err)
+		}
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+		v.session = v.ledger.NewSession() // reset session
 	}
 
 	// Buffer entries only if leader of current slot
@@ -134,7 +164,14 @@ func (v *Validator) leaderBatchLoop() {
 			if len(batch) == 0 {
 				continue
 			}
-			entry, err := v.Recorder.RecordTxs(batch)
+
+			valid, errs := v.session.FilterValid(batch)
+			if len(errs) > 0 {
+				fmt.Println("Invalid transactions:", errs)
+				continue
+			}
+
+			entry, err := v.Recorder.RecordTxs(valid)
 			if err != nil {
 				continue
 			}

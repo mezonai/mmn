@@ -10,8 +10,6 @@ config:
       grpc_addr: "node1:9001"
     - pubkey: "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248"
       grpc_addr: "node2:9002"
-    - pubkey: "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b"
-      grpc_addr: "node3:9003"
 
   leader_schedule:
     - start_slot: 0

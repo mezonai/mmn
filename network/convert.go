@@ -35,16 +35,16 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.Block, error) {
 
 	ts := time.Now()
 	if pbt := pbBlk.Timestamp; pbt != nil {
-		if t := timestamppb.Timestamp(*pbt); t.IsValid() {
+		if pbt.IsValid() {
 			ts = pbt.AsTime()
 		}
 	}
 
 	var bh [32]byte
-	if len(pbBlk.BlockHash) != 32 {
+	if len(pbBlk.Hash) != 32 {
 		return nil, fmt.Errorf("invalid block_hash length")
 	}
-	copy(bh[:], pbBlk.BlockHash)
+	copy(bh[:], pbBlk.Hash)
 
 	return &block.Block{
 		Slot:      pbBlk.Slot,
@@ -52,7 +52,7 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.Block, error) {
 		Entries:   entries,
 		LeaderID:  pbBlk.LeaderId,
 		Timestamp: ts,
-		BlockHash: bh,
+		Hash:      bh,
 		Signature: pbBlk.Signature,
 	}, nil
 }
@@ -64,7 +64,7 @@ func ToProtoBlock(blk *block.Block) *pb.Block {
 		Entries:   ToProtoEntries(blk.Entries),
 		LeaderId:  blk.LeaderID,
 		Timestamp: timestamppb.New(blk.Timestamp),
-		BlockHash: blk.BlockHash[:],
+		Hash:      blk.Hash[:],
 		Signature: blk.Signature,
 	}
 }

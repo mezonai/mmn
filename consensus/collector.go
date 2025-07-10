@@ -14,8 +14,9 @@ type Collector struct {
 }
 
 func NewCollector(n int) *Collector {
-	f := (n - 1) / 3
+	f := n / 3
 	q := 2*f + 1
+	log.Printf("[collector] total=%d threshold=%d", n, q)
 	return &Collector{
 		votes:     make(map[uint64]map[string]*Vote),
 		total:     n,

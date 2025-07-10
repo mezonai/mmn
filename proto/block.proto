@@ -17,7 +17,7 @@ message Block {
   repeated Entry entries = 3;
   string leader_id = 4;
   google.protobuf.Timestamp timestamp = 5;
-  bytes block_hash = 6;
+  bytes hash = 6;
   bytes signature  = 7;
 }
 

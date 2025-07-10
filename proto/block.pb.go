@@ -7,12 +7,13 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -89,7 +90,7 @@ type Block struct {
 	Entries       []*Entry               `protobuf:"bytes,3,rep,name=entries,proto3" json:"entries,omitempty"`
 	LeaderId      string                 `protobuf:"bytes,4,opt,name=leader_id,json=leaderId,proto3" json:"leader_id,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	BlockHash     []byte                 `protobuf:"bytes,6,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
+	Hash          []byte                 `protobuf:"bytes,6,opt,name=hash,proto3" json:"hash,omitempty"`
 	Signature     []byte                 `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -160,9 +161,9 @@ func (x *Block) GetTimestamp() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *Block) GetBlockHash() []byte {
+func (x *Block) GetHash() []byte {
 	if x != nil {
-		return x.BlockHash
+		return x.Hash
 	}
 	return nil
 }
@@ -279,16 +280,15 @@ const file_proto_block_proto_rawDesc = "" +
 	"\n" +
 	"num_hashes\x18\x01 \x01(\x04R\tnumHashes\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\fR\x04hash\x12\"\n" +
-	"\ftransactions\x18\x03 \x03(\fR\ftransactions\"\xf2\x01\n" +
+	"\ftransactions\x18\x03 \x03(\fR\ftransactions\"\xe7\x01\n" +
 	"\x05Block\x12\x12\n" +
 	"\x04slot\x18\x01 \x01(\x04R\x04slot\x12\x1b\n" +
 	"\tprev_hash\x18\x02 \x01(\fR\bprevHash\x12$\n" +
 	"\aentries\x18\x03 \x03(\v2\n" +
 	".mmn.EntryR\aentries\x12\x1b\n" +
 	"\tleader_id\x18\x04 \x01(\tR\bleaderId\x128\n" +
-	"\ttimestamp\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x1d\n" +
-	"\n" +
-	"block_hash\x18\x06 \x01(\fR\tblockHash\x12\x1c\n" +
+	"\ttimestamp\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x12\n" +
+	"\x04hash\x18\x06 \x01(\fR\x04hash\x12\x1c\n" +
 	"\tsignature\x18\a \x01(\fR\tsignature\"9\n" +
 	"\x11BroadcastResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +

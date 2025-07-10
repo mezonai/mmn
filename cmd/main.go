@@ -58,6 +58,9 @@ func main() {
 	// --- Mempool ---
 	mp := mempool.NewMempool(1000)
 
+	// --- Collector ---
+	collector := consensus.NewCollector(len(peers) + 1)
+
 	// --- PoH ---
 	seed := []byte(self.PubKey)
 	hashesPerTick := uint64(5)
@@ -86,7 +89,7 @@ func main() {
 		pubKeys,
 		blockDir,
 		ld,
-		consensus.NewCollector(len(peers)+1), // total validators
+		collector,
 		netClient,
 		self.PubKey,
 		privKey,
@@ -98,8 +101,8 @@ func main() {
 	pollInterval := 500 * time.Millisecond
 	batchSize := 100
 	val := validator.NewValidator(
-		self.PubKey, privKey, recorder, pohService, pohSchedule, ticksPerSlot,
-		pollInterval, batchSize, netClient, bs, mp,
+		self.PubKey, privKey, recorder, pohService, pohSchedule, mp, ticksPerSlot,
+		pollInterval, batchSize, netClient, bs, ld, collector,
 	)
 	val.Run()
 
