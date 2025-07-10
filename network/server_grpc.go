@@ -15,6 +15,7 @@ import (
 
 type server struct {
 	pb.UnimplementedBlockServiceServer
+	pb.UnimplementedVoteServiceServer
 	pubKeys       map[string]ed25519.PublicKey
 	blockDir      string
 	ledger        *ledger.Ledger
@@ -41,6 +42,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	}
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
+	pb.RegisterVoteServiceServer(grpcSrv, s)
 	lis, _ := net.Listen("tcp", addr)
 	go grpcSrv.Serve(lis)
 	fmt.Printf("[gRPC] server listening on %s", addr)
@@ -135,22 +137,22 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 	fmt.Printf("[consensus] Adding vote %d to collector for peer vote\n", v.Slot)
 	committed, err := s.voteCollector.AddVote(&v)
 	if err != nil {
-		fmt.Printf("[consensus] Add vote error: %v", err)
+		fmt.Printf("[consensus] Add vote error: %v\n", err)
 		return &pb.VoteResponse{Ok: false, Error: err.Error()}, nil
 	}
 	if committed {
-		fmt.Printf("[consensus] slot %d finalized! votes=%d", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
+		fmt.Printf("[consensus] slot %d committed, processing apply block! votes=%d\n", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
 		// Replay transactions in block
 		if err := s.ledger.ApplyBlock(s.blockStore.Block(v.Slot)); err != nil {
-			fmt.Printf("[consensus] Apply block error: %v", err)
+			fmt.Printf("[consensus] Apply block error: %v\n", err)
 			return &pb.VoteResponse{Ok: false, Error: "block apply failed"}, nil
 		}
 		// Mark block as finalized
 		if err := s.blockStore.MarkFinalized(v.Slot); err != nil {
-			fmt.Printf("[consensus] Mark block as finalized error: %v", err)
+			fmt.Printf("[consensus] Mark block as finalized error: %v\n", err)
 			return &pb.VoteResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
-		fmt.Printf("[consensus] slot %d finalized! votes=%d", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
+		fmt.Printf("[consensus] slot %d finalized!\n", v.Slot)
 	}
 
 	return &pb.VoteResponse{Ok: true}, nil

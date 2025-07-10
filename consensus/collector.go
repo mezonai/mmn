@@ -15,7 +15,7 @@ type Collector struct {
 func NewCollector(n int) *Collector {
 	f := n / 3
 	q := 2*f + 1
-	fmt.Printf("[collector] total=%d threshold=%d", n, q)
+	fmt.Printf("[collector] total=%d threshold=%d\n", n, q)
 	return &Collector{
 		votes:     make(map[uint64]map[string]*Vote),
 		total:     n,
@@ -41,7 +41,7 @@ func (c *Collector) AddVote(v *Vote) (bool, error) {
 	slotVotes[v.VoterID] = v
 
 	count := len(slotVotes)
-	fmt.Printf("[collector] slot=%d votes=%d/%d", v.Slot, count, c.threshold)
+	fmt.Printf("[collector] slot=%d votes=%d/%d\n", v.Slot, count, c.threshold)
 	if count >= c.threshold {
 		return true, nil
 	}

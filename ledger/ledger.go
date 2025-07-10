@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mmn/block"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -77,6 +78,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
 
 	for _, entry := range b.Entries {
 		for _, raw := range entry.Transactions {
@@ -104,9 +106,9 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		return err
 	}
 	if b.Slot%1000 == 0 {
-		_ = l.saveSnapshot("snapshot.gob")
+		_ = l.saveSnapshot("ledger/snapshot.gob")
 	}
-
+	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
 	return nil
 }
 
@@ -150,10 +152,17 @@ func addHistory(acc *Account, rec TxRecord) {
 }
 
 func (l *Ledger) appendWAL(b *block.Block) error {
-	f, err := os.OpenFile("ledger/wal.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	path := "ledger/wal.log"
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
+	defer f.Close()
+
 	enc := json.NewEncoder(f)
 	for _, entry := range b.Entries {
 		for _, raw := range entry.Transactions {
@@ -161,16 +170,24 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 			_ = enc.Encode(TxRecord{Slot: b.Slot, From: tx.From, To: tx.To, Amount: tx.Amount})
 		}
 	}
-	return f.Close()
+	return nil
 }
 
 func (l *Ledger) saveSnapshot(path string) error {
-	f, err := os.Create(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
+	if err := gob.NewEncoder(f).Encode(l.state); err != nil {
+		return err
+	}
 	defer f.Close()
-	return gob.NewEncoder(f).Encode(l.state)
+	return os.Rename(tmp, path)
 }
 
 func (l *Ledger) LoadLedger() error {

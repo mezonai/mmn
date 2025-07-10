@@ -71,7 +71,7 @@ func (bs *BlockStore) Block(slot uint64) *block.Block {
 func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
-	fmt.Printf("Adding block %d to blockstore\n", b.Slot)
+	fmt.Printf("Adding pending block %d to blockstore\n", b.Slot)
 
 	if _, ok := bs.data[b.Slot]; ok {
 		return fmt.Errorf("block %d already exists", b.Slot)
@@ -80,7 +80,7 @@ func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 		return err
 	}
 	bs.data[b.Slot] = b
-	fmt.Printf("Block %d added to blockstore\n", b.Slot)
+	fmt.Printf("Pending block %d added to blockstore\n", b.Slot)
 	return nil
 }
 
@@ -102,6 +102,8 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	if slot > bs.latestFinalized {
 		bs.latestFinalized = slot
 	}
+	fmt.Printf("Block %d marked as finalized\n", slot)
+	fmt.Printf("Latest finalized block: %d\n", bs.latestFinalized)
 	return nil
 }
 

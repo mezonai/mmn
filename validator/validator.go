@@ -122,8 +122,17 @@ func (v *Validator) handleEntry(e poh.Entry) {
 		}
 		vote.Sign(v.PrivKey)
 		fmt.Printf("[LEADER] Adding vote %d to collector for self-vote\n", vote.Slot)
-		if _, err := v.collector.AddVote(vote); err != nil {
+		if committed, err := v.collector.AddVote(vote); err != nil {
 			fmt.Printf("[LEADER] Add vote error: %v\n", err)
+		} else if committed {
+			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
+			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot)); err != nil {
+				fmt.Printf("[LEADER] Apply block error: %v\n", err)
+			}
+			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
+				fmt.Printf("[LEADER] Mark block as finalized error: %v\n", err)
+			}
+			fmt.Printf("[LEADER] slot %d finalized!\n", vote.Slot)
 		}
 
 		// Broadcast vote
