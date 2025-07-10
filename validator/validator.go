@@ -121,10 +121,17 @@ func (v *Validator) handleEntry(e poh.Entry) {
 			VoterID:   v.Pubkey,
 		}
 		vote.Sign(v.PrivKey)
-		v.collector.AddVote(vote)
-		if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
-			fmt.Println("Failed to broadcast vote:", err)
+		fmt.Printf("[LEADER] Adding vote %d to collector for self-vote\n", vote.Slot)
+		if _, err := v.collector.AddVote(vote); err != nil {
+			fmt.Printf("[LEADER] Add vote error: %v\n", err)
 		}
+
+		// Broadcast vote
+		fmt.Printf("[LEADER] Broadcasted vote %d to %s\n", vote.Slot, v.Pubkey)
+		if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
+			fmt.Printf("[LEADER] Failed to broadcast vote: %v\n", err)
+		}
+
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 		v.session = v.ledger.NewSession() // reset session

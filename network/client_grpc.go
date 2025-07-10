@@ -2,7 +2,7 @@ package network
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"time"
 
 	"mmn/consensus"
@@ -30,7 +30,7 @@ func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *pb.Block) error {
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
-			log.Printf("[gRPC Client] NewClient %s failed: %v", addr, err)
+			fmt.Printf("[gRPC Client] NewClient %s failed: %v", addr, err)
 			continue
 		}
 		client := pb.NewBlockServiceClient(conn)
@@ -38,10 +38,11 @@ func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *pb.Block) error {
 		resp, err := client.Broadcast(rpcCtx, blk)
 		cancel()
 		if err != nil {
-			log.Printf("[gRPC Client] Broadcast to %s error: %v", addr, err)
+			fmt.Printf("[gRPC Client] Broadcast to %s error: %v", addr, err)
 		} else if !resp.Ok {
-			log.Printf("[gRPC Client] Broadcast to %s not OK: %s", addr, resp.Error)
+			fmt.Printf("[gRPC Client] Broadcast to %s not OK: %s", addr, resp.Error)
 		}
+		fmt.Printf("Broadcasted block %d to %s\n", blk.Slot, addr)
 		conn.Close()
 	}
 	return nil
@@ -60,7 +61,13 @@ func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) erro
 			continue
 		}
 		client := pb.NewVoteServiceClient(conn)
-		_, _ = client.Vote(ctx, pbV)
+		resp, err := client.Vote(ctx, pbV)
+		if err != nil {
+			fmt.Printf("[gRPC Client] Vote to %s error: %v", addr, err)
+		} else if !resp.Ok {
+			fmt.Printf("[gRPC Client] Vote to %s not OK: %s", addr, resp.Error)
+		}
+		fmt.Printf("Broadcasted vote %d to %s\n", vt.Slot, addr)
 		conn.Close()
 	}
 	return nil

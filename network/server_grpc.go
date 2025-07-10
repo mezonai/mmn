@@ -3,7 +3,7 @@ package network
 import (
 	"context"
 	"crypto/ed25519"
-	"log"
+	"fmt"
 	"mmn/blockstore"
 	"mmn/consensus"
 	"mmn/ledger"
@@ -43,7 +43,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	lis, _ := net.Listen("tcp", addr)
 	go grpcSrv.Serve(lis)
-	log.Printf("[gRPC] server listening on %s", addr)
+	fmt.Printf("[gRPC] server listening on %s", addr)
 	return grpcSrv
 }
 
@@ -51,31 +51,31 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 	// Convert pb.Block → block.Block
 	blk, err := FromProtoBlock(pbBlk)
 	if err != nil {
-		log.Printf("[follower] Block conversion error: %v", err)
+		fmt.Printf("[follower] Block conversion error: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "invalid block"}, nil
 	}
 	pubKey, ok := s.pubKeys[blk.LeaderID]
 	if !ok {
-		log.Printf("[follower] Unknown leader: %s", blk.LeaderID)
+		fmt.Printf("[follower] Unknown leader: %s", blk.LeaderID)
 		return &pb.BroadcastResponse{Ok: false, Error: "unknown leader"}, nil
 	}
 	// Verify signature
 	if !blk.VerifySignature(pubKey) {
-		log.Printf("[follower] Invalid signature for slot %d", blk.Slot)
+		fmt.Printf("[follower] Invalid signature for slot %d", blk.Slot)
 		return &pb.BroadcastResponse{Ok: false, Error: "bad signature"}, nil
 	}
 
 	// Verify block is valid
 	if err := s.ledger.VerifyBlock(blk); err != nil {
-		log.Printf("[follower] Invalid block: %v", err)
+		fmt.Printf("[follower] Invalid block: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "invalid block"}, nil
 	}
 
 	// Persist block
 	if err := s.blockStore.AddBlockPending(blk); err != nil {
-		log.Printf("[follower] Store block error: %v", err)
+		fmt.Printf("[follower] Store block error: %v", err)
 	} else {
-		log.Printf("[follower] Stored block slot=%d", blk.Slot)
+		fmt.Printf("[follower] Stored block slot=%d", blk.Slot)
 	}
 
 	// Broadcast vote
@@ -86,26 +86,27 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 	}
 	vote.Sign(s.privKey)
 
-	// Add vote to collector
+	// Add vote to collector for follower self-vote
+	fmt.Printf("[follower] Adding vote %d to collector for self-vote\n", vote.Slot)
 	if committed, err := s.voteCollector.AddVote(vote); err != nil {
-		log.Printf("[follower] Add vote error: %v", err)
+		fmt.Printf("[follower] Add vote error: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "add vote failed"}, nil
 	} else if committed {
 		// Replay transactions in block
 		if err := s.ledger.ApplyBlock(s.blockStore.Block(vote.Slot)); err != nil {
-			log.Printf("[follower] Apply block error: %v", err)
+			fmt.Printf("[follower] Apply block error: %v", err)
 			return &pb.BroadcastResponse{Ok: false, Error: "block apply failed"}, nil
 		}
 		// Mark block as finalized
 		if err := s.blockStore.MarkFinalized(vote.Slot); err != nil {
-			log.Printf("[follower] Mark block as finalized error: %v", err)
+			fmt.Printf("[follower] Mark block as finalized error: %v", err)
 			return &pb.BroadcastResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
-		log.Printf("[follower] slot %d finalized! votes=%d", vote.Slot, len(s.voteCollector.VotesForSlot(vote.Slot)))
+		fmt.Printf("[follower] slot %d finalized! votes=%d", vote.Slot, len(s.voteCollector.VotesForSlot(vote.Slot)))
 	}
 
 	if err := s.grpcClient.BroadcastVote(context.Background(), vote); err != nil {
-		log.Printf("[follower] Broadcast vote error: %v", err)
+		fmt.Printf("[follower] Broadcast vote error: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "broadcast vote failed"}, nil
 	}
 
@@ -131,23 +132,25 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 	}
 
 	// 3. Add to collector
+	fmt.Printf("[consensus] Adding vote %d to collector for peer vote\n", v.Slot)
 	committed, err := s.voteCollector.AddVote(&v)
 	if err != nil {
+		fmt.Printf("[consensus] Add vote error: %v", err)
 		return &pb.VoteResponse{Ok: false, Error: err.Error()}, nil
 	}
 	if committed {
-		log.Printf("[consensus] slot %d finalized! votes=%d", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
+		fmt.Printf("[consensus] slot %d finalized! votes=%d", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
 		// Replay transactions in block
 		if err := s.ledger.ApplyBlock(s.blockStore.Block(v.Slot)); err != nil {
-			log.Printf("[consensus] Apply block error: %v", err)
+			fmt.Printf("[consensus] Apply block error: %v", err)
 			return &pb.VoteResponse{Ok: false, Error: "block apply failed"}, nil
 		}
 		// Mark block as finalized
 		if err := s.blockStore.MarkFinalized(v.Slot); err != nil {
-			log.Printf("[consensus] Mark block as finalized error: %v", err)
+			fmt.Printf("[consensus] Mark block as finalized error: %v", err)
 			return &pb.VoteResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
-		log.Printf("[consensus] slot %d finalized! votes=%d", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
+		fmt.Printf("[consensus] slot %d finalized! votes=%d", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
 	}
 
 	return &pb.VoteResponse{Ok: true}, nil

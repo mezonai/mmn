@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 
 	"mmn/mempool"
@@ -28,7 +27,7 @@ func NewAPIServer(mp *mempool.Mempool, addr string) *APIServer {
 
 func (s *APIServer) Start() {
 	http.HandleFunc("/tx", s.handleTx)
-	log.Printf("Tx API listen on %s\n", s.ListenAddr)
+	fmt.Printf("Tx API listen on %s\n", s.ListenAddr)
 	go http.ListenAndServe(s.ListenAddr, nil)
 }
 
