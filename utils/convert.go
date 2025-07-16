@@ -1,4 +1,4 @@
-package network
+package utils
 
 import (
 	"fmt"

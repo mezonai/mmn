@@ -28,6 +28,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 	self := cfg.SelfNode
+	seed := []byte(self.PubKey)
 	peers := cfg.PeerNodes
 	leaderSchedule := cfg.LeaderSchedule
 
@@ -47,7 +48,7 @@ func main() {
 
 	// --- Blockstore ---
 	blockDir := "./blockstore/blocks"
-	bs, err := blockstore.NewBlockStore(blockDir)
+	bs, err := blockstore.NewBlockStore(blockDir, seed)
 	if err != nil {
 		log.Fatalf("Failed to init blockstore: %v", err)
 	}
@@ -62,16 +63,19 @@ func main() {
 	collector := consensus.NewCollector(len(peers) + 1)
 
 	// --- PoH ---
-	seed := []byte(self.PubKey)
 	hashesPerTick := uint64(5)
 	ticksPerSlot := uint64(4)
+	tickInterval := 500 * time.Millisecond
+	pohAutoHashInterval := tickInterval / 5
+	log.Printf("tickInterval: %v", tickInterval)
+	log.Printf("pohAutoHashInterval: %v", pohAutoHashInterval)
 
-	pohEngine := poh.NewPoh(seed, &hashesPerTick)
+	pohEngine := poh.NewPoh(seed, &hashesPerTick, pohAutoHashInterval)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(leaderSchedule)
 	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, self.PubKey, pohSchedule)
-	tickInterval := 500 * time.Millisecond
+
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
 
@@ -84,6 +88,22 @@ func main() {
 			pubKeys[n.PubKey] = ed25519.PublicKey(pub)
 		}
 	}
+
+	// --- Validator ---
+	leaderBatchLoopInterval := tickInterval / 2
+	log.Printf("leaderBatchLoopInterval: %v", leaderBatchLoopInterval)
+	roleMonitorLoopInterval := tickInterval
+	log.Printf("roleMonitorLoopInterval: %v", roleMonitorLoopInterval)
+	batchSize := 100
+	leaderTimeout := 50 * time.Millisecond
+	leaderTimeoutLoopInterval := 5 * time.Millisecond
+
+	val := validator.NewValidator(
+		self.PubKey, privKey, recorder, pohService, pohSchedule, mp, ticksPerSlot,
+		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout, leaderTimeoutLoopInterval, batchSize, netClient, bs, ld, collector,
+	)
+	val.Run()
+
 	grpcSrv := network.NewGRPCServer(
 		self.GRPCAddr,
 		pubKeys,
@@ -93,18 +113,10 @@ func main() {
 		netClient,
 		self.PubKey,
 		privKey,
+		val,
 		bs,
 	)
 	_ = grpcSrv // not used directly, but keeps server running
-
-	// --- Validator ---
-	pollInterval := 500 * time.Millisecond
-	batchSize := 100
-	val := validator.NewValidator(
-		self.PubKey, privKey, recorder, pohService, pohSchedule, mp, ticksPerSlot,
-		pollInterval, batchSize, netClient, bs, ld, collector,
-	)
-	val.Run()
 
 	// --- API (for tx submission) ---
 	apiSrv := api.NewAPIServer(mp, self.ListenAddr)

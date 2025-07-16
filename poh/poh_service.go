@@ -45,6 +45,7 @@ func (s *PohService) tickAndFlush() {
 				}
 			}
 		case <-s.stopCh:
+			fmt.Println("Ticking and flushing stop")
 			return
 		}
 	}

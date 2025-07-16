@@ -14,12 +14,12 @@ config:
       grpc_addr: "grpc_addr3"
 
   leader_schedule:
-    - start_slot: 0
-      end_slot: 19
+    - start_slot: start_slot
+      end_slot: end_slot
       leader: "leader1"
-    - start_slot: 100
-      end_slot: 29
+    - start_slot: start_slot
+      end_slot: end_slot
       leader: "leader2"
-    - start_slot: 200
-      end_slot: 39
+    - start_slot: start_slot
+      end_slot: end_slot
       leader: "leader3"

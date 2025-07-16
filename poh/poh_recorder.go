@@ -8,12 +8,14 @@ import (
 
 type PohRecorder struct {
 	poh            *Poh
-	ticksPerSlot   uint64
-	tickHeight     uint64
-	entries        []Entry
-	mu             sync.Mutex
 	leaderSchedule *LeaderSchedule
-	myPubkey       string
+
+	myPubkey     string
+	ticksPerSlot uint64
+	tickHeight   uint64
+	entries      []Entry
+	tickHash     map[uint64][32]byte
+	mu           sync.Mutex
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
@@ -25,7 +27,54 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 		entries:        []Entry{},
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
+		tickHash:       make(map[uint64][32]byte),
 	}
+}
+
+func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tickHeight = slot*r.ticksPerSlot + r.ticksPerSlot - 1
+	r.entries = make([]Entry, 0)
+	r.poh.Reset(lastHash)
+}
+
+func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
+	v, ok := p.tickHash[h]
+	return v, ok && h <= p.tickHeight
+}
+
+func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.tickHeight >= target {
+		if h, ok := r.HashAtHeight(target); ok {
+			return h, nil
+		}
+		return [32]byte{}, fmt.Errorf("hash for tick %d pruned", target)
+	}
+
+	var lastHash [32]byte
+	for r.tickHeight < target {
+		lastHash = r.poh.RecordTick().Hash
+		r.tickHash[r.tickHeight] = lastHash
+		r.tickHeight++
+		fmt.Printf("FastForward: %d\n", r.tickHeight)
+	}
+	return lastHash, nil
+}
+
+func (r *PohRecorder) ReseedAtSlot(seedHash [32]byte, slot uint64) {
+	tick := slot*r.ticksPerSlot + r.ticksPerSlot - 1
+	r.ReseedAtTick(seedHash, tick)
+}
+
+func (r *PohRecorder) ReseedAtTick(seedHash [32]byte, tick uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.poh.Reset(seedHash)
+	r.tickHeight = tick
 }
 
 func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
@@ -54,9 +103,9 @@ func (r *PohRecorder) Tick() *Entry {
 	}
 
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
+	r.tickHash[r.tickHeight] = pohEntry.Hash
 
 	r.tickHeight++
-	fmt.Printf("Finished Tick: %d\n", r.tickHeight)
 	return &entry
 }
 

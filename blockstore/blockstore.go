@@ -1,6 +1,7 @@
 package blockstore
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -20,13 +21,20 @@ type BlockStore struct {
 	data map[uint64]*block.Block
 
 	latestFinalized uint64
+	SeedHash        [32]byte
+}
+
+type SlotBoundary struct {
+	Slot uint64
+	Hash [32]byte
 }
 
 // NewBlockStore initializes a BlockStore, loading existing chain if present.
-func NewBlockStore(dir string) (*BlockStore, error) {
+func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
 	bs := &BlockStore{
-		dir:  dir,
-		data: make(map[uint64]*block.Block),
+		dir:      dir,
+		data:     make(map[uint64]*block.Block),
+		SeedHash: sha256.Sum256(seed),
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -53,19 +61,28 @@ func NewBlockStore(dir string) (*BlockStore, error) {
 	return bs, err
 }
 
-func (bs *BlockStore) LatestFinalizedHash() [32]byte {
-	bs.mu.RLock()
-	defer bs.mu.RUnlock()
-	if blk := bs.data[bs.latestFinalized]; blk != nil {
-		return blk.Hash
-	}
-	return [32]byte{}
-}
-
 func (bs *BlockStore) Block(slot uint64) *block.Block {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 	return bs.data[slot]
+}
+
+func (bs *BlockStore) HasCompleteBlock(slot uint64) bool {
+	_, ok := bs.data[slot]
+	return ok
+}
+
+func (bs *BlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
+	b, ok := bs.data[slot]
+	if !ok {
+		return SlotBoundary{}, false
+	}
+
+	lastEntryHash := b.LastEntryHash()
+	return SlotBoundary{
+		Slot: slot,
+		Hash: lastEntryHash,
+	}, true
 }
 
 func (bs *BlockStore) AddBlockPending(b *block.Block) error {

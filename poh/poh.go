@@ -16,18 +16,18 @@ type PohEntry struct {
 }
 
 type Poh struct {
-	Hash            [32]byte
-	NumHashes       uint64
-	HashesPerTick   uint64
-	RemainingHashes uint64
-	TickNumber      uint64
-	SlotStartTime   time.Time
+	Hash             [32]byte
+	NumHashes        uint64
+	HashesPerTick    uint64
+	RemainingHashes  uint64
+	SlotStartTime    time.Time
+	autoHashInterval time.Duration
 
 	mu     sync.Mutex
 	stopCh chan struct{}
 }
 
-func NewPoh(seed []byte, hashesPerTickOpt *uint64) *Poh {
+func NewPoh(seed []byte, hashesPerTickOpt *uint64, autoHashInterval time.Duration) *Poh {
 	var hashesPerTick uint64
 	if hashesPerTickOpt == nil {
 		hashesPerTick = LOW_POWER_MODE
@@ -40,14 +40,25 @@ func NewPoh(seed []byte, hashesPerTickOpt *uint64) *Poh {
 	}
 
 	return &Poh{
-		Hash:            sha256.Sum256(seed),
-		NumHashes:       0,
-		HashesPerTick:   hashesPerTick,
-		RemainingHashes: hashesPerTick,
-		TickNumber:      0,
-		SlotStartTime:   time.Now(),
-		stopCh:          make(chan struct{}),
+		Hash:             sha256.Sum256(seed),
+		NumHashes:        0,
+		HashesPerTick:    hashesPerTick,
+		RemainingHashes:  hashesPerTick,
+		SlotStartTime:    time.Now(),
+		stopCh:           make(chan struct{}),
+		autoHashInterval: autoHashInterval,
 	}
+}
+
+func (p *Poh) Reset(seed [32]byte) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	fmt.Println("PoH Reset: seed", seed)
+	p.Hash = seed
+	p.RemainingHashes = p.HashesPerTick
+	p.NumHashes = 0
+	p.SlotStartTime = time.Now()
 }
 
 func (p *Poh) Stop() {
@@ -75,6 +86,8 @@ func (p *Poh) Record(mixin [32]byte) *PohEntry {
 		Hash:      p.Hash,
 		Tick:      false,
 	}
+
+	p.NumHashes = 0
 	return entry
 }
 
@@ -96,7 +109,22 @@ func (p *Poh) Tick() *PohEntry {
 
 	p.RemainingHashes = p.HashesPerTick
 	p.NumHashes = 0
-	p.TickNumber += 1
+	return entry
+}
+
+func (p *Poh) RecordTick() *PohEntry {
+	remaining := p.HashesPerTick - p.NumHashes
+	for i := uint64(0); i < remaining; i++ {
+		p.Hash = sha256.Sum256(p.Hash[:])
+	}
+	entry := &PohEntry{
+		Hash:      p.Hash,
+		NumHashes: remaining,
+		Tick:      true,
+	}
+
+	p.NumHashes = 0
+	p.RemainingHashes = p.HashesPerTick
 	return entry
 }
 
@@ -105,7 +133,7 @@ func (p *Poh) Run() {
 }
 
 func (p *Poh) AutoHash() {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(p.autoHashInterval)
 	defer ticker.Stop()
 
 	for {
@@ -114,7 +142,7 @@ func (p *Poh) AutoHash() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
-			fmt.Println("RemainingHashes", p.RemainingHashes)
+			fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
 			if p.RemainingHashes > 1 {
 				p.hashOnce(p.Hash[:])
 			}

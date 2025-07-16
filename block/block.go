@@ -17,7 +17,7 @@ const (
 
 type Block struct {
 	Slot      uint64
-	PrevHash  [32]byte
+	PrevHash  [32]byte // hash of the last entry in the previous block
 	Entries   []poh.Entry
 	LeaderID  string
 	Timestamp time.Time
@@ -73,4 +73,12 @@ func (b *Block) Sign(privKey ed25519.PrivateKey) {
 
 func (b *Block) VerifySignature(pubKey ed25519.PublicKey) bool {
 	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
+}
+
+func (b *Block) VerifyPoH() error {
+	return poh.VerifyEntries(b.PrevHash, b.Entries)
+}
+
+func (b *Block) LastEntryHash() [32]byte {
+	return b.Entries[len(b.Entries)-1].Hash
 }

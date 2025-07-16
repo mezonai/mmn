@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"mmn/block"
 	"mmn/consensus"
 	pb "mmn/proto"
+	"mmn/utils"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,7 +28,7 @@ func NewGRPCClient(peers []string) *GRPCClient {
 	}
 }
 
-func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *pb.Block) error {
+func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.Block) error {
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
@@ -35,7 +37,7 @@ func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *pb.Block) error {
 		}
 		client := pb.NewBlockServiceClient(conn)
 		rpcCtx, cancel := context.WithTimeout(ctx, time.Second)
-		resp, err := client.Broadcast(rpcCtx, blk)
+		resp, err := client.Broadcast(rpcCtx, utils.ToProtoBlock(blk))
 		cancel()
 		if err != nil {
 			fmt.Printf("[gRPC Client] Broadcast to %s error: %v", addr, err)

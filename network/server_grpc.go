@@ -8,6 +8,8 @@ import (
 	"mmn/consensus"
 	"mmn/ledger"
 	pb "mmn/proto"
+	"mmn/utils"
+	"mmn/validator"
 	"net"
 
 	"google.golang.org/grpc"
@@ -23,12 +25,13 @@ type server struct {
 	grpcClient    *GRPCClient // to vote back
 	selfID        string
 	privKey       ed25519.PrivateKey
+	validator     *validator.Validator
 	blockStore    *blockstore.BlockStore
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, blockStore *blockstore.BlockStore) *grpc.Server {
+	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -39,6 +42,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		selfID:        selfID,
 		privKey:       priv,
 		blockStore:    blockStore,
+		validator:     validator,
 	}
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
@@ -51,23 +55,33 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 
 func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastResponse, error) {
 	// Convert pb.Block → block.Block
-	blk, err := FromProtoBlock(pbBlk)
+	blk, err := utils.FromProtoBlock(pbBlk)
 	if err != nil {
 		fmt.Printf("[follower] Block conversion error: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "invalid block"}, nil
 	}
+	fmt.Printf("VerifySignature: leader ID: %s\n", blk.LeaderID)
 	pubKey, ok := s.pubKeys[blk.LeaderID]
 	if !ok {
 		fmt.Printf("[follower] Unknown leader: %s", blk.LeaderID)
 		return &pb.BroadcastResponse{Ok: false, Error: "unknown leader"}, nil
 	}
 	// Verify signature
+	fmt.Printf("VerifySignature: verifying signature for block %x\n", blk.Hash)
 	if !blk.VerifySignature(pubKey) {
 		fmt.Printf("[follower] Invalid signature for slot %d", blk.Slot)
 		return &pb.BroadcastResponse{Ok: false, Error: "bad signature"}, nil
 	}
 
+	// Verify PoH
+	fmt.Printf("VerifyPoH: verifying PoH for block %x\n", blk.Hash)
+	if err := blk.VerifyPoH(); err != nil {
+		fmt.Printf("[follower] Invalid PoH: %v", err)
+		return &pb.BroadcastResponse{Ok: false, Error: "invalid PoH"}, nil
+	}
+
 	// Verify block is valid
+	fmt.Printf("VerifyBlock: verifying block %x\n", blk.Hash)
 	if err := s.ledger.VerifyBlock(blk); err != nil {
 		fmt.Printf("[follower] Invalid block: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "invalid block"}, nil
@@ -78,6 +92,17 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 		fmt.Printf("[follower] Store block error: %v", err)
 	} else {
 		fmt.Printf("[follower] Stored block slot=%d", blk.Slot)
+	}
+
+	// Reseed PoH for follower
+	if s.validator.IsFollower(blk.Slot) {
+		if blk.Slot > 0 && !s.blockStore.HasCompleteBlock(blk.Slot-1) {
+			fmt.Printf("Skip reseed slot %d - missing ancestor", blk.Slot)
+		} else {
+			fmt.Printf("Reseed at slot %d", blk.Slot)
+			seed := blk.LastEntryHash()
+			s.validator.Recorder.ReseedAtSlot(seed, blk.Slot)
+		}
 	}
 
 	// Broadcast vote
