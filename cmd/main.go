@@ -54,10 +54,7 @@ func main() {
 	}
 
 	// --- Ledger ---
-	ld := ledger.NewLedger()
-
-	// --- Mempool ---
-	mp := mempool.NewMempool(1000)
+	ld := ledger.NewLedger(cfg.Faucet.Address)
 
 	// --- Collector ---
 	collector := consensus.NewCollector(len(peers) + 1)
@@ -89,6 +86,9 @@ func main() {
 		}
 	}
 
+	// --- Mempool ---
+	mp := mempool.NewMempool(1000, netClient)
+
 	// --- Validator ---
 	leaderBatchLoopInterval := tickInterval / 2
 	log.Printf("leaderBatchLoopInterval: %v", leaderBatchLoopInterval)
@@ -115,11 +115,12 @@ func main() {
 		privKey,
 		val,
 		bs,
+		mp,
 	)
 	_ = grpcSrv // not used directly, but keeps server running
 
 	// --- API (for tx submission) ---
-	apiSrv := api.NewAPIServer(mp, self.ListenAddr)
+	apiSrv := api.NewAPIServer(mp, ld, self.ListenAddr)
 	apiSrv.Start()
 
 	// --- Block forever ---

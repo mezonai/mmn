@@ -1,0 +1,17 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/proto;proto";
+
+message TxRequest  { 
+  bytes data = 1; 
+}
+
+message TxResponse { 
+  bool   ok    = 1; 
+  string error = 2; 
+}
+
+service TxService {
+  rpc TxBroadcast (TxRequest) returns (TxResponse);
+}

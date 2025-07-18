@@ -9,6 +9,7 @@ import (
 	"mmn/block"
 	"mmn/blockstore"
 	"mmn/consensus"
+	"mmn/interfaces"
 	"mmn/ledger"
 	"mmn/mempool"
 	"mmn/poh"
@@ -33,7 +34,7 @@ type Validator struct {
 	leaderTimeoutLoopInterval time.Duration
 	BatchSize                 int
 
-	netClient  Broadcaster
+	netClient  interfaces.Broadcaster
 	blockStore *blockstore.BlockStore
 	ledger     *ledger.Ledger
 	session    *ledger.Session
@@ -59,7 +60,7 @@ func NewValidator(
 	leaderTimeout time.Duration,
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
-	netClient Broadcaster,
+	netClient interfaces.Broadcaster,
 	blockStore *blockstore.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
@@ -197,9 +198,9 @@ func (v *Validator) handleEntry(e poh.Entry) {
 		}
 		vote.Sign(v.PrivKey)
 		fmt.Printf("[LEADER] Adding vote %d to collector for self-vote\n", vote.Slot)
-		if committed, err := v.collector.AddVote(vote); err != nil {
+		if committed, needApply, err := v.collector.AddVote(vote); err != nil {
 			fmt.Printf("[LEADER] Add vote error: %v\n", err)
-		} else if committed {
+		} else if committed && needApply {
 			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
 			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot)); err != nil {
 				fmt.Printf("[LEADER] Apply block error: %v\n", err)
@@ -251,22 +252,27 @@ func (v *Validator) leaderBatchLoop() {
 				continue
 			}
 
+			fmt.Println("[LEADER] Pulling batch")
 			batch := v.Mempool.PullBatch(v.BatchSize)
 			if len(batch) == 0 {
+				fmt.Println("[LEADER] No batch")
 				continue
 			}
 
-			valid, errs := v.session.FilterValid(batch)
+			fmt.Println("[LEADER] Filtering batch")
+			valids, errs := v.session.FilterValid(batch)
 			if len(errs) > 0 {
-				fmt.Println("Invalid transactions:", errs)
+				fmt.Println("[LEADER] Invalid transactions:", errs)
 				continue
 			}
 
-			entry, err := v.Recorder.RecordTxs(valid)
+			fmt.Println("[LEADER] Recording batch")
+			entry, err := v.Recorder.RecordTxs(valids)
 			if err != nil {
+				fmt.Println("[LEADER] Record error:", err)
 				continue
 			}
-			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(batch), slot, entry.Hash[:6])
+			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(valids), slot, entry.Hash[:6])
 		}
 	}
 }

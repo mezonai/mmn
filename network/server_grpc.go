@@ -7,6 +7,7 @@ import (
 	"mmn/blockstore"
 	"mmn/consensus"
 	"mmn/ledger"
+	"mmn/mempool"
 	pb "mmn/proto"
 	"mmn/utils"
 	"mmn/validator"
@@ -18,6 +19,7 @@ import (
 type server struct {
 	pb.UnimplementedBlockServiceServer
 	pb.UnimplementedVoteServiceServer
+	pb.UnimplementedTxServiceServer
 	pubKeys       map[string]ed25519.PublicKey
 	blockDir      string
 	ledger        *ledger.Ledger
@@ -27,11 +29,12 @@ type server struct {
 	privKey       ed25519.PrivateKey
 	validator     *validator.Validator
 	blockStore    *blockstore.BlockStore
+	mempool       *mempool.Mempool
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore) *grpc.Server {
+	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -43,10 +46,12 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		privKey:       priv,
 		blockStore:    blockStore,
 		validator:     validator,
+		mempool:       mempool,
 	}
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterVoteServiceServer(grpcSrv, s)
+	pb.RegisterTxServiceServer(grpcSrv, s)
 	lis, _ := net.Listen("tcp", addr)
 	go grpcSrv.Serve(lis)
 	fmt.Printf("[gRPC] server listening on %s", addr)
@@ -115,10 +120,10 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 
 	// Add vote to collector for follower self-vote
 	fmt.Printf("[follower] Adding vote %d to collector for self-vote\n", vote.Slot)
-	if committed, err := s.voteCollector.AddVote(vote); err != nil {
+	if committed, needApply, err := s.voteCollector.AddVote(vote); err != nil {
 		fmt.Printf("[follower] Add vote error: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "add vote failed"}, nil
-	} else if committed {
+	} else if committed && needApply {
 		// Replay transactions in block
 		if err := s.ledger.ApplyBlock(s.blockStore.Block(vote.Slot)); err != nil {
 			fmt.Printf("[follower] Apply block error: %v", err)
@@ -160,12 +165,12 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 
 	// 3. Add to collector
 	fmt.Printf("[consensus] Adding vote %d to collector for peer vote\n", v.Slot)
-	committed, err := s.voteCollector.AddVote(&v)
+	committed, needApply, err := s.voteCollector.AddVote(&v)
 	if err != nil {
 		fmt.Printf("[consensus] Add vote error: %v\n", err)
 		return &pb.VoteResponse{Ok: false, Error: err.Error()}, nil
 	}
-	if committed {
+	if committed && needApply {
 		fmt.Printf("[consensus] slot %d committed, processing apply block! votes=%d\n", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
 		// Replay transactions in block
 		if err := s.ledger.ApplyBlock(s.blockStore.Block(v.Slot)); err != nil {
@@ -181,4 +186,10 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 	}
 
 	return &pb.VoteResponse{Ok: true}, nil
+}
+
+func (s *server) TxBroadcast(ctx context.Context, in *pb.TxRequest) (*pb.TxResponse, error) {
+	fmt.Printf("[gRPC] received tx %x\n", in.Data)
+	s.mempool.AddTx(in.Data, false)
+	return &pb.TxResponse{Ok: true}, nil
 }

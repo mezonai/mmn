@@ -18,12 +18,9 @@ func VerifyEntries(prev [32]byte, entries []Entry) error {
 		if len(e.Transactions) == 0 {
 			cur = sha256.Sum256(cur[:])
 		} else {
-			h := sha256.New()
-			h.Write(cur[:])
-			for _, raw := range e.Transactions {
-				h.Write(raw)
-			}
-			copy(cur[:], h.Sum(nil))
+			mixin := HashTransactions(e.Transactions)
+			hash := sha256.Sum256(append(cur[:], mixin[:]...))
+			copy(cur[:], hash[:])
 		}
 
 		if cur != e.Hash {

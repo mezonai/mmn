@@ -1,4 +1,7 @@
 config:
+  faucet:
+    address: "faucet_address"
+    amount: 1000000000000000000
   self_node:
     pubkey: "pubkey"
     privkey_path: "privkey_path"
