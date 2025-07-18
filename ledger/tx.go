@@ -1,38 +1,45 @@
 package ledger
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 )
 
+const (
+	TxTypeTransfer = 0
+	TxTypeFaucet   = 1
+)
+
 type Transaction struct {
-	From      string
-	To        string
-	Amount    uint64
-	Nonce     uint64
-	Signature []byte
+	Type      int    `json:"type"`
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Amount    uint64 `json:"amount"`
+	Timestamp int64  `json:"timestamp"`
+	TextData  string `json:"text_data"`
+	Nonce     uint64 `json:"nonce,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 func (tx *Transaction) Serialize() []byte {
-	data, _ := json.Marshal(struct {
-		From   string
-		To     string
-		Amount uint64
-		Nonce  uint64
-	}{
-		From: tx.From, To: tx.To, Amount: tx.Amount, Nonce: tx.Nonce,
-	})
-	return data
+	//TODO: buffer from dummy string 1234567890
+	buf := bytes.NewBuffer([]byte("1234567890"))
+	return buf.Bytes()
 }
 
 func (tx *Transaction) Verify() bool {
-	pub, err := hexToEd25519(tx.From)
+	pub, err := hexToEd25519(tx.Sender)
 	if err != nil {
 		return false
 	}
-	return ed25519.Verify(pub, tx.Serialize(), tx.Signature)
+	signature, err := hex.DecodeString(tx.Signature)
+	if err != nil {
+		return false
+	}
+	return ed25519.Verify(pub, tx.Serialize(), signature)
 }
 
 func (tx *Transaction) Bytes() []byte {

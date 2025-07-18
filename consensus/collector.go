@@ -23,9 +23,10 @@ func NewCollector(n int) *Collector {
 	}
 }
 
-func (c *Collector) AddVote(v *Vote) (bool, error) {
+// return (committed, need apply block, err)
+func (c *Collector) AddVote(v *Vote) (bool, bool, error) {
 	if err := v.Validate(); err != nil {
-		return false, err
+		return false, false, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -36,16 +37,19 @@ func (c *Collector) AddVote(v *Vote) (bool, error) {
 		c.votes[v.Slot] = slotVotes
 	}
 	if _, exists := slotVotes[v.VoterID]; exists {
-		return false, fmt.Errorf("duplicate vote from %s for slot %d", v.VoterID, v.Slot)
+		return false, false, fmt.Errorf("duplicate vote from %s for slot %d", v.VoterID, v.Slot)
 	}
 	slotVotes[v.VoterID] = v
 
 	count := len(slotVotes)
 	fmt.Printf("[collector] slot=%d votes=%d/%d\n", v.Slot, count, c.threshold)
 	if count >= c.threshold {
-		return true, nil
+		if count-1 >= c.threshold {
+			return true, false, nil
+		}
+		return true, true, nil
 	}
-	return false, nil
+	return false, false, nil
 }
 
 func (c *Collector) VotesForSlot(slot uint64) map[string]*Vote {

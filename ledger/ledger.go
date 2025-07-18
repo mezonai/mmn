@@ -11,25 +11,31 @@ import (
 )
 
 type TxRecord struct {
-	Slot   uint64
-	Amount uint64
-	From   string
-	To     string
+	Slot      uint64
+	Amount    uint64
+	Sender    string
+	Recipient string
+	Timestamp int64
+	TextData  string
+	Type      int
+	Nonce     uint64
 }
 
 type Account struct {
+	Address string
 	Balance uint64
 	Nonce   uint64
 	History []TxRecord
 }
 
 type Ledger struct {
-	state map[string]*Account // address (public key hex) → account
-	mu    sync.RWMutex
+	state      map[string]*Account // address (public key hex) → account
+	faucetAddr string
+	mu         sync.RWMutex
 }
 
-func NewLedger() *Ledger {
-	return &Ledger{state: make(map[string]*Account)}
+func NewLedger(faucetAddr string) *Ledger {
+	return &Ledger{state: make(map[string]*Account), faucetAddr: faucetAddr}
 }
 
 // Initialize initial account
@@ -67,7 +73,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
-			if err := view.ApplyTx(tx); err != nil {
+			if err := view.ApplyTx(tx, l.faucetAddr); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
 		}
@@ -86,18 +92,22 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
-			if err := applyTx(l.state, tx); err != nil {
+			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			rec := TxRecord{
-				Slot:   b.Slot,
-				Amount: tx.Amount,
-				From:   tx.From,
-				To:     tx.To,
+				Slot:      b.Slot,
+				Amount:    tx.Amount,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Timestamp: tx.Timestamp,
+				TextData:  tx.TextData,
+				Type:      tx.Type,
+				Nonce:     tx.Nonce,
 			}
-			addHistory(l.state[tx.From], rec)
-			if tx.To != tx.From {
-				addHistory(l.state[tx.To], rec)
+			addHistory(l.state[tx.Sender], rec)
+			if tx.Recipient != tx.Sender {
+				addHistory(l.state[tx.Recipient], rec)
 			}
 		}
 	}
@@ -124,31 +134,64 @@ func (l *Ledger) NewSession() *Session {
 	}
 }
 
+func (l *Ledger) GetAccount(addr string) *Account {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.state[addr]
+}
+
 // Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*Account, tx *Transaction) error {
-	from, ok := state[tx.From]
+func applyTx(state map[string]*Account, tx *Transaction, faucetAddr string) error {
+	sender, ok := state[tx.Sender]
 	if !ok {
-		return fmt.Errorf("from acct not found")
+		state[tx.Sender] = &Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]TxRecord, 0)}
+		sender = state[tx.Sender]
 	}
-	to, ok := state[tx.To]
+	recipient, ok := state[tx.Recipient]
 	if !ok {
-		state[tx.To] = &Account{}
-		to = state[tx.To]
+		state[tx.Recipient] = &Account{Address: tx.Recipient, Balance: 0, Nonce: 0, History: make([]TxRecord, 0)}
+		recipient = state[tx.Recipient]
 	}
-	if from.Balance < tx.Amount {
+
+	if tx.Type == TxTypeFaucet {
+		if tx.Sender != faucetAddr {
+			return fmt.Errorf("faucet tx from non-faucet address")
+		}
+		fmt.Printf("[applyTx] Faucet tx: %+v\n", tx)
+		sender.Balance -= tx.Amount
+		recipient.Balance += tx.Amount
+		return nil
+	}
+
+	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce != from.Nonce+1 {
-		return fmt.Errorf("bad nonce: got %d want %d", tx.Nonce, from.Nonce+1)
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("bad nonce: got %d want %d", tx.Nonce, sender.Nonce+1)
 	}
-	from.Balance -= tx.Amount
-	to.Balance += tx.Amount
-	from.Nonce++
+	sender.Balance -= tx.Amount
+	recipient.Balance += tx.Amount
+	sender.Nonce++
 	return nil
 }
 
 func addHistory(acc *Account, rec TxRecord) {
 	acc.History = append(acc.History, rec)
+}
+
+func (l *Ledger) GetTxs(addr string) []TxRecord {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	txs := make([]TxRecord, 0)
+	acc, ok := l.state[addr]
+	if !ok {
+		return txs
+	}
+	for i := len(acc.History) - 1; i >= 0; i-- {
+		txs = append(txs, acc.History[i])
+	}
+	return txs
 }
 
 func (l *Ledger) appendWAL(b *block.Block) error {
@@ -159,7 +202,7 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("write WAL fail: %v", err)
 	}
 	defer f.Close()
 
@@ -167,7 +210,16 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 	for _, entry := range b.Entries {
 		for _, raw := range entry.Transactions {
 			tx, _ := ParseTx(raw)
-			_ = enc.Encode(TxRecord{Slot: b.Slot, From: tx.From, To: tx.To, Amount: tx.Amount})
+			_ = enc.Encode(TxRecord{
+				Slot:      b.Slot,
+				Amount:    tx.Amount,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Timestamp: tx.Timestamp,
+				TextData:  tx.TextData,
+				Type:      tx.Type,
+				Nonce:     tx.Nonce,
+			})
 		}
 	}
 	return nil
@@ -203,9 +255,14 @@ func (l *Ledger) LoadLedger() error {
 		var rec TxRecord
 		for dec.Decode(&rec) == nil {
 			_ = applyTx(l.state, &Transaction{
-				From: rec.From, To: rec.To, Amount: rec.Amount,
-				Nonce: l.state[rec.From].Nonce + 1,
-			})
+				Type:      rec.Type,
+				Sender:    rec.Sender,
+				Recipient: rec.Recipient,
+				Amount:    rec.Amount,
+				Timestamp: rec.Timestamp,
+				TextData:  rec.TextData,
+				Nonce:     rec.Nonce,
+			}, l.faucetAddr)
 		}
 		w.Close()
 	}
@@ -239,28 +296,34 @@ func (lv *LedgerView) loadOrCreate(addr string) *SnapshotAccount {
 	if acc, ok := lv.loadForRead(addr); ok {
 		return acc
 	}
-	cp := SnapshotAccount{}
+	cp := SnapshotAccount{Balance: 0, Nonce: 0}
 	lv.overlay[addr] = &cp
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *Transaction) error {
-	from, ok := lv.loadForRead(tx.From)
-	if !ok {
-		return fmt.Errorf("from acct not found")
+func (lv *LedgerView) ApplyTx(tx *Transaction, faucetAddr string) error {
+	sender := lv.loadOrCreate(tx.Sender)
+	recipient := lv.loadOrCreate(tx.Recipient)
+
+	if tx.Type == TxTypeFaucet {
+		if tx.Sender != faucetAddr {
+			return fmt.Errorf("faucet tx from non-faucet address")
+		}
+		sender.Balance -= tx.Amount
+		recipient.Balance += tx.Amount
+		return nil
 	}
 
-	to := lv.loadOrCreate(tx.To)
-	if from.Balance < tx.Amount {
+	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce != from.Nonce+1 {
-		return fmt.Errorf("bad nonce: got %d want %d", tx.Nonce, from.Nonce+1)
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("bad nonce: got %d want %d", tx.Nonce, sender.Nonce+1)
 	}
 
-	from.Balance -= tx.Amount
-	to.Balance += tx.Amount
-	from.Nonce++
+	sender.Balance -= tx.Amount
+	recipient.Balance += tx.Amount
+	sender.Nonce++
 	return nil
 }
 
@@ -276,33 +339,16 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 	for _, r := range raws {
 		tx, err := ParseTx(r)
 		if err != nil || !tx.Verify() {
+			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
-		if err := s.view.ApplyTx(tx); err != nil {
+		if err := s.view.ApplyTx(tx, s.ledger.faucetAddr); err != nil {
+			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, err)
 			continue
 		}
 		valid = append(valid, r)
 	}
 	return valid, errs
-}
-
-// Commit the session to the ledger
-func (s *Session) Commit() error {
-	l := s.ledger
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for addr, snap := range s.view.overlay {
-		acc, ok := l.state[addr]
-		if !ok {
-			l.state[addr] = &Account{
-				Balance: snap.Balance, Nonce: snap.Nonce,
-			}
-		} else {
-			acc.Balance = snap.Balance
-			acc.Nonce = snap.Nonce
-		}
-	}
-	return nil
 }

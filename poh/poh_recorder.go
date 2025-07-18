@@ -81,7 +81,7 @@ func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	mixin := hashTransactions(txs)
+	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	if pohEntry == nil {
 		return nil, fmt.Errorf("PoH refused to record, tick required")
@@ -124,7 +124,7 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 	return r.tickHeight / r.ticksPerSlot
 }
 
-func hashTransactions(txs [][]byte) [32]byte {
+func HashTransactions(txs [][]byte) [32]byte {
 	var all []byte
 	for _, tx := range txs {
 		all = append(all, tx...)
