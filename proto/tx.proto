@@ -12,6 +12,17 @@ message TxResponse {
   string error = 2; 
 }
 
+message AddTxRequest {
+  bytes data = 1;
+}
+
+message AddTxResponse {
+  bool   ok      = 1;
+  string tx_hash = 2;
+  string error   = 3;
+}
+
 service TxService {
   rpc TxBroadcast (TxRequest) returns (TxResponse);
+  rpc AddTx (AddTxRequest) returns (AddTxResponse);
 }

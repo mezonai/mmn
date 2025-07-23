@@ -60,7 +60,7 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 		req.Data = body
 		fmt.Println("Raw tx", string(req.Data))
 	}
-	ok := s.Mempool.AddTx(req.Data, true)
+	_, ok := s.Mempool.AddTx(req.Data, true)
 	if !ok {
 		http.Error(w, "Mempool full", http.StatusServiceUnavailable)
 		return

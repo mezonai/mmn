@@ -19,7 +19,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
 	return &Mempool{txsBuf: make(map[string][]byte, max), max: max, broadcaster: broadcaster}
 }
 
-func (mp *Mempool) AddTx(tx []byte, broadcast bool) bool {
+func (mp *Mempool) AddTx(tx []byte, broadcast bool) (string, bool) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 	fmt.Println("Adding tx", string(tx))
@@ -27,12 +27,12 @@ func (mp *Mempool) AddTx(tx []byte, broadcast bool) bool {
 	txHash := hex.EncodeToString(tx)
 	if _, du := mp.txsBuf[txHash]; du {
 		fmt.Println("Dropping duplicate tx", txHash)
-		return false // drop if duplicate
+		return "", false // drop if duplicate
 	}
 
 	if len(mp.txsBuf) >= mp.max {
 		fmt.Println("Dropping full mempool")
-		return false // drop if full
+		return "", false // drop if full
 	}
 
 	mp.txsBuf[txHash] = tx
@@ -40,7 +40,7 @@ func (mp *Mempool) AddTx(tx []byte, broadcast bool) bool {
 		mp.broadcaster.TxBroadcast(context.Background(), tx)
 	}
 	fmt.Println("Added tx", txHash)
-	return true
+	return txHash, true
 }
 
 // Pull batch of tx (for leader to batch and record)
