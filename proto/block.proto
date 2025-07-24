@@ -3,8 +3,6 @@ package mmn;
 
 option go_package = "mmn/proto;proto";
 
-import "google/protobuf/timestamp.proto";
-
 message Entry {
   uint64 num_hashes = 1;
   bytes hash       = 2;
@@ -16,7 +14,7 @@ message Block {
   bytes prev_hash = 2;
   repeated Entry entries = 3;
   string leader_id = 4;
-  google.protobuf.Timestamp timestamp = 5;
+  uint64 timestamp = 5;
   bytes hash = 6;
   bytes signature  = 7;
 }

@@ -8,6 +8,8 @@ import (
 
 	"mmn/ledger"
 	"mmn/mempool"
+	"mmn/types"
+	"mmn/utils"
 )
 
 type TxReq struct {
@@ -60,7 +62,12 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 		req.Data = body
 		fmt.Println("Raw tx", string(req.Data))
 	}
-	_, ok := s.Mempool.AddTx(req.Data, true)
+	tx, err := utils.ParseTx(req.Data)
+	if err != nil {
+		http.Error(w, "Invalid tx", http.StatusBadRequest)
+		return
+	}
+	_, ok := s.Mempool.AddTx(tx, true)
 	if !ok {
 		http.Error(w, "Mempool full", http.StatusServiceUnavailable)
 		return
@@ -77,11 +84,11 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := struct {
-		Pending   []ledger.Transaction
-		Confirmed []ledger.TxRecord
+		Pending   []types.Transaction
+		Confirmed []types.TxRecord
 	}{
-		Pending:   make([]ledger.Transaction, 0),
-		Confirmed: make([]ledger.TxRecord, 0),
+		Pending:   make([]types.Transaction, 0),
+		Confirmed: make([]types.TxRecord, 0),
 	}
 	result.Confirmed = s.Ledger.GetTxs(addr)
 

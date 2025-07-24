@@ -27,8 +27,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TxServiceClient interface {
-	TxBroadcast(ctx context.Context, in *TxRequest, opts ...grpc.CallOption) (*TxResponse, error)
-	AddTx(ctx context.Context, in *AddTxRequest, opts ...grpc.CallOption) (*AddTxResponse, error)
+	TxBroadcast(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*TxResponse, error)
+	AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error)
 }
 
 type txServiceClient struct {
@@ -39,7 +39,7 @@ func NewTxServiceClient(cc grpc.ClientConnInterface) TxServiceClient {
 	return &txServiceClient{cc}
 }
 
-func (c *txServiceClient) TxBroadcast(ctx context.Context, in *TxRequest, opts ...grpc.CallOption) (*TxResponse, error) {
+func (c *txServiceClient) TxBroadcast(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*TxResponse, error) {
 	out := new(TxResponse)
 	err := c.cc.Invoke(ctx, TxService_TxBroadcast_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -48,7 +48,7 @@ func (c *txServiceClient) TxBroadcast(ctx context.Context, in *TxRequest, opts .
 	return out, nil
 }
 
-func (c *txServiceClient) AddTx(ctx context.Context, in *AddTxRequest, opts ...grpc.CallOption) (*AddTxResponse, error) {
+func (c *txServiceClient) AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error) {
 	out := new(AddTxResponse)
 	err := c.cc.Invoke(ctx, TxService_AddTx_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -61,8 +61,8 @@ func (c *txServiceClient) AddTx(ctx context.Context, in *AddTxRequest, opts ...g
 // All implementations must embed UnimplementedTxServiceServer
 // for forward compatibility
 type TxServiceServer interface {
-	TxBroadcast(context.Context, *TxRequest) (*TxResponse, error)
-	AddTx(context.Context, *AddTxRequest) (*AddTxResponse, error)
+	TxBroadcast(context.Context, *SignedTxMsg) (*TxResponse, error)
+	AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error)
 	mustEmbedUnimplementedTxServiceServer()
 }
 
@@ -70,10 +70,10 @@ type TxServiceServer interface {
 type UnimplementedTxServiceServer struct {
 }
 
-func (UnimplementedTxServiceServer) TxBroadcast(context.Context, *TxRequest) (*TxResponse, error) {
+func (UnimplementedTxServiceServer) TxBroadcast(context.Context, *SignedTxMsg) (*TxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TxBroadcast not implemented")
 }
-func (UnimplementedTxServiceServer) AddTx(context.Context, *AddTxRequest) (*AddTxResponse, error) {
+func (UnimplementedTxServiceServer) AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddTx not implemented")
 }
 func (UnimplementedTxServiceServer) mustEmbedUnimplementedTxServiceServer() {}
@@ -90,7 +90,7 @@ func RegisterTxServiceServer(s grpc.ServiceRegistrar, srv TxServiceServer) {
 }
 
 func _TxService_TxBroadcast_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TxRequest)
+	in := new(SignedTxMsg)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -102,13 +102,13 @@ func _TxService_TxBroadcast_Handler(srv interface{}, ctx context.Context, dec fu
 		FullMethod: TxService_TxBroadcast_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxServiceServer).TxBroadcast(ctx, req.(*TxRequest))
+		return srv.(TxServiceServer).TxBroadcast(ctx, req.(*SignedTxMsg))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _TxService_AddTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AddTxRequest)
+	in := new(SignedTxMsg)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func _TxService_AddTx_Handler(srv interface{}, ctx context.Context, dec func(int
 		FullMethod: TxService_AddTx_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxServiceServer).AddTx(ctx, req.(*AddTxRequest))
+		return srv.(TxServiceServer).AddTx(ctx, req.(*SignedTxMsg))
 	}
 	return interceptor(ctx, in, info, handler)
 }

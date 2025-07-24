@@ -3,17 +3,24 @@ package mmn;
 
 option go_package = "mmn/proto;proto";
 
-message TxRequest  { 
-  bytes data = 1; 
+message TxMsg { 
+  int32 type = 1;
+  string sender = 2;
+  string recipient = 3;
+  uint64 amount = 4;
+  uint64 timestamp = 5;
+  string text_data = 6;
+  uint64 nonce = 7;
+}
+
+message SignedTxMsg {
+  TxMsg tx_msg = 1;
+  string signature = 2;
 }
 
 message TxResponse { 
   bool   ok    = 1; 
   string error = 2; 
-}
-
-message AddTxRequest {
-  bytes data = 1;
 }
 
 message AddTxResponse {
@@ -23,6 +30,6 @@ message AddTxResponse {
 }
 
 service TxService {
-  rpc TxBroadcast (TxRequest) returns (TxResponse);
-  rpc AddTx (AddTxRequest) returns (AddTxResponse);
+  rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
+  rpc AddTx (SignedTxMsg) returns (AddTxResponse);
 }

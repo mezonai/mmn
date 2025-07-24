@@ -12,10 +12,8 @@ import (
 	"mmn/utils"
 	"mmn/validator"
 	"net"
-	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type server struct {
@@ -192,15 +190,23 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 	return &pb.VoteResponse{Ok: true}, nil
 }
 
-func (s *server) TxBroadcast(ctx context.Context, in *pb.TxRequest) (*pb.TxResponse, error) {
-	fmt.Printf("[gRPC] received tx %x\n", in.Data)
-	s.mempool.AddTx(in.Data, false)
+func (s *server) TxBroadcast(ctx context.Context, in *pb.SignedTxMsg) (*pb.TxResponse, error) {
+	fmt.Printf("[gRPC] received tx %+v\n", in.TxMsg)
+	tx, err := utils.FromProtoSignedTx(in)
+	if err != nil {
+		return &pb.TxResponse{Ok: false, Error: "invalid tx"}, nil
+	}
+	s.mempool.AddTx(tx, false)
 	return &pb.TxResponse{Ok: true}, nil
 }
 
-func (s *server) AddTx(ctx context.Context, in *pb.AddTxRequest) (*pb.AddTxResponse, error) {
-	fmt.Printf("[gRPC] received tx %x\n", in.Data)
-	txHash, ok := s.mempool.AddTx(in.Data, true)
+func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
+	fmt.Printf("[gRPC] received tx %+v\n", in.TxMsg)
+	tx, err := utils.FromProtoSignedTx(in)
+	if err != nil {
+		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
+	}
+	txHash, ok := s.mempool.AddTx(tx, true)
 	if !ok {
 		return &pb.AddTxResponse{Ok: false, Error: "mempool full"}, nil
 	}
@@ -228,7 +234,7 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 			Recipient: tx.Recipient,
 			Amount:    tx.Amount,
 			Nonce:     tx.Nonce,
-			Timestamp: timestamppb.New(time.Unix(tx.Timestamp, 0)),
+			Timestamp: tx.Timestamp,
 			Status:    pb.TxMeta_CONFIRMED,
 		}
 	}
