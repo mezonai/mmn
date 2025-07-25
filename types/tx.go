@@ -1,7 +1,6 @@
-package ledger
+package types
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
@@ -14,20 +13,20 @@ const (
 )
 
 type Transaction struct {
-	Type      int    `json:"type"`
+	Type      int32  `json:"type"`
 	Sender    string `json:"sender"`
 	Recipient string `json:"recipient"`
 	Amount    uint64 `json:"amount"`
-	Timestamp int64  `json:"timestamp"`
+	Timestamp uint64 `json:"timestamp"`
 	TextData  string `json:"text_data"`
 	Nonce     uint64 `json:"nonce,omitempty"`
 	Signature string `json:"signature,omitempty"`
 }
 
 func (tx *Transaction) Serialize() []byte {
-	//TODO: buffer from dummy string 1234567890
-	buf := bytes.NewBuffer([]byte("1234567890"))
-	return buf.Bytes()
+	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce)
+	fmt.Println("Serialize metadata:", metadata)
+	return []byte(metadata)
 }
 
 func (tx *Transaction) Verify() bool {
@@ -53,10 +52,4 @@ func hexToEd25519(hexstr string) (ed25519.PublicKey, error) {
 		return nil, fmt.Errorf("invalid pubkey")
 	}
 	return ed25519.PublicKey(b), nil
-}
-
-func ParseTx(data []byte) (*Transaction, error) {
-	var tx Transaction
-	err := json.Unmarshal(data, &tx)
-	return &tx, err
 }

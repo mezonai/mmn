@@ -49,36 +49,29 @@ interface Tx {
   recipient: string;
   amount: number;
   timestamp: number;
-  textData: string;
+  text_data: string;
   nonce: number;
   signature: string;
 }
 
-function buildTx(sender: string, recipient: string, amount: number, textData: string, nonce: number, type: number): Tx {
+function buildTx(sender: string, recipient: string, amount: number, text_data: string, nonce: number, type: number): Tx {
   return {
     type:      type,
     sender:    sender,
     recipient: recipient,
     amount:    amount,
     timestamp: Math.floor(Date.now() / 1000),
-    textData:  textData,
-    nonce:     nonce,
+    text_data:  text_data,
+    nonce:     nonce, 
     signature: "", // to be filled
   };
 }
 
 function serializeTx(tx: Tx): Buffer {
   // Must match Go's Transaction.Serialize() method
-  const serializedData = {
-    type:      tx.type,
-    sender:    tx.sender,
-    recipient: tx.recipient,
-    amount:    tx.amount,
-    timestamp: tx.timestamp,
-    textData:  tx.textData,
-    nonce:     tx.nonce,
-  };
-  return Buffer.from("1234567890");
+  const metadata = `${tx.type}|${tx.sender}|${tx.recipient}|${tx.amount}|${tx.text_data}|${tx.nonce}`;
+  console.log("serializeTx metadata:", metadata);
+  return Buffer.from(metadata);
 }
 
 function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
@@ -134,12 +127,12 @@ async function main() {
   await new Promise((resolve) => setTimeout(resolve, 200));
 
   // 3. Send tx from recipient1 to recipient2
-  const amount3 = 10;
-  const tx3 = buildTx(recipientPublicKeyHex1, recipientPublicKeyHex2, amount3, "Send 10 amount", nonce+1, TransferTxType);
-  tx3.signature = signTx(tx3, recipientPrivateKey1);
-  console.log("Verifying tx 3 locally:", verifyTx(tx3, recipientPublicKeyHex1));
-  const txId3 = await sendTx(tx3);
-  console.log("Tx sent:", txId3);
+  // const amount3 = 10;
+  // const tx3 = buildTx(recipientPublicKeyHex1, recipientPublicKeyHex2, amount3, "Send 10 amount", nonce+1, TransferTxType);
+  // tx3.signature = signTx(tx3, recipientPrivateKey1);
+  // console.log("Verifying tx 3 locally:", verifyTx(tx3, recipientPublicKeyHex1));
+  // const txId3 = await sendTx(tx3);
+  // console.log("Tx sent:", txId3);
 
   // Sleep 5 seconds and count down
   for (let i = 5; i > 0; i--) {

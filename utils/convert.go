@@ -1,15 +1,16 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
-	"time"
+	"mmn/types"
 
 	"mmn/block"
 	"mmn/poh"
 	pb "mmn/proto"
-
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// -- Block --
 
 func fromPBEntry(e *pb.Entry) poh.Entry {
 	var hashArr [32]byte
@@ -33,13 +34,6 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.Block, error) {
 		entries[i] = fromPBEntry(e)
 	}
 
-	ts := time.Now()
-	if pbt := pbBlk.Timestamp; pbt != nil {
-		if pbt.IsValid() {
-			ts = pbt.AsTime()
-		}
-	}
-
 	var bh [32]byte
 	if len(pbBlk.Hash) != 32 {
 		return nil, fmt.Errorf("invalid block_hash length")
@@ -51,7 +45,7 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.Block, error) {
 		PrevHash:  prev,
 		Entries:   entries,
 		LeaderID:  pbBlk.LeaderId,
-		Timestamp: ts,
+		Timestamp: pbBlk.Timestamp,
 		Hash:      bh,
 		Signature: pbBlk.Signature,
 	}, nil
@@ -63,7 +57,7 @@ func ToProtoBlock(blk *block.Block) *pb.Block {
 		PrevHash:  blk.PrevHash[:],
 		Entries:   ToProtoEntries(blk.Entries),
 		LeaderId:  blk.LeaderID,
-		Timestamp: timestamppb.New(blk.Timestamp),
+		Timestamp: blk.Timestamp,
 		Hash:      blk.Hash[:],
 		Signature: blk.Signature,
 	}
@@ -79,4 +73,44 @@ func ToProtoEntries(entries []poh.Entry) []*pb.Entry {
 		}
 	}
 	return pbEntries
+}
+
+// -- Tx --
+
+func ParseTx(data []byte) (*types.Transaction, error) {
+	var tx types.Transaction
+	err := json.Unmarshal(data, &tx)
+	return &tx, err
+}
+
+func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*types.Transaction, error) {
+	return &types.Transaction{
+		Type:      pbTx.TxMsg.Type,
+		Sender:    pbTx.TxMsg.Sender,
+		Recipient: pbTx.TxMsg.Recipient,
+		Amount:    pbTx.TxMsg.Amount,
+		Timestamp: pbTx.TxMsg.Timestamp,
+		TextData:  pbTx.TxMsg.TextData,
+		Nonce:     pbTx.TxMsg.Nonce,
+		Signature: pbTx.Signature,
+	}, nil
+}
+
+func ToProtoSignedTx(tx *types.Transaction) *pb.SignedTxMsg {
+	return &pb.SignedTxMsg{
+		TxMsg:     ToProtoTx(tx),
+		Signature: tx.Signature,
+	}
+}
+
+func ToProtoTx(tx *types.Transaction) *pb.TxMsg {
+	return &pb.TxMsg{
+		Type:      tx.Type,
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    tx.Amount,
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+	}
 }
