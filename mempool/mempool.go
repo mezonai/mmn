@@ -46,6 +46,7 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 }
 
 // Pull batch of tx (for leader to batch and record)
+// TODO: should keep order of txs
 func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()

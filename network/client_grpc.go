@@ -30,6 +30,7 @@ func NewGRPCClient(peers []string) *GRPCClient {
 }
 
 func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.Block) error {
+	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
@@ -59,6 +60,7 @@ func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) erro
 		VoterId:   vt.VoterID,
 		Signature: vt.Signature,
 	}
+	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
@@ -80,6 +82,7 @@ func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) erro
 
 func (c *GRPCClient) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
 	pbTx := utils.ToProtoSignedTx(tx)
+	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
