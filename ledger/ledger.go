@@ -150,12 +150,12 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr 
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("bad nonce: got %d want %d", tx.Nonce, sender.Nonce+1)
+	if tx.Nonce <= sender.Nonce {
+		return fmt.Errorf("bad nonce: got %d current nonce %d", tx.Nonce, sender.Nonce)
 	}
 	sender.Balance -= tx.Amount
 	recipient.Balance += tx.Amount
-	sender.Nonce++
+	sender.Nonce = tx.Nonce
 	return nil
 }
 
@@ -296,13 +296,13 @@ func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("bad nonce: got %d want %d", tx.Nonce, sender.Nonce+1)
+	if tx.Nonce <= sender.Nonce {
+		return fmt.Errorf("bad nonce: got %d current nonce %d", tx.Nonce, sender.Nonce)
 	}
 
 	sender.Balance -= tx.Amount
 	recipient.Balance += tx.Amount
-	sender.Nonce++
+	sender.Nonce = tx.Nonce
 	return nil
 }
 

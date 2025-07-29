@@ -127,12 +127,12 @@ async function main() {
   await new Promise((resolve) => setTimeout(resolve, 200));
 
   // 3. Send tx from recipient1 to recipient2
-  // const amount3 = 10;
-  // const tx3 = buildTx(recipientPublicKeyHex1, recipientPublicKeyHex2, amount3, "Send 10 amount", nonce+1, TransferTxType);
-  // tx3.signature = signTx(tx3, recipientPrivateKey1);
-  // console.log("Verifying tx 3 locally:", verifyTx(tx3, recipientPublicKeyHex1));
-  // const txId3 = await sendTx(tx3);
-  // console.log("Tx sent:", txId3);
+  const amount3 = 10;
+  const tx3 = buildTx(recipientPublicKeyHex1, recipientPublicKeyHex2, amount3, "Send 10 amount", nonce+1, TransferTxType);
+  tx3.signature = signTx(tx3, recipientPrivateKey1);
+  console.log("Verifying tx 3 locally:", verifyTx(tx3, recipientPublicKeyHex1));
+  const txId3 = await sendTx(tx3);
+  console.log("Tx sent:", txId3);
 
   // Sleep 5 seconds and count down
   for (let i = 5; i > 0; i--) {
