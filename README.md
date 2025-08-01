@@ -1,4 +1,5 @@
-<img width="1063" height="702" alt="1753958148000_image" src="https://github.com/user-attachments/assets/0e2ac8bf-79e0-4cef-886f-89e0f30e29cd" />
+<img width="1061" height="695" alt="1754016094020_image" src="https://github.com/user-attachments/assets/c2df9920-e7e6-48ed-baa3-994b281a7575" />
+
 
 # run (dev)
 go mod tidy
