@@ -225,8 +225,7 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
 	addr := in.Address
-	// TODO: need to get txs by limit and offset; status is PENDING
-	txs := s.ledger.GetTxs(addr)
+	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
 	txMetas := make([]*pb.TxMeta, len(txs))
 	for i, tx := range txs {
 		txMetas[i] = &pb.TxMeta{
@@ -239,7 +238,7 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		}
 	}
 	return &pb.GetTxHistoryResponse{
-		Total: uint32(len(txs)),
+		Total: total,
 		Txs:   txMetas,
 	}, nil
 }

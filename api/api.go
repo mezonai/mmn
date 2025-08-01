@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-
 	"mmn/ledger"
 	"mmn/mempool"
 	"mmn/types"
 	"mmn/utils"
+	"net/http"
+	"strconv"
 )
 
 type TxReq struct {
@@ -82,15 +82,31 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing addr param", http.StatusBadRequest)
 		return
 	}
+	limit, err := strconv.ParseUint(r.URL.Query().Get("limit"), 10, 32)
+	if err != nil {
+		limit = 10
+	}
+	offset, err := strconv.ParseUint(r.URL.Query().Get("offset"), 10, 32)
+	if err != nil {
+		offset = 0
+	}
+	filter, err := strconv.ParseUint(r.URL.Query().Get("filter"), 10, 32)
+	if err != nil {
+		filter = 0
+	}
+
+	fmt.Println("limit", limit, "offset", offset, "filter", filter)
 
 	result := struct {
-		Pending   []types.Transaction
-		Confirmed []types.TxRecord
+		Total uint32
+		Txs   []types.TxRecord
 	}{
-		Pending:   make([]types.Transaction, 0),
-		Confirmed: make([]types.TxRecord, 0),
+		Total: 0,
+		Txs:   make([]types.TxRecord, 0),
 	}
-	result.Confirmed = s.Ledger.GetTxs(addr)
+	total, txs := s.Ledger.GetTxs(addr, uint32(limit), uint32(offset), uint32(filter))
+	result.Total = total
+	result.Txs = txs
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)

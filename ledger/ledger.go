@@ -163,19 +163,35 @@ func addHistory(acc *types.Account, rec types.TxRecord) {
 	acc.History = append(acc.History, rec)
 }
 
-func (l *Ledger) GetTxs(addr string) []types.TxRecord {
+// TODO: need to optimize this by using BadgerDB
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []types.TxRecord) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
 	txs := make([]types.TxRecord, 0)
 	acc, ok := l.state[addr]
 	if !ok {
-		return txs
+		return 0, txs
 	}
-	for i := len(acc.History) - 1; i >= 0; i-- {
-		txs = append(txs, acc.History[i])
+
+	// filter type: 0: all, 1: sender, 2: recipient
+	filteredHistory := make([]types.TxRecord, 0)
+	for _, tx := range acc.History {
+		if filter == 0 {
+			filteredHistory = append(filteredHistory, tx)
+		} else if filter == 1 && tx.Sender == addr {
+			filteredHistory = append(filteredHistory, tx)
+		} else if filter == 2 && tx.Recipient == addr {
+			filteredHistory = append(filteredHistory, tx)
+		}
 	}
-	return txs
+
+	total := uint32(len(filteredHistory))
+	start := offset
+	end := min(start+limit, total)
+	txs = filteredHistory[start:end]
+
+	return total, txs
 }
 
 func (l *Ledger) appendWAL(b *block.Block) error {
