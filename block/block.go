@@ -20,7 +20,7 @@ type Block struct {
 	PrevHash  [32]byte // hash of the last entry in the previous block
 	Entries   []poh.Entry
 	LeaderID  string
-	Timestamp time.Time
+	Timestamp uint64
 	Hash      [32]byte
 	Signature []byte
 	Status    BlockStatus
@@ -37,7 +37,7 @@ func AssembleBlock(
 		PrevHash:  prevHash,
 		Entries:   entries,
 		LeaderID:  leaderID,
-		Timestamp: time.Now(),
+		Timestamp: uint64(time.Now().UnixNano()),
 	}
 	b.Hash = b.computeHash()
 	return b
@@ -54,7 +54,7 @@ func (b *Block) computeHash() [32]byte {
 	// LeaderID
 	h.Write([]byte(b.LeaderID))
 	// Timestamp (UnixNano)
-	binary.BigEndian.PutUint64(buf, uint64(b.Timestamp.UnixNano()))
+	binary.BigEndian.PutUint64(buf, b.Timestamp)
 	h.Write(buf)
 	for _, e := range b.Entries {
 		binary.BigEndian.PutUint64(buf, e.NumHashes)

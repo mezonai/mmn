@@ -30,6 +30,7 @@ type SlotBoundary struct {
 }
 
 // NewBlockStore initializes a BlockStore, loading existing chain if present.
+// TODO: should dynamic follow up config
 func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
 	bs := &BlockStore{
 		dir:      dir,

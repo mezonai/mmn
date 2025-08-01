@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-
 	"mmn/ledger"
 	"mmn/mempool"
+	"mmn/types"
+	"mmn/utils"
+	"net/http"
+	"strconv"
 )
 
 type TxReq struct {
@@ -60,7 +62,12 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 		req.Data = body
 		fmt.Println("Raw tx", string(req.Data))
 	}
-	ok := s.Mempool.AddTx(req.Data, true)
+	tx, err := utils.ParseTx(req.Data)
+	if err != nil {
+		http.Error(w, "Invalid tx", http.StatusBadRequest)
+		return
+	}
+	_, ok := s.Mempool.AddTx(tx, true)
 	if !ok {
 		http.Error(w, "Mempool full", http.StatusServiceUnavailable)
 		return
@@ -75,15 +82,31 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing addr param", http.StatusBadRequest)
 		return
 	}
+	limit, err := strconv.ParseUint(r.URL.Query().Get("limit"), 10, 32)
+	if err != nil {
+		limit = 10
+	}
+	offset, err := strconv.ParseUint(r.URL.Query().Get("offset"), 10, 32)
+	if err != nil {
+		offset = 0
+	}
+	filter, err := strconv.ParseUint(r.URL.Query().Get("filter"), 10, 32)
+	if err != nil {
+		filter = 0
+	}
+
+	fmt.Println("limit", limit, "offset", offset, "filter", filter)
 
 	result := struct {
-		Pending   []ledger.Transaction
-		Confirmed []ledger.TxRecord
+		Total uint32
+		Txs   []types.TxRecord
 	}{
-		Pending:   make([]ledger.Transaction, 0),
-		Confirmed: make([]ledger.TxRecord, 0),
+		Total: 0,
+		Txs:   make([]types.TxRecord, 0),
 	}
-	result.Confirmed = s.Ledger.GetTxs(addr)
+	total, txs := s.Ledger.GetTxs(addr, uint32(limit), uint32(offset), uint32(filter))
+	result.Total = total
+	result.Txs = txs
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
