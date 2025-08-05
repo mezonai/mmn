@@ -8,6 +8,7 @@ import (
 	"mmn/block"
 	"mmn/consensus"
 	pb "mmn/proto"
+	"mmn/types"
 	"mmn/utils"
 
 	"google.golang.org/grpc"
@@ -29,6 +30,7 @@ func NewGRPCClient(peers []string) *GRPCClient {
 }
 
 func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.Block) error {
+	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
@@ -58,6 +60,7 @@ func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) erro
 		VoterId:   vt.VoterID,
 		Signature: vt.Signature,
 	}
+	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
@@ -77,24 +80,23 @@ func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) erro
 	return nil
 }
 
-func (c *GRPCClient) TxBroadcast(ctx context.Context, txBytes []byte) error {
-	pbTx := &pb.TxRequest{
-		Data: txBytes,
-	}
+func (c *GRPCClient) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
+	pbTx := utils.ToProtoSignedTx(tx)
+	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
 		if err != nil {
 			continue
 		}
 		client := pb.NewTxServiceClient(conn)
-		fmt.Printf("Broadcasting tx %x to %s\n", txBytes, addr)
+		fmt.Printf("Broadcasting tx %+v to %s\n", tx, addr)
 		resp, err := client.TxBroadcast(ctx, pbTx)
 		if err != nil {
 			fmt.Printf("[gRPC Client] TxBroadcast to %s error: %v", addr, err)
 		} else if !resp.Ok {
 			fmt.Printf("[gRPC Client] TxBroadcast to %s not OK: %s", addr, resp.Error)
 		}
-		fmt.Printf("Broadcasted tx %x to %s successfully\n", txBytes, addr)
+		fmt.Printf("Broadcasted tx %+v to %s successfully\n", tx, addr)
 		conn.Close()
 	}
 	return nil

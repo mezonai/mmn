@@ -49,36 +49,29 @@ interface Tx {
   recipient: string;
   amount: number;
   timestamp: number;
-  textData: string;
+  text_data: string;
   nonce: number;
   signature: string;
 }
 
-function buildTx(sender: string, recipient: string, amount: number, textData: string, nonce: number, type: number): Tx {
+function buildTx(sender: string, recipient: string, amount: number, text_data: string, nonce: number, type: number): Tx {
   return {
     type:      type,
     sender:    sender,
     recipient: recipient,
     amount:    amount,
     timestamp: Math.floor(Date.now() / 1000),
-    textData:  textData,
-    nonce:     nonce,
+    text_data:  text_data,
+    nonce:     nonce, 
     signature: "", // to be filled
   };
 }
 
 function serializeTx(tx: Tx): Buffer {
   // Must match Go's Transaction.Serialize() method
-  const serializedData = {
-    type:      tx.type,
-    sender:    tx.sender,
-    recipient: tx.recipient,
-    amount:    tx.amount,
-    timestamp: tx.timestamp,
-    textData:  tx.textData,
-    nonce:     tx.nonce,
-  };
-  return Buffer.from("1234567890");
+  const metadata = `${tx.type}|${tx.sender}|${tx.recipient}|${tx.amount}|${tx.text_data}|${tx.nonce}`;
+  console.log("serializeTx metadata:", metadata);
+  return Buffer.from(metadata);
 }
 
 function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
@@ -148,15 +141,24 @@ async function main() {
   }
 
   // Get account for recipient1
-  const account = await axios.get(`${API_URL}/account?addr=${recipientPublicKeyHex1}`);
+  const account = await axios.get(`${API_URL}/account?addr=${recipientPublicKeyHex1}&limit=10&offset=0&filter=0`);
   console.log("Account:", account.data);
 
+  const txs_type_0 = await axios.get(`${API_URL}/txs?addr=${recipientPublicKeyHex1}&limit=10&offset=0&filter=0`);
+  console.log("Txs account type 0:", txs_type_0.data);
+
+  const txs_type_1 = await axios.get(`${API_URL}/txs?addr=${recipientPublicKeyHex1}&limit=10&offset=0&filter=1`);
+  console.log("Txs account type 1:", txs_type_1.data);
+
+  const txs_type_2 = await axios.get(`${API_URL}/txs?addr=${recipientPublicKeyHex1}&limit=10&offset=0&filter=2`);
+  console.log("Txs account type 2:", txs_type_2.data);
+
   // Get account for recipient2
-  const account2 = await axios.get(`${API_URL}/account?addr=${recipientPublicKeyHex2}`);
+  const account2 = await axios.get(`${API_URL}/account?addr=${recipientPublicKeyHex2}&limit=10&offset=0&filter=0`);
   console.log("Account:", account2.data);
 
   // Get account for faucet
-  const faucetAccount = await axios.get(`${API_URL}/account?addr=${faucetPublicKeyHex}`);
+  const faucetAccount = await axios.get(`${API_URL}/account?addr=${faucetPublicKeyHex}&limit=10&offset=0&filter=0`);
   console.log("Faucet account:", faucetAccount.data);
 }
 
