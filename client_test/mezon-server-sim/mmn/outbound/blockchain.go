@@ -1,6 +1,6 @@
 package outbound
 
-import "mezon/v2/mmn/domain"
+import "mmn/client_test/mezon-server-sim/mmn/domain"
 
 type MainnetClient interface {
 	AddTx(tx domain.SignedTx) (domain.AddTxResponse, error)

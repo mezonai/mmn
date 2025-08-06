@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"mezon/v2/mezoncfg"
-	"mezon/v2/mmn/adapter/blockchain"
-	"mezon/v2/mmn/adapter/keystore"
-	"mezon/v2/mmn/service"
+	"mmn/client_test/mezon-server-sim/mezoncfg"
+	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
+	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"mmn/client_test/mezon-server-sim/mmn/service"
 
 	_ "github.com/lib/pq"
 )

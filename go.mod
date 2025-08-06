@@ -12,12 +12,16 @@ require (
 	github.com/google/gofuzz v1.2.0
 	github.com/holiman/uint256 v1.3.2
 	github.com/jedisct1/go-minisign v0.0.0-20241212093149-d2f9f49435c7
+	github.com/lib/pq v1.10.9
 	github.com/stretchr/testify v1.10.0
 	github.com/tetratelabs/wazero v1.9.0
 	go.etcd.io/bbolt v1.4.0
 	golang.org/x/crypto v0.38.0
 	golang.org/x/sys v0.33.0
 	golang.org/x/tools v0.33.0
+	google.golang.org/grpc v1.73.0
+	google.golang.org/protobuf v1.36.6
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -32,8 +36,5 @@ require (
 	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
-	google.golang.org/grpc v1.73.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )

@@ -4,7 +4,7 @@ package blockchain_test
 import (
 	"testing"
 
-	"mmm/pkg/blockchain"
+	"mmn/pkg/blockchain"
 )
 
 func TestChainReplacementWithHigherDifficulty(t *testing.T) {

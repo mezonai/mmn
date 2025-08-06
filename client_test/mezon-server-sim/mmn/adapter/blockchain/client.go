@@ -3,10 +3,10 @@ package blockchain
 import (
 	"context"
 	"fmt"
-	"mezon/v2/mezoncfg"
-	"mezon/v2/mmn/domain"
-	mmnpb "mezon/v2/mmn/proto"
-	"mezon/v2/mmn/utils"
+	"mmn/client_test/mezon-server-sim/mezoncfg"
+	"mmn/client_test/mezon-server-sim/mmn/domain"
+	mmnpb "mmn/client_test/mezon-server-sim/mmn/proto"
+	"mmn/client_test/mezon-server-sim/mmn/utils"
 	"time"
 
 	"google.golang.org/grpc"
