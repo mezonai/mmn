@@ -115,3 +115,27 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 		WalletLedger: txs,
 	}, nil
 }
+
+func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount uint64, textData string) (string, error) {
+	unsigned, err := domain.BuildTransferTx(domain.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
+	if err != nil {
+		return "", err
+	}
+
+	signedRaw, err := crypto.SignTx(unsigned, fromPriv)
+	if err != nil {
+		return "", err
+	}
+
+	//Self verify
+	if !crypto.Verify(unsigned, signedRaw.Sig) {
+		return "", errors.New("self verify failed")
+	}
+
+	res, err := s.bc.AddTx(signedRaw)
+	if err != nil {
+		return "", err
+	}
+
+	return res.TxHash, nil
+}

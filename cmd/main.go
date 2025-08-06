@@ -87,7 +87,7 @@ func main() {
 	}
 
 	// --- Mempool ---
-	mp := mempool.NewMempool(1000, netClient)
+	mp := mempool.NewMempool(100000, netClient)
 
 	// --- Validator ---
 	leaderBatchLoopInterval := tickInterval / 2
