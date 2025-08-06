@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"io"
 
-	"mezon/v2/mmn/domain"
-	"mezon/v2/mmn/outbound"
+	"mmn/client_test/mezon-server-sim/mmn/domain"
+	"mmn/client_test/mezon-server-sim/mmn/outbound"
 
 	_ "github.com/lib/pq"
 )

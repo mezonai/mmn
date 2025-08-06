@@ -2,8 +2,8 @@ package service
 
 import (
 	"database/sql"
-	"mezon/v2/mmn/domain"
-	"mezon/v2/mmn/outbound"
+	"mmn/client_test/mezon-server-sim/mmn/domain"
+	"mmn/client_test/mezon-server-sim/mmn/outbound"
 )
 
 type AccountService struct {

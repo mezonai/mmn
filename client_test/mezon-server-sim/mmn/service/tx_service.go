@@ -8,12 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"mezon/v2/common/api"
-	"mezon/v2/mmn/crypto"
-	"mezon/v2/mmn/domain"
-	"mezon/v2/mmn/outbound"
-
-	"google.golang.org/protobuf/types/known/timestamppb"
+	"mmn/client_test/mezon-server-sim/api"
+	"mmn/client_test/mezon-server-sim/mmn/crypto"
+	"mmn/client_test/mezon-server-sim/mmn/domain"
+	"mmn/client_test/mezon-server-sim/mmn/outbound"
 )
 
 // -------- TxService --------
@@ -105,7 +103,7 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 	for i, tx := range history.Txs {
 		txs[i] = &api.WalletLedger{
 			Id:            strconv.FormatUint(tx.Nonce, 10),
-			CreateTime:    timestamppb.New(time.Unix(int64(tx.Timestamp), 0)),
+			CreateTime:    uint64(tx.Timestamp),
 			UserId:        strconv.FormatUint(uid, 10),
 			Value:         int32(tx.Amount),
 			TransactionId: strconv.FormatUint(tx.Nonce, 10),
