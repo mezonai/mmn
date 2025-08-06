@@ -17,6 +17,7 @@ message GetTxHistoryRequest {
   string address = 1;
   uint32 limit   = 2;
   uint32 offset  = 3;
+  uint32 filter  = 4;
 }
 
 message TxMeta {

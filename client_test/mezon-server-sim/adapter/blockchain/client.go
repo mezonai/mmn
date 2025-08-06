@@ -3,28 +3,29 @@ package blockchain
 import (
 	"context"
 	"fmt"
-
+	"mezon/v2/mezoncfg"
 	"mezon/v2/mmn/domain"
 	mmnpb "mezon/v2/mmn/proto"
 	"mezon/v2/mmn/utils"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type GRPCClient struct {
-	cfg    MmnConfig
+	cfg    mezoncfg.MmnConfig
 	conn   *grpc.ClientConn
 	txCli  mmnpb.TxServiceClient
 	accCli mmnpb.AccountServiceClient
 }
 
-func NewGRPCClient(cfg MmnConfig) (*GRPCClient, error) {
+func NewGRPCClient(cfg mezoncfg.MmnConfig) (*GRPCClient, error) {
 	conn, err := grpc.Dial(
 		cfg.Endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()), // dev-net not TLS yet
 		grpc.WithBlock(),
-		grpc.WithTimeout(cfg.Timeout),
+		grpc.WithTimeout(time.Duration(cfg.Timeout)*time.Millisecond),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
 	)
 	if err != nil {
@@ -41,7 +42,7 @@ func NewGRPCClient(cfg MmnConfig) (*GRPCClient, error) {
 // ---- MainnetClient interface ----
 
 func (c *GRPCClient) AddTx(tx domain.SignedTx) (domain.AddTxResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Millisecond)
 	defer cancel()
 
 	txMsg := utils.ToProtoSigTx(&tx)
@@ -60,16 +61,23 @@ func (c *GRPCClient) AddTx(tx domain.SignedTx) (domain.AddTxResponse, error) {
 }
 
 func (c *GRPCClient) GetAccount(addr string) (domain.Account, error) {
-	// TODO: implement
-	return domain.Account{}, nil
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Millisecond)
+	defer cancel()
+
+	res, err := c.accCli.GetAccount(ctx, &mmnpb.GetAccountRequest{Address: addr})
+	if err != nil {
+		return domain.Account{Address: addr, Balance: 0, Nonce: 0}, err
+	}
+	return utils.FromProtoAccount(res), nil
 }
 
-func (c *GRPCClient) GetTxHistory(addr string, limit, offset int) ([]domain.Tx, error) {
-	// TODO: implement
-	return nil, nil
-}
+func (c *GRPCClient) GetTxHistory(addr string, limit, offset, filter int) (domain.TxHistoryResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Millisecond)
+	defer cancel()
 
-func (c *GRPCClient) GetNonce(addr string) (uint64, error) {
-	// TODO: implement
-	return 0, nil
+	res, err := c.accCli.GetTxHistory(ctx, &mmnpb.GetTxHistoryRequest{Address: addr, Limit: uint32(limit), Offset: uint32(offset), Filter: uint32(filter)})
+	if err != nil {
+		return domain.TxHistoryResponse{}, err
+	}
+	return utils.FromProtoTxHistory(res), nil
 }

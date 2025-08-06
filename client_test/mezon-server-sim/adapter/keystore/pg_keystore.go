@@ -75,14 +75,14 @@ func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
 	return addr, priv, err
 }
 
-func (p *pgStore) CreateKey(uid uint64) (string, error) {
+func (p *pgStore) CreateKey(uid uint64) (string, []byte, error) {
 	fmt.Printf("CreateKey start %d\n", uid)
 
 	// Generate Ed25519 seed (32 bytes)
 	seed := make([]byte, ed25519.SeedSize)
 	_, err := rand.Read(seed)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	// Generate Ed25519 key pair from seed
@@ -95,7 +95,7 @@ func (p *pgStore) CreateKey(uid uint64) (string, error) {
 	// Store the seed (not the full private key) for SignTx compatibility
 	enc, err := p.encrypt(seed)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	_, err = p.db.Exec(
@@ -103,5 +103,5 @@ func (p *pgStore) CreateKey(uid uint64) (string, error) {
 		uid, addr, enc,
 	)
 	fmt.Printf("CreateKey done %d %s\n", uid, addr)
-	return addr, err
+	return addr, seed, err
 }
