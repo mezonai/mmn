@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"flag"
@@ -14,9 +15,13 @@ import (
 	"mmn/consensus"
 	"mmn/ledger"
 	"mmn/mempool"
-	"mmn/network"
+
+	// "mmn/network"  // Temporarily disabled during P2P migration
+	"mmn/p2p"
 	"mmn/poh"
 	"mmn/validator"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func main() {
@@ -76,8 +81,65 @@ func main() {
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
 
-	// --- Network (gRPC) ---
-	netClient := network.NewGRPCClient(peerAddrs)
+	// --- Mempool (declare early for use in handlers) ---
+	var mp *mempool.Mempool
+
+	// --- Network (LibP2P) ---
+	log.Printf("Setting up LibP2P networking...")
+
+	// Create P2P configuration
+	p2pConfig := &p2p.Config{
+		ListenAddrs:    cfg.P2P.ListenAddrs,
+		BootstrapPeers: cfg.P2P.BootstrapPeers,
+		EnableDHT:      cfg.P2P.EnableDHT,
+		EnablePubSub:   cfg.P2P.EnablePubSub,
+	}
+
+	// Create P2P service
+	p2pService, err := p2p.NewP2PService(p2pConfig)
+	if err != nil {
+		log.Fatalf("Failed to create P2P service: %v", err)
+	}
+	defer p2pService.Close()
+
+	// Create network adapter
+	netClient := p2p.NewNetworkAdapter(p2pService)
+
+	// Setup message handlers
+	blockHandler := p2p.NewBlockMessageHandler(func(ctx context.Context, from peer.ID, blockData []byte) error {
+		log.Printf("Received block from peer %s", from)
+		// Handle block message - integrate with existing block processing
+		return nil
+	})
+
+	voteHandler := p2p.NewVoteMessageHandler(func(ctx context.Context, from peer.ID, voteData []byte) error {
+		log.Printf("Received vote from peer %s", from)
+		// Handle vote message - integrate with existing vote processing
+		return nil
+	})
+
+	txHandler := p2p.NewTxMessageHandler(func(ctx context.Context, from peer.ID, txData []byte) error {
+		log.Printf("Received transaction from peer %s", from)
+		// Handle transaction - add to mempool
+		if mp != nil {
+			mp.AddTx(txData, false) // Don't re-broadcast received tx
+		}
+		return nil
+	})
+
+	p2pService.SetMessageHandlers(blockHandler, voteHandler, txHandler)
+
+	// Start P2P service
+	if err := p2pService.Start(); err != nil {
+		log.Fatalf("Failed to start P2P service: %v", err)
+	}
+
+	log.Printf("P2P Node started successfully!")
+	log.Printf("Node ID: %s", netClient.GetNodeID())
+	log.Printf("Listen addresses: %v", netClient.GetListenAddresses())
+	log.Printf("Connected peers: %d", netClient.GetPeerCount())
+
+	// Keep backwards compatibility for validator
 	pubKeys := make(map[string]ed25519.PublicKey)
 	for _, n := range append(peers, self) {
 		pub, err := hex.DecodeString(n.PubKey)
@@ -86,8 +148,8 @@ func main() {
 		}
 	}
 
-	// --- Mempool ---
-	mp := mempool.NewMempool(1000, netClient)
+	// --- Initialize Mempool ---
+	mp = mempool.NewMempool(1000, netClient)
 
 	// --- Validator ---
 	leaderBatchLoopInterval := tickInterval / 2
@@ -104,24 +166,35 @@ func main() {
 	)
 	val.Run()
 
-	grpcSrv := network.NewGRPCServer(
-		self.GRPCAddr,
-		pubKeys,
-		blockDir,
-		ld,
-		collector,
-		netClient,
-		self.PubKey,
-		privKey,
-		val,
-		bs,
-		mp,
-	)
-	_ = grpcSrv // not used directly, but keeps server running
+	// TODO: Migrate gRPC server to use P2P networking
+	// For now, keep it disabled during P2P integration
+	/*
+		grpcSrv := network.NewGRPCServer(
+			self.GRPCAddr,
+			pubKeys,
+			blockDir,
+			ld,
+			collector,
+			netClient,
+			self.PubKey,
+			privKey,
+			val,
+			bs,
+			mp,
+		)
+		_ = grpcSrv // not used directly, but keeps server running
+	*/
 
-	// --- API (for tx submission) ---
-	apiSrv := api.NewAPIServer(mp, ld, self.ListenAddr)
+	// --- Enhanced API (for tx submission and P2P monitoring) ---
+	isBootstrap := len(cfg.P2P.BootstrapPeers) == 0 // Bootstrap if no bootstrap peers configured
+	apiSrv := api.NewEnhancedAPIServer(mp, ld, netClient, self.ListenAddr, isBootstrap)
 	apiSrv.Start()
+
+	log.Printf("MMN Node started successfully!")
+	log.Printf("Node ID: %s", p2pService.GetHostID())
+	log.Printf("Listening on: %v", p2pService.GetListenAddresses())
+	log.Printf("API server: %s", self.ListenAddr)
+	log.Printf("Bootstrap mode: %v", isBootstrap)
 
 	// --- Block forever ---
 	select {}
