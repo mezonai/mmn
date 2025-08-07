@@ -216,6 +216,13 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
 	addr := in.Address
 	acc := s.ledger.GetAccount(addr)
+	if acc == nil {
+		return &pb.GetAccountResponse{
+			Address: addr,
+			Balance: 0,
+			Nonce:   0,
+		}, nil
+	}
 	return &pb.GetAccountResponse{
 		Address: addr,
 		Balance: acc.Balance,

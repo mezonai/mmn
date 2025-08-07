@@ -59,10 +59,14 @@ func main() {
 	// --- Collector ---
 	collector := consensus.NewCollector(len(peers) + 1)
 
-	// --- PoH ---
-	hashesPerTick := uint64(5)
-	ticksPerSlot := uint64(4)
-	tickInterval := 500 * time.Millisecond
+	// --- PoH config ---
+	pohCfg, err := config.LoadPohConfig("config/config.ini")
+	if err != nil {
+		log.Fatalf("Failed to load PoH config: %v", err)
+	}
+	hashesPerTick := pohCfg.HashesPerTick
+	ticksPerSlot := pohCfg.TicksPerSlot
+	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
 	pohAutoHashInterval := tickInterval / 5
 	log.Printf("tickInterval: %v", tickInterval)
 	log.Printf("pohAutoHashInterval: %v", pohAutoHashInterval)
@@ -87,16 +91,25 @@ func main() {
 	}
 
 	// --- Mempool ---
-	mp := mempool.NewMempool(1000, netClient)
+	mempoolCfg, err := config.LoadMempoolConfig("config/config.ini")
+	if err != nil {
+		log.Fatalf("Failed to load mempool config: %v", err)
+	}
+	maxTxs := mempoolCfg.MaxTxs
+	mp := mempool.NewMempool(maxTxs, netClient)
 
 	// --- Validator ---
+	validatorCfg, err := config.LoadValidatorConfig("config/config.ini")
+	if err != nil {
+		log.Fatalf("Failed to load validator config: %v", err)
+	}
 	leaderBatchLoopInterval := tickInterval / 2
 	log.Printf("leaderBatchLoopInterval: %v", leaderBatchLoopInterval)
 	roleMonitorLoopInterval := tickInterval
 	log.Printf("roleMonitorLoopInterval: %v", roleMonitorLoopInterval)
-	batchSize := 100
-	leaderTimeout := 50 * time.Millisecond
-	leaderTimeoutLoopInterval := 5 * time.Millisecond
+	batchSize := validatorCfg.BatchSize
+	leaderTimeout := time.Duration(validatorCfg.LeaderTimeout) * time.Millisecond
+	leaderTimeoutLoopInterval := time.Duration(validatorCfg.LeaderTimeoutLoopInterval) * time.Millisecond
 
 	val := validator.NewValidator(
 		self.PubKey, privKey, recorder, pohService, pohSchedule, mp, ticksPerSlot,
