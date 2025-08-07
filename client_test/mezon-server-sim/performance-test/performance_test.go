@@ -8,6 +8,7 @@ import (
 	"mmn/client_test/mezon-server-sim/mezoncfg"
 	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
 	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"mmn/client_test/mezon-server-sim/mmn/domain"
 	"mmn/client_test/mezon-server-sim/mmn/service"
 	"os"
 	"sync"
@@ -22,8 +23,8 @@ const (
 	defaultMasterKey       = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 của "mezon_test_master_key_1234567890"
 )
 
-const totalRequests = 1000
-const concurrency = 1000 // Number of concurrent requests
+const totalRequests = 2000
+const concurrency = 2000 // Number of concurrent requests
 
 type TestResult struct {
 	TotalTime      string  `json:"total_time"`
@@ -201,7 +202,7 @@ func sendToken(t *testing.T, service *service.TxService, key int, wg *sync.WaitG
 	ctx := context.Background()
 	start := time.Now()
 	// _, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
-	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData)
+	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData, domain.TxTypeTransfer)
 	latency := time.Since(start)
 
 	mu.Lock()

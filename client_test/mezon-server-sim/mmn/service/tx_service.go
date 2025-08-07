@@ -87,6 +87,11 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 	return res.TxHash, nil
 }
 
+// GetAccountByAddress gets account information by address
+func (s *TxService) GetAccountByAddress(ctx context.Context, addr string) (domain.Account, error) {
+	return s.bc.GetAccount(addr)
+}
+
 func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, page, filter int) (*api.WalletLedgerList, error) {
 	addr, _, err := s.ks.LoadKey(uid)
 	if err != nil {
@@ -116,8 +121,8 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 	}, nil
 }
 
-func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount uint64, textData string) (string, error) {
-	unsigned, err := domain.BuildTransferTx(domain.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
+func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount uint64, textData string, transferType int) (string, error) {
+	unsigned, err := domain.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
 	if err != nil {
 		return "", err
 	}
@@ -138,4 +143,29 @@ func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, 
 	}
 
 	return res.TxHash, nil
+}
+
+func (s *TxService) ListFaucetTransactions(ctx context.Context, limit, page, filter int) (*api.WalletLedgerList, error) {
+	offset := (page - 1) * limit
+	addr := "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
+	history, err := s.bc.GetTxHistory(addr, limit, offset, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	txs := make([]*api.WalletLedger, len(history.Txs))
+	for i, tx := range history.Txs {
+		txs[i] = &api.WalletLedger{
+			Id:            strconv.FormatUint(tx.Nonce, 10),
+			CreateTime:    uint64(tx.Timestamp),
+			UserId:        "faucet",
+			Value:         int32(tx.Amount),
+			TransactionId: strconv.FormatUint(tx.Nonce, 10),
+		}
+	}
+
+	return &api.WalletLedgerList{
+		Count:        int32(history.Total),
+		WalletLedger: txs,
+	}, nil
 }

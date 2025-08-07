@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"mmn/client_test/mezon-server-sim/mezoncfg"
 	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
 	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"mmn/client_test/mezon-server-sim/mmn/domain"
 	"mmn/client_test/mezon-server-sim/mmn/service"
 
 	_ "github.com/lib/pq"
@@ -97,6 +100,62 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getFaucetAccount() (string, ed25519.PrivateKey) {
+	fmt.Println("getFaucetAccount")
+	faucetPrivateKeyHex := "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
+	faucetPrivateKeyDer, err := hex.DecodeString(faucetPrivateKeyHex)
+	if err != nil {
+		fmt.Println("err", err)
+		panic(err)
+	}
+	fmt.Println("faucetPrivateKeyDer")
+
+	// Extract the last 32 bytes as the Ed25519 seed
+	faucetSeed := faucetPrivateKeyDer[len(faucetPrivateKeyDer)-32:]
+	faucetPrivateKey := ed25519.NewKeyFromSeed(faucetSeed)
+	faucetPublicKey := faucetPrivateKey.Public().(ed25519.PublicKey)
+	faucetPublicKeyHex := hex.EncodeToString(faucetPublicKey[:])
+	fmt.Println("faucetPublicKeyHex", faucetPublicKeyHex)
+	return faucetPublicKeyHex, faucetPrivateKey
+}
+
+func TestSendToken_Integration_Faucet(t *testing.T) {
+	fmt.Println("TestSendToken_Integration_Faucet")
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
+	fmt.Println("faucetPublicKey", faucetPublicKey)
+	toAddress := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
+
+	// Check balance of toAddress
+	account, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	if err != nil {
+		t.Fatalf("Failed to get account balance: %v", err)
+	}
+
+	t.Logf("Account %s balance: %d tokens, nonce: %d", faucetPublicKey, account.Balance, account.Nonce)
+
+	// Extract the seed from the private key (first 32 bytes)
+	faucetSeed := faucetPrivateKey.Seed()
+	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", domain.TxTypeFaucet)
+	if err != nil {
+		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
+	}
+
+	t.Logf("Transaction successful! Hash: %s", txHash)
+
+	time.Sleep(5 * time.Second)
+	toAccount, err := service.GetAccountByAddress(ctx, toAddress)
+	if err != nil {
+		t.Fatalf("Failed to get account balance: %v", err)
+	}
+
+	t.Logf("Account %s balance: %d tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
 }
 
 // TestSendToken_Integration_RealMainnet tests the full flow with real mainnet
@@ -257,4 +316,18 @@ func BenchmarkSendToken_Integration(b *testing.B) {
 			i++
 		}
 	})
+}
+
+func Test_GetListFaucetTransactions(t *testing.T) {
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	txs, err := service.ListFaucetTransactions(ctx, 10, 1, 0)
+	if err != nil {
+		t.Fatalf("ListTransactions failed: %v", err)
+	}
+
+	t.Logf("ListTransactions: %v", txs)
 }

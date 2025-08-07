@@ -61,8 +61,8 @@ func main() {
 
 	// --- PoH ---
 	hashesPerTick := uint64(5)
-	ticksPerSlot := uint64(4)
-	tickInterval := 500 * time.Millisecond
+	ticksPerSlot := uint64(8)
+	tickInterval := 200 * time.Millisecond
 	pohAutoHashInterval := tickInterval / 5
 	log.Printf("tickInterval: %v", tickInterval)
 	log.Printf("pohAutoHashInterval: %v", pohAutoHashInterval)
@@ -94,7 +94,7 @@ func main() {
 	log.Printf("leaderBatchLoopInterval: %v", leaderBatchLoopInterval)
 	roleMonitorLoopInterval := tickInterval
 	log.Printf("roleMonitorLoopInterval: %v", roleMonitorLoopInterval)
-	batchSize := 100
+	batchSize := 750
 	leaderTimeout := 50 * time.Millisecond
 	leaderTimeoutLoopInterval := 5 * time.Millisecond
 
