@@ -1,0 +1,27 @@
+config:
+  faucet:
+    address: "faucet_address_bootstrap"
+    amount: 1000000000000000000
+    
+  self_node:
+    pubkey: "6eb256b49f718cd2f0456b9151b5700c0cf5db52c033ade5b8e31513a4f5fd84"
+    privkey_path: "config/bootstrap_key.txt"
+    listen_addr: "localhost:8090"
+    grpc_addr: "localhost:9000"
+
+  p2p:
+    listen_addrs:
+      - "/ip4/0.0.0.0/tcp/4000"
+      - "/ip4/0.0.0.0/tcp/4001/ws"
+    bootstrap_peers: []  # Bootstrap node doesn't need bootstrap peers
+    enable_dht: true
+    enable_pubsub: true
+    is_bootstrap: true
+    max_peers: 100
+
+  peer_nodes: []  # No static peers for bootstrap node
+
+  leader_schedule:
+    - start_slot: 0
+      end_slot: 100
+      leader: "6eb256b49f718cd2f0456b9151b5700c0cf5db52c033ade5b8e31513a4f5fd84"

@@ -32,3 +32,5 @@ go.work.sum
 # .vscode/
 
 bin
+blockstore/blocks
+mmn-node

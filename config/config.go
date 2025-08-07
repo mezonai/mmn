@@ -19,6 +19,16 @@ type NodeConfig struct {
 	GRPCAddr    string `yaml:"grpc_addr"`
 }
 
+// P2PConfig represents P2P networking configuration
+type P2PConfig struct {
+	ListenAddrs    []string `yaml:"listen_addrs"`
+	BootstrapPeers []string `yaml:"bootstrap_peers"`
+	EnableDHT      bool     `yaml:"enable_dht"`
+	EnablePubSub   bool     `yaml:"enable_pubsub"`
+	IsBootstrap    bool     `yaml:"is_bootstrap"`
+	MaxPeers       int      `yaml:"max_peers"`
+}
+
 // LeaderSchedule represents a leader schedule entry
 type LeaderSchedule struct {
 	StartSlot int    `yaml:"start_slot"`
@@ -35,6 +45,7 @@ type Faucet struct {
 type GenesisConfig struct {
 	SelfNode       NodeConfig       `yaml:"self_node"`
 	PeerNodes      []NodeConfig     `yaml:"peer_nodes"`
+	P2P            P2PConfig        `yaml:"p2p"`
 	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
 	Faucet         Faucet           `yaml:"faucet"`
 }
