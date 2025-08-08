@@ -3,46 +3,16 @@ package config
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"mmn/logx"
 	"mmn/poh"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
-
-// NodeConfig represents a node's configuration
-type NodeConfig struct {
-	PubKey      string `yaml:"pubkey"`
-	PrivKeyPath string `yaml:"privkey_path"`
-	ListenAddr  string `yaml:"listen_addr"`
-	GRPCAddr    string `yaml:"grpc_addr"`
-}
-
-// LeaderSchedule represents a leader schedule entry
-type LeaderSchedule struct {
-	StartSlot int    `yaml:"start_slot"`
-	EndSlot   int    `yaml:"end_slot"`
-	Leader    string `yaml:"leader"`
-}
-
-type Faucet struct {
-	Address string `yaml:"address"`
-	Amount  uint64 `yaml:"amount"`
-}
-
-// GenesisConfig holds the configuration from genesis.yml
-type GenesisConfig struct {
-	SelfNode       NodeConfig       `yaml:"self_node"`
-	PeerNodes      []NodeConfig     `yaml:"peer_nodes"`
-	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
-	Faucet         Faucet           `yaml:"faucet"`
-}
-
-// ConfigFile is the top-level structure for genesis.yml
-type ConfigFile struct {
-	Config GenesisConfig `yaml:"config"`
-}
 
 // LoadGenesisConfig reads and parses the genesis.yml file
 func LoadGenesisConfig(path string) (*GenesisConfig, error) {
@@ -96,4 +66,28 @@ func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
 		log.Fatalf("Invalid leader schedule: %v", err)
 	}
 	return ls
+}
+
+func NewConfig(nodeConfigFileName string) (*GenesisConfig, NodeConfig, []byte, []NodeConfig, []LeaderSchedule, ed25519.PrivateKey) {
+	// load node config
+	current_node := flag.String("node", nodeConfigFileName, "The node to run")
+	flag.Parse()
+
+	cfg, err := LoadGenesisConfig(fmt.Sprintf("config/genesis.%s.yml", *current_node))
+	if err != nil {
+		logx.Error("LOAD CONFIG", "Failed to load config: ", err)
+	}
+	self := cfg.SelfNode
+	seed := []byte(self.PubKey)
+	peers := cfg.PeerNodes
+	leaderSchedule := cfg.LeaderSchedule
+
+	// --- Load private key from file ---
+	privKey, err := LoadEd25519PrivKey(self.PrivKeyPath)
+	if err != nil {
+		logx.Error("LOAD CONFIG", "Failed to load private key", err)
+	}
+
+	return cfg, self, seed, peers, leaderSchedule, privKey
+
 }

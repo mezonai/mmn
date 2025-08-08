@@ -20,15 +20,5 @@ services:
     networks:
       - mezon
 
-  node3:
-    build: .
-    container_name: node3
-    command: ["./mmn", "-node=node3"]
-    ports:
-      - "8003:8003"
-      - "9003:9003" 
-    networks:
-      - mezon
-
 networks:
   mezon:

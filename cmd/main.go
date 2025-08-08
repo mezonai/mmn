@@ -1,10 +1,6 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"encoding/hex"
-	"flag"
-	"fmt"
 	"log"
 	"time"
 
@@ -13,44 +9,27 @@ import (
 	"mmn/config"
 	"mmn/consensus"
 	"mmn/ledger"
+	"mmn/logx"
 	"mmn/mempool"
 	"mmn/network"
 	"mmn/poh"
 	"mmn/validator"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	current_node := flag.String("node", "node1", "The node to run")
-	flag.Parse()
-	// --- Load config from genesis.yml ---
-	cfg, err := config.LoadGenesisConfig(fmt.Sprintf("config/genesis.%s.yml", *current_node))
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
-	self := cfg.SelfNode
-	seed := []byte(self.PubKey)
-	peers := cfg.PeerNodes
-	leaderSchedule := cfg.LeaderSchedule
+	godotenv.Load()
 
-	// --- Prepare peer addresses (excluding self) ---
-	peerAddrs := []string{}
-	for _, p := range peers {
-		if p.GRPCAddr != self.GRPCAddr {
-			peerAddrs = append(peerAddrs, p.GRPCAddr)
-		}
-	}
-
-	// --- Load private key from file (helper stub) ---
-	privKey, err := config.LoadEd25519PrivKey(self.PrivKeyPath)
-	if err != nil {
-		log.Fatalf("Failed to load private key: %v", err)
-	}
+	// load node config
+	cfg, self, seed, peers, leaderSchedule, privKey := config.NewConfig("node3")
 
 	// --- Blockstore ---
 	blockDir := "./blockstore/blocks"
 	bs, err := blockstore.NewBlockStore(blockDir, seed)
+
 	if err != nil {
-		log.Fatalf("Failed to init blockstore: %v", err)
+		logx.Error("BLOCK STORE", "Failed to init blockstore: ", err)
 	}
 
 	// --- Ledger ---
@@ -76,48 +55,36 @@ func main() {
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
 
-	// --- Network (gRPC) ---
-	netClient := network.NewGRPCClient(peerAddrs)
-	pubKeys := make(map[string]ed25519.PublicKey)
-	for _, n := range append(peers, self) {
-		pub, err := hex.DecodeString(n.PubKey)
-		if err == nil && len(pub) == ed25519.PublicKeySize {
-			pubKeys[n.PubKey] = ed25519.PublicKey(pub)
-		}
+	// network libp2p
+	libp2pNetwork, err := network.NewNetWork(
+		self.PubKey,
+		privKey,
+		self.Libp2pAddr,
+		"/ip4/10.10.30.50/tcp/56363/p2p/12D3KooWDqiNAU1nKWm67TEH6852QKBxkwQ6sikUvWV6f2camNxr",
+		bs,
+	)
+
+	if err != nil {
+		logx.Error("Failed to create libp2p network: %v", err)
 	}
 
-	// --- Mempool ---
-	mp := mempool.NewMempool(1000, netClient)
+	mp := mempool.NewMempool(1000, libp2pNetwork)
 
-	// --- Validator ---
 	leaderBatchLoopInterval := tickInterval / 2
-	log.Printf("leaderBatchLoopInterval: %v", leaderBatchLoopInterval)
 	roleMonitorLoopInterval := tickInterval
-	log.Printf("roleMonitorLoopInterval: %v", roleMonitorLoopInterval)
 	batchSize := 100
 	leaderTimeout := 50 * time.Millisecond
 	leaderTimeoutLoopInterval := 5 * time.Millisecond
 
 	val := validator.NewValidator(
 		self.PubKey, privKey, recorder, pohService, pohSchedule, mp, ticksPerSlot,
-		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout, leaderTimeoutLoopInterval, batchSize, netClient, bs, ld, collector,
+		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout, leaderTimeoutLoopInterval, batchSize, libp2pNetwork, bs, ld, collector,
 	)
-	val.Run()
 
-	grpcSrv := network.NewGRPCServer(
-		self.GRPCAddr,
-		pubKeys,
-		blockDir,
-		ld,
-		collector,
-		netClient,
-		self.PubKey,
-		privKey,
-		val,
-		bs,
-		mp,
-	)
-	_ = grpcSrv // not used directly, but keeps server running
+	libp2pNetwork.SetupCallbacks(ld, privKey, self, bs, collector, mp)
+
+	// --- Start validator ---
+	val.Run()
 
 	// --- API (for tx submission) ---
 	apiSrv := api.NewAPIServer(mp, ld, self.ListenAddr)
