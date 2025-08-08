@@ -1,0 +1,32 @@
+{
+  "name": "sdk",
+  "version": "1.0.0",
+  "main": "test.ts",
+  "scripts": {
+    "test": "ts-node test.ts",
+    "generate-types": "sh ./generate-types.sh"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.13.4",
+    "@grpc/proto-loader": "^0.8.0",
+    "@protobuf-ts/grpc-transport": "^2.11.1",
+    "elliptic": "^6.6.1",
+    "ethers": "^6.14.3",
+    "google-protobuf": "^3.21.4",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@protobuf-ts/plugin": "^2.11.1",
+    "@protobuf-ts/protoc": "^2.11.1",
+    "@protobuf-ts/runtime": "^2.11.1",
+    "@protobuf-ts/runtime-rpc": "^2.11.1",
+    "@types/elliptic": "^6.4.18",
+    "@types/google-protobuf": "^3.15.12",
+    "@types/node": "^22.15.24",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

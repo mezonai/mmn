@@ -1,0 +1,46 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/proto;proto";
+
+message GetAccountRequest {
+  string address = 1;
+}
+
+message GetAccountResponse {
+  string address = 1;
+  uint64 balance = 2;
+  uint64 nonce   = 3;
+}
+
+message GetTxHistoryRequest {
+  string address = 1;
+  uint32 limit   = 2;
+  uint32 offset  = 3;
+  uint32 filter  = 4;
+}
+
+message TxMeta {
+  string sender    = 1; // sender address
+  string recipient = 2; // recipient address
+  uint64 amount    = 3; // amount
+  uint64 nonce     = 4; // nonce
+  uint64 timestamp = 5;
+  enum Status {
+    PENDING   = 0;
+    CONFIRMED = 1;
+    FINALIZED = 2;
+    FAILED    = 3;
+  }
+  Status status = 6;
+}
+
+message GetTxHistoryResponse {
+  uint32 total = 1;
+  repeated TxMeta txs = 2;
+}
+
+service AccountService {
+  rpc GetAccount   (GetAccountRequest)   returns (GetAccountResponse);
+  rpc GetTxHistory (GetTxHistoryRequest) returns (GetTxHistoryResponse);
+}
