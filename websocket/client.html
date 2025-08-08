@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MMN Network Events Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .events-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .event-section {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            background-color: #fafafa;
+        }
+        .event-section h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        .event-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+        .event-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 12px;
+        }
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        .event-item.tx-submitted {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+        .event-item.tx-confirmed {
+            background-color: #e8f5e8;
+            border-left: 4px solid #4caf50;
+        }
+        .event-item.tx-failed {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        .event-item.block-created {
+            background-color: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .event-item.mempool-stats {
+            background-color: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+        }
+        .event-time {
+            font-weight: bold;
+            color: #666;
+        }
+        .event-type {
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .event-data {
+            margin-top: 5px;
+            padding: 5px;
+            background-color: rgba(0,0,0,0.05);
+            border-radius: 3px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background-color: white;
+            padding: 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔗 MMN Network Events Monitor</h1>
+            <p>Real-time monitoring of transactions and blocks in MMN network</p>
+        </div>
+
+        <div id="status" class="status disconnected">
+            🔴 Disconnected from WebSocket
+        </div>
+
+        <div class="controls">
+            <button id="connectBtn" class="btn-primary" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" class="btn-secondary" onclick="disconnect()">Disconnect</button>
+            <button class="btn-danger" onclick="clearEvents()">Clear Events</button>
+            <button class="btn-secondary" onclick="exportEvents()">Export Events</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="txSubmittedCount">0</div>
+                <div class="stat-label">Transactions Submitted</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="txConfirmedCount">0</div>
+                <div class="stat-label">Transactions Confirmed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="blocksCreatedCount">0</div>
+                <div class="stat-label">Blocks Created</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="mempoolTxCount">0</div>
+                <div class="stat-label">Mempool Transactions</div>
+            </div>
+        </div>
+
+        <div class="events-container">
+            <div class="event-section">
+                <h3>📝 Transaction Events</h3>
+                <div id="txEvents" class="event-list"></div>
+            </div>
+            <div class="event-section">
+                <h3>🧱 Block & System Events</h3>
+                <div id="blockEvents" class="event-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let events = [];
+        let stats = {
+            txSubmitted: 0,
+            txConfirmed: 0,
+            txFailed: 0,
+            blocksCreated: 0,
+            mempoolTxCount: 0
+        };
+
+        const WS_URL = 'ws://localhost:8090/ws';
+
+        function updateStatus(connected) {
+            const statusEl = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+
+            if (connected) {
+                statusEl.className = 'status connected';
+                statusEl.innerHTML = '🟢 Connected to WebSocket';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusEl.className = 'status disconnected';
+                statusEl.innerHTML = '🔴 Disconnected from WebSocket';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                updateStatus(true);
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const eventData = JSON.parse(event.data);
+                    handleEvent(eventData);
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket disconnected');
+                updateStatus(false);
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateStatus(false);
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function handleEvent(eventData) {
+            events.unshift(eventData);
+            
+            // Update stats
+            switch (eventData.type) {
+                case 'tx_submitted':
+                    stats.txSubmitted++;
+                    break;
+                case 'tx_confirmed':
+                    stats.txConfirmed++;
+                    break;
+                case 'tx_failed':
+                    stats.txFailed++;
+                    break;
+                case 'block_created':
+                    stats.blocksCreated++;
+                    break;
+                case 'mempool_stats':
+                    stats.mempoolTxCount = eventData.data.tx_count || 0;
+                    break;
+            }
+            
+            updateStats();
+            renderEvent(eventData);
+        }
+
+        function updateStats() {
+            document.getElementById('txSubmittedCount').textContent = stats.txSubmitted;
+            document.getElementById('txConfirmedCount').textContent = stats.txConfirmed;
+            document.getElementById('blocksCreatedCount').textContent = stats.blocksCreated;
+            document.getElementById('mempoolTxCount').textContent = stats.mempoolTxCount;
+        }
+
+        function renderEvent(eventData) {
+            const isTxEvent = ['tx_submitted', 'tx_confirmed', 'tx_failed'].includes(eventData.type);
+            const containerId = isTxEvent ? 'txEvents' : 'blockEvents';
+            const container = document.getElementById(containerId);
+
+            const eventEl = document.createElement('div');
+            eventEl.className = `event-item ${eventData.type.replace('_', '-')}`;
+            
+            const timestamp = new Date(eventData.timestamp * 1000).toLocaleTimeString();
+            
+            let eventDetails = '';
+            switch (eventData.type) {
+                case 'tx_submitted':
+                    eventDetails = `
+                        Hash: ${eventData.data.tx_hash}
+                        From: ${eventData.data.tx_data?.sender || 'N/A'}
+                        To: ${eventData.data.tx_data?.recipient || 'N/A'}
+                        Amount: ${eventData.data.tx_data?.amount || 0}
+                    `;
+                    break;
+                case 'tx_confirmed':
+                    eventDetails = `
+                        Hash: ${eventData.data.tx_hash}
+                        Slot: ${eventData.data.slot}
+                        From: ${eventData.data.tx_data?.sender || 'N/A'}
+                        To: ${eventData.data.tx_data?.recipient || 'N/A'}
+                        Amount: ${eventData.data.tx_data?.amount || 0}
+                    `;
+                    break;
+                case 'tx_failed':
+                    eventDetails = `
+                        Hash: ${eventData.data.tx_hash}
+                        Error: ${eventData.data.error}
+                    `;
+                    break;
+                case 'block_created':
+                    eventDetails = `
+                        Slot: ${eventData.data.slot}
+                        Transactions: ${eventData.data.tx_count}
+                        TxHashes: ${eventData.data.transactions?.slice(0, 3).join(', ')}${eventData.data.transactions?.length > 3 ? '...' : ''}
+                    `;
+                    break;
+                case 'mempool_stats':
+                    eventDetails = `
+                        Transaction Count: ${eventData.data.tx_count}
+                        Max Size: ${eventData.data.max_size}
+                        Full: ${eventData.data.is_full ? 'Yes' : 'No'}
+                    `;
+                    break;
+            }
+
+            eventEl.innerHTML = `
+                <div class="event-time">${timestamp}</div>
+                <div class="event-type">${eventData.type.replace('_', ' ')}</div>
+                <div class="event-data">${eventDetails}</div>
+            `;
+
+            container.insertBefore(eventEl, container.firstChild);
+
+            // Keep only last 100 events in each container
+            while (container.children.length > 100) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function clearEvents() {
+            document.getElementById('txEvents').innerHTML = '';
+            document.getElementById('blockEvents').innerHTML = '';
+            events = [];
+            stats = {
+                txSubmitted: 0,
+                txConfirmed: 0,
+                txFailed: 0,
+                blocksCreated: 0,
+                mempoolTxCount: 0
+            };
+            updateStats();
+        }
+
+        function exportEvents() {
+            const data = JSON.stringify(events, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mmn-events-${new Date().toISOString()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Auto-connect on page load
+        window.onload = function() {
+            updateStatus(false);
+            connect();
+        };
+
+        // Reconnect on page focus if disconnected
+        window.addEventListener('focus', function() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                connect();
+            }
+        });
+    </script>
+</body>
+</html>

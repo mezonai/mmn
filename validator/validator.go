@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"mmn/ledger"
 	"mmn/mempool"
 	"mmn/poh"
+	"mmn/utils"
 )
 
 const NoSlot = ^uint64(0)
@@ -183,6 +185,22 @@ func (v *Validator) handleEntry(e poh.Entry) {
 
 		blk.Sign(v.PrivKey)
 		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
+
+		// Extract transaction hashes from entries for event publishing
+		txHashes := make([]string, 0)
+		for _, entry := range v.collectedEntries {
+			for _, txData := range entry.Transactions {
+				if tx, err := utils.ParseTx(txData); err == nil {
+					txHash := hex.EncodeToString(txData)
+					txHashes = append(txHashes, txHash)
+					// Publish transaction confirmed event
+					v.Mempool.GetEventBus().PublishTxConfirmed(txHash, tx, v.lastSlot)
+				}
+			}
+		}
+
+		// Publish block created event
+		v.Mempool.GetEventBus().PublishBlockCreated(v.lastSlot, txHashes)
 
 		// Persist then broadcast
 		v.blockStore.AddBlockPending(blk)

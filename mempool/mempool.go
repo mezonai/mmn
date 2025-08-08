@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"mmn/events"
 	"mmn/interfaces"
 	"mmn/types"
 	"sync"
@@ -16,6 +17,7 @@ type Mempool struct {
 	txOrder     []string // Maintain FIFO order
 	max         int
 	broadcaster interfaces.Broadcaster
+	eventBus    *events.EventBus
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
@@ -24,6 +26,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
 		txOrder:     make([]string, 0, max),
 		max:         max,
 		broadcaster: broadcaster,
+		eventBus:    events.NewEventBus(),
 	}
 }
 
@@ -66,6 +69,9 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	fmt.Println("Adding tx", tx)
 	mp.txsBuf[txHash] = txBytes
 	mp.txOrder = append(mp.txOrder, txHash) // Add to order queue
+
+	// Publish event for transaction submission
+	mp.eventBus.PublishTxSubmitted(txHash, tx)
 
 	// Handle broadcast safely
 	if broadcast && mp.broadcaster != nil {
@@ -152,4 +158,20 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 	result := make([]string, len(mp.txOrder))
 	copy(result, mp.txOrder)
 	return result
+}
+
+// GetEventBus returns the event bus instance
+func (mp *Mempool) GetEventBus() *events.EventBus {
+	return mp.eventBus
+}
+
+// PublishMempoolStats publishes current mempool statistics
+func (mp *Mempool) PublishMempoolStats() {
+	mp.mu.RLock()
+	txCount := len(mp.txsBuf)
+	txHashes := make([]string, len(mp.txOrder))
+	copy(txHashes, mp.txOrder)
+	mp.mu.RUnlock()
+
+	mp.eventBus.PublishMempoolStats(txCount, txHashes, mp.max)
 }

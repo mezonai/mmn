@@ -17,6 +17,7 @@ import (
 	"mmn/network"
 	"mmn/poh"
 	"mmn/validator"
+	"mmn/websocket"
 )
 
 func main() {
@@ -135,6 +136,10 @@ func main() {
 	// --- API (for tx submission) ---
 	apiSrv := api.NewAPIServer(mp, ld, self.ListenAddr)
 	apiSrv.Start()
+
+	// --- WebSocket (for real-time events) ---
+	wsSrv := websocket.NewWSService(mp)
+	go wsSrv.Start(":8090") // Start WebSocket server on port 8090
 
 	// --- Block forever ---
 	select {}
