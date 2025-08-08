@@ -1,161 +1,97 @@
-import * as grpc from '@grpc/grpc-js';
-import * as protoLoader from '@grpc/proto-loader';
-import * as path from 'path';
-
-// Load proto files from local client_test/proto directory
-const PROTO_PATH = path.join(__dirname, 'proto');
-
-const txPackageDefinition = protoLoader.loadSync(
-  path.join(PROTO_PATH, 'tx.proto'),
-  {
-    keepCase: true,
-    longs: String,
-    enums: String,
-    defaults: true,
-    oneofs: true
-  }
-);
-
-const accountPackageDefinition = protoLoader.loadSync(
-  path.join(PROTO_PATH, 'account.proto'),
-  {
-    keepCase: true,
-    longs: String,
-    enums: String,
-    defaults: true,
-    oneofs: true
-  }
-);
-
-// Define proper TypeScript interfaces based on proto definitions
-export interface TxMsg {
-  type: number;
-  sender: string;
-  recipient: string;
-  amount: number;
-  timestamp: number;
-  text_data: string;
-  nonce: number;
-}
-
-export interface SignedTxMsg {
-  tx_msg: TxMsg;
-  signature: string;
-}
-
-export interface TxResponse {
-  ok: boolean;
-  error?: string;
-}
-
-export interface AddTxResponse {
-  ok: boolean;
-  tx_hash?: string;
-  error?: string;
-}
-
-export interface GetAccountRequest {
-  address: string;
-}
-
-export interface GetAccountResponse {
-  address: string;
-  balance: string; // uint64 comes as string due to longs: String
-  nonce: string;   // uint64 comes as string due to longs: String
-}
-
-export interface GetTxHistoryRequest {
-  address: string;
-  limit: number;
-  offset: number;
-  filter: number;
-}
-
-export interface TxMeta {
-  sender: string;
-  recipient: string;
-  amount: string; // uint64 comes as string due to longs: String
-  nonce: string;  // uint64 comes as string due to longs: String
-  timestamp: string; // uint64 comes as string due to longs: String
-  status: string; // enum comes as string due to enums: String
-}
-
-export interface GetTxHistoryResponse {
-  total: number;
-  txs: TxMeta[];
-}
-
-// Define gRPC client types
-interface TxServiceClient {
-  TxBroadcast: (request: SignedTxMsg, callback: (error: grpc.ServiceError | null, response: TxResponse) => void) => void;
-  AddTx: (request: SignedTxMsg, callback: (error: grpc.ServiceError | null, response: AddTxResponse) => void) => void;
-}
-
-interface AccountServiceClient {
-  GetAccount: (request: GetAccountRequest, callback: (error: grpc.ServiceError | null, response: GetAccountResponse) => void) => void;
-  GetTxHistory: (request: GetTxHistoryRequest, callback: (error: grpc.ServiceError | null, response: GetTxHistoryResponse) => void) => void;
-}
-
-const txProto = grpc.loadPackageDefinition(txPackageDefinition) as unknown as { mmn: { TxService: new (address: string, credentials: grpc.ChannelCredentials) => TxServiceClient } };
-const accountProto = grpc.loadPackageDefinition(accountPackageDefinition) as unknown as { mmn: { AccountService: new (address: string, credentials: grpc.ChannelCredentials) => AccountServiceClient } };
+import { GrpcTransport } from '@protobuf-ts/grpc-transport';
+import { ChannelCredentials } from '@grpc/grpc-js';
+import {
+  TxServiceClient,
+  ITxServiceClient,
+} from './generated/tx.client';
+import {
+  AccountServiceClient,
+  IAccountServiceClient,
+} from './generated/account.client';
+import {
+  TransactionStatusServiceClient,
+  ITransactionStatusServiceClient,
+} from './generated/transaction_status.client';
+import type {
+  TxMsg as GenTxMsg,
+  SignedTxMsg as GenSignedTxMsg,
+  TxResponse as GenTxResponse,
+  AddTxResponse as GenAddTxResponse,
+} from './generated/tx';
+import type {
+  GetAccountRequest as GenGetAccountRequest,
+  GetAccountResponse as GenGetAccountResponse,
+  GetTxHistoryRequest as GenGetTxHistoryRequest,
+  GetTxHistoryResponse as GenGetTxHistoryResponse,
+} from './generated/account';
 
 export class GrpcClient {
-  private txClient: TxServiceClient;
-  private accountClient: AccountServiceClient;
+  private transport: GrpcTransport;
+  private txClient: ITxServiceClient;
+  private accountClient: IAccountServiceClient;
 
   constructor(serverAddress: string) {
-    this.txClient = new txProto.mmn.TxService(serverAddress, grpc.credentials.createInsecure());
-    this.accountClient = new accountProto.mmn.AccountService(serverAddress, grpc.credentials.createInsecure());
+    this.transport = new GrpcTransport({
+      host: serverAddress,
+      channelCredentials: ChannelCredentials.createInsecure(),
+    });
+    this.txClient = new TxServiceClient(this.transport);
+    this.accountClient = new AccountServiceClient(this.transport);
   }
 
-  async broadcastTransaction(txMsg: TxMsg, signature: string): Promise<{ ok: boolean; error?: string }> {
-    return new Promise((resolve, reject) => {
-      const signedTx: SignedTxMsg = {
-        tx_msg: txMsg,
-        signature: signature
-      };
+  async broadcastTransaction(
+    txMsg: {
+      type: number; sender: string; recipient: string; amount: number; timestamp: number; text_data: string; nonce: number;
+    },
+    signature: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    const genTx: GenTxMsg = {
+      type: txMsg.type,
+      sender: txMsg.sender,
+      recipient: txMsg.recipient,
+      amount: BigInt(txMsg.amount),
+      timestamp: BigInt(txMsg.timestamp),
+      textData: txMsg.text_data,
+      nonce: BigInt(txMsg.nonce),
+    };
+    const req: GenSignedTxMsg = { txMsg: genTx, signature };
 
-      this.txClient.TxBroadcast(signedTx, (err: grpc.ServiceError | null, response: TxResponse) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ ok: response.ok, error: response.error });
-        }
-      });
-    });
+    const call = this.txClient.txBroadcast(req as any as GenSignedTxMsg);
+    const res: GenTxResponse = await call.response;
+    return { ok: res.ok, error: res.error };
   }
 
-  async addTransaction(txMsg: TxMsg, signature: string): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
-    return new Promise((resolve, reject) => {
-      const signedTx: SignedTxMsg = {
-        tx_msg: txMsg,
-        signature: signature
-      };
+  async addTransaction(
+    txMsg: {
+      type: number; sender: string; recipient: string; amount: number; timestamp: number; text_data: string; nonce: number;
+    },
+    signature: string
+  ): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
+    const genTx: GenTxMsg = {
+      type: txMsg.type,
+      sender: txMsg.sender,
+      recipient: txMsg.recipient,
+      amount: BigInt(txMsg.amount),
+      timestamp: BigInt(txMsg.timestamp),
+      textData: txMsg.text_data,
+      nonce: BigInt(txMsg.nonce),
+    };
+    const req: GenSignedTxMsg = { txMsg: genTx, signature };
 
-      this.txClient.AddTx(signedTx, (err: grpc.ServiceError | null, response: AddTxResponse) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ ok: response.ok, tx_hash: response.tx_hash, error: response.error });
-        }
-      });
-    });
+    const call = this.txClient.addTx(req as any as GenSignedTxMsg);
+    const res: GenAddTxResponse = await call.response;
+    return { ok: res.ok, tx_hash: res.txHash, error: res.error };
   }
 
   async getAccount(address: string): Promise<{ address: string; balance: string; nonce: string }> {
-    return new Promise((resolve, reject) => {
-      this.accountClient.GetAccount({ address: address }, (err: grpc.ServiceError | null, response: GetAccountResponse) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({
-            address: response.address,
-            balance: response.balance,
-            nonce: response.nonce
-          });
-        }
-      });
-    });
+    const req: GenGetAccountRequest = { address };
+    const call = this.accountClient.getAccount(req);
+    const res: GenGetAccountResponse = await call.response;
+    return {
+      address: res.address,
+      balance: res.balance.toString(),
+      nonce: res.nonce.toString(),
+    };
   }
 
   async getTxHistory(
@@ -163,26 +99,24 @@ export class GrpcClient {
     limit: number,
     offset: number,
     filter: number
-  ): Promise<{ total: number; txs: TxMeta[] }> {
-    return new Promise((resolve, reject) => {
-      this.accountClient.GetTxHistory(
-        { address, limit, offset, filter },
-        (err: grpc.ServiceError | null, response: GetTxHistoryResponse) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve({
-              total: response.total,
-              txs: response.txs
-            });
-          }
-        }
-      );
-    });
+  ): Promise<{ total: number; txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string }[] }> {
+    const req: GenGetTxHistoryRequest = { address, limit, offset, filter };
+    const call = this.accountClient.getTxHistory(req);
+    const res: GenGetTxHistoryResponse = await call.response;
+    return {
+      total: res.total,
+      txs: res.txs.map(tx => ({
+        sender: tx.sender,
+        recipient: tx.recipient,
+        amount: tx.amount.toString(),
+        nonce: tx.nonce.toString(),
+        timestamp: tx.timestamp.toString(),
+        status: ['PENDING','CONFIRMED','FINALIZED','FAILED'][tx.status] || 'PENDING',
+      })),
+    };
   }
 
   close(): void {
-    this.txClient = null as any;
-    this.accountClient = null as any;
+    this.transport.close();
   }
 }

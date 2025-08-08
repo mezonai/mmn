@@ -196,7 +196,6 @@ class TestSuite {
 
     // Verify balance via gRPC
     const accountInfo = await this.grpcClient.getAccount(account.publicKeyHex);
-    console.log('type of ', typeof accountInfo.balance);
     if (parseInt(accountInfo.balance) !== 300) throw new Error(`Expected balance 300, got ${accountInfo.balance}`);
   }
 
