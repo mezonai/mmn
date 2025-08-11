@@ -121,6 +121,9 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
+	ln.host.SetStreamHandler(BlockProtocol, ln.HandleBlockStream)
+	ln.host.SetStreamHandler(VoteProtocol, ln.HandleVoteStream)
+	ln.host.SetStreamHandler(TxProtocol, ln.HandleTxStream)
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 
 	ln.SetupPubSubTopics()
@@ -139,6 +142,7 @@ func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
 		}
 
 		go ln.RequestNodeInfo(bootstrapPeer, info)
+		go ln.RequestBlockSync(ln.blockStore.LatestSlot() + 1)
 
 		if len(ln.host.Network().Peers()) < ln.maxPeers {
 			if err := ln.host.Connect(context.Background(), *info); err != nil {
