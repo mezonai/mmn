@@ -15,6 +15,7 @@ import (
 
 // BlockStore manages the chain of blocks, persisting them and tracking the latest hash.
 // It is safe for concurrent use.
+// Deprecated
 type BlockStore struct {
 	dir  string
 	mu   sync.RWMutex
@@ -31,6 +32,7 @@ type SlotBoundary struct {
 
 // NewBlockStore initializes a BlockStore, loading existing chain if present.
 // TODO: should dynamic follow up config
+// Deprecated
 func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
 	bs := &BlockStore{
 		dir:      dir,
