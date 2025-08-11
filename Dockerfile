@@ -15,12 +15,19 @@ RUN apt-get update && apt-get install -y \
   unzip
 
 # Build RocksDB
-RUN git clone https://github.com/facebook/rocksdb.git && \
-    cd rocksdb && \
-    make static_lib && \
-    make install && \
-    cd .. && \
-    rm -rf rocksdb
+## Option 1: Using RocksDB from source
+
+# RUN git clone https://github.com/facebook/rocksdb.git && \
+#     cd rocksdb && \
+#     make static_lib && \
+#     make install && \
+#     cd .. && \
+#     rm -rf rocksdb
+
+## Option 2: Using pre-built RocksDB binaries
+COPY libs/librocksdb.a /usr/local/lib/
+COPY libs/rocksdb /usr/local/include/rocksdb
+
 
 # Set up CGO build environment
 ENV CGO_ENABLED=1
