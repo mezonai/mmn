@@ -63,7 +63,7 @@ func main() {
 		self.PubKey,
 		privKey,
 		self.Libp2pAddr,
-		os.Getenv("BOOTSTRAP_NODE_PEER_ADDRESS")
+		os.Getenv("BOOTSTRAP_NODE_PEER_ADDRESS"),
 		bs,
 	)
 
