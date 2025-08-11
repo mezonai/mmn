@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 import "github.com/multiformats/go-multiaddr"
 

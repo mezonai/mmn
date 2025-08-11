@@ -7,7 +7,6 @@ import (
 	"mmn/blockstore"
 	"mmn/discovery"
 	"mmn/logx"
-	"time"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -26,6 +25,7 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeer string,
 	blockStore *blockstore.BlockStore,
+	isBootstrap bool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -43,7 +43,11 @@ func NewNetWork(
 		libp2p.NATPortMap(),
 		libp2p.EnableNATService(),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
+			dhtMode := dht.ModeClient
+			if isBootstrap {
+				dhtMode = dht.ModeServer
+			}
+			ddht, err = dht.New(ctx, h, dht.Mode(dhtMode))
 			return ddht, err
 		}),
 	)
@@ -53,6 +57,11 @@ func NewNetWork(
 
 	if err := ddht.Bootstrap(ctx); err != nil {
 		return nil, fmt.Errorf("failed to bootstrap DHT: %w", err)
+	}
+
+	if isBootstrap {
+		HandleNewpPeerConnected(h)
+		NotifyNewPeerConnected(h)
 	}
 
 	customDiscovery, err := discovery.NewDHTDiscovery(ctx, cancel, h, ddht, discovery.DHTConfig{})
@@ -77,42 +86,19 @@ func NewNetWork(
 		voteStreams:  make(map[peer.ID]network.Stream),
 		txStreams:    make(map[peer.ID]network.Stream),
 		blockStore:   blockStore,
-		maxPeers:     2,
+		maxPeers:     MaxPeers,
 	}
 
 	ln.setupHandlers(bootstrapPeer)
-
-	go func() {
-		for {
-			peerChan, err := customDiscovery.FindPeers(ctx, "blockchain", ln.maxPeers)
-			if err != nil {
-				logx.Error("DISCOVERY", "Failed to find peers:", err)
-				time.Sleep(10 * time.Second)
-				continue
-			}
-
-			for p := range peerChan {
-				if p.ID == h.ID() || len(p.Addrs) == 0 {
-					continue
-				}
-
-				if len(h.Network().Peers()) >= ln.maxPeers {
-					break
-				}
-
-				err := h.Connect(ctx, p)
-				if err != nil {
-					logx.Error("DISCOVERY", "Failed to connect to discovered peer:", err)
-				} else {
-					logx.Info("DISCOVERY", "Connected to discovered peer:", p.ID.String())
-				}
-			}
-
-			time.Sleep(30 * time.Second)
-		}
-	}()
+	go ln.Discovery(customDiscovery, ctx, h)
 
 	logx.Info("NETWORK", fmt.Sprintf("Libp2p network started with ID: %s", h.ID().String()))
+
+	for _, addr := range h.Addrs() {
+		fullAddr := fmt.Sprintf("%s/p2p/%s", addr.String(), h.ID().String())
+		logx.Info("BOOTSTRAP NODE ADDRESS", "Full multiaddr:", fullAddr)
+	}
+
 	for _, addr := range h.Addrs() {
 		logx.Info("NETWORK", "Listening on:", addr.String())
 	}
@@ -140,9 +126,10 @@ func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
 
 		go ln.RequestNodeInfo(bootstrapPeer, info)
 
-		if len(ln.host.Network().Peers()) < ln.maxPeers {
+		if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
 			if err := ln.host.Connect(context.Background(), *info); err != nil {
-				logx.Error("NETWORK:SETUP", "Failed to connect bootstrap peer: "+err.Error())
+				// logx.Error("NETWORK:SETUP", "Failed to connect bootstrap peer: "+err.Error())
+				// ignore logs for handle case node is a bootstrap node
 			} else {
 				logx.Info("NETWORK:SETUP", "Connected to bootstrap peer "+info.ID.String())
 			}

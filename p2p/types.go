@@ -27,7 +27,7 @@ type Libp2pNetwork struct {
 	voteStreams  map[peer.ID]network.Stream
 	txStreams    map[peer.ID]network.Stream
 	streamMu     sync.RWMutex
-	maxPeers     int
+	maxPeers     int32
 }
 
 type PeerInfo struct {

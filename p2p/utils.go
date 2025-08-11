@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 func UnmarshalEd25519PrivateKey(private ed25519.PrivateKey) (crypto.PrivKey, error) {
@@ -21,4 +22,12 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 		return fmt.Sprintf("%s/p2p/%s", addrs[0].String(), ln.host.ID().String())
 	}
 	return ""
+}
+
+func AddrStrings(addrs []ma.Multiaddr) []string {
+	var strAddrs []string
+	for _, addr := range addrs {
+		strAddrs = append(strAddrs, addr.String())
+	}
+	return strAddrs
 }

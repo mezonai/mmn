@@ -1,8 +1,10 @@
-package main
+package bootstrap
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -10,12 +12,44 @@ import (
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
 	connmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
 )
+
+func InitBootstrapNode() {
+	ctx := context.Background()
+
+	priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		logx.Error("BOOTSTRAP NODE", "Failed to generate private key:", err)
+	}
+
+	cfg := &Config{
+		PrivateKey: priv,
+		Bootstrap:  true, // set false if you don't want to bootstrap
+	}
+
+	host, ddht, err := CreateNode(ctx, cfg)
+	if err != nil {
+		logx.Error("BOOTSTRAP NODE", "Failed to create node:", err)
+	}
+
+	logx.Info("BOOTSTRAP NODE", "Node ID:", host.ID().String())
+	for _, addr := range host.Addrs() {
+		fmt.Println("Listening on:", addr)
+	}
+
+	if !cfg.Bootstrap {
+		if err := ddht.Bootstrap(ctx); err != nil {
+			logx.Error("BOOTSTRAP NODE", "Failed to bootstrap DHT:", err)
+		}
+	}
+
+}
 
 func CreateNode(ctx context.Context, cfg *Config) (h host.Host, ddht *dht.IpfsDHT, err error) {
 	// Create a connection manager

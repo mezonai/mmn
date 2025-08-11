@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	"flag"
 	"log"
 	"os"
 	"time"
@@ -23,6 +24,10 @@ import (
 
 func main() {
 	godotenv.Load()
+
+	// flag
+	isBootstrapNode := flag.Bool("isBootstrapNode", false, "Run this node as a bootstrap node")
+	flag.Parse()
 
 	// load node config
 	cfg, self, seed, peers, leaderSchedule, privKey := config.NewConfig("node3")
@@ -65,6 +70,7 @@ func main() {
 		self.Libp2pAddr,
 		os.Getenv("BOOTSTRAP_NODE_PEER_ADDRESS"),
 		bs,
+		*isBootstrapNode,
 	)
 
 	if err != nil {
