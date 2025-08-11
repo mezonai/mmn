@@ -125,6 +125,10 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	return nil
 }
 
+func (bs *BlockStore) Seed() [32]byte {
+	return bs.SeedHash
+}
+
 // LoadBlock reads a block file by slot.
 func LoadBlock(dir string, slot uint64) (*block.Block, error) {
 	path := filepath.Join(dir, fmt.Sprintf("%d.json", slot))
