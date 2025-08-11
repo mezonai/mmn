@@ -3,15 +3,18 @@ package network
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"mmn/blockstore"
 	"mmn/consensus"
 	"mmn/ledger"
 	"mmn/mempool"
 	pb "mmn/proto"
+	"mmn/types"
 	"mmn/utils"
 	"mmn/validator"
 	"net"
+	"time"
 
 	"google.golang.org/grpc"
 )
@@ -31,11 +34,12 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    *blockstore.BlockStore
 	mempool       *mempool.Mempool
+	eventBus      *types.EventBus // Event bus for transaction status updates
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool) *grpc.Server {
+	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool, eventBus *types.EventBus) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -48,6 +52,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		blockStore:    blockStore,
 		validator:     validator,
 		mempool:       mempool,
+		eventBus:      eventBus,
 	}
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
@@ -248,4 +253,166 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		Total: total,
 		Txs:   txMetas,
 	}, nil
+}
+
+// GetTransactionStatus returns real-time status by checking mempool and blockstore.
+func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.GetTransactionStatusResponse, error) {
+	txHash := in.TxHash
+	resp := &pb.GetTransactionStatusResponse{
+		TxHash:    txHash,
+		Status:    pb.TransactionStatus_UNKNOWN,
+		Timestamp: uint64(time.Now().Unix()),
+	}
+
+	// 1) Check mempool
+	if s.mempool != nil {
+		data, ok := s.mempool.GetTransaction(txHash)
+		if ok {
+			// Parse tx to compute client-hash
+			tx, err := utils.ParseTx(data)
+			if err == nil {
+				println("GetTransactionStatus - in mempool", tx)
+				if tx.Hash() == txHash {
+					resp.Status = pb.TransactionStatus_PENDING
+					return resp, nil
+				}
+			}
+		}
+	}
+
+	// 2) Search in stored blocks
+	if s.blockStore != nil {
+		slot, blkHash, _, found := s.blockStore.FindTransactionByClientHash(txHash)
+		if found {
+			println("GetTransactionStatus - in blockstore", slot, hex.EncodeToString(blkHash[:]))
+			resp.Status = pb.TransactionStatus_CONFIRMED
+			resp.BlockSlot = slot
+			resp.BlockHash = hex.EncodeToString(blkHash[:])
+			// confirmations = latestFinalized - slot + 1 if finalized beyond slot; mark FINALIZED if slot <= latestFinalized
+			latest := s.blockStore.LatestFinalized()
+			if latest >= slot {
+				resp.Status = pb.TransactionStatus_FINALIZED
+				resp.Confirmations = latest - slot + 1
+			} else {
+				resp.Confirmations = 1
+			}
+			return resp, nil
+		}
+	}
+
+	// 3) Not found anywhere -> UNKNOWN for now (could EXPIRED after TTL if we tracked submission time)
+	return resp, nil
+}
+
+// SubscribeTransactionStatus streams transaction status updates using event-based system
+func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream pb.TxService_SubscribeTransactionStatusServer) error {
+	txHash := in.TxHash
+	timeoutSeconds := in.TimeoutSeconds
+	if timeoutSeconds == 0 {
+		timeoutSeconds = 300 // Default 5 minutes
+	}
+
+	// Send initial status
+	initialStatus, err := s.GetTransactionStatus(stream.Context(), &pb.GetTransactionStatusRequest{TxHash: txHash})
+	if err != nil {
+		return err
+	}
+
+	update := &pb.TransactionStatusUpdate{
+		TxHash:        initialStatus.TxHash,
+		Status:        initialStatus.Status,
+		BlockSlot:     initialStatus.BlockSlot,
+		BlockHash:     initialStatus.BlockHash,
+		Confirmations: initialStatus.Confirmations,
+		ErrorMessage:  initialStatus.ErrorMessage,
+		Timestamp:     initialStatus.Timestamp,
+	}
+
+	if err := stream.Send(update); err != nil {
+		return err
+	}
+
+	// If already in terminal state, return immediately
+	if initialStatus.Status == pb.TransactionStatus_FINALIZED ||
+		initialStatus.Status == pb.TransactionStatus_FAILED ||
+		initialStatus.Status == pb.TransactionStatus_EXPIRED {
+		return nil
+	}
+
+	// Subscribe to blockchain events for this transaction
+	eventChan := s.eventBus.Subscribe(txHash)
+	defer s.eventBus.Unsubscribe(txHash, eventChan)
+
+	// Wait for events with timeout
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	deadline := time.Now().Add(timeout)
+
+	for {
+		select {
+		case event := <-eventChan:
+			statusUpdate := s.convertEventToStatusUpdate(event, txHash)
+			if statusUpdate != nil {
+				if err := stream.Send(statusUpdate); err != nil {
+					return err
+				}
+
+				// If reached terminal state, stop listening for events
+				if statusUpdate.Status == pb.TransactionStatus_FINALIZED ||
+					statusUpdate.Status == pb.TransactionStatus_FAILED ||
+					statusUpdate.Status == pb.TransactionStatus_EXPIRED {
+					return nil
+				}
+			}
+
+		case <-time.After(time.Until(deadline)):
+			return nil // Timeout
+
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
+// convertEventToStatusUpdate converts blockchain events to transaction status updates
+func (s *server) convertEventToStatusUpdate(event types.BlockchainEvent, txHash string) *pb.TransactionStatusUpdate {
+	switch e := event.(type) {
+	case *types.TransactionAddedToMempool:
+		return &pb.TransactionStatusUpdate{
+			TxHash:   txHash,
+			Status:   pb.TransactionStatus_PENDING,
+			Timestamp: uint64(time.Now().Unix()),
+		}
+
+	case *types.TransactionIncludedInBlock:
+		return &pb.TransactionStatusUpdate{
+			TxHash:    txHash,
+			Status:    pb.TransactionStatus_CONFIRMED,
+			BlockSlot: e.BlockSlot(),
+			BlockHash: e.BlockHash(),
+			Timestamp: uint64(time.Now().Unix()),
+		}
+
+	case *types.TransactionFailed:
+		return &pb.TransactionStatusUpdate{
+			TxHash:       txHash,
+			Status:       pb.TransactionStatus_FAILED,
+			ErrorMessage: e.ErrorMessage(),
+			Timestamp:    uint64(time.Now().Unix()),
+		}
+
+	case *types.BlockFinalized:
+		// Check if our transaction is in this finalized block
+		if slot, _, _, found := s.blockStore.FindTransactionByClientHash(txHash); found && slot == e.BlockSlot() {
+			return &pb.TransactionStatusUpdate{
+				TxHash:        txHash,
+				Status:        pb.TransactionStatus_FINALIZED,
+				BlockSlot:     e.BlockSlot(),
+				BlockHash:     e.BlockHash(),
+				Confirmations: 1, // Calculate actual confirmations
+				Timestamp:     uint64(time.Now().Unix()),
+			}
+		}
+	}
+
+	return nil
 }

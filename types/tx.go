@@ -46,6 +46,10 @@ func (tx *Transaction) Bytes() []byte {
 	return b
 }
 
+func (tx *Transaction) Hash() string {
+	return hex.EncodeToString(tx.Bytes())
+}
+
 func hexToEd25519(hexstr string) (ed25519.PublicKey, error) {
 	b, err := hex.DecodeString(hexstr)
 	if err != nil || len(b) != ed25519.PublicKeySize {

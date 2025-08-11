@@ -2,6 +2,7 @@ package blockstore
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -11,6 +12,8 @@ import (
 	"sync"
 
 	"mmn/block"
+	"mmn/types"
+	"mmn/utils"
 )
 
 // BlockStore manages the chain of blocks, persisting them and tracking the latest hash.
@@ -22,6 +25,7 @@ type BlockStore struct {
 
 	latestFinalized uint64
 	SeedHash        [32]byte
+	eventBus        *types.EventBus // Event bus for transaction status updates
 }
 
 type SlotBoundary struct {
@@ -31,11 +35,12 @@ type SlotBoundary struct {
 
 // NewBlockStore initializes a BlockStore, loading existing chain if present.
 // TODO: should dynamic follow up config
-func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
+func NewBlockStore(dir string, seed []byte, eventBus *types.EventBus) (*BlockStore, error) {
 	bs := &BlockStore{
 		dir:      dir,
 		data:     make(map[uint64]*block.Block),
 		SeedHash: sha256.Sum256(seed),
+		eventBus: eventBus,
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -98,6 +103,23 @@ func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 		return err
 	}
 	bs.data[b.Slot] = b
+	
+	// Publish events for transactions included in this block
+	if bs.eventBus != nil {
+		blockHashHex := hex.EncodeToString(b.Hash[:])
+		for _, entry := range b.Entries {
+			for _, raw := range entry.Transactions {
+				tx, err := utils.ParseTx(raw)
+				if err != nil {
+					continue
+				}
+				txHash := tx.Hash()
+				event := types.NewTransactionIncludedInBlock(txHash, b.Slot, blockHashHex)
+				bs.eventBus.Publish(event)
+			}
+		}
+	}
+	
 	fmt.Printf("Pending block %d added to blockstore\n", b.Slot)
 	return nil
 }
@@ -120,6 +142,14 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	if slot > bs.latestFinalized {
 		bs.latestFinalized = slot
 	}
+	
+	// Publish block finalization event
+	if bs.eventBus != nil {
+		blockHashHex := hex.EncodeToString(blk.Hash[:])
+		event := types.NewBlockFinalized(slot, blockHashHex)
+		bs.eventBus.Publish(event)
+	}
+	
 	fmt.Printf("Block %d marked as finalized\n", slot)
 	fmt.Printf("Latest finalized block: %d\n", bs.latestFinalized)
 	return nil
@@ -153,4 +183,36 @@ func (bs *BlockStore) writeToDisk(b *block.Block) error {
 		return err
 	}
 	return os.Rename(tmp, file) // atomic replace
+}
+
+// LatestFinalized returns the latest finalized slot number.
+func (bs *BlockStore) LatestFinalized() uint64 {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+	return bs.latestFinalized
+}
+
+// FindTransactionByClientHash searches all stored blocks for a transaction whose
+// client-computed hash (sha256 of the canonical Serialize() fields) matches the
+// provided hex string. It returns the containing slot, block hash, whether the
+// block is finalized, and whether it was found.
+func (bs *BlockStore) FindTransactionByClientHash(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool) {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+
+	for s, blk := range bs.data {
+		for _, entry := range blk.Entries {
+			for _, raw := range entry.Transactions {
+				// Follow the same approach as ApplyBlock
+				tx, err := utils.ParseTx(raw)
+				if err != nil {
+					continue
+				}
+				if tx.Hash() == clientHashHex {
+					return s, blk.Hash, blk.Status == block.BlockFinalized, true
+				}
+			}
+		}
+	}
+	return 0, [32]byte{}, false, false
 }

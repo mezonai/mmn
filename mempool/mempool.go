@@ -2,7 +2,6 @@ package mempool
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"mmn/interfaces"
 	"mmn/types"
@@ -16,21 +15,22 @@ type Mempool struct {
 	txOrder     []string // Maintain FIFO order
 	max         int
 	broadcaster interfaces.Broadcaster
+	eventBus    *types.EventBus // Event bus for transaction status updates
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, eventBus *types.EventBus) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
 		max:         max,
 		broadcaster: broadcaster,
+		eventBus:    eventBus,
 	}
 }
 
 func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	// Generate hash first (read-only operation)
-	txBytes := tx.Bytes()
-	txHash := hex.EncodeToString(txBytes)
+	txHash := tx.Hash()
 
 	// Quick check for duplicate using read lock
 	mp.mu.RLock()
@@ -64,13 +64,21 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	}
 
 	fmt.Println("Adding tx", tx)
-	mp.txsBuf[txHash] = txBytes
+	mp.txsBuf[txHash] = tx.Bytes()
 	mp.txOrder = append(mp.txOrder, txHash) // Add to order queue
+
+	// Publish event for transaction status tracking
+	if mp.eventBus != nil {
+		event := types.NewTransactionAddedToMempool(txHash, tx)
+		mp.eventBus.Publish(event)
+	}
 
 	// Handle broadcast safely
 	if broadcast && mp.broadcaster != nil {
 		// Use goroutine to avoid blocking the critical path
 		go func() {
+			//sleep 5 seconds
+			time.Sleep(5 * time.Second)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := mp.broadcaster.TxBroadcast(ctx, tx); err != nil {

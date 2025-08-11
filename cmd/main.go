@@ -16,6 +16,7 @@ import (
 	"mmn/mempool"
 	"mmn/network"
 	"mmn/poh"
+	"mmn/types"
 	"mmn/validator"
 )
 
@@ -46,9 +47,12 @@ func main() {
 		log.Fatalf("Failed to load private key: %v", err)
 	}
 
+	// --- Event Bus ---
+	eventBus := types.NewEventBus()
+
 	// --- Blockstore ---
 	blockDir := "./blockstore/blocks"
-	bs, err := blockstore.NewBlockStore(blockDir, seed)
+	bs, err := blockstore.NewBlockStore(blockDir, seed, eventBus)
 	if err != nil {
 		log.Fatalf("Failed to init blockstore: %v", err)
 	}
@@ -96,7 +100,7 @@ func main() {
 		log.Fatalf("Failed to load mempool config: %v", err)
 	}
 	maxTxs := mempoolCfg.MaxTxs
-	mp := mempool.NewMempool(maxTxs, netClient)
+	mp := mempool.NewMempool(maxTxs, netClient, eventBus)
 
 	// --- Validator ---
 	validatorCfg, err := config.LoadValidatorConfig("config/config.ini")
@@ -129,6 +133,7 @@ func main() {
 		val,
 		bs,
 		mp,
+		eventBus,
 	)
 	_ = grpcSrv // not used directly, but keeps server running
 
