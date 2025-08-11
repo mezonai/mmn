@@ -29,13 +29,13 @@ type server struct {
 	selfID        string
 	privKey       ed25519.PrivateKey
 	validator     *validator.Validator
-	blockStore    *blockstore.BlockStore
+	blockStore    blockstore.Store
 	mempool       *mempool.Mempool
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool) *grpc.Server {
+	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
