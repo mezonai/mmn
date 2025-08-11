@@ -1,6 +1,6 @@
 FROM golang:1.23-bookworm AS builder
 
-# Cài các thư viện cần thiết để build RocksDB
+# Install necessary libraries to build RocksDB
 RUN apt-get update && apt-get install -y \
   build-essential \
   libsnappy-dev \
@@ -22,14 +22,14 @@ RUN git clone https://github.com/facebook/rocksdb.git && \
     cd .. && \
     rm -rf rocksdb
 
-# Thiết lập môi trường build CGO
+# Set up CGO build environment
 ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-I/usr/local/include"
 ENV CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
 
 WORKDIR /app
 COPY . .
-# Cài dependencies
+# Install dependencies
 RUN go mod download
 
 # Build binary
@@ -38,7 +38,7 @@ RUN go build -o mmn ./cmd/main.go
 # Runtime stage
 FROM debian:bookworm-slim AS runtime
 
-# Cài runtime libs cần cho RocksDB và Go
+# Install runtime libraries needed for RocksDB and Go
 RUN apt-get update && apt-get install -y \
   libstdc++6 \
   libsnappy1v5 \

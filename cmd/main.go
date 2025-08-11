@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	// Storage paths - sử dụng đường dẫn tuyệt đối
+	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
 	rocksdbBlockDir = "blockstore/rocksdb"
 
@@ -34,16 +34,16 @@ func main() {
 	nodeName := flag.String("node", "node1", "The node to run")
 	flag.Parse()
 
-	// Lấy thư mục hiện tại và tạo đường dẫn tuyệt đối
+	// Get current directory and create absolute path
 	currentDir, err := os.Getwd()
 	if err != nil {
 		log.Fatalf("Failed to get current directory: %v", err)
 	}
 
-	// Tạo đường dẫn tuyệt đối cho storage
+	// Create absolute path for storage
 	absRocksdbBlockDir := filepath.Join(currentDir, rocksdbBlockDir)
 
-	// Tạo thư mục nếu chưa có
+	// Create directory if it doesn't exist
 	if err := os.MkdirAll(absRocksdbBlockDir, 0755); err != nil {
 		log.Printf("Warning: Failed to create directory %s: %v", absRocksdbBlockDir, err)
 	}
@@ -54,7 +54,7 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Initialize components với đường dẫn tuyệt đối
+	// Initialize components with absolute paths
 	bs, err := initializeBlockstore(cfg.SelfNode.PubKey, absRocksdbBlockDir)
 	if err != nil {
 		log.Fatalf("Failed to initialize blockstore: %v", err)
