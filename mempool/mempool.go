@@ -11,13 +11,14 @@ import (
 
 type Mempool struct {
 	mu          sync.Mutex
+	txsOrder    []string
 	txsBuf      map[string][]byte
 	max         int
 	broadcaster interfaces.Broadcaster
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
-	return &Mempool{txsBuf: make(map[string][]byte, max), max: max, broadcaster: broadcaster}
+	return &Mempool{txsOrder: make([]string, 0, max), txsBuf: make(map[string][]byte, max), max: max, broadcaster: broadcaster}
 }
 
 func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
@@ -38,6 +39,7 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	}
 
 	mp.txsBuf[txHash] = txBytes
+	mp.txsOrder = append(mp.txsOrder, txHash)
 	if broadcast {
 		mp.broadcaster.TxBroadcast(context.Background(), tx)
 	}
@@ -46,19 +48,22 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 }
 
 // Pull batch of tx (for leader to batch and record)
-// TODO: should keep order of txs
 func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
 	batch := make([][]byte, 0, batchSize)
-	for id, raw := range mp.txsBuf {
+	i := 0
+	for ; len(batch) <= batchSize && i < len(mp.txsOrder); i++ {
+		id := mp.txsOrder[i]
+		raw, ok := mp.txsBuf[id]
+		if !ok {
+			continue
+		}
 		batch = append(batch, raw)
 		delete(mp.txsBuf, id)
-		if len(batch) >= batchSize {
-			break
-		}
 	}
+	mp.txsOrder = mp.txsOrder[i:]
 	return batch
 }
 
