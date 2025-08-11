@@ -2,7 +2,6 @@ package blockstore
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -12,7 +11,6 @@ import (
 	"sync"
 
 	"mmn/block"
-	"mmn/types"
 	"mmn/utils"
 )
 
@@ -25,7 +23,6 @@ type BlockStore struct {
 
 	latestFinalized uint64
 	SeedHash        [32]byte
-	eventBus        *types.EventBus // Event bus for transaction status updates
 }
 
 type SlotBoundary struct {
@@ -35,12 +32,11 @@ type SlotBoundary struct {
 
 // NewBlockStore initializes a BlockStore, loading existing chain if present.
 // TODO: should dynamic follow up config
-func NewBlockStore(dir string, seed []byte, eventBus *types.EventBus) (*BlockStore, error) {
+func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
 	bs := &BlockStore{
 		dir:      dir,
 		data:     make(map[uint64]*block.Block),
 		SeedHash: sha256.Sum256(seed),
-		eventBus: eventBus,
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -104,22 +100,6 @@ func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 	}
 	bs.data[b.Slot] = b
 	
-	// Publish events for transactions included in this block
-	if bs.eventBus != nil {
-		blockHashHex := hex.EncodeToString(b.Hash[:])
-		for _, entry := range b.Entries {
-			for _, raw := range entry.Transactions {
-				tx, err := utils.ParseTx(raw)
-				if err != nil {
-					continue
-				}
-				txHash := tx.Hash()
-				event := types.NewTransactionIncludedInBlock(txHash, b.Slot, blockHashHex)
-				bs.eventBus.Publish(event)
-			}
-		}
-	}
-	
 	fmt.Printf("Pending block %d added to blockstore\n", b.Slot)
 	return nil
 }
@@ -141,13 +121,6 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	}
 	if slot > bs.latestFinalized {
 		bs.latestFinalized = slot
-	}
-	
-	// Publish block finalization event
-	if bs.eventBus != nil {
-		blockHashHex := hex.EncodeToString(blk.Hash[:])
-		event := types.NewBlockFinalized(slot, blockHashHex)
-		bs.eventBus.Publish(event)
 	}
 	
 	fmt.Printf("Block %d marked as finalized\n", slot)
@@ -190,6 +163,31 @@ func (bs *BlockStore) LatestFinalized() uint64 {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 	return bs.latestFinalized
+}
+
+
+
+// GetTransactionHashes returns all transaction hashes for a given block slot
+func (bs *BlockStore) GetTransactionHashes(slot uint64) []string {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+	
+	block := bs.data[slot]
+	if block == nil {
+		return nil
+	}
+	
+	var txHashes []string
+	for _, entry := range block.Entries {
+		for _, raw := range entry.Transactions {
+			tx, err := utils.ParseTx(raw)
+			if err != nil {
+				continue
+			}
+			txHashes = append(txHashes, tx.Hash())
+		}
+	}
+	return txHashes
 }
 
 // FindTransactionByClientHash searches all stored blocks for a transaction whose

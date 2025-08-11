@@ -47,15 +47,18 @@ func main() {
 		log.Fatalf("Failed to load private key: %v", err)
 	}
 
-	// --- Event Bus ---
-	eventBus := types.NewEventBus()
-
 	// --- Blockstore ---
 	blockDir := "./blockstore/blocks"
-	bs, err := blockstore.NewBlockStore(blockDir, seed, eventBus)
+	bs, err := blockstore.NewBlockStore(blockDir, seed)
 	if err != nil {
 		log.Fatalf("Failed to init blockstore: %v", err)
 	}
+
+	// --- Event Bus ---
+	eventBus := types.NewEventBus()
+	
+	// --- Event Router ---
+	eventRouter := types.NewEventRouter(eventBus, bs)
 
 	// --- Ledger ---
 	ld := ledger.NewLedger(cfg.Faucet.Address)
@@ -100,7 +103,7 @@ func main() {
 		log.Fatalf("Failed to load mempool config: %v", err)
 	}
 	maxTxs := mempoolCfg.MaxTxs
-	mp := mempool.NewMempool(maxTxs, netClient, eventBus)
+	mp := mempool.NewMempool(maxTxs, netClient, eventRouter)
 
 	// --- Validator ---
 	validatorCfg, err := config.LoadValidatorConfig("config/config.ini")
@@ -133,7 +136,7 @@ func main() {
 		val,
 		bs,
 		mp,
-		eventBus,
+		eventRouter,
 	)
 	_ = grpcSrv // not used directly, but keeps server running
 

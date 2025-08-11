@@ -166,7 +166,6 @@ export class GrpcClient {
 
     (async () => {
       try {
-        console.log("call.responses", call.responses)
         for await (const update of call.responses as AsyncIterable<GenTxStatusUpdate>) {
           const statusStr = GenTxStatusEnum[update.status] as unknown as string;
           onUpdate({

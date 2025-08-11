@@ -34,12 +34,12 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    *blockstore.BlockStore
 	mempool       *mempool.Mempool
-	eventBus      *types.EventBus // Event bus for transaction status updates
+	eventRouter   *types.EventRouter // Event router for complex event logic
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool, eventBus *types.EventBus) *grpc.Server {
+	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool, eventRouter *types.EventRouter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -52,7 +52,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		blockStore:    blockStore,
 		validator:     validator,
 		mempool:       mempool,
-		eventBus:      eventBus,
+		eventRouter:   eventRouter,
 	}
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
@@ -104,6 +104,22 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 		fmt.Printf("[follower] Store block error: %v", err)
 	} else {
 		fmt.Printf("[follower] Stored block slot=%d", blk.Slot)
+		
+		// Publish events for transactions included in this block
+		if s.eventRouter != nil {
+			blockHashHex := hex.EncodeToString(blk.Hash[:])
+			for _, entry := range blk.Entries {
+				for _, raw := range entry.Transactions {
+					tx, err := utils.ParseTx(raw)
+					if err != nil {
+						continue
+					}
+					txHash := tx.Hash()
+					event := types.NewTransactionIncludedInBlock(txHash, blk.Slot, blockHashHex)
+					s.eventRouter.PublishTransactionEvent(event)
+				}
+			}
+		}
 	}
 
 	// Reseed PoH for follower
@@ -141,6 +157,16 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 			fmt.Printf("[follower] Mark block as finalized error: %v", err)
 			return &pb.BroadcastResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
+		
+		// Publish block finalization event
+		if s.eventRouter != nil {
+			block := s.blockStore.Block(vote.Slot)
+			if block != nil {
+				blockHashHex := hex.EncodeToString(block.Hash[:])
+				s.eventRouter.PublishBlockFinalized(vote.Slot, blockHashHex)
+			}
+		}
+		
 		fmt.Printf("[follower] slot %d finalized! votes=%d", vote.Slot, len(s.voteCollector.VotesForSlot(vote.Slot)))
 	}
 
@@ -189,6 +215,16 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 			fmt.Printf("[consensus] Mark block as finalized error: %v\n", err)
 			return &pb.VoteResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
+		
+		// Publish block finalization event
+		if s.eventRouter != nil {
+			block := s.blockStore.Block(v.Slot)
+			if block != nil {
+				blockHashHex := hex.EncodeToString(block.Hash[:])
+				s.eventRouter.PublishBlockFinalized(v.Slot, blockHashHex)
+			}
+		}
+		
 		fmt.Printf("[consensus] slot %d finalized!\n", v.Slot)
 	}
 
@@ -340,8 +376,8 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 	}
 
 	// Subscribe to blockchain events for this transaction
-	eventChan := s.eventBus.Subscribe(txHash)
-	defer s.eventBus.Unsubscribe(txHash, eventChan)
+	eventChan := s.eventRouter.Subscribe(txHash)
+	defer s.eventRouter.Unsubscribe(txHash, eventChan)
 
 	// Wait for events with timeout
 	timeout := time.Duration(timeoutSeconds) * time.Second

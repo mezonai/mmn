@@ -15,16 +15,16 @@ type Mempool struct {
 	txOrder     []string // Maintain FIFO order
 	max         int
 	broadcaster interfaces.Broadcaster
-	eventBus    *types.EventBus // Event bus for transaction status updates
+	eventRouter *types.EventRouter // Event router for transaction status updates
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, eventBus *types.EventBus) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, eventRouter *types.EventRouter) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
 		max:         max,
 		broadcaster: broadcaster,
-		eventBus:    eventBus,
+		eventRouter: eventRouter,
 	}
 }
 
@@ -68,9 +68,9 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	mp.txOrder = append(mp.txOrder, txHash) // Add to order queue
 
 	// Publish event for transaction status tracking
-	if mp.eventBus != nil {
+	if mp.eventRouter != nil {
 		event := types.NewTransactionAddedToMempool(txHash, tx)
-		mp.eventBus.Publish(event)
+		mp.eventRouter.PublishTransactionEvent(event)
 	}
 
 	// Handle broadcast safely

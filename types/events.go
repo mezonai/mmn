@@ -4,9 +4,19 @@ import (
 	"time"
 )
 
+// EventType is an enum-like string type for blockchain events
+type EventType string
+
+const (
+    EventTransactionAddedToMempool EventType = "TransactionAddedToMempool"
+    EventTransactionIncludedInBlock EventType = "TransactionIncludedInBlock"
+    EventTransactionFailed          EventType = "TransactionFailed"
+    EventBlockFinalized             EventType = "BlockFinalized"
+)
+
 // BlockchainEvent represents any event that occurs in the blockchain
 type BlockchainEvent interface {
-	Type() string
+    Type() EventType
 	Timestamp() time.Time
 	TxHash() string
 }
@@ -26,8 +36,8 @@ func NewTransactionAddedToMempool(txHash string, tx *Transaction) *TransactionAd
 	}
 }
 
-func (e *TransactionAddedToMempool) Type() string {
-	return "TransactionAddedToMempool"
+func (e *TransactionAddedToMempool) Type() EventType {
+    return EventTransactionAddedToMempool
 }
 
 func (e *TransactionAddedToMempool) Timestamp() time.Time {
@@ -59,8 +69,8 @@ func NewTransactionIncludedInBlock(txHash string, blockSlot uint64, blockHash st
 	}
 }
 
-func (e *TransactionIncludedInBlock) Type() string {
-	return "TransactionIncludedInBlock"
+func (e *TransactionIncludedInBlock) Type() EventType {
+    return EventTransactionIncludedInBlock
 }
 
 func (e *TransactionIncludedInBlock) Timestamp() time.Time {
@@ -94,8 +104,8 @@ func NewTransactionFailed(txHash string, errorMessage string) *TransactionFailed
 	}
 }
 
-func (e *TransactionFailed) Type() string {
-	return "TransactionFailed"
+func (e *TransactionFailed) Type() EventType {
+    return EventTransactionFailed
 }
 
 func (e *TransactionFailed) Timestamp() time.Time {
@@ -125,8 +135,8 @@ func NewBlockFinalized(blockSlot uint64, blockHash string) *BlockFinalized {
 	}
 }
 
-func (e *BlockFinalized) Type() string {
-	return "BlockFinalized"
+func (e *BlockFinalized) Type() EventType {
+    return EventBlockFinalized
 }
 
 func (e *BlockFinalized) Timestamp() time.Time {

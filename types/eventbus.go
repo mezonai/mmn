@@ -60,12 +60,6 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 	defer eb.mu.RUnlock()
 
 	txHash := event.TxHash()
-	
-	// For block events, we need to notify all transactions in that block
-	if event.Type() == "BlockFinalized" {
-		eb.publishBlockEvent(event)
-		return
-	}
 
 	// For transaction-specific events, notify subscribers for that transaction
 	if subs, exists := eb.subscribers[txHash]; exists {
@@ -82,31 +76,6 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 		}
 	} else {
 		fmt.Printf("No subscribers for tx: %s (event: %s)\n", txHash, event.Type())
-	}
-}
-
-// publishBlockEvent handles block-level events that affect multiple transactions
-func (eb *EventBus) publishBlockEvent(event BlockchainEvent) {
-	blockEvent, ok := event.(*BlockFinalized)
-	if !ok {
-		return
-	}
-
-	fmt.Printf("Publishing BlockFinalized event for slot: %d to all subscribers\n", blockEvent.BlockSlot())
-	
-	// Notify all subscribers about the block finalization
-	// In a real implementation, you might want to track which transactions are in which blocks
-	// For now, we'll notify all subscribers
-	for txHash, subs := range eb.subscribers {
-		for _, ch := range subs {
-			select {
-			case ch <- event:
-				// Event sent successfully
-			default:
-				// Channel is full, skip this subscriber
-				fmt.Printf("Warning: subscriber channel full for tx: %s during block event\n", txHash)
-			}
-		}
 	}
 }
 
