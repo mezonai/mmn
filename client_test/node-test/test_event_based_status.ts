@@ -167,7 +167,15 @@ class EventBasedStatusTest {
       const unsubscribe = this.grpcClient.subscribeTransactionStatus(
         txHash,
         30, // 30 seconds timeout
-        (update) => {
+        (update: {
+          tx_hash: string;
+          status: string;
+          block_slot?: string;
+          block_hash?: string;
+          confirmations?: string;
+          error_message?: string;
+          timestamp?: string;
+        }) => {
           const statusInfo: TransactionStatusInfo = {
             txHash: update.tx_hash,
             status: this.mapStatusStringToEnum(update.status),
@@ -188,7 +196,7 @@ class EventBasedStatusTest {
             resolve(statusUpdates);
           }
         },
-        (error) => {
+        (error: any) => {
           clearTimeout(timeout);
           reject(error);
         },
@@ -243,7 +251,15 @@ class EventBasedStatusTest {
         const unsubscribe = this.grpcClient.subscribeTransactionStatus(
           txHash,
           30,
-          (update) => {
+          (update: {
+            tx_hash: string;
+            status: string;
+            block_slot?: string;
+            block_hash?: string;
+            confirmations?: string;
+            error_message?: string;
+            timestamp?: string;
+          }) => {
             if (update.status === 'FINALIZED' || update.status === 'FAILED' || update.status === 'EXPIRED') {
               clearTimeout(timeout);
               resolve({
@@ -254,7 +270,7 @@ class EventBasedStatusTest {
               });
             }
           },
-          (error) => {
+          (error: any) => {
             clearTimeout(timeout);
             reject(error);
           },
@@ -295,11 +311,19 @@ class EventBasedStatusTest {
       const unsubscribe = this.grpcClient.subscribeTransactionStatus(
         fakeTxHash,
         5, // 5 seconds subscription timeout
-        (update) => {
+        (update: {
+          tx_hash: string;
+          status: string;
+          block_slot?: string;
+          block_hash?: string;
+          confirmations?: string;
+          error_message?: string;
+          timestamp?: string;
+        }) => {
           // Should not receive any updates for fake hash
           console.log(`  ⚠️  Unexpected update for fake hash: ${update.status}`);
         },
-        (error) => {
+        (error: any) => {
           clearTimeout(timeout);
           resolve(true); // Error is expected for fake hash
         },
@@ -347,7 +371,15 @@ class EventBasedStatusTest {
       const unsubscribe = this.grpcClient.subscribeTransactionStatus(
         txHash,
         30,
-        (update) => {
+        (update: {
+          tx_hash: string;
+          status: string;
+          block_slot?: string;
+          block_hash?: string;
+          confirmations?: string;
+          error_message?: string;
+          timestamp?: string;
+        }) => {
           const updateTime = Date.now();
           updateTimes.push(updateTime - startTime);
           console.log(`  ⚡ Real-time update: ${update.status} (${updateTime - startTime}ms)`);
@@ -364,7 +396,7 @@ class EventBasedStatusTest {
             });
           }
         },
-        (error) => {
+        (error: any) => {
           clearTimeout(timeout);
           reject(error);
         },
@@ -414,7 +446,15 @@ class EventBasedStatusTest {
       const unsubscribe = this.grpcClient.subscribeTransactionStatus(
         txHash,
         30,
-        (update) => {
+        (update: {
+          tx_hash: string;
+          status: string;
+          block_slot?: string;
+          block_hash?: string;
+          confirmations?: string;
+          error_message?: string;
+          timestamp?: string;
+        }) => {
           updateCount++;
           console.log(`  🧹 Cleanup test update ${updateCount}: ${update.status}`);
 
@@ -431,7 +471,7 @@ class EventBasedStatusTest {
             });
           }
         },
-        (error) => {
+        (error: any) => {
           clearTimeout(timeout);
           reject(error);
         },
@@ -479,7 +519,15 @@ class EventBasedStatusTest {
       const unsubscribe = this.grpcClient.subscribeTransactionStatus(
         txHash,
         30,
-        (update) => {
+        (update: {
+          tx_hash: string;
+          status: string;
+          block_slot?: string;
+          block_hash?: string;
+          confirmations?: string;
+          error_message?: string;
+          timestamp?: string;
+        }) => {
           const eventBasedTime = Date.now() - startTime;
           console.log(`  🚀 Event-based: ${update.status} in ${eventBasedTime}ms`);
 
@@ -492,7 +540,7 @@ class EventBasedStatusTest {
             });
           }
         },
-        (error) => {
+        (error: any) => {
           clearTimeout(timeout);
           reject(error);
         },

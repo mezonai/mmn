@@ -8,16 +8,18 @@ import {
   AccountServiceClient,
   IAccountServiceClient,
 } from './generated/account.client';
-import {
-  TransactionStatusServiceClient,
-  ITransactionStatusServiceClient,
-} from './generated/transaction_status.client';
+
 import type {
   TxMsg as GenTxMsg,
   SignedTxMsg as GenSignedTxMsg,
   TxResponse as GenTxResponse,
   AddTxResponse as GenAddTxResponse,
+  GetTransactionStatusRequest as GenGetTxStatusRequest,
+  GetTransactionStatusResponse as GenGetTxStatusResponse,
+  SubscribeTransactionStatusRequest as GenSubscribeTxStatusRequest,
+  TransactionStatusUpdate as GenTxStatusUpdate,
 } from './generated/tx';
+import { TransactionStatus as GenTxStatusEnum } from './generated/tx';
 import type {
   GetAccountRequest as GenGetAccountRequest,
   GetAccountResponse as GenGetAccountResponse,
@@ -113,6 +115,88 @@ export class GrpcClient {
         timestamp: tx.timestamp.toString(),
         status: ['PENDING','CONFIRMED','FINALIZED','FAILED'][tx.status] || 'PENDING',
       })),
+    };
+  }
+
+  // Transaction status methods (real implementations)
+  async getTransactionStatus(txHash: string): Promise<{
+    tx_hash: string;
+    status: string;
+    block_slot?: string;
+    block_hash?: string;
+    confirmations?: string;
+    error_message?: string;
+    timestamp?: string;
+  }> {
+    const req: GenGetTxStatusRequest = { txHash };
+    const call = this.txClient.getTransactionStatus(req);
+    const res: GenGetTxStatusResponse = await call.response;
+
+    const statusStr = GenTxStatusEnum[res.status] as unknown as string;
+
+    return {
+      tx_hash: res.txHash,
+      status: statusStr || 'UNKNOWN',
+      block_slot: res.blockSlot ? res.blockSlot.toString() : undefined,
+      block_hash: res.blockHash || undefined,
+      confirmations: res.confirmations ? res.confirmations.toString() : undefined,
+      error_message: res.errorMessage || undefined,
+      timestamp: res.timestamp ? res.timestamp.toString() : undefined,
+    };
+  }
+
+  subscribeTransactionStatus(
+    txHash: string,
+    timeoutSeconds: number,
+    onUpdate: (update: {
+      tx_hash: string;
+      status: string;
+      block_slot?: string;
+      block_hash?: string;
+      confirmations?: string;
+      error_message?: string;
+      timestamp?: string;
+    }) => void,
+    onError: (error: any) => void,
+    onComplete: () => void
+  ): () => void {
+    const req: GenSubscribeTxStatusRequest = { txHash, timeoutSeconds };
+    const abortController = new AbortController();
+    const call = this.txClient.subscribeTransactionStatus(req, { abort: abortController.signal });
+
+    (async () => {
+      try {
+        console.log("call.responses", call.responses)
+        for await (const update of call.responses as AsyncIterable<GenTxStatusUpdate>) {
+          const statusStr = GenTxStatusEnum[update.status] as unknown as string;
+          onUpdate({
+            tx_hash: update.txHash,
+            status: statusStr || 'UNKNOWN',
+            block_slot: update.blockSlot ? update.blockSlot.toString() : undefined,
+            block_hash: update.blockHash || undefined,
+            confirmations: update.confirmations ? update.confirmations.toString() : undefined,
+            error_message: update.errorMessage || undefined,
+            timestamp: update.timestamp ? update.timestamp.toString() : undefined,
+          });
+        }
+        onComplete();
+      } catch (err: any) {
+        if (abortController.signal.aborted) {
+          // treat as completed due to unsubscribe
+          onComplete();
+          return;
+        }
+        onError(err);
+      }
+    })();
+
+    // Return unsubscribe that cancels the streaming call
+    return () => {
+      try {
+        abortController.abort();
+      } catch (_e) {
+        // ignore
+      }
     };
   }
 

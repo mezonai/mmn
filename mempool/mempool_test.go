@@ -55,7 +55,7 @@ func TestNewMempool(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	maxSize := 100
 
-	mempool := NewMempool(maxSize, mockBroadcaster)
+    mempool := NewMempool(maxSize, mockBroadcaster, nil)
 
 	if mempool == nil {
 		t.Fatal("NewMempool returned nil")
@@ -80,7 +80,7 @@ func TestNewMempool(t *testing.T) {
 
 func TestMempool_AddTx_Success(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 
@@ -101,7 +101,7 @@ func TestMempool_AddTx_Success(t *testing.T) {
 
 func TestMempool_AddTx_WithBroadcast(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 
@@ -131,7 +131,7 @@ func TestMempool_AddTx_WithBroadcast(t *testing.T) {
 
 func TestMempool_AddTx_Duplicate(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 
@@ -162,7 +162,7 @@ func TestMempool_AddTx_Duplicate(t *testing.T) {
 
 func TestMempool_AddTx_FullMempool(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(2, mockBroadcaster) // Small size for testing
+    mempool := NewMempool(2, mockBroadcaster, nil) // Small size for testing
 
 	// Add first transaction
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -196,7 +196,7 @@ func TestMempool_AddTx_FullMempool(t *testing.T) {
 
 func TestMempool_PullBatch_Empty(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	batch := mempool.PullBatch(5)
 
@@ -211,7 +211,7 @@ func TestMempool_PullBatch_Empty(t *testing.T) {
 
 func TestMempool_PullBatch_Partial(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Add 3 transactions
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -247,7 +247,7 @@ func TestMempool_PullBatch_Partial(t *testing.T) {
 
 func TestMempool_PullBatch_All(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Add 3 transactions
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -272,7 +272,7 @@ func TestMempool_PullBatch_All(t *testing.T) {
 
 func TestMempool_Size(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Initial size should be 0
 	if mempool.Size() != 0 {
@@ -304,7 +304,7 @@ func TestMempool_Size(t *testing.T) {
 
 func TestMempool_ConcurrentAccess(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, mockBroadcaster)
+    mempool := NewMempool(100, mockBroadcaster, nil)
 
 	// Test concurrent AddTx operations
 	done := make(chan bool, 10)
@@ -329,7 +329,7 @@ func TestMempool_ConcurrentAccess(t *testing.T) {
 
 func TestMempool_DifferentTransactionTypes(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Test transfer transaction
 	txTransfer := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -358,7 +358,7 @@ func TestMempool_DifferentTransactionTypes(t *testing.T) {
 
 func TestMempool_FIFOOrder(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Add transactions in specific order
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -388,7 +388,7 @@ func TestMempool_FIFOOrder(t *testing.T) {
 
 func TestMempool_PullBatchFIFOOrder(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Add transactions in specific order
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -427,7 +427,7 @@ func TestMempool_PullBatchFIFOOrder(t *testing.T) {
 
 func TestMempool_HasTransaction(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 	hash, success := mempool.AddTx(tx, false)
@@ -448,7 +448,7 @@ func TestMempool_HasTransaction(t *testing.T) {
 
 func TestMempool_GetTransaction(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 	hash, success := mempool.AddTx(tx, false)
@@ -477,7 +477,7 @@ func TestMempool_GetTransaction(t *testing.T) {
 
 func TestMempool_GetTransactionCount(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Initial count should be 0
 	if mempool.GetTransactionCount() != 0 {
@@ -501,7 +501,7 @@ func TestMempool_GetTransactionCount(t *testing.T) {
 
 func TestMempool_GetOrderedTransactions(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Add transactions
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -539,7 +539,7 @@ func TestMempool_GetOrderedTransactions(t *testing.T) {
 
 func TestMempool_ConcurrentReadAccess(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, mockBroadcaster)
+    mempool := NewMempool(100, mockBroadcaster, nil)
 
 	// Add some transactions first
 	for i := 0; i < 5; i++ {
@@ -577,7 +577,7 @@ func TestMempool_ConcurrentReadAccess(t *testing.T) {
 
 func TestMempool_ConcurrentReadWriteAccess(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, mockBroadcaster)
+    mempool := NewMempool(100, mockBroadcaster, nil)
 
 	// Test concurrent read and write operations
 	done := make(chan bool, 20)
@@ -616,7 +616,7 @@ func TestMempool_ConcurrentReadWriteAccess(t *testing.T) {
 
 func TestMempool_BroadcastWithoutBlocking(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(10, mockBroadcaster)
+    mempool := NewMempool(10, mockBroadcaster, nil)
 
 	// Test that broadcasting doesn't block other operations
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -650,7 +650,7 @@ func TestMempool_BroadcastWithoutBlocking(t *testing.T) {
 
 func TestMempool_RaceConditionHandling(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(2, mockBroadcaster) // Small size to trigger race conditions
+    mempool := NewMempool(2, mockBroadcaster, nil) // Small size to trigger race conditions
 
 	// Test race condition where multiple goroutines try to add the same transaction
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)

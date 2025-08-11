@@ -87,6 +87,143 @@ export interface AddTxResponse {
      */
     error: string;
 }
+/**
+ * Request to get transaction status
+ *
+ * @generated from protobuf message mmn.GetTransactionStatusRequest
+ */
+export interface GetTransactionStatusRequest {
+    /**
+     * @generated from protobuf field: string tx_hash = 1
+     */
+    txHash: string;
+}
+/**
+ * Response with transaction status
+ *
+ * @generated from protobuf message mmn.GetTransactionStatusResponse
+ */
+export interface GetTransactionStatusResponse {
+    /**
+     * @generated from protobuf field: string tx_hash = 1
+     */
+    txHash: string;
+    /**
+     * @generated from protobuf field: mmn.TransactionStatus status = 2
+     */
+    status: TransactionStatus;
+    /**
+     * @generated from protobuf field: uint64 block_slot = 3
+     */
+    blockSlot: bigint; // Slot where transaction was included (if confirmed/finalized)
+    /**
+     * @generated from protobuf field: string block_hash = 4
+     */
+    blockHash: string; // Hash of the block (if confirmed/finalized)
+    /**
+     * @generated from protobuf field: uint64 confirmations = 5
+     */
+    confirmations: bigint; // Number of confirmations
+    /**
+     * @generated from protobuf field: string error_message = 6
+     */
+    errorMessage: string; // Error message if failed
+    /**
+     * @generated from protobuf field: uint64 timestamp = 7
+     */
+    timestamp: bigint; // Timestamp when status was last updated
+}
+/**
+ * Request to subscribe to transaction status updates
+ *
+ * @generated from protobuf message mmn.SubscribeTransactionStatusRequest
+ */
+export interface SubscribeTransactionStatusRequest {
+    /**
+     * @generated from protobuf field: string tx_hash = 1
+     */
+    txHash: string;
+    /**
+     * @generated from protobuf field: uint32 timeout_seconds = 2
+     */
+    timeoutSeconds: number; // How long to wait for status changes
+}
+/**
+ * Stream of transaction status updates
+ *
+ * @generated from protobuf message mmn.TransactionStatusUpdate
+ */
+export interface TransactionStatusUpdate {
+    /**
+     * @generated from protobuf field: string tx_hash = 1
+     */
+    txHash: string;
+    /**
+     * @generated from protobuf field: mmn.TransactionStatus status = 2
+     */
+    status: TransactionStatus;
+    /**
+     * @generated from protobuf field: uint64 block_slot = 3
+     */
+    blockSlot: bigint;
+    /**
+     * @generated from protobuf field: string block_hash = 4
+     */
+    blockHash: string;
+    /**
+     * @generated from protobuf field: uint64 confirmations = 5
+     */
+    confirmations: bigint;
+    /**
+     * @generated from protobuf field: string error_message = 6
+     */
+    errorMessage: string;
+    /**
+     * @generated from protobuf field: uint64 timestamp = 7
+     */
+    timestamp: bigint;
+}
+/**
+ * Transaction status enum
+ *
+ * @generated from protobuf enum mmn.TransactionStatus
+ */
+export enum TransactionStatus {
+    /**
+     * @generated from protobuf enum value: UNKNOWN = 0;
+     */
+    UNKNOWN = 0,
+    /**
+     * Transaction is in mempool
+     *
+     * @generated from protobuf enum value: PENDING = 1;
+     */
+    PENDING = 1,
+    /**
+     * Transaction is included in a block
+     *
+     * @generated from protobuf enum value: CONFIRMED = 2;
+     */
+    CONFIRMED = 2,
+    /**
+     * Transaction is finalized (block has enough votes)
+     *
+     * @generated from protobuf enum value: FINALIZED = 3;
+     */
+    FINALIZED = 3,
+    /**
+     * Transaction failed validation
+     *
+     * @generated from protobuf enum value: FAILED = 4;
+     */
+    FAILED = 4,
+    /**
+     * Transaction expired (timeout)
+     *
+     * @generated from protobuf enum value: EXPIRED = 5;
+     */
+    EXPIRED = 5
+}
 // @generated message type with reflection information, may provide speed optimized methods
 class TxMsg$Type extends MessageType<TxMsg> {
     constructor() {
@@ -354,10 +491,304 @@ class AddTxResponse$Type extends MessageType<AddTxResponse> {
  * @generated MessageType for protobuf message mmn.AddTxResponse
  */
 export const AddTxResponse = new AddTxResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetTransactionStatusRequest$Type extends MessageType<GetTransactionStatusRequest> {
+    constructor() {
+        super("mmn.GetTransactionStatusRequest", [
+            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetTransactionStatusRequest>): GetTransactionStatusRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.txHash = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetTransactionStatusRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetTransactionStatusRequest): GetTransactionStatusRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tx_hash */ 1:
+                    message.txHash = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetTransactionStatusRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tx_hash = 1; */
+        if (message.txHash !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetTransactionStatusRequest
+ */
+export const GetTransactionStatusRequest = new GetTransactionStatusRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetTransactionStatusResponse$Type extends MessageType<GetTransactionStatusResponse> {
+    constructor() {
+        super("mmn.GetTransactionStatusResponse", [
+            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "status", kind: "enum", T: () => ["mmn.TransactionStatus", TransactionStatus] },
+            { no: 3, name: "block_slot", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 4, name: "block_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "confirmations", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 6, name: "error_message", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetTransactionStatusResponse>): GetTransactionStatusResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.txHash = "";
+        message.status = 0;
+        message.blockSlot = 0n;
+        message.blockHash = "";
+        message.confirmations = 0n;
+        message.errorMessage = "";
+        message.timestamp = 0n;
+        if (value !== undefined)
+            reflectionMergePartial<GetTransactionStatusResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetTransactionStatusResponse): GetTransactionStatusResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tx_hash */ 1:
+                    message.txHash = reader.string();
+                    break;
+                case /* mmn.TransactionStatus status */ 2:
+                    message.status = reader.int32();
+                    break;
+                case /* uint64 block_slot */ 3:
+                    message.blockSlot = reader.uint64().toBigInt();
+                    break;
+                case /* string block_hash */ 4:
+                    message.blockHash = reader.string();
+                    break;
+                case /* uint64 confirmations */ 5:
+                    message.confirmations = reader.uint64().toBigInt();
+                    break;
+                case /* string error_message */ 6:
+                    message.errorMessage = reader.string();
+                    break;
+                case /* uint64 timestamp */ 7:
+                    message.timestamp = reader.uint64().toBigInt();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetTransactionStatusResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tx_hash = 1; */
+        if (message.txHash !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
+        /* mmn.TransactionStatus status = 2; */
+        if (message.status !== 0)
+            writer.tag(2, WireType.Varint).int32(message.status);
+        /* uint64 block_slot = 3; */
+        if (message.blockSlot !== 0n)
+            writer.tag(3, WireType.Varint).uint64(message.blockSlot);
+        /* string block_hash = 4; */
+        if (message.blockHash !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.blockHash);
+        /* uint64 confirmations = 5; */
+        if (message.confirmations !== 0n)
+            writer.tag(5, WireType.Varint).uint64(message.confirmations);
+        /* string error_message = 6; */
+        if (message.errorMessage !== "")
+            writer.tag(6, WireType.LengthDelimited).string(message.errorMessage);
+        /* uint64 timestamp = 7; */
+        if (message.timestamp !== 0n)
+            writer.tag(7, WireType.Varint).uint64(message.timestamp);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetTransactionStatusResponse
+ */
+export const GetTransactionStatusResponse = new GetTransactionStatusResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransactionStatusRequest> {
+    constructor() {
+        super("mmn.SubscribeTransactionStatusRequest", [
+            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "timeout_seconds", kind: "scalar", T: 13 /*ScalarType.UINT32*/ }
+        ]);
+    }
+    create(value?: PartialMessage<SubscribeTransactionStatusRequest>): SubscribeTransactionStatusRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.txHash = "";
+        message.timeoutSeconds = 0;
+        if (value !== undefined)
+            reflectionMergePartial<SubscribeTransactionStatusRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: SubscribeTransactionStatusRequest): SubscribeTransactionStatusRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tx_hash */ 1:
+                    message.txHash = reader.string();
+                    break;
+                case /* uint32 timeout_seconds */ 2:
+                    message.timeoutSeconds = reader.uint32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: SubscribeTransactionStatusRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tx_hash = 1; */
+        if (message.txHash !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
+        /* uint32 timeout_seconds = 2; */
+        if (message.timeoutSeconds !== 0)
+            writer.tag(2, WireType.Varint).uint32(message.timeoutSeconds);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.SubscribeTransactionStatusRequest
+ */
+export const SubscribeTransactionStatusRequest = new SubscribeTransactionStatusRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class TransactionStatusUpdate$Type extends MessageType<TransactionStatusUpdate> {
+    constructor() {
+        super("mmn.TransactionStatusUpdate", [
+            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "status", kind: "enum", T: () => ["mmn.TransactionStatus", TransactionStatus] },
+            { no: 3, name: "block_slot", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 4, name: "block_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "confirmations", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 6, name: "error_message", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<TransactionStatusUpdate>): TransactionStatusUpdate {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.txHash = "";
+        message.status = 0;
+        message.blockSlot = 0n;
+        message.blockHash = "";
+        message.confirmations = 0n;
+        message.errorMessage = "";
+        message.timestamp = 0n;
+        if (value !== undefined)
+            reflectionMergePartial<TransactionStatusUpdate>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: TransactionStatusUpdate): TransactionStatusUpdate {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tx_hash */ 1:
+                    message.txHash = reader.string();
+                    break;
+                case /* mmn.TransactionStatus status */ 2:
+                    message.status = reader.int32();
+                    break;
+                case /* uint64 block_slot */ 3:
+                    message.blockSlot = reader.uint64().toBigInt();
+                    break;
+                case /* string block_hash */ 4:
+                    message.blockHash = reader.string();
+                    break;
+                case /* uint64 confirmations */ 5:
+                    message.confirmations = reader.uint64().toBigInt();
+                    break;
+                case /* string error_message */ 6:
+                    message.errorMessage = reader.string();
+                    break;
+                case /* uint64 timestamp */ 7:
+                    message.timestamp = reader.uint64().toBigInt();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: TransactionStatusUpdate, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tx_hash = 1; */
+        if (message.txHash !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
+        /* mmn.TransactionStatus status = 2; */
+        if (message.status !== 0)
+            writer.tag(2, WireType.Varint).int32(message.status);
+        /* uint64 block_slot = 3; */
+        if (message.blockSlot !== 0n)
+            writer.tag(3, WireType.Varint).uint64(message.blockSlot);
+        /* string block_hash = 4; */
+        if (message.blockHash !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.blockHash);
+        /* uint64 confirmations = 5; */
+        if (message.confirmations !== 0n)
+            writer.tag(5, WireType.Varint).uint64(message.confirmations);
+        /* string error_message = 6; */
+        if (message.errorMessage !== "")
+            writer.tag(6, WireType.LengthDelimited).string(message.errorMessage);
+        /* uint64 timestamp = 7; */
+        if (message.timestamp !== 0n)
+            writer.tag(7, WireType.Varint).uint64(message.timestamp);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.TransactionStatusUpdate
+ */
+export const TransactionStatusUpdate = new TransactionStatusUpdate$Type();
 /**
  * @generated ServiceType for protobuf service mmn.TxService
  */
 export const TxService = new ServiceType("mmn.TxService", [
     { name: "TxBroadcast", options: {}, I: SignedTxMsg, O: TxResponse },
-    { name: "AddTx", options: {}, I: SignedTxMsg, O: AddTxResponse }
+    { name: "AddTx", options: {}, I: SignedTxMsg, O: AddTxResponse },
+    { name: "GetTransactionStatus", options: {}, I: GetTransactionStatusRequest, O: GetTransactionStatusResponse },
+    { name: "SubscribeTransactionStatus", serverStreaming: true, options: {}, I: SubscribeTransactionStatusRequest, O: TransactionStatusUpdate }
 ]);

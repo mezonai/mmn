@@ -146,10 +146,18 @@ export class TransactionTracker extends EventEmitter {
     const unsubscribe = this.grpcClient.subscribeTransactionStatus(
       txHash,
       300, // 5 minutes timeout
-      (update) => {
+      (update: {
+        tx_hash: string;
+        status: string;
+        block_slot?: string;
+        block_hash?: string;
+        confirmations?: string;
+        error_message?: string;
+        timestamp?: string;
+      }) => {
         this.handleStatusUpdate(txHash, update);
       },
-      (error) => {
+      (error: any) => {
         console.error(`Subscription error for ${txHash}:`, error);
       },
       () => {

@@ -4,6 +4,8 @@
   "main": "test.ts",
   "scripts": {
     "test": "ts-node test.ts",
+    "test:status": "ts-node test_transaction_status.ts",
+    "test:event-based-status": "ts-node test_event_based_status.ts",
     "generate-types": "sh ./generate-types.sh"
   },
   "author": "",

@@ -77,8 +77,6 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	if broadcast && mp.broadcaster != nil {
 		// Use goroutine to avoid blocking the critical path
 		go func() {
-			//sleep 5 seconds
-			time.Sleep(5 * time.Second)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := mp.broadcaster.TxBroadcast(ctx, tx); err != nil {
