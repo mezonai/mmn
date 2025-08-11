@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"log"
+	"os"
 	"time"
 
 	"mmn/api"
@@ -12,6 +14,7 @@ import (
 	"mmn/logx"
 	"mmn/mempool"
 	"mmn/network"
+	"mmn/p2p"
 	"mmn/poh"
 	"mmn/validator"
 
@@ -56,11 +59,11 @@ func main() {
 	pohService.Start()
 
 	// network libp2p
-	libp2pNetwork, err := network.NewNetWork(
+	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
 		privKey,
 		self.Libp2pAddr,
-		"/ip4/10.10.30.50/tcp/56363/p2p/12D3KooWDqiNAU1nKWm67TEH6852QKBxkwQ6sikUvWV6f2camNxr",
+		os.Getenv("BOOTSTRAP_NODE_PEER_ADDRESS")
 		bs,
 	)
 
@@ -83,9 +86,33 @@ func main() {
 
 	libp2pNetwork.SetupCallbacks(ld, privKey, self, bs, collector, mp)
 
+	// start grpc
+	peerAddrs := []string{}
+	for _, p := range peers {
+		if p.GRPCAddr != self.GRPCAddr {
+			peerAddrs = append(peerAddrs, p.GRPCAddr)
+		}
+	}
+	pubKeys := make(map[string]ed25519.PublicKey)
+	netClient := network.NewGRPCClient(peerAddrs)
+
+	grpcSrv := network.NewGRPCServer(
+		self.GRPCAddr,
+		pubKeys,
+		blockDir,
+		ld,
+		collector,
+		netClient,
+		self.PubKey,
+		privKey,
+		val,
+		bs,
+		mp,
+	)
+	_ = grpcSrv // not used directly, but keeps server running
+
 	// --- Start validator ---
 	val.Run()
-
 	// --- API (for tx submission) ---
 	apiSrv := api.NewAPIServer(mp, ld, self.ListenAddr)
 	apiSrv.Start()

@@ -1,4 +1,4 @@
-package network
+package p2p
 
 import (
 	"context"
@@ -21,28 +21,11 @@ func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrIn
 
 	logx.Info("NETWORK CONNECTED AND REQYEST NODE INFO TO JOIN", bootstrapPeer)
 
-	if len(ln.host.Network().Peers()) >= ln.maxPeers {
-		logx.Info("NETWORK", "Max peers reached, skipping connect to", bootstrapPeer)
-		return nil
-	}
-
 	if len(ln.host.Network().Peers()) < ln.maxPeers {
 		if err := ln.host.Connect(ctx, *info); err != nil {
 			logx.Error("NETWORK:SETUP", "connect bootstrap", err.Error())
 		}
 	}
-
-	stream, err := ln.host.NewStream(context.Background(), info.ID, NodeInfoProtocol)
-	if err != nil {
-		logx.Error("NETWORK:SETUP", "Failed to open stream:", err)
-	}
-	defer stream.Close()
-
-	msg := map[string]interface{}{
-		"peer_id": ln.host.ID().String(),
-	}
-	data, _ := json.Marshal(msg)
-	stream.Write(data)
 
 	return nil
 }

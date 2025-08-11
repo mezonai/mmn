@@ -6,6 +6,7 @@ type NodeConfig struct {
 	PrivKeyPath string `yaml:"privkey_path"`
 	ListenAddr  string `yaml:"listen_addr"`
 	Libp2pAddr  string `yaml:"libp2p_addr"`
+	GRPCAddr    string `yaml:"grpc_addr"`
 }
 
 // LeaderSchedule represents a leader schedule entry

@@ -1,4 +1,4 @@
-package network
+package p2p
 
 import (
 	"crypto/ed25519"

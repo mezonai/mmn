@@ -6,13 +6,16 @@ config:
     pubkey: "6a4dd9b6efe0fc8f125be331735b0e33239e24f02c84e555ade9ea50bd1369db"
     privkey_path: "config/key1.txt"
     listen_addr: ":8001"
-    libp2p_addr: "/ip4/0.0.0.0/tcp/9001"
+    libp2p_addr: "/ip4/0.0.0.0/tcp/10001"
+    grpc_addr: ":9003"
 
   peer_nodes:
     - pubkey: "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248"
-      libp2p_addr: "/ip4/127.0.0.1/tcp/9002"
+      libp2p_addr: "/ip4/127.0.0.1/tcp/10002"
+      grpc_addr: "node2:10002"
     - pubkey: "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b"
-      libp2p_addr: "/ip4/127.0.0.1/tcp/9003"
+      libp2p_addr: "/ip4/127.0.0.1/tcp/10003"
+      grpc_addr: "node3:9003"
 
   leader_schedule:
     - start_slot: 0
@@ -24,3 +27,5 @@ config:
     - start_slot: 200
       end_slot: 299
       leader: "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b"
+
+

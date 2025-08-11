@@ -1,4 +1,4 @@
-package network
+package p2p
 
 const (
 	BlockProtocol    = "/block"
@@ -11,4 +11,5 @@ const (
 	TopicTxs               = "transactions"
 	BlockSyncRequestTopic  = "block-sync/request"
 	BlockSyncResponseTopic = "block-sync/response"
+	AdvertiseName          = "mmn"
 )

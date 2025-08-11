@@ -1,4 +1,4 @@
-package network
+package p2p
 
 import (
 	"context"
@@ -27,12 +27,13 @@ func NewNetWork(
 	bootstrapPeer string,
 	blockStore *blockstore.BlockStore,
 ) (*Libp2pNetwork, error) {
-	ctx, cancel := context.WithCancel(context.Background())
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ed25519 private key: %w", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var ddht *dht.IpfsDHT
 
@@ -59,10 +60,7 @@ func NewNetWork(
 		return nil, fmt.Errorf("failed to create custom discovery: %w", err)
 	}
 
-	_, err = customDiscovery.Advertise(ctx, "blockchain")
-	if err != nil {
-		logx.Error("DISCOVERY", "Failed to advertise:", err)
-	}
+	customDiscovery.Advertise(ctx, AdvertiseName)
 
 	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()))
 	if err != nil {
@@ -83,29 +81,6 @@ func NewNetWork(
 	}
 
 	ln.setupHandlers(bootstrapPeer)
-
-	if bootstrapPeer != "" {
-		addr, err := ma.NewMultiaddr(bootstrapPeer)
-		if err != nil {
-			logx.Error("NETWORK", "Invalid bootstrap peer address:", err)
-		} else {
-			info, err := peer.AddrInfoFromP2pAddr(addr)
-			if err != nil {
-				logx.Error("NETWORK", "Invalid bootstrap peer info:", err)
-			} else {
-				go ln.RequestNodeInfo(bootstrapPeer, info)
-				go ln.RequestBlockSync(ln.blockStore.LatestSlot() + 1)
-
-				if len(ln.host.Network().Peers()) < ln.maxPeers {
-					if err := ln.host.Connect(ctx, *info); err != nil {
-						logx.Error("NETWORK", "Failed to connect bootstrap peer: "+err.Error())
-					} else {
-						logx.Info("NETWORK", "Connected to bootstrap peer: "+info.ID.String())
-					}
-				}
-			}
-		}
-	}
 
 	go func() {
 		for {
@@ -146,9 +121,6 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
-	ln.host.SetStreamHandler(BlockProtocol, ln.HandleBlockStream)
-	ln.host.SetStreamHandler(VoteProtocol, ln.HandleVoteStream)
-	ln.host.SetStreamHandler(TxProtocol, ln.HandleTxStream)
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 
 	ln.SetupPubSubTopics()
@@ -167,7 +139,6 @@ func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
 		}
 
 		go ln.RequestNodeInfo(bootstrapPeer, info)
-		go ln.RequestBlockSync(ln.blockStore.LatestSlot() + 1)
 
 		if len(ln.host.Network().Peers()) < ln.maxPeers {
 			if err := ln.host.Connect(context.Background(), *info); err != nil {

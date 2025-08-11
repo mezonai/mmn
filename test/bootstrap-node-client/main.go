@@ -22,7 +22,7 @@ func main() {
 	fmt.Println("🆔 Peer ID:", host.ID())
 
 	// Address of bootstrap node
-	bootstrapAddrStr := "/ip4/127.0.0.1/tcp/9001/p2p/12D3KooWLSyVWkYVoLuGU462eqLZo98vdNJVPSzQEjAcvHSCqAfY"
+	bootstrapAddrStr := "/ip4/10.10.30.50/tcp/59828/p2p/12D3KooWEyDXDXzhpct8kkdV2hvMbLkhagGci5oA9rJwiniXErwn"
 	bootstrapAddr, err := ma.NewMultiaddr(bootstrapAddrStr)
 	if err != nil {
 		log.Fatal(err)
@@ -40,7 +40,6 @@ func main() {
 
 	fmt.Println("✅ Connected to bootstrap peer:", peerInfo.ID, peerInfo.Addrs)
 
-	// Keep the program alive for testing
 	select {
 	case <-ctx.Done():
 	case <-time.After(time.Minute):
