@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"mmn/block"
 	"mmn/blockstore"
-	"mmn/consensus"
 	"sync"
 	"time"
 
@@ -23,16 +22,6 @@ type Libp2pNetwork struct {
 	mu          sync.RWMutex
 
 	blockStore *blockstore.BlockStore
-
-	topicBlocks       *pubsub.Topic
-	topicVotes        *pubsub.Topic
-	topicTxs          *pubsub.Topic
-	topicBlockSyncReq *pubsub.Topic
-	topicBlockSyncRes *pubsub.Topic
-
-	onBlockReceived func(*block.Block) error
-	onVoteReceived  func(*consensus.Vote) error
-	onTxReceived    func([]byte) error
 
 	blockStreams map[peer.ID]network.Stream
 	voteStreams  map[peer.ID]network.Stream

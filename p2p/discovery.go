@@ -2,19 +2,10 @@ package p2p
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"mmn/logx"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 )
-
-func (ln *Libp2pNetwork) RequestBlockSync(fromSlot uint64) error {
-	req := SyncRequest{FromSlot: fromSlot}
-	data, _ := json.Marshal(req)
-	logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Requesting block sync from slot %d", fromSlot))
-	return ln.topicBlockSyncReq.Publish(context.Background(), data)
-}
 
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()

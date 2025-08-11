@@ -11,6 +11,7 @@ import (
 	"mmn/ledger"
 	"mmn/logx"
 	"mmn/mempool"
+	"mmn/types"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -85,20 +86,21 @@ func (ln *Libp2pNetwork) BroadcastToStreams(data []byte, streams map[peer.ID]net
 		}
 	}
 }
-func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, txData []byte) error {
-	// not implement for now
+
+func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
+	// TODO: implement actual broadcasting logic via streams or pubsub
 
 	return nil
 }
 
 func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote) error {
-	// not implement for now
+	// TODO: implement actual broadcasting logic via streams or pubsub
 
 	return nil
 }
 
 func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) error {
-	// not implement for now
+	// TODO: implement actual broadcasting logic via streams or pubsub
 
 	return nil
 }
