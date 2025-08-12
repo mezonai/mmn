@@ -1,8 +1,9 @@
-package types
+package events
 
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // BlockStore interface for getting transaction hashes
@@ -32,6 +33,40 @@ func (er *EventRouter) PublishBlockFinalized(slot uint64, blockHash string) {
 
 	// Create minimal block event (no transaction hashes)
 	event := NewBlockFinalized(slot, blockHash)
+	
+	// Get transaction hashes from BlockStore (single source of truth)
+	txHashes := er.blockStore.GetTransactionHashes(slot)
+	
+	fmt.Printf("EventRouter: Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
+	
+	// Route to relevant subscribers only
+	notifiedCount := 0
+	for _, txHash := range txHashes {
+		if subs, exists := er.eventBus.subscribers[txHash]; exists {
+			fmt.Printf("EventRouter: Notifying %d subscribers for tx: %s (in block %d)\n", len(subs), txHash, slot)
+			for _, ch := range subs {
+				select {
+				case ch <- event:
+					// Event sent successfully
+					notifiedCount++
+				default:
+					// Channel is full, skip this subscriber
+					fmt.Printf("Warning: subscriber channel full for tx: %s during block event\n", txHash)
+				}
+			}
+		}
+	}
+	
+	fmt.Printf("EventRouter: BlockFinalized for slot %d: notified %d subscribers for %d transactions\n", slot, notifiedCount, len(txHashes))
+}
+
+// PublishBlockFinalizedWithTimestamp publishes a block finalization event with a specific timestamp
+func (er *EventRouter) PublishBlockFinalizedWithTimestamp(slot uint64, blockHash string, timestamp time.Time) {
+	er.mu.RLock()
+	defer er.mu.RUnlock()
+
+	// Create block event with specific timestamp
+	event := NewBlockFinalizedWithTimestamp(slot, blockHash, timestamp)
 	
 	// Get transaction hashes from BlockStore (single source of truth)
 	txHashes := er.blockStore.GetTransactionHashes(slot)

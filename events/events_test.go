@@ -1,7 +1,7 @@
-package types
+package events
 
 import (
-	"fmt"
+	"mmn/types"
 	"testing"
 	"time"
 )
@@ -28,8 +28,8 @@ func TestEventBus(t *testing.T) {
 	}
 	
 	// Test publishing event
-	tx := &Transaction{
-		Type:      TxTypeTransfer,
+	tx := &types.Transaction{
+		Type:      types.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    100,
@@ -67,8 +67,8 @@ func TestEventBus(t *testing.T) {
 
 func TestBlockchainEvents(t *testing.T) {
 	// Test TransactionAddedToMempool
-	tx := &Transaction{
-		Type:      TxTypeTransfer,
+	tx := &types.Transaction{
+		Type:      types.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    100,
@@ -99,17 +99,20 @@ func TestBlockchainEvents(t *testing.T) {
 	}
 	
 	// Test BlockFinalized
-	finalizedEvent := NewBlockFinalized(123, "block-hash")
-	if finalizedEvent.Type() != "BlockFinalized" {
-		t.Errorf("Expected BlockFinalized, got %s", finalizedEvent.Type())
+	blockFinalizedEvent := NewBlockFinalized(123, "block-hash")
+	if blockFinalizedEvent.Type() != "BlockFinalized" {
+		t.Errorf("Expected BlockFinalized, got %s", blockFinalizedEvent.Type())
 	}
-	if finalizedEvent.BlockSlot() != 123 {
-		t.Errorf("Expected block slot 123, got %d", finalizedEvent.BlockSlot())
+	if blockFinalizedEvent.BlockSlot() != 123 {
+		t.Errorf("Expected block slot 123, got %d", blockFinalizedEvent.BlockSlot())
+	}
+	if blockFinalizedEvent.BlockHash() != "block-hash" {
+		t.Errorf("Expected block hash 'block-hash', got %s", blockFinalizedEvent.BlockHash())
 	}
 }
 
 func TestEventRouter(t *testing.T) {
-	// Mock BlockStore for testing
+	// Create mock block store
 	mockBlockStore := &mockBlockStore{
 		txHashes: map[uint64][]string{
 			123: {"tx1", "tx2", "tx3"},
@@ -119,85 +122,75 @@ func TestEventRouter(t *testing.T) {
 	eventBus := NewEventBus()
 	eventRouter := NewEventRouter(eventBus, mockBlockStore)
 	
-	// Subscribe to a transaction that will be in the block
+	// Subscribe to a transaction that's in the block
 	txHash := "tx1"
 	eventChan := eventRouter.Subscribe(txHash)
 	
-	// Publish block finalization event
-	go func() {
-		eventRouter.PublishBlockFinalized(123, "block-hash")
-	}()
+	// Publish block finalized event
+	eventRouter.PublishBlockFinalized(123, "block-hash")
 	
 	// Wait for event
 	select {
-	case receivedEvent := <-eventChan:
-		if receivedEvent.Type() != "BlockFinalized" {
-			t.Errorf("Expected BlockFinalized, got %s", receivedEvent.Type())
+	case event := <-eventChan:
+		if event.Type() != "BlockFinalized" {
+			t.Errorf("Expected BlockFinalized, got %s", event.Type())
 		}
-		
-		// Verify it's the correct event type
-		if blockEvent, ok := receivedEvent.(*BlockFinalized); ok {
+		if blockEvent, ok := event.(*BlockFinalized); ok {
 			if blockEvent.BlockSlot() != 123 {
 				t.Errorf("Expected block slot 123, got %d", blockEvent.BlockSlot())
 			}
-			if blockEvent.BlockHash() != "block-hash" {
-				t.Errorf("Expected block hash 'block-hash', got %s", blockEvent.BlockHash())
-			}
 		} else {
-			t.Error("Received event is not a BlockFinalized event")
+			t.Error("Expected BlockFinalized event type")
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event")
 	}
 	
-	// Test unsubscribe
+	// Clean up
 	eventRouter.Unsubscribe(txHash, eventChan)
 }
 
 func TestEventRouterOnlyNotifiesRelevantTransactions(t *testing.T) {
-	// Mock BlockStore for testing
+	// Create mock block store with specific transactions
 	mockBlockStore := &mockBlockStore{
 		txHashes: map[uint64][]string{
-			123: {"tx1", "tx2", "tx3"}, // Only these transactions in block 123
+			123: {"tx-in-block"},
 		},
 	}
 	
 	eventBus := NewEventBus()
 	eventRouter := NewEventRouter(eventBus, mockBlockStore)
 	
-	// Subscribe to a transaction that will be in the block
-	txInBlock := "tx1"
+	// Subscribe to a transaction that's in the block
+	txInBlock := "tx-in-block"
 	eventChanInBlock := eventRouter.Subscribe(txInBlock)
 	
-	// Subscribe to a transaction that will NOT be in the block
+	// Subscribe to a transaction that's NOT in the block
 	txNotInBlock := "tx-not-in-block"
 	eventChanNotInBlock := eventRouter.Subscribe(txNotInBlock)
 	
-	// Publish block finalization event
-	go func() {
-		eventRouter.PublishBlockFinalized(123, "block-hash")
-	}()
+	// Publish block finalized event
+	eventRouter.PublishBlockFinalized(123, "block-hash")
 	
-	// Wait for event on the transaction that should be notified
+	// Only the transaction in the block should receive the event
 	select {
-	case receivedEvent := <-eventChanInBlock:
-		if receivedEvent.Type() != "BlockFinalized" {
-			t.Errorf("Expected BlockFinalized, got %s", receivedEvent.Type())
+	case event := <-eventChanInBlock:
+		if event.Type() != "BlockFinalized" {
+			t.Errorf("Expected BlockFinalized, got %s", event.Type())
 		}
-		fmt.Printf("✅ Transaction %s correctly received BlockFinalized event\n", txInBlock)
 	case <-time.After(1 * time.Second):
-		t.Error("Timeout waiting for event on transaction in block")
+		t.Error("Timeout waiting for event for tx-in-block")
 	}
 	
-	// Verify that the transaction NOT in the block does NOT receive the event
+	// The transaction not in the block should NOT receive the event
 	select {
 	case <-eventChanNotInBlock:
-		t.Error("Transaction not in block incorrectly received BlockFinalized event")
+		t.Error("Transaction not in block should not have received event")
 	case <-time.After(100 * time.Millisecond):
-		fmt.Printf("✅ Transaction %s correctly did NOT receive BlockFinalized event\n", txNotInBlock)
+		// This is expected - no event should be received
 	}
 	
-	// Cleanup
+	// Clean up
 	eventRouter.Unsubscribe(txInBlock, eventChanInBlock)
 	eventRouter.Unsubscribe(txNotInBlock, eventChanNotInBlock)
 }

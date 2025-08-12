@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"mmn/blockstore"
 	"mmn/consensus"
+	"mmn/events"
 	"mmn/ledger"
 	"mmn/mempool"
 	pb "mmn/proto"
-	"mmn/types"
 	"mmn/utils"
 	"mmn/validator"
 	"net"
@@ -34,12 +34,12 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    blockstore.Store
 	mempool       *mempool.Mempool
-	eventRouter   *types.EventRouter // Event router for complex event logic
+	eventRouter   *events.EventRouter // Event router for complex event logic
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool, eventRouter *types.EventRouter) *grpc.Server {
+	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -115,7 +115,7 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 						continue
 					}
 					txHash := tx.Hash()
-					event := types.NewTransactionIncludedInBlock(txHash, blk.Slot, blockHashHex)
+					event := events.NewTransactionIncludedInBlock(txHash, blk.Slot, blockHashHex)
 					s.eventRouter.PublishTransactionEvent(event)
 				}
 			}
@@ -163,7 +163,8 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 			block := s.blockStore.Block(vote.Slot)
 			if block != nil {
 				blockHashHex := hex.EncodeToString(block.Hash[:])
-				s.eventRouter.PublishBlockFinalized(vote.Slot, blockHashHex)
+				blockTimestamp := time.Unix(0, int64(block.Timestamp))
+				s.eventRouter.PublishBlockFinalizedWithTimestamp(vote.Slot, blockHashHex, blockTimestamp)
 			}
 		}
 		
@@ -221,7 +222,8 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 			block := s.blockStore.Block(v.Slot)
 			if block != nil {
 				blockHashHex := hex.EncodeToString(block.Hash[:])
-				s.eventRouter.PublishBlockFinalized(v.Slot, blockHashHex)
+				blockTimestamp := time.Unix(0, int64(block.Timestamp))
+				s.eventRouter.PublishBlockFinalizedWithTimestamp(v.Slot, blockHashHex, blockTimestamp)
 			}
 		}
 		
@@ -407,9 +409,9 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 }
 
 // convertEventToStatusUpdate converts blockchain events to transaction status updates
-func (s *server) convertEventToStatusUpdate(event types.BlockchainEvent, txHash string) *pb.TransactionStatusUpdate {
+func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash string) *pb.TransactionStatusUpdate {
 	switch e := event.(type) {
-	case *types.TransactionAddedToMempool:
+	case *events.TransactionAddedToMempool:
 		return &pb.TransactionStatusUpdate{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_PENDING,
@@ -417,7 +419,7 @@ func (s *server) convertEventToStatusUpdate(event types.BlockchainEvent, txHash 
 			Timestamp:     uint64(e.Timestamp().Unix()),
 		}
 
-	case *types.TransactionIncludedInBlock:
+	case *events.TransactionIncludedInBlock:
 		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
 		var status pb.TransactionStatus
 		
@@ -436,7 +438,7 @@ func (s *server) convertEventToStatusUpdate(event types.BlockchainEvent, txHash 
 			Timestamp:     uint64(e.Timestamp().Unix()),
 		}
 
-	case *types.TransactionFailed:
+	case *events.TransactionFailed:
 		return &pb.TransactionStatusUpdate{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_FAILED,
@@ -445,7 +447,7 @@ func (s *server) convertEventToStatusUpdate(event types.BlockchainEvent, txHash 
 			Timestamp:     uint64(e.Timestamp().Unix()),
 		}
 
-	case *types.BlockFinalized:
+	case *events.BlockFinalized:
 		// Check if our transaction is in this finalized block
 		if slot, _, _, found := s.blockStore.GetTransactionBlockInfo(txHash); found && slot == e.BlockSlot() {
 			confirmations := s.blockStore.GetConfirmations(slot)

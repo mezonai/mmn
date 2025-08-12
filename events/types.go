@@ -1,6 +1,7 @@
-package types
+package events
 
 import (
+	"mmn/types"
 	"time"
 )
 
@@ -24,11 +25,11 @@ type BlockchainEvent interface {
 // TransactionAddedToMempool event when a transaction is added to mempool
 type TransactionAddedToMempool struct {
 	txHash    string
-	tx        *Transaction
+	tx        *types.Transaction
 	timestamp time.Time
 }
 
-func NewTransactionAddedToMempool(txHash string, tx *Transaction) *TransactionAddedToMempool {
+func NewTransactionAddedToMempool(txHash string, tx *types.Transaction) *TransactionAddedToMempool {
 	return &TransactionAddedToMempool{
 		txHash:    txHash,
 		tx:        tx,
@@ -48,7 +49,7 @@ func (e *TransactionAddedToMempool) TxHash() string {
 	return e.txHash
 }
 
-func (e *TransactionAddedToMempool) Transaction() *Transaction {
+func (e *TransactionAddedToMempool) Transaction() *types.Transaction {
 	return e.tx
 }
 
@@ -61,11 +62,15 @@ type TransactionIncludedInBlock struct {
 }
 
 func NewTransactionIncludedInBlock(txHash string, blockSlot uint64, blockHash string) *TransactionIncludedInBlock {
+	return NewTransactionIncludedInBlockWithTimestamp(txHash, blockSlot, blockHash, time.Now())
+}
+
+func NewTransactionIncludedInBlockWithTimestamp(txHash string, blockSlot uint64, blockHash string, timestamp time.Time) *TransactionIncludedInBlock {
 	return &TransactionIncludedInBlock{
 		txHash:    txHash,
 		blockSlot: blockSlot,
 		blockHash: blockHash,
-		timestamp: time.Now(),
+		timestamp: timestamp,
 	}
 }
 
@@ -128,10 +133,14 @@ type BlockFinalized struct {
 }
 
 func NewBlockFinalized(blockSlot uint64, blockHash string) *BlockFinalized {
+	return NewBlockFinalizedWithTimestamp(blockSlot, blockHash, time.Now())
+}
+
+func NewBlockFinalizedWithTimestamp(blockSlot uint64, blockHash string, timestamp time.Time) *BlockFinalized {
 	return &BlockFinalized{
 		blockSlot: blockSlot,
 		blockHash: blockHash,
-		timestamp: time.Now(),
+		timestamp: timestamp,
 	}
 }
 

@@ -1,4 +1,4 @@
-package types
+package events
 
 import (
 	"fmt"
@@ -102,14 +102,14 @@ func (eb *EventBus) GetTotalSubscriptions() int {
 	return total
 }
 
-// GetTrackedTransactions returns all transaction hashes being tracked
+// GetTrackedTransactions returns a list of all transaction hashes being tracked
 func (eb *EventBus) GetTrackedTransactions() []string {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
 	
-	txs := make([]string, 0, len(eb.subscribers))
+	txHashes := make([]string, 0, len(eb.subscribers))
 	for txHash := range eb.subscribers {
-		txs = append(txs, txHash)
+		txHashes = append(txHashes, txHash)
 	}
-	return txs
+	return txHashes
 }

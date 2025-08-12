@@ -3,6 +3,7 @@ package mempool
 import (
 	"context"
 	"fmt"
+	"mmn/events"
 	"mmn/interfaces"
 	"mmn/types"
 	"sync"
@@ -15,10 +16,10 @@ type Mempool struct {
 	txOrder     []string // Maintain FIFO order
 	max         int
 	broadcaster interfaces.Broadcaster
-	eventRouter *types.EventRouter // Event router for transaction status updates
+	eventRouter *events.EventRouter // Event router for transaction status updates
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, eventRouter *types.EventRouter) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, eventRouter *events.EventRouter) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
@@ -69,7 +70,7 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 
 	// Publish event for transaction status tracking
 	if mp.eventRouter != nil {
-		event := types.NewTransactionAddedToMempool(txHash, tx)
+		event := events.NewTransactionAddedToMempool(txHash, tx)
 		mp.eventRouter.PublishTransactionEvent(event)
 	}
 

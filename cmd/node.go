@@ -13,11 +13,11 @@ import (
 	"mmn/blockstore"
 	"mmn/config"
 	"mmn/consensus"
+	"mmn/events"
 	"mmn/ledger"
 	"mmn/mempool"
 	"mmn/network"
 	"mmn/poh"
-	"mmn/types"
 	"mmn/validator"
 
 	"github.com/spf13/cobra"
@@ -75,10 +75,10 @@ func runNode(currentNode string) {
 	}
 
 	// --- Event Bus ---
-	eventBus := types.NewEventBus()
+	eventBus := events.NewEventBus()
 	
 	// --- Event Router ---
-	eventRouter := types.NewEventRouter(eventBus, bs)
+	eventRouter := events.NewEventRouter(eventBus, bs)
 
 	ld := ledger.NewLedger(cfg.Faucet.Address)
 	collector := consensus.NewCollector(len(cfg.PeerNodes) + 1)
@@ -204,7 +204,7 @@ func initializeNetwork(cfg *config.GenesisConfig) (*network.GRPCClient, map[stri
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(netClient *network.GRPCClient, eventRouter *types.EventRouter) (*mempool.Mempool, error) {
+func initializeMempool(netClient *network.GRPCClient, eventRouter *events.EventRouter) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
@@ -255,7 +255,7 @@ func initializeValidator(cfg *config.GenesisConfig, pohService *poh.PohService, 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, netClient *network.GRPCClient,
 	pubKeys map[string]ed25519.PublicKey, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool, eventRouter *types.EventRouter) {
+	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool, eventRouter *events.EventRouter) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(cfg.SelfNode.PrivKeyPath)
