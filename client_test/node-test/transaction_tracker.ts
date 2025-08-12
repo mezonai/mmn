@@ -86,90 +86,13 @@ export class TransactionTracker extends EventEmitter {
   }
 
   /**
-   * Get the current status of a transaction via server RPC
-   */
-  async getTransactionStatus(txHash: string): Promise<TransactionStatusInfo> {
-    try {
-      const resp = await this.grpcClient.getTransactionStatus(txHash);
-      // Server returns string status values ("PENDING", "CONFIRMED", etc.), convert to enum
-      const statusMap: { [key: string]: TransactionStatus } = {
-        UNKNOWN: TransactionStatus.UNKNOWN,
-        PENDING: TransactionStatus.PENDING,
-        CONFIRMED: TransactionStatus.CONFIRMED,
-        FINALIZED: TransactionStatus.FINALIZED,
-        FAILED: TransactionStatus.FAILED,
-        EXPIRED: TransactionStatus.EXPIRED,
-      };
-      const statusEnum = statusMap[resp.status || 'UNKNOWN'] || TransactionStatus.UNKNOWN;
-
-      const info: TransactionStatusInfo = {
-        txHash,
-        status: statusEnum,
-        blockSlot: resp.block_slot ? Number(resp.block_slot) : undefined,
-        blockHash: resp.block_hash,
-        confirmations: resp.confirmations ? Number(resp.confirmations) : undefined,
-        errorMessage: resp.error_message,
-        timestamp: resp.timestamp ? Number(resp.timestamp) : Date.now(),
-      };
-      return info;
-    } catch (error) {
-      console.error(`Error getting transaction status for ${txHash}:`, error);
-      return {
-        txHash,
-        status: TransactionStatus.UNKNOWN,
-        timestamp: Date.now(),
-      };
-    }
-  }
-
-  /**
-   * Track a transaction using subscription instead of polling
-   */
-  async trackTransaction(txHash: string): Promise<void> {
-    if (this.trackedTransactions.has(txHash)) {
-      return; // Already tracking
-    }
-
-    // Get initial status
-    const initialStatus = await this.getTransactionStatus(txHash);
-    this.trackedTransactions.set(txHash, initialStatus);
-
-    // Emit tracking started event
-    this.emit('trackingStarted', txHash);
-
-    // Subscribe to status updates
-    const unsubscribe = this.grpcClient.subscribeTransactionStatus(
-      txHash,
-      (update: {
-        tx_hash: string;
-        status: string;
-        block_slot?: string;
-        block_hash?: string;
-        confirmations?: string;
-        error_message?: string;
-        timestamp?: string;
-      }) => {
-        this.handleStatusUpdate(txHash, update);
-      },
-      (error: any) => {
-        console.error(`Subscription error for ${txHash}:`, error);
-      },
-      () => {
-        console.log(`Subscription completed for ${txHash}`);
-      }
-    );
-
-    this.subscriptions.set(txHash, unsubscribe);
-  }
-
-  /**
    * Track all transactions using subscription to all transaction events
    */
-  trackAllTransactions(): void {
+  trackTransactions(): void {
     console.log('🔍 Starting to track all transactions...');
     
     // Subscribe to all transaction events
-    const unsubscribe = this.grpcClient.subscribeToAllTransactionStatus(
+    const unsubscribe = this.grpcClient.subscribeTransactionStatus(
       (update: {
         tx_hash: string;
         status: string;
@@ -198,26 +121,10 @@ export class TransactionTracker extends EventEmitter {
     this.emit('allTransactionsTrackingStarted');
   }
 
-
-  /**
-   * Stop tracking a specific transaction
-   */
-  stopTracking(txHash: string): void {
-    // Cancel subscription if exists
-    const unsubscribe = this.subscriptions.get(txHash);
-    if (unsubscribe) {
-      unsubscribe();
-      this.subscriptions.delete(txHash);
-    }
-
-    this.trackedTransactions.delete(txHash);
-    this.emit('trackingStopped', txHash);
-  }
-
   /**
    * Stop tracking all transactions
    */
-  stopTrackingAllTransactions(): void {
+  stopTracking(): void {
     console.log('🛑 Stopping tracking of all transactions...');
     
     // Cancel the all-transactions subscription
@@ -268,9 +175,11 @@ export class TransactionTracker extends EventEmitter {
       EXPIRED: TransactionStatus.EXPIRED,
     };
 
+    const statusEnum = statusMap[update.status || 'UNKNOWN'] || TransactionStatus.UNKNOWN;
+
     const newStatus: TransactionStatusInfo = {
       txHash,
-      status: statusMap[update.status] || TransactionStatus.UNKNOWN,
+      status: statusEnum,
       blockSlot: update.block_slot ? Number(update.block_slot) : undefined,
       blockHash: update.block_hash,
       confirmations: update.confirmations ? Number(update.confirmations) : undefined,
@@ -279,29 +188,18 @@ export class TransactionTracker extends EventEmitter {
     };
 
     const oldStatus = this.trackedTransactions.get(txHash);
+    this.trackedTransactions.set(txHash, newStatus);
 
-    if (oldStatus && oldStatus.status !== newStatus.status) {
-      // Status changed, update and emit event
-      this.trackedTransactions.set(txHash, newStatus);
-      this.emit('statusChanged', txHash, oldStatus.status, newStatus.status);
+    // Emit status change event
+    this.emit('statusChanged', txHash, newStatus, oldStatus);
 
-      // Emit specific status events
-      const statusString = TransactionStatus[newStatus.status];
-      if (statusString) {
-        this.emit(`status:${statusString.toLowerCase()}`, txHash, newStatus);
-      }
-
-      // Emit completion events
-      if (newStatus.status === TransactionStatus.FINALIZED) {
-        this.emit('transactionFinalized', txHash, newStatus);
-        this.stopTracking(txHash);
-      } else if (newStatus.status === TransactionStatus.FAILED) {
-        this.emit('transactionFailed', txHash, newStatus);
-        this.stopTracking(txHash);
-      } else if (newStatus.status === TransactionStatus.EXPIRED) {
-        this.emit('transactionExpired', txHash, newStatus);
-        this.stopTracking(txHash);
-      }
+    // Emit specific status events
+    if (newStatus.status === TransactionStatus.FINALIZED) {
+      this.emit('transactionFinalized', txHash, newStatus);
+    } else if (newStatus.status === TransactionStatus.FAILED) {
+      this.emit('transactionFailed', txHash, newStatus);
+    } else if (newStatus.status === TransactionStatus.EXPIRED) {
+      this.emit('transactionExpired', txHash, newStatus);
     }
   }
 
@@ -320,88 +218,93 @@ export class TransactionTracker extends EventEmitter {
   }
 
   /**
-   * Wait for a transaction to reach a specific status using subscription
+   * Wait for a transaction to reach a specific status
    */
   async waitForStatus(
     txHash: string,
     targetStatus: TransactionStatus,
-    timeoutMs: number = 60000
+    timeoutMs: number = 30000
   ): Promise<TransactionStatusInfo> {
     return new Promise((resolve, reject) => {
-      const startTime = Date.now();
       const timeout = setTimeout(() => {
-        reject(
-          new Error(`Timeout waiting for transaction ${txHash} to reach status ${TransactionStatus[targetStatus]}`)
-        );
+        this.off('statusChanged', statusListener);
+        reject(new Error(`Timeout waiting for status ${TransactionStatus[targetStatus]} for ${txHash.substring(0, 16)}...`));
       }, timeoutMs);
 
-      // Check if we're already tracking this transaction
+      const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
+        if (eventTxHash === txHash && newStatus.status === targetStatus) {
+          clearTimeout(timeout);
+          this.off('statusChanged', statusListener);
+          resolve(newStatus);
+        }
+      };
+
+      this.on('statusChanged', statusListener);
+
+      // Check if already at target status
       const currentStatus = this.getTrackedTransactionStatus(txHash);
       if (currentStatus && currentStatus.status === targetStatus) {
         clearTimeout(timeout);
-        console.log(`  ✅ Target status already reached for ${txHash.substring(0, 16)}...`);
+        this.off('statusChanged', statusListener);
         resolve(currentStatus);
         return;
       }
 
-      // Set up a one-time event listener for status changes
-      const statusListener = (changedTxHash: string, oldStatus: TransactionStatus, newStatus: TransactionStatus) => {
-        if (changedTxHash === txHash && newStatus === targetStatus) {
-          clearTimeout(timeout);
-          this.off('statusChanged', statusListener);
-          
-          const finalStatus = this.getTrackedTransactionStatus(txHash);
-          if (finalStatus) {
-            console.log(`  ✅ Target status reached for ${txHash.substring(0, 16)}... via subscription`);
-            resolve(finalStatus);
-          } else {
-            reject(new Error(`Status reached but not found in tracked transactions`));
-          }
-        }
-      };
-
-      // Listen for status changes
-      this.on('statusChanged', statusListener);
-
-      // Start tracking the transaction if not already tracking
-      if (!this.getTrackedTransactionStatus(txHash)) {
-        this.trackTransaction(txHash).catch((error) => {
-          clearTimeout(timeout);
-          this.off('statusChanged', statusListener);
-          console.log(`  ❌ Error starting tracking for ${txHash.substring(0, 16)}...:`, error);
-          reject(error);
-        });
+      // Start tracking all transactions if not already tracking
+      if (!this.subscriptions.has('*all*')) {
+        this.trackTransactions();
       }
-
-      // Also check for timeout
-      const checkTimeout = () => {
-        if (Date.now() - startTime > timeoutMs) {
-          clearTimeout(timeout);
-          this.off('statusChanged', statusListener);
-          console.log(`  ⏰ Timeout exceeded for ${txHash.substring(0, 16)}...`);
-          reject(
-            new Error(`Timeout waiting for transaction ${txHash} to reach status ${TransactionStatus[targetStatus]}`)
-          );
-        } else {
-          setTimeout(checkTimeout, 1000); // Check every second
-        }
-      };
-      checkTimeout();
     });
-  }
-
-  /**
-   * Wait for a transaction to be confirmed
-   */
-  async waitForConfirmation(txHash: string, timeoutMs: number = 60000): Promise<TransactionStatusInfo> {
-    return this.waitForStatus(txHash, TransactionStatus.CONFIRMED, timeoutMs);
   }
 
   /**
    * Wait for a transaction to be finalized
    */
-  async waitForFinalization(txHash: string, timeoutMs: number = 120000): Promise<TransactionStatusInfo> {
+  async waitForFinalization(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
     return this.waitForStatus(txHash, TransactionStatus.FINALIZED, timeoutMs);
+  }
+
+  /**
+   * Wait for a transaction to be confirmed
+   */
+  async waitForConfirmation(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
+    return this.waitForStatus(txHash, TransactionStatus.CONFIRMED, timeoutMs);
+  }
+
+  /**
+   * Wait for any status update for a transaction
+   */
+  async waitForAnyStatusUpdate(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.off('statusChanged', statusListener);
+        reject(new Error(`Timeout waiting for any status update for ${txHash.substring(0, 16)}...`));
+      }, timeoutMs);
+
+      const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
+        if (eventTxHash === txHash) {
+          clearTimeout(timeout);
+          this.off('statusChanged', statusListener);
+          resolve(newStatus);
+        }
+      };
+
+      this.on('statusChanged', statusListener);
+
+      // Check if we already have a status
+      const currentStatus = this.getTrackedTransactionStatus(txHash);
+      if (currentStatus) {
+        clearTimeout(timeout);
+        this.off('statusChanged', statusListener);
+        resolve(currentStatus);
+        return;
+      }
+
+      // Start tracking all transactions if not already tracking
+      if (!this.subscriptions.has('*all*')) {
+        this.trackTransactions();
+      }
+    });
   }
 
   /**
@@ -443,87 +346,56 @@ export class TransactionStatusUtils {
   }
 
   /**
-   * Track a transaction and return a promise that resolves when finalized
+   * Static method to wait for a transaction to be finalized
    */
-  static async trackToFinalization(
+  static async waitForFinalization(
+    serverAddress: string,
     txHash: string,
-    serverAddress?: string,
-    timeoutMs: number = 120000
+    timeoutMs: number = 30000
   ): Promise<TransactionStatusInfo> {
     const tracker = new TransactionTracker({ serverAddress });
 
     try {
-      await tracker.trackTransaction(txHash);
+      tracker.trackTransactions();
       return await tracker.waitForFinalization(txHash, timeoutMs);
     } finally {
-      tracker.close();
+      tracker.stopTracking();
     }
   }
 
   /**
-   * Track a transaction and return a promise that resolves when confirmed
+   * Static method to wait for a transaction to be confirmed
    */
-  static async trackToConfirmation(
+  static async waitForConfirmation(
+    serverAddress: string,
     txHash: string,
-    serverAddress?: string,
-    timeoutMs: number = 60000
+    timeoutMs: number = 30000
   ): Promise<TransactionStatusInfo> {
     const tracker = new TransactionTracker({ serverAddress });
 
     try {
-      await tracker.trackTransaction(txHash);
+      tracker.trackTransactions();
       return await tracker.waitForConfirmation(txHash, timeoutMs);
     } finally {
-      tracker.close();
+      tracker.stopTracking();
     }
   }
 
   /**
-   * Get transaction status with retry logic (using subscription)
+   * Static method to wait for any status update
    */
-  static async getStatusWithRetry(
+  static async waitForAnyStatusUpdate(
+    serverAddress: string,
     txHash: string,
-    serverAddress?: string,
-    maxRetries: number = 5
+    timeoutMs: number = 30000
   ): Promise<TransactionStatusInfo> {
     const tracker = new TransactionTracker({ serverAddress });
 
     try {
-      // Use subscription-based tracking instead of polling
-      await tracker.trackTransaction(txHash);
-      
-      // Wait for any status update (with timeout)
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error(`Timeout getting status for transaction ${txHash}`));
-        }, 10000); // 10 second timeout
-
-                 const statusListener = (changedTxHash: string, oldStatus: TransactionStatus, newStatus: TransactionStatus) => {
-           if (changedTxHash === txHash) {
-             clearTimeout(timeout);
-             tracker.off('statusChanged', statusListener);
-             
-             const status = tracker.getTrackedTransactionStatus(txHash);
-             if (status) {
-               resolve(status);
-             } else {
-               reject(new Error(`Status not found for transaction ${txHash}`));
-             }
-           }
-         };
-
-         tracker.on('statusChanged', statusListener);
-         
-         // Also check current status immediately
-         const currentStatus = tracker.getTrackedTransactionStatus(txHash);
-         if (currentStatus) {
-           clearTimeout(timeout);
-           tracker.off('statusChanged', statusListener);
-           resolve(currentStatus);
-         }
-      });
+      tracker.trackTransactions();
+      return await tracker.waitForAnyStatusUpdate(txHash, timeoutMs);
     } finally {
-      tracker.close();
+      tracker.stopTracking();
     }
   }
 }

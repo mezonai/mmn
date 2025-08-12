@@ -144,7 +144,7 @@ async function waitForTransactionFinalization(txHash: string, timeoutMs: number 
     console.log(`  📋 Full transaction hash: ${txHash}`);
     
     // First check current status
-    const currentStatus = await tracker.getTransactionStatus(txHash);
+    const currentStatus = await tracker.getTrackedTransactionStatus(txHash);
     console.log(`  📊 Current status:`, JSON.stringify(currentStatus, null, 2));
     
     await tracker.waitForFinalization(txHash, timeoutMs);
@@ -305,7 +305,7 @@ async function runTransactionStatusTests() {
 
     // Start tracking all transactions
     console.log('🚀 Starting all-transactions tracking...');
-    tracker.trackAllTransactions();
+    tracker.trackTransactions();
 
     // Send test transactions
     console.log('\n📤 Sending test transactions...');
@@ -339,7 +339,7 @@ async function runTransactionStatusTests() {
 
     // Stop tracking
     console.log('\n🛑 Stopping transaction tracking...');
-    tracker.stopTrackingAllTransactions();
+    tracker.stopTracking();
 
     // Print results
     console.log('\n📊 Test Results:');
@@ -439,7 +439,7 @@ class EventBasedStatusTest {
         reject(new Error('All transactions subscription timeout'));
       }, 30000);
 
-      const unsubscribe = this.grpcClient.subscribeToAllTransactionStatus(
+      const unsubscribe = this.grpcClient.subscribeTransactionStatus(
         async (update: {
           tx_hash: string;
           status: string;

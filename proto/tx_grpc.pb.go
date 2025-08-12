@@ -33,7 +33,7 @@ type TxServiceClient interface {
 	AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error)
 	// Get current status of a transaction
 	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*GetTransactionStatusResponse, error)
-	// Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
+	// Subscribe to status updates for all transactions
 	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusUpdate], error)
 }
 
@@ -102,7 +102,7 @@ type TxServiceServer interface {
 	AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error)
 	// Get current status of a transaction
 	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*GetTransactionStatusResponse, error)
-	// Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
+	// Subscribe to status updates for all transactions
 	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusUpdate]) error
 	mustEmbedUnimplementedTxServiceServer()
 }

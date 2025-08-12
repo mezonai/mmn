@@ -134,17 +134,13 @@ export interface GetTransactionStatusResponse {
     timestamp: bigint; // Timestamp when status was last updated
 }
 /**
- * Request to subscribe to transaction status updates
+ * Request to subscribe to all transaction status updates
+ *
+ * Empty request - subscribes to all transaction events
  *
  * @generated from protobuf message mmn.SubscribeTransactionStatusRequest
  */
 export interface SubscribeTransactionStatusRequest {
-    /**
-     * tx_hash is now optional - if not provided, subscribes to all transaction events
-     *
-     * @generated from protobuf field: optional string tx_hash = 1
-     */
-    txHash?: string;
 }
 /**
  * Stream of transaction status updates
@@ -634,9 +630,7 @@ export const GetTransactionStatusResponse = new GetTransactionStatusResponse$Typ
 // @generated message type with reflection information, may provide speed optimized methods
 class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransactionStatusRequest> {
     constructor() {
-        super("mmn.SubscribeTransactionStatusRequest", [
-            { no: 1, name: "tx_hash", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
-        ]);
+        super("mmn.SubscribeTransactionStatusRequest", []);
     }
     create(value?: PartialMessage<SubscribeTransactionStatusRequest>): SubscribeTransactionStatusRequest {
         const message = globalThis.Object.create((this.messagePrototype!));
@@ -649,9 +643,6 @@ class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransa
         while (reader.pos < end) {
             let [fieldNo, wireType] = reader.tag();
             switch (fieldNo) {
-                case /* optional string tx_hash */ 1:
-                    message.txHash = reader.string();
-                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -664,9 +655,6 @@ class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransa
         return message;
     }
     internalBinaryWrite(message: SubscribeTransactionStatusRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
-        /* optional string tx_hash = 1; */
-        if (message.txHash !== undefined)
-            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

@@ -55,10 +55,9 @@ message GetTransactionStatusResponse {
   uint64 timestamp = 7;         // Timestamp when status was last updated
 }
 
-// Request to subscribe to transaction status updates
+// Request to subscribe to all transaction status updates
 message SubscribeTransactionStatusRequest {
-  // tx_hash is now optional - if not provided, subscribes to all transaction events
-  optional string tx_hash = 1;
+  // Empty request - subscribes to all transaction events
 }
 
 // Stream of transaction status updates
@@ -79,6 +78,6 @@ service TxService {
   // Get current status of a transaction
   rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusResponse);
   
-  // Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
+  // Subscribe to status updates for all transactions
   rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusUpdate);
 }

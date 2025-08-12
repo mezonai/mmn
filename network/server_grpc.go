@@ -372,80 +372,10 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system
-func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream pb.TxService_SubscribeTransactionStatusServer) error {
-	txHash := in.TxHash
-
-	// If txHash is provided, subscribe to specific transaction events
-	if txHash != nil && *txHash != "" {
-		return s.subscribeToSpecificTransaction(*txHash, stream)
-	}
-
-	// Otherwise, subscribe to all transaction events
-	return s.subscribeToAllTransactions(stream)
-}
-
-// subscribeToSpecificTransaction handles subscription to a specific transaction
-func (s *server) subscribeToSpecificTransaction(txHash string, stream pb.TxService_SubscribeTransactionStatusServer) error {
-	// Send initial status
-	initialStatus, err := s.GetTransactionStatus(stream.Context(), &pb.GetTransactionStatusRequest{TxHash: txHash})
-	if err != nil {
-		return err
-	}
-
-	update := &pb.TransactionStatusUpdate{
-		TxHash:        initialStatus.TxHash,
-		Status:        initialStatus.Status,
-		BlockSlot:     initialStatus.BlockSlot,
-		BlockHash:     initialStatus.BlockHash,
-		Confirmations: initialStatus.Confirmations,
-		ErrorMessage:  initialStatus.ErrorMessage,
-		Timestamp:     initialStatus.Timestamp,
-	}
-
-	if err := stream.Send(update); err != nil {
-		return err
-	}
-
-	// If already in terminal state, return immediately
-	if initialStatus.Status == pb.TransactionStatus_FINALIZED ||
-		initialStatus.Status == pb.TransactionStatus_FAILED ||
-		initialStatus.Status == pb.TransactionStatus_EXPIRED {
-		return nil
-	}
-
-	// Subscribe to blockchain events for this transaction
-	eventChan := s.eventRouter.Subscribe(txHash)
-	defer s.eventRouter.Unsubscribe(txHash, eventChan)
-
-	// Wait for events indefinitely (client keeps connection open)
-	for {
-		select {
-		case event := <-eventChan:
-			statusUpdate := s.convertEventToStatusUpdate(event, txHash)
-			if statusUpdate != nil {
-				if err := stream.Send(statusUpdate); err != nil {
-					return err
-				}
-
-				// If reached terminal state, stop listening for events
-				if statusUpdate.Status == pb.TransactionStatus_FINALIZED ||
-					statusUpdate.Status == pb.TransactionStatus_FAILED ||
-					statusUpdate.Status == pb.TransactionStatus_EXPIRED {
-					return nil
-				}
-			}
-
-		case <-stream.Context().Done():
-			return stream.Context().Err()
-		}
-	}
-}
-
-// subscribeToAllTransactions handles subscription to all transaction events
-func (s *server) subscribeToAllTransactions(stream pb.TxService_SubscribeTransactionStatusServer) error {
+func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusUpdate]) error {
 	// Subscribe to all blockchain events
-	eventChan := s.eventRouter.SubscribeToAllEvents()
-	defer s.eventRouter.UnsubscribeFromAllEvents(eventChan)
+	eventChan := s.eventRouter.Subscribe()
+	defer s.eventRouter.Unsubscribe(eventChan)
 
 	// Wait for events indefinitely (client keeps connection open)
 	for {

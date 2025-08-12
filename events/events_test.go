@@ -18,12 +18,11 @@ func (m *mockBlockStore) GetTransactionHashes(slot uint64) []string {
 func TestEventBus(t *testing.T) {
 	eventBus := NewEventBus()
 	
-	// Test subscription
-	txHash := "test-tx-hash"
-	eventChan := eventBus.Subscribe(txHash)
+	// Test subscription to all events
+	eventChan := eventBus.Subscribe()
 	
 	// Verify subscription count
-	if count := eventBus.GetSubscriberCount(txHash); count != 1 {
+	if count := eventBus.GetTotalSubscriptions(); count != 1 {
 		t.Errorf("Expected 1 subscriber, got %d", count)
 	}
 	
@@ -36,6 +35,7 @@ func TestEventBus(t *testing.T) {
 		Timestamp: uint64(time.Now().Unix()),
 	}
 	
+	txHash := "test-tx-hash"
 	event := NewTransactionAddedToMempool(txHash, tx)
 	
 	// Publish event in goroutine to avoid blocking
@@ -57,10 +57,10 @@ func TestEventBus(t *testing.T) {
 	}
 	
 	// Test unsubscribe
-	eventBus.Unsubscribe(txHash, eventChan)
+	eventBus.Unsubscribe(eventChan)
 	
 	// Verify subscription count is 0
-	if count := eventBus.GetSubscriberCount(txHash); count != 0 {
+	if count := eventBus.GetTotalSubscriptions(); count != 0 {
 		t.Errorf("Expected 0 subscribers after unsubscribe, got %d", count)
 	}
 }
@@ -122,9 +122,8 @@ func TestEventRouter(t *testing.T) {
 	eventBus := NewEventBus()
 	eventRouter := NewEventRouter(eventBus, mockBlockStore)
 	
-	// Subscribe to a transaction that's in the block
-	txHash := "tx1"
-	eventChan := eventRouter.Subscribe(txHash)
+	// Subscribe to all events
+	eventChan := eventRouter.Subscribe()
 	
 	// Publish block finalized event
 	eventRouter.PublishBlockFinalized(123, "block-hash")
@@ -147,50 +146,61 @@ func TestEventRouter(t *testing.T) {
 	}
 	
 	// Clean up
-	eventRouter.Unsubscribe(txHash, eventChan)
+	eventRouter.Unsubscribe(eventChan)
 }
 
-func TestEventRouterOnlyNotifiesRelevantTransactions(t *testing.T) {
-	// Create mock block store with specific transactions
-	mockBlockStore := &mockBlockStore{
-		txHashes: map[uint64][]string{
-			123: {"tx-in-block"},
-		},
+func TestMultipleSubscribers(t *testing.T) {
+	eventBus := NewEventBus()
+	
+	// Subscribe multiple clients to all events
+	eventChan1 := eventBus.Subscribe()
+	eventChan2 := eventBus.Subscribe()
+	
+	// Verify subscription count
+	if count := eventBus.GetTotalSubscriptions(); count != 2 {
+		t.Errorf("Expected 2 subscribers, got %d", count)
 	}
 	
-	eventBus := NewEventBus()
-	eventRouter := NewEventRouter(eventBus, mockBlockStore)
+	// Test publishing event
+	tx := &types.Transaction{
+		Type:      types.TxTypeTransfer,
+		Sender:    "sender",
+		Recipient: "recipient",
+		Amount:    100,
+		Timestamp: uint64(time.Now().Unix()),
+	}
 	
-	// Subscribe to a transaction that's in the block
-	txInBlock := "tx-in-block"
-	eventChanInBlock := eventRouter.Subscribe(txInBlock)
+	txHash := "test-tx-hash"
+	event := NewTransactionAddedToMempool(txHash, tx)
 	
-	// Subscribe to a transaction that's NOT in the block
-	txNotInBlock := "tx-not-in-block"
-	eventChanNotInBlock := eventRouter.Subscribe(txNotInBlock)
+	// Publish event
+	eventBus.Publish(event)
 	
-	// Publish block finalized event
-	eventRouter.PublishBlockFinalized(123, "block-hash")
-	
-	// Only the transaction in the block should receive the event
+	// Both subscribers should receive the event
 	select {
-	case event := <-eventChanInBlock:
-		if event.Type() != "BlockFinalized" {
-			t.Errorf("Expected BlockFinalized, got %s", event.Type())
+	case receivedEvent := <-eventChan1:
+		if receivedEvent.TxHash() != txHash {
+			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.TxHash())
 		}
 	case <-time.After(1 * time.Second):
-		t.Error("Timeout waiting for event for tx-in-block")
+		t.Error("Timeout waiting for event on channel 1")
 	}
 	
-	// The transaction not in the block should NOT receive the event
 	select {
-	case <-eventChanNotInBlock:
-		t.Error("Transaction not in block should not have received event")
-	case <-time.After(100 * time.Millisecond):
-		// This is expected - no event should be received
+	case receivedEvent := <-eventChan2:
+		if receivedEvent.TxHash() != txHash {
+			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.TxHash())
+		}
+	case <-time.After(1 * time.Second):
+		t.Error("Timeout waiting for event on channel 2")
 	}
 	
 	// Clean up
-	eventRouter.Unsubscribe(txInBlock, eventChanInBlock)
-	eventRouter.Unsubscribe(txNotInBlock, eventChanNotInBlock)
+	eventBus.Unsubscribe(eventChan1)
+	eventBus.Unsubscribe(eventChan2)
+	
+	// Verify subscription count is 0
+	if count := eventBus.GetTotalSubscriptions(); count != 0 {
+		t.Errorf("Expected 0 subscribers after unsubscribe, got %d", count)
+	}
 }

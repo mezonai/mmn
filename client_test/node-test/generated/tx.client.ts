@@ -34,7 +34,7 @@ export interface ITxServiceClient {
      */
     getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, GetTransactionStatusResponse>;
     /**
-     * Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
+     * Subscribe to status updates for all transactions
      *
      * @generated from protobuf rpc: SubscribeTransactionStatus
      */
@@ -73,7 +73,7 @@ export class TxServiceClient implements ITxServiceClient, ServiceInfo {
         return stackIntercept<GetTransactionStatusRequest, GetTransactionStatusResponse>("unary", this._transport, method, opt, input);
     }
     /**
-     * Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
+     * Subscribe to status updates for all transactions
      *
      * @generated from protobuf rpc: SubscribeTransactionStatus
      */

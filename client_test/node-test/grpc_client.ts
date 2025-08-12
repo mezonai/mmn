@@ -145,7 +145,6 @@ export class GrpcClient {
   }
 
   subscribeTransactionStatus(
-    txHash: string,
     onUpdate: (update: {
       tx_hash: string;
       status: string;
@@ -158,59 +157,7 @@ export class GrpcClient {
     onError: (error: any) => void,
     onComplete: () => void
   ): () => void {
-    const req: GenSubscribeTxStatusRequest = { txHash };
-    const abortController = new AbortController();
-    const call = this.txClient.subscribeTransactionStatus(req, { abort: abortController.signal });
-
-    (async () => {
-      try {
-        for await (const update of call.responses as AsyncIterable<GenTxStatusUpdate>) {
-          const statusStr = GenTxStatusEnum[update.status] as unknown as string;
-          onUpdate({
-            tx_hash: update.txHash,
-            status: statusStr || 'UNKNOWN',
-            block_slot: update.blockSlot ? update.blockSlot.toString() : undefined,
-            block_hash: update.blockHash || undefined,
-            confirmations: update.confirmations ? update.confirmations.toString() : undefined,
-            error_message: update.errorMessage || undefined,
-            timestamp: update.timestamp ? update.timestamp.toString() : undefined,
-          });
-        }
-        onComplete();
-      } catch (err: any) {
-        if (abortController.signal.aborted) {
-          // treat as completed due to unsubscribe
-          onComplete();
-          return;
-        }
-        onError(err);
-      }
-    })();
-
-    // Return unsubscribe that cancels the streaming call
-    return () => {
-      try {
-        abortController.abort();
-      } catch (_e) {
-        // ignore
-      }
-    };
-  }
-
-  subscribeToAllTransactionStatus(
-    onUpdate: (update: {
-      tx_hash: string;
-      status: string;
-      block_slot?: string;
-      block_hash?: string;
-      confirmations?: string;
-      error_message?: string;
-      timestamp?: string;
-    }) => void,
-    onError: (error: any) => void,
-    onComplete: () => void
-  ): () => void {
-    const req: GenSubscribeTxStatusRequest = {}; // No txHash for all transactions
+    const req: GenSubscribeTxStatusRequest = {}; // Empty request for all transactions
     const abortController = new AbortController();
     const call = this.txClient.subscribeTransactionStatus(req, { abort: abortController.signal });
 

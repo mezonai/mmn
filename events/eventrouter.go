@@ -39,8 +39,7 @@ func (er *EventRouter) PublishBlockFinalized(slot uint64, blockHash string) {
 	
 	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
 	
-	// Use EventBus.Publish to handle both specific and all-events subscribers
-	// This avoids duplicate messages since EventBus.Publish handles routing correctly
+	// Use EventBus.Publish to handle subscribers
 	er.eventBus.Publish(event)
 }
 
@@ -57,8 +56,7 @@ func (er *EventRouter) PublishBlockFinalizedWithTimestamp(slot uint64, blockHash
 	
 	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
 	
-	// Use EventBus.Publish to handle both specific and all-events subscribers
-	// This avoids duplicate messages since EventBus.Publish handles routing correctly
+	// Use EventBus.Publish to handle subscribers
 	er.eventBus.Publish(event)
 }
 
@@ -67,22 +65,12 @@ func (er *EventRouter) PublishTransactionEvent(event BlockchainEvent) {
 	er.eventBus.Publish(event)
 }
 
-// Subscribe subscribes to events for a specific transaction hash
-func (er *EventRouter) Subscribe(txHash string) chan BlockchainEvent {
-	return er.eventBus.Subscribe(txHash)
+// Subscribe subscribes to all transaction events
+func (er *EventRouter) Subscribe() chan BlockchainEvent {
+	return er.eventBus.Subscribe()
 }
 
-// SubscribeToAllEvents subscribes to all transaction events
-func (er *EventRouter) SubscribeToAllEvents() chan BlockchainEvent {
-	return er.eventBus.SubscribeToAllEvents()
-}
-
-// Unsubscribe removes a subscription for a transaction hash
-func (er *EventRouter) Unsubscribe(txHash string, ch chan BlockchainEvent) {
-	er.eventBus.Unsubscribe(txHash, ch)
-}
-
-// UnsubscribeFromAllEvents removes an all-events subscription
-func (er *EventRouter) UnsubscribeFromAllEvents(ch chan BlockchainEvent) {
-	er.eventBus.UnsubscribeFromAllEvents(ch)
+// Unsubscribe removes a subscription
+func (er *EventRouter) Unsubscribe(ch chan BlockchainEvent) {
+	er.eventBus.Unsubscribe(ch)
 }
