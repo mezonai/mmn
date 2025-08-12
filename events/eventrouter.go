@@ -39,25 +39,11 @@ func (er *EventRouter) PublishBlockFinalized(slot uint64, blockHash string) {
 	
 	fmt.Printf("EventRouter: Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
 	
-	// Route to relevant subscribers only
-	notifiedCount := 0
-	for _, txHash := range txHashes {
-		if subs, exists := er.eventBus.subscribers[txHash]; exists {
-			fmt.Printf("EventRouter: Notifying %d subscribers for tx: %s (in block %d)\n", len(subs), txHash, slot)
-			for _, ch := range subs {
-				select {
-				case ch <- event:
-					// Event sent successfully
-					notifiedCount++
-				default:
-					// Channel is full, skip this subscriber
-					fmt.Printf("Warning: subscriber channel full for tx: %s during block event\n", txHash)
-				}
-			}
-		}
-	}
+	// Use EventBus.Publish to handle both specific and all-events subscribers
+	// This avoids duplicate messages since EventBus.Publish handles routing correctly
+	er.eventBus.Publish(event)
 	
-	fmt.Printf("EventRouter: BlockFinalized for slot %d: notified %d subscribers for %d transactions\n", slot, notifiedCount, len(txHashes))
+	fmt.Printf("EventRouter: BlockFinalized for slot %d: published to all subscribers\n", slot)
 }
 
 // PublishBlockFinalizedWithTimestamp publishes a block finalization event with a specific timestamp
@@ -73,25 +59,11 @@ func (er *EventRouter) PublishBlockFinalizedWithTimestamp(slot uint64, blockHash
 	
 	fmt.Printf("EventRouter: Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
 	
-	// Route to relevant subscribers only
-	notifiedCount := 0
-	for _, txHash := range txHashes {
-		if subs, exists := er.eventBus.subscribers[txHash]; exists {
-			fmt.Printf("EventRouter: Notifying %d subscribers for tx: %s (in block %d)\n", len(subs), txHash, slot)
-			for _, ch := range subs {
-				select {
-				case ch <- event:
-					// Event sent successfully
-					notifiedCount++
-				default:
-					// Channel is full, skip this subscriber
-					fmt.Printf("Warning: subscriber channel full for tx: %s during block event\n", txHash)
-				}
-			}
-		}
-	}
+	// Use EventBus.Publish to handle both specific and all-events subscribers
+	// This avoids duplicate messages since EventBus.Publish handles routing correctly
+	er.eventBus.Publish(event)
 	
-	fmt.Printf("EventRouter: BlockFinalized for slot %d: notified %d subscribers for %d transactions\n", slot, notifiedCount, len(txHashes))
+	fmt.Printf("EventRouter: BlockFinalized for slot %d: published to all subscribers\n", slot)
 }
 
 // PublishTransactionEvent publishes a transaction-specific event

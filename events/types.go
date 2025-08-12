@@ -11,6 +11,7 @@ type EventType string
 const (
     EventTransactionAddedToMempool EventType = "TransactionAddedToMempool"
     EventTransactionIncludedInBlock EventType = "TransactionIncludedInBlock"
+    EventTransactionFinalized       EventType = "TransactionFinalized"
     EventTransactionFailed          EventType = "TransactionFailed"
     EventBlockFinalized             EventType = "BlockFinalized"
 )
@@ -91,6 +92,47 @@ func (e *TransactionIncludedInBlock) BlockSlot() uint64 {
 }
 
 func (e *TransactionIncludedInBlock) BlockHash() string {
+	return e.blockHash
+}
+
+// TransactionFinalized event when a transaction is finalized (block is finalized)
+type TransactionFinalized struct {
+	txHash    string
+	blockSlot uint64
+	blockHash string
+	timestamp time.Time
+}
+
+func NewTransactionFinalized(txHash string, blockSlot uint64, blockHash string) *TransactionFinalized {
+	return NewTransactionFinalizedWithTimestamp(txHash, blockSlot, blockHash, time.Now())
+}
+
+func NewTransactionFinalizedWithTimestamp(txHash string, blockSlot uint64, blockHash string, timestamp time.Time) *TransactionFinalized {
+	return &TransactionFinalized{
+		txHash:    txHash,
+		blockSlot: blockSlot,
+		blockHash: blockHash,
+		timestamp: timestamp,
+	}
+}
+
+func (e *TransactionFinalized) Type() EventType {
+    return EventTransactionFinalized
+}
+
+func (e *TransactionFinalized) Timestamp() time.Time {
+	return e.timestamp
+}
+
+func (e *TransactionFinalized) TxHash() string {
+	return e.txHash
+}
+
+func (e *TransactionFinalized) BlockSlot() uint64 {
+	return e.blockSlot
+}
+
+func (e *TransactionFinalized) BlockHash() string {
 	return e.blockHash
 }
 
