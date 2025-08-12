@@ -94,7 +94,6 @@ func main() {
 		}
 	}
 	pubKeys := make(map[string]ed25519.PublicKey)
-	netClient := network.NewGRPCClient(peerAddrs)
 
 	grpcSrv := network.NewGRPCServer(
 		self.GRPCAddr,
@@ -102,7 +101,6 @@ func main() {
 		blockDir,
 		ld,
 		collector,
-		netClient,
 		self.PubKey,
 		privKey,
 		val,
