@@ -6,7 +6,7 @@ go mod tidy
 
 go run cmd/main.go --node <node name> 
 
-exaple:
+example:
 go run cmd/main.go --node node3
 
 # Build
