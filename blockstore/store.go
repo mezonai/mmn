@@ -13,5 +13,6 @@ type Store interface {
 	Seed() [32]byte
 	LatestFinalized() uint64
 	GetTransactionHashes(slot uint64) []string
-	FindTransactionByClientHash(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool)
+	GetTransactionBlockInfo(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool)
+	GetConfirmations(blockSlot uint64) uint64
 }

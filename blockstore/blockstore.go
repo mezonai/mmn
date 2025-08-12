@@ -171,6 +171,20 @@ func (bs *BlockStore) LatestFinalized() uint64 {
 	return bs.latestFinalized
 }
 
+// GetConfirmations calculates the number of confirmations for a transaction in a given block slot.
+// Confirmations = latestFinalized - blockSlot + 1 if the block is finalized,
+// otherwise returns 1 for confirmed but not finalized blocks.
+func (bs *BlockStore) GetConfirmations(blockSlot uint64) uint64 {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+	
+	latest := bs.latestFinalized
+	if latest >= blockSlot {
+		return latest - blockSlot + 1
+	}
+	return 1 // Confirmed but not yet finalized
+}
+
 
 
 // GetTransactionHashes returns all transaction hashes for a given block slot
@@ -196,11 +210,11 @@ func (bs *BlockStore) GetTransactionHashes(slot uint64) []string {
 	return txHashes
 }
 
-// FindTransactionByClientHash searches all stored blocks for a transaction whose
+// GetTransactionBlockInfo searches all stored blocks for a transaction whose
 // client-computed hash (sha256 of the canonical Serialize() fields) matches the
 // provided hex string. It returns the containing slot, block hash, whether the
 // block is finalized, and whether it was found.
-func (bs *BlockStore) FindTransactionByClientHash(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool) {
+func (bs *BlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool) {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 

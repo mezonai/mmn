@@ -307,7 +307,6 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			// Parse tx to compute client-hash
 			tx, err := utils.ParseTx(data)
 			if err == nil {
-				println("GetTransactionStatus - in mempool", tx)
 				if tx.Hash() == txHash {
 					resp.Status = pb.TransactionStatus_PENDING
 					return resp, nil
@@ -318,19 +317,17 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 
 	// 2) Search in stored blocks
 	if s.blockStore != nil {
-		slot, blkHash, _, found := s.blockStore.FindTransactionByClientHash(txHash)
+		slot, blkHash, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
 		if found {
-			println("GetTransactionStatus - in blockstore", slot, hex.EncodeToString(blkHash[:]))
-			resp.Status = pb.TransactionStatus_CONFIRMED
 			resp.BlockSlot = slot
 			resp.BlockHash = hex.EncodeToString(blkHash[:])
-			// confirmations = latestFinalized - slot + 1 if finalized beyond slot; mark FINALIZED if slot <= latestFinalized
-			latest := s.blockStore.LatestFinalized()
-			if latest >= slot {
+			resp.Confirmations = s.blockStore.GetConfirmations(slot)
+			
+			// Determine status based on confirmations
+			if resp.Confirmations > 1 {
 				resp.Status = pb.TransactionStatus_FINALIZED
-				resp.Confirmations = latest - slot + 1
 			} else {
-				resp.Confirmations = 1
+				resp.Status = pb.TransactionStatus_CONFIRMED
 			}
 			return resp, nil
 		}
@@ -414,38 +411,52 @@ func (s *server) convertEventToStatusUpdate(event types.BlockchainEvent, txHash 
 	switch e := event.(type) {
 	case *types.TransactionAddedToMempool:
 		return &pb.TransactionStatusUpdate{
-			TxHash:   txHash,
-			Status:   pb.TransactionStatus_PENDING,
-			Timestamp: uint64(time.Now().Unix()),
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_PENDING,
+			Confirmations: 0, // No confirmations for mempool transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
 		}
 
 	case *types.TransactionIncludedInBlock:
+		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
+		var status pb.TransactionStatus
+		
+		if confirmations > 1 {
+			status = pb.TransactionStatus_FINALIZED
+		} else {
+			status = pb.TransactionStatus_CONFIRMED
+		}
+		
 		return &pb.TransactionStatusUpdate{
-			TxHash:    txHash,
-			Status:    pb.TransactionStatus_CONFIRMED,
-			BlockSlot: e.BlockSlot(),
-			BlockHash: e.BlockHash(),
-			Timestamp: uint64(time.Now().Unix()),
+			TxHash:        txHash,
+			Status:        status,
+			BlockSlot:     e.BlockSlot(),
+			BlockHash:     e.BlockHash(),
+			Confirmations: confirmations,
+			Timestamp:     uint64(e.Timestamp().Unix()),
 		}
 
 	case *types.TransactionFailed:
 		return &pb.TransactionStatusUpdate{
-			TxHash:       txHash,
-			Status:       pb.TransactionStatus_FAILED,
-			ErrorMessage: e.ErrorMessage(),
-			Timestamp:    uint64(time.Now().Unix()),
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_FAILED,
+			ErrorMessage:  e.ErrorMessage(),
+			Confirmations: 0, // No confirmations for failed transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
 		}
 
 	case *types.BlockFinalized:
 		// Check if our transaction is in this finalized block
-		if slot, _, _, found := s.blockStore.FindTransactionByClientHash(txHash); found && slot == e.BlockSlot() {
+		if slot, _, _, found := s.blockStore.GetTransactionBlockInfo(txHash); found && slot == e.BlockSlot() {
+			confirmations := s.blockStore.GetConfirmations(slot)
+			
 			return &pb.TransactionStatusUpdate{
 				TxHash:        txHash,
 				Status:        pb.TransactionStatus_FINALIZED,
 				BlockSlot:     e.BlockSlot(),
 				BlockHash:     e.BlockHash(),
-				Confirmations: 1, // Calculate actual confirmations
-				Timestamp:     uint64(time.Now().Unix()),
+				Confirmations: confirmations,
+				Timestamp:     uint64(e.Timestamp().Unix()),
 			}
 		}
 	}
