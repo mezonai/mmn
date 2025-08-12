@@ -13,6 +13,7 @@ require (
 	github.com/holiman/uint256 v1.3.2
 	github.com/jedisct1/go-minisign v0.0.0-20241212093149-d2f9f49435c7
 	github.com/lib/pq v1.10.9
+	github.com/linxGnu/grocksdb v1.10.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tetratelabs/wazero v1.9.0
 	go.etcd.io/bbolt v1.4.0

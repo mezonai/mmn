@@ -8,7 +8,6 @@ import {
   AccountServiceClient,
   IAccountServiceClient,
 } from './generated/account.client';
-
 import type {
   TxMsg as GenTxMsg,
   SignedTxMsg as GenSignedTxMsg,
