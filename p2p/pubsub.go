@@ -13,7 +13,6 @@ import (
 	"mmn/logx"
 	"mmn/mempool"
 	"mmn/types"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -103,14 +102,25 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				// (Implementation depends on your block structure)
+				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+					return fmt.Errorf("apply block error: %w", err)
+				}
+
+				// Mark block as finalized
+				if err := bs.MarkFinalized(vote.Slot); err != nil {
+					return fmt.Errorf("mark block as finalized error: %w", err)
+				}
+
+				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
 			}
 
 			return nil
 		},
-		func(txData []types.Transaction) error {
-			// TODO implement
+		func(txData *types.Transaction) error {
+			logx.Info("TX", "Processing received transaction from P2P network")
 
+			// Add transaction to mempool
+			mp.AddTx(txData, false)
 			return nil
 		},
 	)
@@ -154,7 +164,7 @@ func (ln *Libp2pNetwork) SetupPubSubTopics() {
 func (ln *Libp2pNetwork) SetCallbacks(
 	onBlock func(*block.Block) error,
 	onVote func(*consensus.Vote) error,
-	onTx func([]types.Transaction) error,
+	onTx func(*types.Transaction) error,
 ) {
 	ln.onBlockReceived = onBlock
 	ln.onVoteReceived = onVote
@@ -165,6 +175,8 @@ func (ln *Libp2pNetwork) BroadcastToStreams(data []byte, streams map[peer.ID]net
 	ln.streamMu.RLock()
 	defer ln.streamMu.RUnlock()
 
+	logx.Info("NETWORK:BROADCAST TO STREAMS", "Broadcasting to ", len(streams), " streams")
+
 	for _, stream := range streams {
 		if stream != nil {
 			stream.Write(data)
@@ -173,7 +185,17 @@ func (ln *Libp2pNetwork) BroadcastToStreams(data []byte, streams map[peer.ID]net
 }
 
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
-	// Implement
+	logx.Info("TX", "Broadcasting transaction to network")
+	// Serialize transaction to JSON
+	txData, err := json.Marshal(tx)
+	if err != nil {
+		return fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+
+	// Publish to pubsub topic
+	if err := ln.topicTxs.Publish(ctx, txData); err != nil {
+		return fmt.Errorf("failed to publish transaction: %w", err)
+	}
 
 	return nil
 }
@@ -201,31 +223,21 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 }
 
 func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) error {
-	msg := BlockMessage{
-		Slot:      blk.Slot,
-		PrevHash:  fmt.Sprintf("%x", blk.PrevHash),
-		LeaderID:  blk.LeaderID,
-		Timestamp: time.Unix(int64(blk.Timestamp), 0),
-		Hash:      fmt.Sprintf("%x", blk.Hash),
-		Signature: blk.Signature,
-	}
+	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
 
-	for _, entry := range blk.Entries {
-		msg.Entries = append(msg.Entries, fmt.Sprintf("%x", entry.Hash))
-	}
-
-	data, err := json.Marshal(msg)
+	data, err := json.Marshal(blk)
 	if err != nil {
+		logx.Error("BLOCK", "Failed to marshal block: ", err)
 		return err
 	}
 
 	if ln.topicBlocks != nil {
+		logx.Info("BLOCK", "Publishing block to pubsub topic")
 		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
-			logx.Error("PUBSUB", "Failed to publish block:", err)
+			logx.Error("BLOCK", "Failed to publish block:", err)
 		}
 	}
 
 	ln.BroadcastToStreams(data, ln.blockStreams)
-
 	return nil
 }

@@ -18,12 +18,11 @@ func (ln *Libp2pNetwork) HandleBlockTopic(sub *pubsub.Subscription) {
 			continue
 		}
 
-		var blockMsg BlockMessage
-		if err := json.Unmarshal(msg.Data, &blockMsg); err != nil {
+		var blk *block.Block
+		if err := json.Unmarshal(msg.Data, &blk); err != nil {
 			continue
 		}
 
-		blk := ln.ConvertMessageToBlock(blockMsg)
 		if blk != nil && ln.onBlockReceived != nil {
 			ln.onBlockReceived(blk)
 		}
@@ -31,6 +30,7 @@ func (ln *Libp2pNetwork) HandleBlockTopic(sub *pubsub.Subscription) {
 }
 
 func (ln *Libp2pNetwork) HandleBlockStream(s network.Stream) {
+	logx.Info("NETWORK:BLOCK", "Received block stream")
 	defer s.Close()
 
 	buf := make([]byte, 4096)
@@ -39,12 +39,11 @@ func (ln *Libp2pNetwork) HandleBlockStream(s network.Stream) {
 		return
 	}
 
-	var msg BlockMessage
-	if err := json.Unmarshal(buf[:n], &msg); err != nil {
+	var blk *block.Block
+	if err := json.Unmarshal(buf[:n], &blk); err != nil {
 		return
 	}
 
-	blk := ln.ConvertMessageToBlock(msg)
 	if blk != nil && ln.onBlockReceived != nil {
 		ln.onBlockReceived(blk)
 	}

@@ -33,7 +33,7 @@ type Libp2pNetwork struct {
 
 	onBlockReceived func(*block.Block) error
 	onVoteReceived  func(*consensus.Vote) error
-	onTxReceived    func([]types.Transaction) error
+	onTxReceived    func(*types.Transaction) error
 
 	blockStreams map[peer.ID]network.Stream
 	voteStreams  map[peer.ID]network.Stream
