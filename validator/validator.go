@@ -35,7 +35,7 @@ type Validator struct {
 	BatchSize                 int
 
 	netClient   interfaces.Broadcaster
-	blockStore  *blockstore.BlockStore
+	blockStore  blockstore.Store
 	ledger      *ledger.Ledger
 	session     *ledger.Session
 	lastSession *ledger.Session
@@ -62,7 +62,7 @@ func NewValidator(
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
 	netClient interfaces.Broadcaster,
-	blockStore *blockstore.BlockStore,
+	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
 ) *Validator {
@@ -167,7 +167,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Retrieve previous block hash from blockStore
 		var hash [32]byte
 		if v.lastSlot == 0 {
-			hash = v.blockStore.SeedHash
+			hash = v.blockStore.Seed()
 		} else {
 			entry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
 			hash = entry.Hash
