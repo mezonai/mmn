@@ -1,15 +1,17 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"mmn/cmd"
+	"os"
 	"runtime/debug"
 )
 
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[FATAL] Panic: %v\n%s", r, debug.Stack())
+			fmt.Printf("NODE CRASHED: %v\n%s", r, debug.Stack())
+			os.Exit(1)
 		}
 	}()
 
