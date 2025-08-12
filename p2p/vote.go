@@ -16,6 +16,12 @@ func (ln *Libp2pNetwork) HandleVoteTopic(sub *pubsub.Subscription) {
 			continue
 		}
 
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:VOTE", "Skipping vote message from self")
+			continue
+		}
+
 		var voteMsg VoteMessage
 		if err := json.Unmarshal(msg.Data, &voteMsg); err != nil {
 			continue

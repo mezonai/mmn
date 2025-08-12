@@ -68,6 +68,16 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	ln.SetCallbacks(
 		func(blk *block.Block) error {
 			logx.Info("BLOCK", "Received block from network: slot=", blk.Slot)
+
+			// TODO: need to verify signature and leader ID
+			// Verify PoH
+			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
+			if err := blk.VerifyPoH(); err != nil {
+				logx.Error("BLOCK", "Invalid PoH:", err)
+				return fmt.Errorf("invalid PoH")
+			}
+
+			// Verify block
 			if err := ld.VerifyBlock(blk); err != nil {
 				logx.Error("BLOCK", "Block verification failed: ", err)
 				return err
@@ -84,6 +94,27 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				VoterID:   self.PubKey,
 			}
 			vote.Sign(privKey)
+
+			committed, needApply, err := collector.AddVote(vote)
+			if err != nil {
+				logx.Error("VOTE", "Failed to add vote: ", err)
+				return err
+			}
+
+			if committed && needApply {
+				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
+				// Apply block to ledger
+				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+					return fmt.Errorf("apply block error: %w", err)
+				}
+
+				// Mark block as finalized
+				if err := bs.MarkFinalized(vote.Slot); err != nil {
+					return fmt.Errorf("mark block as finalized error: %w", err)
+				}
+
+				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
+			}
 
 			ln.BroadcastVote(context.Background(), vote)
 

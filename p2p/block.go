@@ -18,6 +18,12 @@ func (ln *Libp2pNetwork) HandleBlockTopic(sub *pubsub.Subscription) {
 			continue
 		}
 
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:BLOCK", "Skipping block message from self")
+			continue
+		}
+
 		var blk *block.Block
 		if err := json.Unmarshal(msg.Data, &blk); err != nil {
 			continue
@@ -41,6 +47,12 @@ func (ln *Libp2pNetwork) handleBlockSyncResponseTopic(sub *pubsub.Subscription) 
 			continue
 		}
 
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:SYNC BLOCK", "Skipping sync response from self")
+			continue
+		}
+
 		var resp SyncResponse
 		if err := json.Unmarshal(msg.Data, &resp); err != nil {
 			logx.Error("NETWORK:SYNC BLOCK", "Unmarshal ", err.Error())
@@ -58,6 +70,12 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(sub *pubsub.Subscription) {
 		msg, err := sub.Next(context.Background())
 		if err != nil {
 			logx.Error("NETWORK:SYNC BLOCK", "Next ", err.Error())
+			continue
+		}
+
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:SYNC BLOCK", "Skipping sync request from self")
 			continue
 		}
 
