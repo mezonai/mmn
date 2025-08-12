@@ -76,5 +76,5 @@ type SyncRequest struct {
 }
 
 type SyncResponse struct {
-	Block *block.Block `json:"block"`
+	Blocks []*block.Block `json:"blocks"`
 }

@@ -13,7 +13,8 @@ func (ln *Libp2pNetwork) RequestBlockSync(fromSlot uint64) error {
 	req := SyncRequest{FromSlot: fromSlot}
 	data, err := json.Marshal(req)
 	if err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "failed to marshal sync request: %w", err)
+		errMsg := fmt.Sprintf("failed to marshal sync request: %v", err)
+		logx.Error("NETWORK:SYNC BLOCK", errMsg)
 		return err
 	}
 
