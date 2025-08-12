@@ -35,11 +35,12 @@ type Validator struct {
 	leaderTimeoutLoopInterval time.Duration
 	BatchSize                 int
 
-	netClient  interfaces.Broadcaster
-	blockStore blockstore.Store
-	ledger     *ledger.Ledger
-	session    *ledger.Session
-	collector  *consensus.Collector
+	netClient   interfaces.Broadcaster
+	blockStore  blockstore.Store
+	ledger      *ledger.Ledger
+	session     *ledger.Session
+	lastSession *ledger.Session
+	collector   *consensus.Collector
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
@@ -83,6 +84,7 @@ func NewValidator(
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		session:                   ledger.NewSession(),
+		lastSession:               ledger.NewSession(),
 		lastSlot:                  0,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
@@ -128,12 +130,14 @@ waitLoop:
 	v.Recorder.Reset(seed.Hash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
+	v.lastSession = v.ledger.NewSession()
 }
 
 func (v *Validator) onLeaderSlotEnd() {
 	v.leaderStartAtSlot = NoSlot
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
+	v.lastSession = v.ledger.NewSession()
 }
 
 func (v *Validator) fastForwardTicks(prevSlot uint64) blockstore.SlotBoundary {
@@ -156,7 +160,7 @@ func (v *Validator) IsFollower(slot uint64) bool {
 }
 
 // handleEntry buffers entries and assembles a block at slot boundary.
-func (v *Validator) handleEntry(e poh.Entry) {
+func (v *Validator) handleEntry(entries []poh.Entry) {
 	currentSlot := v.Recorder.CurrentSlot()
 
 	// When slot advances, assemble block for lastSlot if we were leader
@@ -179,6 +183,7 @@ func (v *Validator) handleEntry(e poh.Entry) {
 
 		if err := v.ledger.VerifyBlock(blk); err != nil {
 			fmt.Printf("[LEADER] sanity verify fail: %v\n", err)
+			v.session = v.lastSession.CopyWithOverlayClone()
 			return
 		}
 
@@ -220,13 +225,13 @@ func (v *Validator) handleEntry(e poh.Entry) {
 
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-		v.session = v.ledger.NewSession() // reset session
+		v.lastSession = v.session.CopyWithOverlayClone()
 	}
 
 	// Buffer entries only if leader of current slot
 	if v.IsLeader(currentSlot) {
-		fmt.Printf("Adding entry %x for slot %d\n", e.Hash, currentSlot)
-		v.collectedEntries = append(v.collectedEntries, e)
+		v.collectedEntries = append(v.collectedEntries, entries...)
+		fmt.Printf("Adding %d entries for slot %d\n", len(entries), currentSlot)
 	}
 
 	// Update lastSlot
@@ -260,17 +265,18 @@ func (v *Validator) leaderBatchLoop() {
 				continue
 			}
 
+			previousSession := v.session.CopyWithOverlayClone()
 			fmt.Println("[LEADER] Filtering batch")
 			valids, errs := v.session.FilterValid(batch)
 			if len(errs) > 0 {
 				fmt.Println("[LEADER] Invalid transactions:", errs)
-				continue
 			}
 
 			fmt.Println("[LEADER] Recording batch")
 			entry, err := v.Recorder.RecordTxs(valids)
 			if err != nil {
 				fmt.Println("[LEADER] Record error:", err)
+				v.session = previousSession
 				continue
 			}
 			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(valids), slot, entry.Hash[:6])
