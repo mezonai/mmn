@@ -7,6 +7,7 @@ import (
 	"mmn/consensus"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 func UnmarshalEd25519PrivateKey(private ed25519.PrivateKey) (crypto.PrivKey, error) {
@@ -47,4 +48,12 @@ func (ln *Libp2pNetwork) ConvertMessageToBlock(msg BlockMessage) *block.Block {
 		LeaderID:  msg.LeaderID,
 		Timestamp: uint64(msg.Timestamp.Second()),
 	}
+}
+
+func AddrStrings(addrs []ma.Multiaddr) []string {
+	var strAddrs []string
+	for _, addr := range addrs {
+		strAddrs = append(strAddrs, addr.String())
+	}
+	return strAddrs
 }

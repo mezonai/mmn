@@ -12,6 +12,7 @@ import (
 	"mmn/interfaces"
 	"mmn/ledger"
 	"mmn/mempool"
+	"mmn/p2p"
 	"mmn/poh"
 )
 
@@ -35,7 +36,7 @@ type Validator struct {
 	BatchSize                 int
 
 	netClient  interfaces.Broadcaster
-	blockStore *blockstore.BlockStore
+	blockStore blockstore.Store
 	ledger     *ledger.Ledger
 	session    *ledger.Session
 	collector  *consensus.Collector
@@ -60,8 +61,8 @@ func NewValidator(
 	leaderTimeout time.Duration,
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
-	netClient interfaces.Broadcaster,
-	blockStore *blockstore.BlockStore,
+	p2pClient *p2p.Libp2pNetwork,
+	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
 ) *Validator {
@@ -78,7 +79,7 @@ func NewValidator(
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
-		netClient:                 netClient,
+		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		session:                   ledger.NewSession(),
@@ -163,7 +164,7 @@ func (v *Validator) handleEntry(e poh.Entry) {
 		// Retrieve previous block hash from blockStore
 		var hash [32]byte
 		if v.lastSlot == 0 {
-			hash = v.blockStore.SeedHash
+			hash = v.blockStore.Seed()
 		} else {
 			entry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
 			hash = entry.Hash

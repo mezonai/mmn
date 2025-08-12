@@ -13,3 +13,8 @@ const (
 	BlockSyncResponseTopic = "block-sync/response"
 	AdvertiseName          = "mmn"
 )
+
+var (
+	ConnCount int32 = 0
+	MaxPeers  int32 = 50
+)

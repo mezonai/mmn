@@ -2,11 +2,12 @@ package config
 
 // NodeConfig represents a node's configuration
 type NodeConfig struct {
-	PubKey      string `yaml:"pubkey"`
-	PrivKeyPath string `yaml:"privkey_path"`
-	ListenAddr  string `yaml:"listen_addr"`
-	Libp2pAddr  string `yaml:"libp2p_addr"`
-	GRPCAddr    string `yaml:"grpc_addr"`
+	PubKey           string `yaml:"pubkey"`
+	PrivKeyPath      string `yaml:"privkey_path"`
+	ListenAddr       string `yaml:"listen_addr"`
+	Libp2pAddr       string `yaml:"libp2p_addr"`
+	GRPCAddr         string `yaml:"grpc_addr"`
+	BootStrapAddress string `yaml:"bootstrap_address"`
 }
 
 // LeaderSchedule represents a leader schedule entry

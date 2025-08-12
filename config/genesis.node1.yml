@@ -8,6 +8,7 @@ config:
     listen_addr: ":8001"
     libp2p_addr: "/ip4/0.0.0.0/tcp/10001"
     grpc_addr: ":9003"
+    bootstrap_address: "/ip4/10.10.30.50/tcp/53262/p2p/12D3KooWEyiY5BtmFW8n3D3eeMzyjLcu36y49jdCmWoNUtZKVS3L"
 
   peer_nodes:
     - pubkey: "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248"

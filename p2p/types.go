@@ -23,7 +23,7 @@ type Libp2pNetwork struct {
 	peers       map[peer.ID]*PeerInfo
 	mu          sync.RWMutex
 
-	blockStore *blockstore.BlockStore
+	blockStore blockstore.Store
 
 	topicBlocks       *pubsub.Topic
 	topicVotes        *pubsub.Topic

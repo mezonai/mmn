@@ -3,14 +3,12 @@ package config
 import (
 	"crypto/ed25519"
 	"encoding/hex"
-	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
-	"mmn/logx"
 	"mmn/poh"
 	"os"
 
+	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -68,26 +66,61 @@ func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
 	return ls
 }
 
-func NewConfig(nodeConfigFileName string) (*GenesisConfig, NodeConfig, []byte, []NodeConfig, []LeaderSchedule, ed25519.PrivateKey) {
-	// load node config
-	current_node := flag.String("node", nodeConfigFileName, "The node to run")
-	flag.Parse()
+type PohConfig struct {
+	HashesPerTick  uint64 `ini:"hashes_per_tick"`
+	TicksPerSlot   uint64 `ini:"ticks_per_slot"`
+	TickIntervalMs int    `ini:"tick_interval_ms"`
+}
 
-	cfg, err := LoadGenesisConfig(fmt.Sprintf("config/genesis.%s.yml", *current_node))
+type MempoolConfig struct {
+	MaxTxs int `ini:"max_txs"`
+}
+
+type ValidatorConfig struct {
+	BatchSize                 int `ini:"batch_size"`
+	LeaderTimeout             int `ini:"leader_timeout"`
+	LeaderTimeoutLoopInterval int `ini:"leader_timeout_loop_interval"`
+}
+
+// LoadPohConfig reads PoH config from an .ini file
+func LoadPohConfig(path string) (*PohConfig, error) {
+	cfg, err := ini.Load(path)
 	if err != nil {
-		logx.Error("LOAD CONFIG", "Failed to load config: ", err)
+		return nil, err
 	}
-	self := cfg.SelfNode
-	seed := []byte(self.PubKey)
-	peers := cfg.PeerNodes
-	leaderSchedule := cfg.LeaderSchedule
-
-	// --- Load private key from file ---
-	privKey, err := LoadEd25519PrivKey(self.PrivKeyPath)
+	pohSection := cfg.Section("poh")
+	pohCfg := &PohConfig{}
+	err = pohSection.MapTo(pohCfg)
 	if err != nil {
-		logx.Error("LOAD CONFIG", "Failed to load private key", err)
+		return nil, err
 	}
+	return pohCfg, nil
+}
 
-	return cfg, self, seed, peers, leaderSchedule, privKey
+func LoadMempoolConfig(path string) (*MempoolConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	mempoolSection := cfg.Section("mempool")
+	mempoolCfg := &MempoolConfig{}
+	err = mempoolSection.MapTo(mempoolCfg)
+	if err != nil {
+		return nil, err
+	}
+	return mempoolCfg, nil
+}
 
+func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	validatorSection := cfg.Section("validator")
+	validatorCfg := &ValidatorConfig{}
+	err = validatorSection.MapTo(validatorCfg)
+	if err != nil {
+		return nil, err
+	}
+	return validatorCfg, nil
 }

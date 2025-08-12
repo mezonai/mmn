@@ -1,28 +1,34 @@
-version: '3.8'
 services:
   node1:
     build: .
     container_name: node1
-    command: ["./mmn", "-node=node1"]
+    command: ["./mmn", "run", "--node", "node1"]
     ports:
       - "8001:8001"
       - "9001:9001"
       - "10001:10001"  # libp2p port
-    environment:
-      - BOOTSTRAP_NODE_PEER_ADDRESS=${BOOTSTRAP_NODE_PEER_ADDRESS:-}
     networks:
       - mezon
 
   node2:
     build: .
     container_name: node2
-    command: ["./mmn", "-node=node2"]
+    command: ["./mmn", "run", "--node", "node2"]
     ports:
       - "8002:8002"
       - "9002:9002"
       - "10002:10002"  # libp2p port
-    environment:
-      - BOOTSTRAP_NODE_PEER_ADDRESS=${BOOTSTRAP_NODE_PEER_ADDRESS:-}
+    networks:
+      - mezon
+
+  node3:
+    build: .
+    container_name: node3
+    command: ["./mmn", "run", "--node", "node3"]
+    ports:
+      - "8003:8003"
+      - "9003:9003"
+      - "10003:10003"  # libp2p port
     networks:
       - mezon
 
