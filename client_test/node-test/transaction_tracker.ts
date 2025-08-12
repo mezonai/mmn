@@ -65,7 +65,6 @@ export interface TransactionStatusInfo {
 
 export interface TransactionTrackerOptions {
   serverAddress?: string;
-  pollInterval?: number; // milliseconds
   maxRetries?: number;
   timeout?: number; // milliseconds
 }
@@ -74,17 +73,13 @@ export class TransactionTracker extends EventEmitter {
   private grpcClient: GrpcClient;
   private trackedTransactions: Map<string, TransactionStatusInfo> = new Map();
   private subscriptions: Map<string, () => void> = new Map();
-  private pollInterval: number;
 
   constructor(options: TransactionTrackerOptions = {}) {
     super();
 
     const {
       serverAddress = '127.0.0.1:9001',
-      pollInterval = 2000, // 2 seconds
     } = options;
-
-    this.pollInterval = pollInterval;
 
     // Initialize gRPC client
     this.grpcClient = new GrpcClient(serverAddress);
@@ -145,7 +140,6 @@ export class TransactionTracker extends EventEmitter {
     // Subscribe to status updates
     const unsubscribe = this.grpcClient.subscribeTransactionStatus(
       txHash,
-      300, // 5 minutes timeout
       (update: {
         tx_hash: string;
         status: string;
@@ -168,6 +162,41 @@ export class TransactionTracker extends EventEmitter {
     this.subscriptions.set(txHash, unsubscribe);
   }
 
+  /**
+   * Track all transactions using subscription to all transaction events
+   */
+  trackAllTransactions(): void {
+    console.log('🔍 Starting to track all transactions...');
+    
+    // Subscribe to all transaction events
+    const unsubscribe = this.grpcClient.subscribeToAllTransactionStatus(
+      (update: {
+        tx_hash: string;
+        status: string;
+        block_slot?: string;
+        block_hash?: string;
+        confirmations?: string;
+        error_message?: string;
+        timestamp?: string;
+      }) => {
+        // Handle status update for any transaction
+        this.handleStatusUpdate(update.tx_hash, update);
+      },
+      (error: any) => {
+        console.error('Subscription error for all transactions:', error);
+        this.emit('error', error);
+      },
+      () => {
+        console.log('Subscription completed for all transactions');
+        this.emit('allTransactionsSubscriptionCompleted');
+      }
+    );
+
+    // Store the unsubscribe function with a special key
+    this.subscriptions.set('*all*', unsubscribe);
+    
+    this.emit('allTransactionsTrackingStarted');
+  }
 
 
   /**
@@ -183,6 +212,36 @@ export class TransactionTracker extends EventEmitter {
 
     this.trackedTransactions.delete(txHash);
     this.emit('trackingStopped', txHash);
+  }
+
+  /**
+   * Stop tracking all transactions
+   */
+  stopTrackingAllTransactions(): void {
+    console.log('🛑 Stopping tracking of all transactions...');
+    
+    // Cancel the all-transactions subscription
+    const unsubscribe = this.subscriptions.get('*all*');
+    if (unsubscribe) {
+      unsubscribe();
+      this.subscriptions.delete('*all*');
+    }
+    
+    this.emit('allTransactionsTrackingStopped');
+  }
+
+  /**
+   * Stop tracking all transactions
+   */
+  stopTrackingAll(): void {
+    // Cancel all subscriptions
+    for (const unsubscribe of this.subscriptions.values()) {
+      unsubscribe();
+    }
+    this.subscriptions.clear();
+
+    this.trackedTransactions.clear();
+    this.emit('allTrackingStopped');
   }
 
   /**
@@ -247,20 +306,6 @@ export class TransactionTracker extends EventEmitter {
   }
 
   /**
-   * Stop tracking all transactions
-   */
-  stopTrackingAll(): void {
-    // Cancel all subscriptions
-    for (const unsubscribe of this.subscriptions.values()) {
-      unsubscribe();
-    }
-    this.subscriptions.clear();
-
-    this.trackedTransactions.clear();
-    this.emit('trackingStoppedAll');
-  }
-
-  /**
    * Get all tracked transactions
    */
   getTrackedTransactions(): Map<string, TransactionStatusInfo> {
@@ -268,7 +313,14 @@ export class TransactionTracker extends EventEmitter {
   }
 
   /**
-   * Wait for a transaction to reach a specific status
+   * Get tracked transaction status
+   */
+  getTrackedTransactionStatus(txHash: string): TransactionStatusInfo | undefined {
+    return this.trackedTransactions.get(txHash);
+  }
+
+  /**
+   * Wait for a transaction to reach a specific status using subscription
    */
   async waitForStatus(
     txHash: string,
@@ -283,34 +335,58 @@ export class TransactionTracker extends EventEmitter {
         );
       }, timeoutMs);
 
-      const checkStatus = async () => {
-        try {
-          const statusInfo = await this.getTransactionStatus(txHash);
+      // Check if we're already tracking this transaction
+      const currentStatus = this.getTrackedTransactionStatus(txHash);
+      if (currentStatus && currentStatus.status === targetStatus) {
+        clearTimeout(timeout);
+        console.log(`  ✅ Target status already reached for ${txHash.substring(0, 16)}...`);
+        resolve(currentStatus);
+        return;
+      }
 
-          if (statusInfo.status === targetStatus) {
-            clearTimeout(timeout);
-            resolve(statusInfo);
-            return;
-          }
-
-          // Check if we've exceeded timeout
-          if (Date.now() - startTime > timeoutMs) {
-            clearTimeout(timeout);
-            reject(
-              new Error(`Timeout waiting for transaction ${txHash} to reach status ${TransactionStatus[targetStatus]}`)
-            );
-            return;
-          }
-
-          // Continue polling
-          setTimeout(checkStatus, this.pollInterval);
-        } catch (error) {
+      // Set up a one-time event listener for status changes
+      const statusListener = (changedTxHash: string, oldStatus: TransactionStatus, newStatus: TransactionStatus) => {
+        if (changedTxHash === txHash && newStatus === targetStatus) {
           clearTimeout(timeout);
-          reject(error);
+          this.off('statusChanged', statusListener);
+          
+          const finalStatus = this.getTrackedTransactionStatus(txHash);
+          if (finalStatus) {
+            console.log(`  ✅ Target status reached for ${txHash.substring(0, 16)}... via subscription`);
+            resolve(finalStatus);
+          } else {
+            reject(new Error(`Status reached but not found in tracked transactions`));
+          }
         }
       };
 
-      checkStatus();
+      // Listen for status changes
+      this.on('statusChanged', statusListener);
+
+      // Start tracking the transaction if not already tracking
+      if (!this.getTrackedTransactionStatus(txHash)) {
+        this.trackTransaction(txHash).catch((error) => {
+          clearTimeout(timeout);
+          this.off('statusChanged', statusListener);
+          console.log(`  ❌ Error starting tracking for ${txHash.substring(0, 16)}...:`, error);
+          reject(error);
+        });
+      }
+
+      // Also check for timeout
+      const checkTimeout = () => {
+        if (Date.now() - startTime > timeoutMs) {
+          clearTimeout(timeout);
+          this.off('statusChanged', statusListener);
+          console.log(`  ⏰ Timeout exceeded for ${txHash.substring(0, 16)}...`);
+          reject(
+            new Error(`Timeout waiting for transaction ${txHash} to reach status ${TransactionStatus[targetStatus]}`)
+          );
+        } else {
+          setTimeout(checkTimeout, 1000); // Check every second
+        }
+      };
+      checkTimeout();
     });
   }
 
@@ -403,7 +479,7 @@ export class TransactionStatusUtils {
   }
 
   /**
-   * Get transaction status with retry logic
+   * Get transaction status with retry logic (using subscription)
    */
   static async getStatusWithRetry(
     txHash: string,
@@ -412,16 +488,42 @@ export class TransactionStatusUtils {
   ): Promise<TransactionStatusInfo> {
     const tracker = new TransactionTracker({ serverAddress });
 
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        const status = await tracker.getTransactionStatus(txHash);
-        return status;
-      } catch (error) {
-        if (i === maxRetries - 1) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
-      }
-    }
+    try {
+      // Use subscription-based tracking instead of polling
+      await tracker.trackTransaction(txHash);
+      
+      // Wait for any status update (with timeout)
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`Timeout getting status for transaction ${txHash}`));
+        }, 10000); // 10 second timeout
 
-    throw new Error(`Failed to get status for transaction ${txHash} after ${maxRetries} retries`);
+                 const statusListener = (changedTxHash: string, oldStatus: TransactionStatus, newStatus: TransactionStatus) => {
+           if (changedTxHash === txHash) {
+             clearTimeout(timeout);
+             tracker.off('statusChanged', statusListener);
+             
+             const status = tracker.getTrackedTransactionStatus(txHash);
+             if (status) {
+               resolve(status);
+             } else {
+               reject(new Error(`Status not found for transaction ${txHash}`));
+             }
+           }
+         };
+
+         tracker.on('statusChanged', statusListener);
+         
+         // Also check current status immediately
+         const currentStatus = tracker.getTrackedTransactionStatus(txHash);
+         if (currentStatus) {
+           clearTimeout(timeout);
+           tracker.off('statusChanged', statusListener);
+           resolve(currentStatus);
+         }
+      });
+    } finally {
+      tracker.close();
+    }
   }
 }

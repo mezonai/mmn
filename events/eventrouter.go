@@ -37,13 +37,11 @@ func (er *EventRouter) PublishBlockFinalized(slot uint64, blockHash string) {
 	// Get transaction hashes from BlockStore (single source of truth)
 	txHashes := er.blockStore.GetTransactionHashes(slot)
 	
-	fmt.Printf("EventRouter: Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
+	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
 	
 	// Use EventBus.Publish to handle both specific and all-events subscribers
 	// This avoids duplicate messages since EventBus.Publish handles routing correctly
 	er.eventBus.Publish(event)
-	
-	fmt.Printf("EventRouter: BlockFinalized for slot %d: published to all subscribers\n", slot)
 }
 
 // PublishBlockFinalizedWithTimestamp publishes a block finalization event with a specific timestamp
@@ -57,13 +55,11 @@ func (er *EventRouter) PublishBlockFinalizedWithTimestamp(slot uint64, blockHash
 	// Get transaction hashes from BlockStore (single source of truth)
 	txHashes := er.blockStore.GetTransactionHashes(slot)
 	
-	fmt.Printf("EventRouter: Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
+	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
 	
 	// Use EventBus.Publish to handle both specific and all-events subscribers
 	// This avoids duplicate messages since EventBus.Publish handles routing correctly
 	er.eventBus.Publish(event)
-	
-	fmt.Printf("EventRouter: BlockFinalized for slot %d: published to all subscribers\n", slot)
 }
 
 // PublishTransactionEvent publishes a transaction-specific event

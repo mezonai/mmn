@@ -140,13 +140,11 @@ export interface GetTransactionStatusResponse {
  */
 export interface SubscribeTransactionStatusRequest {
     /**
-     * @generated from protobuf field: string tx_hash = 1
+     * tx_hash is now optional - if not provided, subscribes to all transaction events
+     *
+     * @generated from protobuf field: optional string tx_hash = 1
      */
-    txHash: string;
-    /**
-     * @generated from protobuf field: uint32 timeout_seconds = 2
-     */
-    timeoutSeconds: number; // How long to wait for status changes
+    txHash?: string;
 }
 /**
  * Stream of transaction status updates
@@ -637,14 +635,11 @@ export const GetTransactionStatusResponse = new GetTransactionStatusResponse$Typ
 class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransactionStatusRequest> {
     constructor() {
         super("mmn.SubscribeTransactionStatusRequest", [
-            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 2, name: "timeout_seconds", kind: "scalar", T: 13 /*ScalarType.UINT32*/ }
+            { no: 1, name: "tx_hash", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<SubscribeTransactionStatusRequest>): SubscribeTransactionStatusRequest {
         const message = globalThis.Object.create((this.messagePrototype!));
-        message.txHash = "";
-        message.timeoutSeconds = 0;
         if (value !== undefined)
             reflectionMergePartial<SubscribeTransactionStatusRequest>(this, message, value);
         return message;
@@ -654,11 +649,8 @@ class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransa
         while (reader.pos < end) {
             let [fieldNo, wireType] = reader.tag();
             switch (fieldNo) {
-                case /* string tx_hash */ 1:
+                case /* optional string tx_hash */ 1:
                     message.txHash = reader.string();
-                    break;
-                case /* uint32 timeout_seconds */ 2:
-                    message.timeoutSeconds = reader.uint32();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -672,12 +664,9 @@ class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransa
         return message;
     }
     internalBinaryWrite(message: SubscribeTransactionStatusRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
-        /* string tx_hash = 1; */
-        if (message.txHash !== "")
+        /* optional string tx_hash = 1; */
+        if (message.txHash !== undefined)
             writer.tag(1, WireType.LengthDelimited).string(message.txHash);
-        /* uint32 timeout_seconds = 2; */
-        if (message.timeoutSeconds !== 0)
-            writer.tag(2, WireType.Varint).uint32(message.timeoutSeconds);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

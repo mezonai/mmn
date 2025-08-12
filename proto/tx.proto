@@ -72,8 +72,6 @@ message TransactionStatusUpdate {
   uint64 timestamp = 7;
 }
 
-
-
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
   rpc AddTx (SignedTxMsg) returns (AddTxResponse);
@@ -83,6 +81,4 @@ service TxService {
   
   // Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
   rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusUpdate);
-  
-
 }
