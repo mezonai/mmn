@@ -30,6 +30,18 @@ func (eb *EventBus) Subscribe(txHash string) chan BlockchainEvent {
 	return ch
 }
 
+// SubscribeToAllEvents subscribes to all transaction events
+func (eb *EventBus) SubscribeToAllEvents() chan BlockchainEvent {
+	eb.mu.Lock()
+	defer eb.mu.Unlock()
+
+	ch := make(chan BlockchainEvent, 50) // Larger buffer for all events
+	eb.subscribers["*"] = append(eb.subscribers["*"], ch)
+	
+	fmt.Printf("Subscribed to all transaction events (total all-events subscribers: %d)\n", len(eb.subscribers["*"]))
+	return ch
+}
+
 // Unsubscribe removes a subscription for a transaction hash
 func (eb *EventBus) Unsubscribe(txHash string, ch chan BlockchainEvent) {
 	eb.mu.Lock()
@@ -54,6 +66,11 @@ func (eb *EventBus) Unsubscribe(txHash string, ch chan BlockchainEvent) {
 	}
 }
 
+// UnsubscribeFromAllEvents removes an all-events subscription
+func (eb *EventBus) UnsubscribeFromAllEvents(ch chan BlockchainEvent) {
+	eb.Unsubscribe("*", ch)
+}
+
 // Publish publishes an event to all relevant subscribers
 func (eb *EventBus) Publish(event BlockchainEvent) {
 	eb.mu.RLock()
@@ -76,6 +93,21 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 		}
 	} else {
 		fmt.Printf("No subscribers for tx: %s (event: %s)\n", txHash, event.Type())
+	}
+
+	// Also notify all-events subscribers
+	if allSubs, exists := eb.subscribers["*"]; exists {
+		fmt.Printf("Publishing %s event for tx: %s to %d all-events subscribers\n", event.Type(), txHash, len(allSubs))
+		
+		for _, ch := range allSubs {
+			select {
+			case ch <- event:
+				// Event sent successfully
+			default:
+				// Channel is full, skip this subscriber
+				fmt.Printf("Warning: all-events subscriber channel full for tx: %s\n", txHash)
+			}
+		}
 	}
 }
 

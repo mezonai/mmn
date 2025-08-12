@@ -476,11 +476,11 @@ func (x *GetTransactionStatusResponse) GetTimestamp() uint64 {
 
 // Request to subscribe to transaction status updates
 type SubscribeTransactionStatusRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TxHash         string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	TimeoutSeconds uint32                 `protobuf:"varint,2,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"` // How long to wait for status changes
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// tx_hash is now optional - if not provided, subscribes to all transaction events
+	TxHash        *string `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3,oneof" json:"tx_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SubscribeTransactionStatusRequest) Reset() {
@@ -514,17 +514,10 @@ func (*SubscribeTransactionStatusRequest) Descriptor() ([]byte, []int) {
 }
 
 func (x *SubscribeTransactionStatusRequest) GetTxHash() string {
-	if x != nil {
-		return x.TxHash
+	if x != nil && x.TxHash != nil {
+		return *x.TxHash
 	}
 	return ""
-}
-
-func (x *SubscribeTransactionStatusRequest) GetTimeoutSeconds() uint32 {
-	if x != nil {
-		return x.TimeoutSeconds
-	}
-	return 0
 }
 
 // Stream of transaction status updates
@@ -656,10 +649,11 @@ const file_tx_proto_rawDesc = "" +
 	"block_hash\x18\x04 \x01(\tR\tblockHash\x12$\n" +
 	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
-	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"e\n" +
-	"!SubscribeTransactionStatusRequest\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12'\n" +
-	"\x0ftimeout_seconds\x18\x02 \x01(\rR\x0etimeoutSeconds\"\x89\x02\n" +
+	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"M\n" +
+	"!SubscribeTransactionStatusRequest\x12\x1c\n" +
+	"\atx_hash\x18\x01 \x01(\tH\x00R\x06txHash\x88\x01\x01B\n" +
+	"\n" +
+	"\b_tx_hash\"\x89\x02\n" +
 	"\x17TransactionStatusUpdate\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12.\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1d\n" +
@@ -733,6 +727,7 @@ func file_tx_proto_init() {
 	if File_tx_proto != nil {
 		return
 	}
+	file_tx_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

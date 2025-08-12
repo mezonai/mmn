@@ -342,11 +342,18 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 // SubscribeTransactionStatus streams transaction status updates using event-based system
 func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream pb.TxService_SubscribeTransactionStatusServer) error {
 	txHash := in.TxHash
-	timeoutSeconds := in.TimeoutSeconds
-	if timeoutSeconds == 0 {
-		timeoutSeconds = 300 // Default 5 minutes
+
+	// If txHash is provided, subscribe to specific transaction events
+	if txHash != nil && *txHash != "" {
+		return s.subscribeToSpecificTransaction(*txHash, stream)
 	}
 
+	// Otherwise, subscribe to all transaction events
+	return s.subscribeToAllTransactions(stream)
+}
+
+// subscribeToSpecificTransaction handles subscription to a specific transaction
+func (s *server) subscribeToSpecificTransaction(txHash string, stream pb.TxService_SubscribeTransactionStatusServer) error {
 	// Send initial status
 	initialStatus, err := s.GetTransactionStatus(stream.Context(), &pb.GetTransactionStatusRequest{TxHash: txHash})
 	if err != nil {
@@ -378,10 +385,7 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 	eventChan := s.eventRouter.Subscribe(txHash)
 	defer s.eventRouter.Unsubscribe(txHash, eventChan)
 
-	// Wait for events with timeout
-	timeout := time.Duration(timeoutSeconds) * time.Second
-	deadline := time.Now().Add(timeout)
-
+	// Wait for events indefinitely (client keeps connection open)
 	for {
 		select {
 		case event := <-eventChan:
@@ -399,8 +403,29 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 				}
 			}
 
-		case <-time.After(time.Until(deadline)):
-			return nil // Timeout
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
+// subscribeToAllTransactions handles subscription to all transaction events
+func (s *server) subscribeToAllTransactions(stream pb.TxService_SubscribeTransactionStatusServer) error {
+	// Subscribe to all blockchain events
+	eventChan := s.eventRouter.SubscribeToAllEvents()
+	defer s.eventRouter.UnsubscribeFromAllEvents(eventChan)
+
+	// Wait for events indefinitely (client keeps connection open)
+	for {
+		select {
+		case event := <-eventChan:
+			// Convert event to status update for the specific transaction
+			statusUpdate := s.convertEventToStatusUpdate(event, event.TxHash())
+			if statusUpdate != nil {
+				if err := stream.Send(statusUpdate); err != nil {
+					return err
+				}
+			}
 
 		case <-stream.Context().Done():
 			return stream.Context().Err()

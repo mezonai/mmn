@@ -57,8 +57,8 @@ message GetTransactionStatusResponse {
 
 // Request to subscribe to transaction status updates
 message SubscribeTransactionStatusRequest {
-  string tx_hash = 1;
-  uint32 timeout_seconds = 2;   // How long to wait for status changes
+  // tx_hash is now optional - if not provided, subscribes to all transaction events
+  optional string tx_hash = 1;
 }
 
 // Stream of transaction status updates
@@ -81,7 +81,7 @@ service TxService {
   // Get current status of a transaction
   rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusResponse);
   
-  // Subscribe to status updates for a single transaction
+  // Subscribe to status updates for all transactions (or specific transaction if tx_hash provided)
   rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusUpdate);
   
 

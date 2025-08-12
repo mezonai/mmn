@@ -104,7 +104,17 @@ func (er *EventRouter) Subscribe(txHash string) chan BlockchainEvent {
 	return er.eventBus.Subscribe(txHash)
 }
 
+// SubscribeToAllEvents subscribes to all transaction events
+func (er *EventRouter) SubscribeToAllEvents() chan BlockchainEvent {
+	return er.eventBus.SubscribeToAllEvents()
+}
+
 // Unsubscribe removes a subscription for a transaction hash
 func (er *EventRouter) Unsubscribe(txHash string, ch chan BlockchainEvent) {
 	er.eventBus.Unsubscribe(txHash, ch)
+}
+
+// UnsubscribeFromAllEvents removes an all-events subscription
+func (er *EventRouter) UnsubscribeFromAllEvents(ch chan BlockchainEvent) {
+	er.eventBus.UnsubscribeFromAllEvents(ch)
 }
