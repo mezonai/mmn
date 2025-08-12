@@ -1,0 +1,107 @@
+package p2p
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"mmn/block"
+	"mmn/logx"
+
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+)
+
+func (ln *Libp2pNetwork) HandleBlockTopic(sub *pubsub.Subscription) {
+	for {
+		logx.Info("NETWORK:BLOCK", "Received block topic")
+		msg, err := sub.Next(context.Background())
+		if err != nil {
+			continue
+		}
+
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:BLOCK", "Skipping block message from self")
+			continue
+		}
+
+		var blk *block.Block
+		if err := json.Unmarshal(msg.Data, &blk); err != nil {
+			continue
+		}
+
+		if blk != nil && ln.onBlockReceived != nil {
+			ln.onBlockReceived(blk)
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) GetBlock(slot uint64) *block.Block {
+	return ln.blockStore.Block(slot)
+}
+
+func (ln *Libp2pNetwork) handleBlockSyncResponseTopic(sub *pubsub.Subscription) error {
+	for {
+		msg, err := sub.Next(context.Background())
+		if err != nil {
+			logx.Error("NETWORK:SYNC BLOCK", "Next ", err.Error())
+			continue
+		}
+
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:SYNC BLOCK", "Skipping sync response from self")
+			continue
+		}
+
+		var resp SyncResponse
+		if err := json.Unmarshal(msg.Data, &resp); err != nil {
+			logx.Error("NETWORK:SYNC BLOCK", "Unmarshal ", err.Error())
+			continue
+		}
+
+		if resp.Block != nil && ln.onBlockReceived != nil {
+			ln.onBlockReceived(resp.Block)
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(sub *pubsub.Subscription) {
+	for {
+		msg, err := sub.Next(context.Background())
+		if err != nil {
+			logx.Error("NETWORK:SYNC BLOCK", "Next ", err.Error())
+			continue
+		}
+
+		// Skip messages from self to avoid processing own messages
+		if msg.ReceivedFrom == ln.host.ID() {
+			logx.Info("NETWORK:SYNC BLOCK", "Skipping sync request from self")
+			continue
+		}
+
+		var req SyncRequest
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			continue
+		}
+
+		logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Got sync request from %s for slot %d", msg.ReceivedFrom.String(), req.FromSlot))
+
+		for slot := req.FromSlot; ; slot++ {
+			blk := ln.GetBlock(slot)
+
+			if blk == nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Nil blk")
+				break
+			}
+
+			resp := SyncResponse{Block: blk}
+			data, err := json.Marshal(resp)
+			if err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Marshal ", err.Error())
+
+				continue
+			}
+			ln.topicBlockSyncRes.Publish(context.Background(), data)
+		}
+	}
+}

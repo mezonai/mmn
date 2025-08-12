@@ -7,6 +7,9 @@ services:
     ports:
       - "8001:8001"
       - "9001:9001"
+      - "10001:10001"  # libp2p port
+    environment:
+      - BOOTSTRAP_NODE_PEER_ADDRESS=${BOOTSTRAP_NODE_PEER_ADDRESS:-}
     networks:
       - mezon
 
@@ -17,6 +20,9 @@ services:
     ports:
       - "8002:8002"
       - "9002:9002"
+      - "10002:10002"  # libp2p port
+    environment:
+      - BOOTSTRAP_NODE_PEER_ADDRESS=${BOOTSTRAP_NODE_PEER_ADDRESS:-}
     networks:
       - mezon
 

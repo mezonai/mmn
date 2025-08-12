@@ -22,7 +22,12 @@ import (
 )
 
 func main() {
-	godotenv.Load()
+	// Load .env file with error handling
+	if err := godotenv.Load(); err != nil {
+		logx.Info("CONFIG", "No .env file found, using system environment variables\n")
+	} else {
+		logx.Info("CONFIG", "Successfully loaded .env file\n")
+	}
 
 	// load node config
 	cfg, self, seed, peers, leaderSchedule, privKey := config.NewConfig("node3")
@@ -58,12 +63,20 @@ func main() {
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
 
+	// Get bootstrap node address from environment
+	bootstrapAddr := os.Getenv("BOOTSTRAP_NODE_PEER_ADDRESS")
+	if bootstrapAddr == "" {
+		logx.Info("NETWORK", "BOOTSTRAP_NODE_PEER_ADDRESS not set - running without bootstrap peer\n")
+	} else {
+		logx.Info("NETWORK", "Using bootstrap peer address: "+bootstrapAddr+"\n")
+	}
+
 	// network libp2p
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
 		privKey,
 		self.Libp2pAddr,
-		os.Getenv("BOOTSTRAP_NODE_PEER_ADDRESS"),
+		bootstrapAddr,
 		bs,
 	)
 
@@ -94,7 +107,6 @@ func main() {
 		}
 	}
 	pubKeys := make(map[string]ed25519.PublicKey)
-	netClient := network.NewGRPCClient(peerAddrs)
 
 	grpcSrv := network.NewGRPCServer(
 		self.GRPCAddr,
@@ -102,7 +114,6 @@ func main() {
 		blockDir,
 		ld,
 		collector,
-		netClient,
 		self.PubKey,
 		privKey,
 		val,

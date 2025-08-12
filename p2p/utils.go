@@ -3,6 +3,8 @@ package p2p
 import (
 	"crypto/ed25519"
 	"fmt"
+	"mmn/block"
+	"mmn/consensus"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 )
@@ -21,4 +23,28 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 		return fmt.Sprintf("%s/p2p/%s", addrs[0].String(), ln.host.ID().String())
 	}
 	return ""
+}
+
+func (ln *Libp2pNetwork) c(msg BlockMessage) *block.Block {
+	return &block.Block{
+		Slot:      msg.Slot,
+		LeaderID:  msg.LeaderID,
+		Timestamp: uint64(msg.Timestamp.Second()),
+	}
+}
+
+func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
+	return &consensus.Vote{
+		Slot:      msg.Slot,
+		VoterID:   msg.VoterID,
+		Signature: msg.Signature,
+	}
+}
+
+func (ln *Libp2pNetwork) ConvertMessageToBlock(msg BlockMessage) *block.Block {
+	return &block.Block{
+		Slot:      msg.Slot,
+		LeaderID:  msg.LeaderID,
+		Timestamp: uint64(msg.Timestamp.Second()),
+	}
 }
