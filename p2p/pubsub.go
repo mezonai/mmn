@@ -171,19 +171,6 @@ func (ln *Libp2pNetwork) SetCallbacks(
 	ln.onTxReceived = onTx
 }
 
-func (ln *Libp2pNetwork) BroadcastToStreams(data []byte, streams map[peer.ID]network.Stream) {
-	ln.streamMu.RLock()
-	defer ln.streamMu.RUnlock()
-
-	logx.Info("NETWORK:BROADCAST TO STREAMS", "Broadcasting to ", len(streams), " streams")
-
-	for _, stream := range streams {
-		if stream != nil {
-			stream.Write(data)
-		}
-	}
-}
-
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
 	logx.Info("TX", "Broadcasting transaction to network")
 	// Serialize transaction to JSON
@@ -216,9 +203,6 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 	if ln.topicVotes != nil {
 		ln.topicVotes.Publish(ctx, data)
 	}
-
-	ln.BroadcastToStreams(data, ln.voteStreams)
-
 	return nil
 }
 
@@ -237,7 +221,5 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) e
 			logx.Error("BLOCK", "Failed to publish block:", err)
 		}
 	}
-
-	ln.BroadcastToStreams(data, ln.blockStreams)
 	return nil
 }

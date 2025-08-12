@@ -8,11 +8,11 @@ import (
 	"mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/network"
 )
 
 func (ln *Libp2pNetwork) HandleBlockTopic(sub *pubsub.Subscription) {
 	for {
+		logx.Info("NETWORK:BLOCK", "Received block topic")
 		msg, err := sub.Next(context.Background())
 		if err != nil {
 			continue
@@ -26,26 +26,6 @@ func (ln *Libp2pNetwork) HandleBlockTopic(sub *pubsub.Subscription) {
 		if blk != nil && ln.onBlockReceived != nil {
 			ln.onBlockReceived(blk)
 		}
-	}
-}
-
-func (ln *Libp2pNetwork) HandleBlockStream(s network.Stream) {
-	logx.Info("NETWORK:BLOCK", "Received block stream")
-	defer s.Close()
-
-	buf := make([]byte, 4096)
-	n, err := s.Read(buf)
-	if err != nil {
-		return
-	}
-
-	var blk *block.Block
-	if err := json.Unmarshal(buf[:n], &blk); err != nil {
-		return
-	}
-
-	if blk != nil && ln.onBlockReceived != nil {
-		ln.onBlockReceived(blk)
 	}
 }
 

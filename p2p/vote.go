@@ -3,13 +3,14 @@ package p2p
 import (
 	"context"
 	"encoding/json"
+	"mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/network"
 )
 
 func (ln *Libp2pNetwork) HandleVoteTopic(sub *pubsub.Subscription) {
 	for {
+		logx.Info("NETWORK:VOTE", "Received vote topic")
 		msg, err := sub.Next(context.Background())
 		if err != nil {
 			continue
@@ -24,25 +25,5 @@ func (ln *Libp2pNetwork) HandleVoteTopic(sub *pubsub.Subscription) {
 		if vote != nil && ln.onVoteReceived != nil {
 			ln.onVoteReceived(vote)
 		}
-	}
-}
-
-func (ln *Libp2pNetwork) HandleVoteStream(s network.Stream) {
-	defer s.Close()
-
-	buf := make([]byte, 1024)
-	n, err := s.Read(buf)
-	if err != nil {
-		return
-	}
-
-	var msg VoteMessage
-	if err := json.Unmarshal(buf[:n], &msg); err != nil {
-		return
-	}
-
-	vote := ln.ConvertMessageToVote(msg)
-	if vote != nil && ln.onVoteReceived != nil {
-		ln.onVoteReceived(vote)
 	}
 }
