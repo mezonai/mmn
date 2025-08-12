@@ -144,7 +144,7 @@ async function waitForTransactionFinalization(txHash: string, timeoutMs: number 
     console.log(`  📋 Full transaction hash: ${txHash}`);
     
     // First check current status
-    const currentStatus = await tracker.getTrackedTransactionStatus(txHash);
+    const currentStatus = await tracker.getCurrentStatus(txHash);
     console.log(`  📊 Current status:`, JSON.stringify(currentStatus, null, 2));
     
     await tracker.waitForFinalization(txHash, timeoutMs);
@@ -249,6 +249,7 @@ async function runBasicTransactionTests() {
       .map(r => r.tx_hash!);
     
     if (successfulTxHashes.length > 0) {
+      console.log('  ⏳ Waiting for multi-account transactions to be finalized...');
       await waitForMultipleTransactionsFinalization(successfulTxHashes);
     }
 
@@ -284,14 +285,9 @@ async function runTransactionStatusTests() {
     const allStatusUpdates: TransactionStatusInfo[] = [];
 
     // Set up event listeners
-    tracker.on('statusChanged', (txHash: string, oldStatus: TransactionStatus, newStatus: TransactionStatus) => {
-      const statusInfo: TransactionStatusInfo = {
-        txHash,
-        status: newStatus,
-        timestamp: Date.now()
-      };
-      statusUpdates.push(statusInfo);
-      console.log(`📈 Status Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[newStatus]}`);
+    tracker.on('statusChanged', (txHash: string, newStatus: TransactionStatusInfo, oldStatus?: TransactionStatusInfo) => {
+      statusUpdates.push(newStatus);
+      console.log(`📈 Status Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[newStatus.status]}`);
     });
 
     tracker.on('transactionFinalized', (txHash: string, statusInfo: TransactionStatusInfo) => {
@@ -474,11 +470,8 @@ class EventBasedStatusTest {
             clearTimeout(timeout);
             unsubscribe();
             
-            // Additional wait to ensure all transactions are properly finalized
-            if (transactions.length > 0) {
-              console.log('  ⏳ Additional wait to ensure finalization...');
-              await waitForMultipleTransactionsFinalization(transactions, 30000);
-            }
+            // All transactions have already been finalized through the subscription
+            console.log('  ✅ All transactions finalized through subscription');
             
             resolve({
               totalTransactions: transactions.length,

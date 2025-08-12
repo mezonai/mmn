@@ -131,9 +131,21 @@ export class GrpcClient {
     const call = this.txClient.getTransactionStatus(req);
     const res: GenGetTxStatusResponse = await call.response;
 
+    // Log the raw response from the server (with BigInt handling)
+    const serializableRes = {
+      txHash: res.txHash,
+      status: res.status,
+      blockSlot: res.blockSlot?.toString(),
+      blockHash: res.blockHash,
+      confirmations: res.confirmations?.toString(),
+      errorMessage: res.errorMessage,
+      timestamp: res.timestamp?.toString(),
+    };
+    console.log(`🔍 Raw Status Response for ${txHash.substring(0, 16)}...:`, JSON.stringify(serializableRes, null, 2));
+
     const statusStr = GenTxStatusEnum[res.status] as unknown as string;
 
-    return {
+    const processedResponse = {
       tx_hash: res.txHash,
       status: statusStr || 'UNKNOWN',
       block_slot: res.blockSlot ? res.blockSlot.toString() : undefined,
@@ -142,6 +154,11 @@ export class GrpcClient {
       error_message: res.errorMessage || undefined,
       timestamp: res.timestamp ? res.timestamp.toString() : undefined,
     };
+
+    // Log the processed response
+    console.log(`📋 Processed Status Response for ${txHash.substring(0, 16)}...:`, JSON.stringify(processedResponse, null, 2));
+
+    return processedResponse;
   }
 
   subscribeTransactionStatus(
@@ -164,8 +181,20 @@ export class GrpcClient {
     (async () => {
       try {
         for await (const update of call.responses as AsyncIterable<GenTxStatusUpdate>) {
+          // Log the raw update from the server (with BigInt handling)
+          const serializableUpdate = {
+            txHash: update.txHash,
+            status: update.status,
+            blockSlot: update.blockSlot?.toString(),
+            blockHash: update.blockHash,
+            confirmations: update.confirmations?.toString(),
+            errorMessage: update.errorMessage,
+            timestamp: update.timestamp?.toString(),
+          };
+          console.log(`🔄 Raw Update from Server:`, JSON.stringify(serializableUpdate, null, 2));
+          
           const statusStr = GenTxStatusEnum[update.status] as unknown as string;
-          onUpdate({
+          const processedUpdate = {
             tx_hash: update.txHash,
             status: statusStr || 'UNKNOWN',
             block_slot: update.blockSlot ? update.blockSlot.toString() : undefined,
@@ -173,7 +202,12 @@ export class GrpcClient {
             confirmations: update.confirmations ? update.confirmations.toString() : undefined,
             error_message: update.errorMessage || undefined,
             timestamp: update.timestamp ? update.timestamp.toString() : undefined,
-          });
+          };
+          
+          // Log the processed update
+          console.log(`📤 Processed Update:`, JSON.stringify(processedUpdate, null, 2));
+          
+          onUpdate(processedUpdate);
         }
         onComplete();
       } catch (err: any) {

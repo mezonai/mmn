@@ -175,6 +175,18 @@ export class TransactionTracker extends EventEmitter {
       EXPIRED: TransactionStatus.EXPIRED,
     };
 
+    // Log the raw status response from the server (with BigInt handling)
+    const serializableUpdate = {
+      tx_hash: update.tx_hash,
+      status: update.status,
+      block_slot: update.block_slot,
+      block_hash: update.block_hash,
+      confirmations: update.confirmations,
+      error_message: update.error_message,
+      timestamp: update.timestamp,
+    };
+    console.log(`📡 Status Response for ${txHash.substring(0, 16)}...:`, JSON.stringify(serializableUpdate, null, 2));
+
     const statusEnum = statusMap[update.status || 'UNKNOWN'] || TransactionStatus.UNKNOWN;
 
     const newStatus: TransactionStatusInfo = {
@@ -215,6 +227,52 @@ export class TransactionTracker extends EventEmitter {
    */
   getTrackedTransactionStatus(txHash: string): TransactionStatusInfo | undefined {
     return this.trackedTransactions.get(txHash);
+  }
+
+  /**
+   * Get current transaction status from server
+   */
+  async getCurrentStatus(txHash: string): Promise<TransactionStatusInfo | null> {
+    try {
+      const status = await this.grpcClient.getTransactionStatus(txHash);
+      
+      // Log the raw status response from the server (with BigInt handling)
+      const serializableStatus = {
+        tx_hash: status.tx_hash,
+        status: status.status,
+        block_slot: status.block_slot,
+        block_hash: status.block_hash,
+        confirmations: status.confirmations,
+        error_message: status.error_message,
+        timestamp: status.timestamp,
+      };
+      console.log(`📊 Current Status Response for ${txHash.substring(0, 16)}...:`, JSON.stringify(serializableStatus, null, 2));
+      
+      // Convert server status to our enum
+      const statusMap: { [key: string]: TransactionStatus } = {
+        UNKNOWN: TransactionStatus.UNKNOWN,
+        PENDING: TransactionStatus.PENDING,
+        CONFIRMED: TransactionStatus.CONFIRMED,
+        FINALIZED: TransactionStatus.FINALIZED,
+        FAILED: TransactionStatus.FAILED,
+        EXPIRED: TransactionStatus.EXPIRED,
+      };
+
+      const statusEnum = statusMap[status.status || 'UNKNOWN'] || TransactionStatus.UNKNOWN;
+
+      return {
+        txHash: status.tx_hash,
+        status: statusEnum,
+        blockSlot: status.block_slot ? parseInt(status.block_slot) : undefined,
+        blockHash: status.block_hash,
+        confirmations: status.confirmations ? parseInt(status.confirmations) : undefined,
+        errorMessage: status.error_message,
+        timestamp: status.timestamp ? parseInt(status.timestamp) * 1000 : Date.now(), // Convert to milliseconds
+      };
+    } catch (error) {
+      console.error(`Failed to get current status for ${txHash}:`, error);
+      return null;
+    }
   }
 
   /**
