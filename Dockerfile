@@ -40,7 +40,7 @@ COPY . .
 RUN go mod download
 
 # Build binary
-RUN go build -o mmn ./cmd/main.go
+RUN go build -o mmn .
 
 # Runtime stage
 FROM debian:bookworm-slim AS runtime
