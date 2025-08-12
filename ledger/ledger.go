@@ -327,6 +327,23 @@ type Session struct {
 	view   *LedgerView
 }
 
+// Copy session with clone overlay
+func (s *Session) CopyWithOverlayClone() *Session {
+	overlayCopy := make(map[string]*types.SnapshotAccount, len(s.view.overlay))
+	for k, v := range s.view.overlay {
+		accCopy := *v
+		overlayCopy[k] = &accCopy
+	}
+
+	return &Session{
+		ledger: s.ledger,
+		view: &LedgerView{
+			base:    s.view.base,
+			overlay: overlayCopy,
+		},
+	}
+}
+
 // Session API for filtering valid transactions
 func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 	valid := make([][]byte, 0, len(raws))
