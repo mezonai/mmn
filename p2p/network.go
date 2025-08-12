@@ -121,6 +121,7 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
+	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 	ln.SetupPubSubTopics()
 
 	if bootstrapPeer != "" {
