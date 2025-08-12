@@ -139,8 +139,10 @@ async function main() {
     console.log(`✅ All ${txHashes.length} transactions sent successfully`);
     console.log(`📊 Tracking ${txHashes.length} transactions...`);
 
-    // Track all transactions
-    await tracker.trackTransactions(txHashes);
+    // Track all transactions individually
+    for (const txHash of txHashes) {
+      await tracker.trackTransaction(txHash);
+    }
 
     // Set up event listeners
     tracker.on('trackingStarted', (txHash: string) => {

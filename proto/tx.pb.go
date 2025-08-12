@@ -620,104 +620,6 @@ func (x *TransactionStatusUpdate) GetTimestamp() uint64 {
 	return 0
 }
 
-// Request to track multiple transactions
-type TrackTransactionsRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	TxHashes       []string               `protobuf:"bytes,1,rep,name=tx_hashes,json=txHashes,proto3" json:"tx_hashes,omitempty"`
-	TimeoutSeconds uint32                 `protobuf:"varint,2,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *TrackTransactionsRequest) Reset() {
-	*x = TrackTransactionsRequest{}
-	mi := &file_tx_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TrackTransactionsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TrackTransactionsRequest) ProtoMessage() {}
-
-func (x *TrackTransactionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TrackTransactionsRequest.ProtoReflect.Descriptor instead.
-func (*TrackTransactionsRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *TrackTransactionsRequest) GetTxHashes() []string {
-	if x != nil {
-		return x.TxHashes
-	}
-	return nil
-}
-
-func (x *TrackTransactionsRequest) GetTimeoutSeconds() uint32 {
-	if x != nil {
-		return x.TimeoutSeconds
-	}
-	return 0
-}
-
-// Response for tracking multiple transactions
-type TrackTransactionsResponse struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Updates       []*TransactionStatusUpdate `protobuf:"bytes,1,rep,name=updates,proto3" json:"updates,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TrackTransactionsResponse) Reset() {
-	*x = TrackTransactionsResponse{}
-	mi := &file_tx_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TrackTransactionsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TrackTransactionsResponse) ProtoMessage() {}
-
-func (x *TrackTransactionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TrackTransactionsResponse.ProtoReflect.Descriptor instead.
-func (*TrackTransactionsResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *TrackTransactionsResponse) GetUpdates() []*TransactionStatusUpdate {
-	if x != nil {
-		return x.Updates
-	}
-	return nil
-}
-
 var File_tx_proto protoreflect.FileDescriptor
 
 const file_tx_proto_rawDesc = "" +
@@ -767,12 +669,7 @@ const file_tx_proto_rawDesc = "" +
 	"block_hash\x18\x04 \x01(\tR\tblockHash\x12$\n" +
 	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
-	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"`\n" +
-	"\x18TrackTransactionsRequest\x12\x1b\n" +
-	"\ttx_hashes\x18\x01 \x03(\tR\btxHashes\x12'\n" +
-	"\x0ftimeout_seconds\x18\x02 \x01(\rR\x0etimeoutSeconds\"S\n" +
-	"\x19TrackTransactionsResponse\x126\n" +
-	"\aupdates\x18\x01 \x03(\v2\x1c.mmn.TransactionStatusUpdateR\aupdates*d\n" +
+	"\ttimestamp\x18\a \x01(\x04R\ttimestamp*d\n" +
 	"\x11TransactionStatus\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\v\n" +
 	"\aPENDING\x10\x01\x12\r\n" +
@@ -780,13 +677,12 @@ const file_tx_proto_rawDesc = "" +
 	"\tFINALIZED\x10\x03\x12\n" +
 	"\n" +
 	"\x06FAILED\x10\x04\x12\v\n" +
-	"\aEXPIRED\x10\x052\x83\x03\n" +
+	"\aEXPIRED\x10\x052\xaf\x02\n" +
 	"\tTxService\x120\n" +
 	"\vTxBroadcast\x12\x10.mmn.SignedTxMsg\x1a\x0f.mmn.TxResponse\x12-\n" +
 	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12[\n" +
 	"\x14GetTransactionStatus\x12 .mmn.GetTransactionStatusRequest\x1a!.mmn.GetTransactionStatusResponse\x12d\n" +
-	"\x1aSubscribeTransactionStatus\x12&.mmn.SubscribeTransactionStatusRequest\x1a\x1c.mmn.TransactionStatusUpdate0\x01\x12R\n" +
-	"\x11TrackTransactions\x12\x1d.mmn.TrackTransactionsRequest\x1a\x1e.mmn.TrackTransactionsResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
+	"\x1aSubscribeTransactionStatus\x12&.mmn.SubscribeTransactionStatusRequest\x1a\x1c.mmn.TransactionStatusUpdate0\x01B\x11Z\x0fmmn/proto;protob\x06proto3"
 
 var (
 	file_tx_proto_rawDescOnce sync.Once
@@ -801,7 +697,7 @@ func file_tx_proto_rawDescGZIP() []byte {
 }
 
 var file_tx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_tx_proto_goTypes = []any{
 	(TransactionStatus)(0),                    // 0: mmn.TransactionStatus
 	(*TxMsg)(nil),                             // 1: mmn.TxMsg
@@ -812,29 +708,24 @@ var file_tx_proto_goTypes = []any{
 	(*GetTransactionStatusResponse)(nil),      // 6: mmn.GetTransactionStatusResponse
 	(*SubscribeTransactionStatusRequest)(nil), // 7: mmn.SubscribeTransactionStatusRequest
 	(*TransactionStatusUpdate)(nil),           // 8: mmn.TransactionStatusUpdate
-	(*TrackTransactionsRequest)(nil),          // 9: mmn.TrackTransactionsRequest
-	(*TrackTransactionsResponse)(nil),         // 10: mmn.TrackTransactionsResponse
 }
 var file_tx_proto_depIdxs = []int32{
-	1,  // 0: mmn.SignedTxMsg.tx_msg:type_name -> mmn.TxMsg
-	0,  // 1: mmn.GetTransactionStatusResponse.status:type_name -> mmn.TransactionStatus
-	0,  // 2: mmn.TransactionStatusUpdate.status:type_name -> mmn.TransactionStatus
-	8,  // 3: mmn.TrackTransactionsResponse.updates:type_name -> mmn.TransactionStatusUpdate
-	2,  // 4: mmn.TxService.TxBroadcast:input_type -> mmn.SignedTxMsg
-	2,  // 5: mmn.TxService.AddTx:input_type -> mmn.SignedTxMsg
-	5,  // 6: mmn.TxService.GetTransactionStatus:input_type -> mmn.GetTransactionStatusRequest
-	7,  // 7: mmn.TxService.SubscribeTransactionStatus:input_type -> mmn.SubscribeTransactionStatusRequest
-	9,  // 8: mmn.TxService.TrackTransactions:input_type -> mmn.TrackTransactionsRequest
-	3,  // 9: mmn.TxService.TxBroadcast:output_type -> mmn.TxResponse
-	4,  // 10: mmn.TxService.AddTx:output_type -> mmn.AddTxResponse
-	6,  // 11: mmn.TxService.GetTransactionStatus:output_type -> mmn.GetTransactionStatusResponse
-	8,  // 12: mmn.TxService.SubscribeTransactionStatus:output_type -> mmn.TransactionStatusUpdate
-	10, // 13: mmn.TxService.TrackTransactions:output_type -> mmn.TrackTransactionsResponse
-	9,  // [9:14] is the sub-list for method output_type
-	4,  // [4:9] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	1, // 0: mmn.SignedTxMsg.tx_msg:type_name -> mmn.TxMsg
+	0, // 1: mmn.GetTransactionStatusResponse.status:type_name -> mmn.TransactionStatus
+	0, // 2: mmn.TransactionStatusUpdate.status:type_name -> mmn.TransactionStatus
+	2, // 3: mmn.TxService.TxBroadcast:input_type -> mmn.SignedTxMsg
+	2, // 4: mmn.TxService.AddTx:input_type -> mmn.SignedTxMsg
+	5, // 5: mmn.TxService.GetTransactionStatus:input_type -> mmn.GetTransactionStatusRequest
+	7, // 6: mmn.TxService.SubscribeTransactionStatus:input_type -> mmn.SubscribeTransactionStatusRequest
+	3, // 7: mmn.TxService.TxBroadcast:output_type -> mmn.TxResponse
+	4, // 8: mmn.TxService.AddTx:output_type -> mmn.AddTxResponse
+	6, // 9: mmn.TxService.GetTransactionStatus:output_type -> mmn.GetTransactionStatusResponse
+	8, // 10: mmn.TxService.SubscribeTransactionStatus:output_type -> mmn.TransactionStatusUpdate
+	7, // [7:11] is the sub-list for method output_type
+	3, // [3:7] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_tx_proto_init() }
@@ -848,7 +739,7 @@ func file_tx_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tx_proto_rawDesc), len(file_tx_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   10,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

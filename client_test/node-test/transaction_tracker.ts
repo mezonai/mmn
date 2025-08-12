@@ -168,14 +168,7 @@ export class TransactionTracker extends EventEmitter {
     this.subscriptions.set(txHash, unsubscribe);
   }
 
-  /**
-   * Track multiple transactions
-   */
-  async trackTransactions(txHashes: string[]): Promise<void> {
-    for (const txHash of txHashes) {
-      await this.trackTransaction(txHash);
-    }
-  }
+
 
   /**
    * Stop tracking a specific transaction

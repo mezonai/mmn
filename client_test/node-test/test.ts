@@ -145,12 +145,14 @@ async function waitForMultipleTransactions(txHashes: string[], timeoutMs: number
       }
     });
 
-    // Start tracking all transactions
-    tracker.trackTransactions(txHashes).catch((error) => {
-      clearTimeout(timeout);
-      tracker.close();
-      reject(error);
-    });
+    // Start tracking all transactions individually
+    for (const txHash of txHashes) {
+      tracker.trackTransaction(txHash).catch((error) => {
+        clearTimeout(timeout);
+        tracker.close();
+        reject(error);
+      });
+    }
   });
 }
 

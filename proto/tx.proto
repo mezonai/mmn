@@ -72,16 +72,7 @@ message TransactionStatusUpdate {
   uint64 timestamp = 7;
 }
 
-// Request to track multiple transactions
-message TrackTransactionsRequest {
-  repeated string tx_hashes = 1;
-  uint32 timeout_seconds = 2;
-}
 
-// Response for tracking multiple transactions
-message TrackTransactionsResponse {
-  repeated TransactionStatusUpdate updates = 1;
-}
 
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
@@ -93,6 +84,5 @@ service TxService {
   // Subscribe to status updates for a single transaction
   rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusUpdate);
   
-  // Track multiple transactions and get their final status
-  rpc TrackTransactions(TrackTransactionsRequest) returns (TrackTransactionsResponse);
+
 }
