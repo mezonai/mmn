@@ -1,9 +1,8 @@
-package main
+package cmd
 
 import (
 	"crypto/ed25519"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -19,6 +18,8 @@ import (
 	"mmn/network"
 	"mmn/poh"
 	"mmn/validator"
+
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -30,10 +31,22 @@ const (
 	configPath = "config/config.ini"
 )
 
-func main() {
-	nodeName := flag.String("node", "node1", "The node to run")
-	flag.Parse()
+var nodeName string
 
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run the blockchain node",
+	Run: func(cmd *cobra.Command, args []string) {
+		runNode(nodeName)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(runCmd)
+	runCmd.Flags().StringVarP(&nodeName, "node", "n", "node1", "The node to run")
+}
+
+func runNode(currentNode string) {
 	// Get current directory and create absolute path
 	currentDir, err := os.Getwd()
 	if err != nil {
@@ -49,7 +62,7 @@ func main() {
 	}
 
 	// Load configuration
-	cfg, err := loadConfiguration(*nodeName)
+	cfg, err := loadConfiguration(currentNode)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -92,6 +105,7 @@ func main() {
 
 	// Block forever
 	select {}
+
 }
 
 // loadConfiguration loads all configuration files
