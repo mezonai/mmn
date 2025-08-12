@@ -7,6 +7,13 @@ type Entry struct {
 	Tick         bool     `json:"tick"`
 }
 
+type PersistedEntry struct {
+	NumHashes uint64   `json:"num_hashes"`
+	Hash      [32]byte `json:"hash"`
+	TxHashes  []string `json:"tx_hashes"`
+	Tick      bool     `json:"tick"`
+}
+
 // Entry with no transactions (e.g. tick-only)
 func NewTickEntry(numHashes uint64, hash [32]byte) Entry {
 	return Entry{

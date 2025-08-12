@@ -2,8 +2,6 @@ package mempool
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"mmn/interfaces"
 	"mmn/types"
@@ -31,8 +29,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
 func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	// Generate hash first (read-only operation)
 	txBytes := tx.Bytes()
-	txShaHash := sha256.Sum256(txBytes)
-	txHash := hex.EncodeToString(txShaHash[:])
+	txHash := tx.Hash()
 
 	// Quick check for duplicate using read lock
 	mp.mu.RLock()

@@ -5,19 +5,15 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"sync"
 
 	"github.com/linxGnu/grocksdb"
 
 	"mmn/block"
+	"mmn/db"
 )
 
 const (
-	// Column family names
-	cfDefault = "default"
-	cfBlocks  = "blocks"
-
 	// Metadata keys
 	keyLatestFinalized = "latest_finalized"
 
@@ -31,43 +27,25 @@ const (
 // - default: metadata (e.g., latest_finalized)
 // - blocks:  key = slot (uint64 BE), value = json(block.Block)
 type RocksDBStore struct {
-	dir             string
 	mu              sync.RWMutex
 	db              *grocksdb.DB
+	txStore         *db.TxRocksStore
 	metaCF          *grocksdb.ColumnFamilyHandle
 	blocksCF        *grocksdb.ColumnFamilyHandle
 	latestFinalized uint64
 	seedHash        [32]byte
 }
 
-// NewRocksDBStore opens (or creates) a RocksDB database at dir.
-func NewRocksDBStore(dir string, seed []byte) (Store, error) {
-	if dir == "" {
-		return nil, fmt.Errorf("directory path cannot be empty")
-	}
-
-	opts := grocksdb.NewDefaultOptions()
-	opts.SetCreateIfMissing(true)
-	opts.SetCreateIfMissingColumnFamilies(true)
-
-	cfNames := []string{cfDefault, cfBlocks}
-	cfOpts := []*grocksdb.Options{opts, opts}
-
-	db, handles, err := grocksdb.OpenDbColumnFamilies(opts, filepath.Clean(dir), cfNames, cfOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open RocksDB at %s: %w", dir, err)
-	}
-
+func NewRocksDBBlockStore(rocks *db.RocksDB, txStore *db.TxRocksStore, seed []byte) (Store, error) {
 	store := &RocksDBStore{
-		dir:      dir,
-		db:       db,
-		metaCF:   handles[0],
-		blocksCF: handles[1],
+		db:       rocks.DB,
+		txStore:  txStore,
+		metaCF:   rocks.MustGetColumnFamily(db.CfDefault),
+		blocksCF: rocks.MustGetColumnFamily(db.CfBlocks),
 		seedHash: sha256.Sum256(seed),
 	}
 
 	if err := store.loadLatestFinalized(); err != nil {
-		store.Close()
 		return nil, fmt.Errorf("failed to load latest finalized slot: %w", err)
 	}
 
@@ -90,25 +68,6 @@ func (s *RocksDBStore) loadLatestFinalized() error {
 	}
 
 	return nil
-}
-
-// Close releases all RocksDB resources
-func (s *RocksDBStore) Close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.blocksCF != nil {
-		s.blocksCF.Destroy()
-		s.blocksCF = nil
-	}
-	if s.metaCF != nil {
-		s.metaCF.Destroy()
-		s.metaCF = nil
-	}
-	if s.db != nil {
-		s.db.Close()
-		s.db = nil
-	}
 }
 
 // slotToKey converts slot number to RocksDB key

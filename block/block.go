@@ -26,6 +26,17 @@ type Block struct {
 	Status    BlockStatus
 }
 
+type PersistedBlock struct {
+	Slot      uint64
+	PrevHash  [32]byte // hash of the last entry in the previous block
+	Entries   []poh.PersistedEntry
+	LeaderID  string
+	Timestamp uint64
+	Hash      [32]byte
+	Signature []byte
+	Status    BlockStatus
+}
+
 func AssembleBlock(
 	slot uint64,
 	prevHash [32]byte,

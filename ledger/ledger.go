@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"mmn/block"
+	"mmn/db"
 	"mmn/types"
 	"mmn/utils"
 	"os"
@@ -16,6 +17,7 @@ type Ledger struct {
 	state      map[string]*types.Account // address (public key hex) → account
 	faucetAddr string
 	mu         sync.RWMutex
+	txStore    db.TxStore
 }
 
 func NewLedger(faucetAddr string) *Ledger {
@@ -65,17 +67,18 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 	return nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block) error {
+func (l *Ledger) ApplyBlock(b *block.PersistedBlock) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
 
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil || !tx.Verify() {
-				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
 			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
@@ -194,7 +197,7 @@ func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32)
 	return total, txs
 }
 
-func (l *Ledger) appendWAL(b *block.Block) error {
+func (l *Ledger) appendWAL(b *block.PersistedBlock) error {
 	path := "ledger/wal.log"
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -208,8 +211,12 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 
 	enc := json.NewEncoder(f)
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, _ := utils.ParseTx(raw)
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
 			_ = enc.Encode(types.TxRecord{
 				Slot:      b.Slot,
 				Amount:    tx.Amount,
@@ -328,8 +335,8 @@ type Session struct {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
-	valid := make([][]byte, 0, len(raws))
+func (s *Session) FilterValid(raws [][]byte) ([]*types.Transaction, []error) {
+	valid := make([]*types.Transaction, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
@@ -343,7 +350,7 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 			errs = append(errs, err)
 			continue
 		}
-		valid = append(valid, r)
+		valid = append(valid, tx)
 	}
 	return valid, errs
 }

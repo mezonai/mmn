@@ -15,10 +15,10 @@ func VerifyEntries(prev [32]byte, entries []Entry) error {
 			cur = sha256.Sum256(cur[:])
 		}
 
-		if len(e.Transactions) == 0 {
+		if len(e.TxHashes) == 0 {
 			cur = sha256.Sum256(cur[:])
 		} else {
-			mixin := HashTransactions(e.Transactions)
+			mixin := HashTransactions(e.TxHashes)
 			hash := sha256.Sum256(append(cur[:], mixin[:]...))
 			copy(cur[:], hash[:])
 		}
