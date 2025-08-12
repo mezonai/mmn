@@ -29,6 +29,9 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
 
 bin
+
+libs/*
+client_test/mezon-server-sim/performance-test/performance_results.json

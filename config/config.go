@@ -8,6 +8,7 @@ import (
 	"mmn/poh"
 	"os"
 
+	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -96,4 +97,63 @@ func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
 		log.Fatalf("Invalid leader schedule: %v", err)
 	}
 	return ls
+}
+
+type PohConfig struct {
+	HashesPerTick  uint64 `ini:"hashes_per_tick"`
+	TicksPerSlot   uint64 `ini:"ticks_per_slot"`
+	TickIntervalMs int    `ini:"tick_interval_ms"`
+}
+
+type MempoolConfig struct {
+	MaxTxs int `ini:"max_txs"`
+}
+
+type ValidatorConfig struct {
+	BatchSize                 int `ini:"batch_size"`
+	LeaderTimeout             int `ini:"leader_timeout"`
+	LeaderTimeoutLoopInterval int `ini:"leader_timeout_loop_interval"`
+}
+
+// LoadPohConfig reads PoH config from an .ini file
+func LoadPohConfig(path string) (*PohConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	pohSection := cfg.Section("poh")
+	pohCfg := &PohConfig{}
+	err = pohSection.MapTo(pohCfg)
+	if err != nil {
+		return nil, err
+	}
+	return pohCfg, nil
+}
+
+func LoadMempoolConfig(path string) (*MempoolConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	mempoolSection := cfg.Section("mempool")
+	mempoolCfg := &MempoolConfig{}
+	err = mempoolSection.MapTo(mempoolCfg)
+	if err != nil {
+		return nil, err
+	}
+	return mempoolCfg, nil
+}
+
+func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	validatorSection := cfg.Section("validator")
+	validatorCfg := &ValidatorConfig{}
+	err = validatorSection.MapTo(validatorCfg)
+	if err != nil {
+		return nil, err
+	}
+	return validatorCfg, nil
 }
