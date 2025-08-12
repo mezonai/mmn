@@ -4,11 +4,10 @@
 # run (dev)
 go mod tidy
 
-Node 1 (first nodes):
-go run cmd/main.go -rpcPort="8080" -listenAddress="localhost:8000" -peerAddresses="localhost:8001"
+go run cmd/main.go --node <node name> 
 
-Node 2:
-go run cmd/main.go -rpcPort="8081" -listenAddress="localhost:8001" -peerAddresses="localhost:8000"
+example:
+go run cmd/main.go --node node3
 
 # Build
 go build -o bin/mmn ./cmd
