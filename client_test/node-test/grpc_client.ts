@@ -14,9 +14,8 @@ import type {
   TxResponse as GenTxResponse,
   AddTxResponse as GenAddTxResponse,
   GetTransactionStatusRequest as GenGetTxStatusRequest,
-  GetTransactionStatusResponse as GenGetTxStatusResponse,
+  TransactionStatusInfo as GenTxStatusInfo,
   SubscribeTransactionStatusRequest as GenSubscribeTxStatusRequest,
-  TransactionStatusUpdate as GenTxStatusUpdate,
 } from './generated/tx';
 import { TransactionStatus as GenTxStatusEnum } from './generated/tx';
 import type {
@@ -129,7 +128,7 @@ export class GrpcClient {
   }> {
     const req: GenGetTxStatusRequest = { txHash };
     const call = this.txClient.getTransactionStatus(req);
-    const res: GenGetTxStatusResponse = await call.response;
+    const res: GenTxStatusInfo = await call.response;
 
     // Log the raw response from the server (with BigInt handling)
     const serializableRes = {
@@ -180,7 +179,7 @@ export class GrpcClient {
 
     (async () => {
       try {
-        for await (const update of call.responses as AsyncIterable<GenTxStatusUpdate>) {
+        for await (const update of call.responses as AsyncIterable<GenTxStatusInfo>) {
           // Log the raw update from the server (with BigInt handling)
           const serializableUpdate = {
             txHash: update.txHash,

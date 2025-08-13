@@ -321,9 +321,9 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 }
 
 // GetTransactionStatus returns real-time status by checking mempool and blockstore.
-func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.GetTransactionStatusResponse, error) {
+func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
 	txHash := in.TxHash
-	resp := &pb.GetTransactionStatusResponse{
+	resp := &pb.TransactionStatusInfo{
 		TxHash:    txHash,
 		Status:    pb.TransactionStatus_UNKNOWN,
 		Timestamp: uint64(time.Now().Unix()),
@@ -367,7 +367,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system
-func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusUpdate]) error {
+func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusInfo]) error {
 	// Subscribe to all blockchain events
 	eventChan := s.eventRouter.Subscribe()
 	defer s.eventRouter.Unsubscribe(eventChan)
@@ -391,10 +391,10 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 }
 
 // convertEventToStatusUpdate converts blockchain events to transaction status updates
-func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash string) *pb.TransactionStatusUpdate {
+func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash string) *pb.TransactionStatusInfo {
 	switch e := event.(type) {
 	case *events.TransactionAddedToMempool:
-		return &pb.TransactionStatusUpdate{
+		return &pb.TransactionStatusInfo{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
@@ -405,7 +405,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 		// Transaction included in block = CONFIRMED status
 		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
 
-		return &pb.TransactionStatusUpdate{
+		return &pb.TransactionStatusInfo{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_CONFIRMED,
 			BlockSlot:     e.BlockSlot(),
@@ -418,7 +418,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 		// Transaction finalized = FINALIZED status
 		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
 
-		return &pb.TransactionStatusUpdate{
+		return &pb.TransactionStatusInfo{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_FINALIZED,
 			BlockSlot:     e.BlockSlot(),
@@ -428,7 +428,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 		}
 
 	case *events.TransactionFailed:
-		return &pb.TransactionStatusUpdate{
+		return &pb.TransactionStatusInfo{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_FAILED,
 			ErrorMessage:  e.ErrorMessage(),

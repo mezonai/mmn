@@ -4,10 +4,9 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { TxService } from "./tx";
-import type { TransactionStatusUpdate } from "./tx";
 import type { SubscribeTransactionStatusRequest } from "./tx";
 import type { ServerStreamingCall } from "@protobuf-ts/runtime-rpc";
-import type { GetTransactionStatusResponse } from "./tx";
+import type { TransactionStatusInfo } from "./tx";
 import type { GetTransactionStatusRequest } from "./tx";
 import type { AddTxResponse } from "./tx";
 import { stackIntercept } from "@protobuf-ts/runtime-rpc";
@@ -32,13 +31,13 @@ export interface ITxServiceClient {
      *
      * @generated from protobuf rpc: GetTransactionStatus
      */
-    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, GetTransactionStatusResponse>;
+    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo>;
     /**
      * Subscribe to status updates for all transactions
      *
      * @generated from protobuf rpc: SubscribeTransactionStatus
      */
-    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusUpdate>;
+    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo>;
 }
 /**
  * @generated from protobuf service mmn.TxService
@@ -68,17 +67,17 @@ export class TxServiceClient implements ITxServiceClient, ServiceInfo {
      *
      * @generated from protobuf rpc: GetTransactionStatus
      */
-    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, GetTransactionStatusResponse> {
+    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo> {
         const method = this.methods[2], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetTransactionStatusRequest, GetTransactionStatusResponse>("unary", this._transport, method, opt, input);
+        return stackIntercept<GetTransactionStatusRequest, TransactionStatusInfo>("unary", this._transport, method, opt, input);
     }
     /**
      * Subscribe to status updates for all transactions
      *
      * @generated from protobuf rpc: SubscribeTransactionStatus
      */
-    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusUpdate> {
+    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo> {
         const method = this.methods[3], opt = this._transport.mergeOptions(options);
-        return stackIntercept<SubscribeTransactionStatusRequest, TransactionStatusUpdate>("serverStreaming", this._transport, method, opt, input);
+        return stackIntercept<SubscribeTransactionStatusRequest, TransactionStatusInfo>("serverStreaming", this._transport, method, opt, input);
     }
 }

@@ -44,8 +44,8 @@ message GetTransactionStatusRequest {
   string tx_hash = 1;
 }
 
-// Response with transaction status
-message GetTransactionStatusResponse {
+// Unified transaction status message used for both unary and streaming responses
+message TransactionStatusInfo {
   string tx_hash = 1;
   TransactionStatus status = 2;
   uint64 block_slot = 3;        // Slot where transaction was included (if confirmed/finalized)
@@ -60,24 +60,13 @@ message SubscribeTransactionStatusRequest {
   // Empty request - subscribes to all transaction events
 }
 
-// Stream of transaction status updates
-message TransactionStatusUpdate {
-  string tx_hash = 1;
-  TransactionStatus status = 2;
-  uint64 block_slot = 3;
-  string block_hash = 4;
-  uint64 confirmations = 5;
-  string error_message = 6;
-  uint64 timestamp = 7;
-}
-
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
   rpc AddTx (SignedTxMsg) returns (AddTxResponse);
   
   // Get current status of a transaction
-  rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusResponse);
+  rpc GetTransactionStatus(GetTransactionStatusRequest) returns (TransactionStatusInfo);
   
   // Subscribe to status updates for all transactions
-  rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusUpdate);
+  rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusInfo);
 }

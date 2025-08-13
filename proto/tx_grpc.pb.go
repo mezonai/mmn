@@ -32,9 +32,9 @@ type TxServiceClient interface {
 	TxBroadcast(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*TxResponse, error)
 	AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error)
 	// Get current status of a transaction
-	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*GetTransactionStatusResponse, error)
+	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*TransactionStatusInfo, error)
 	// Subscribe to status updates for all transactions
-	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusUpdate], error)
+	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusInfo], error)
 }
 
 type txServiceClient struct {
@@ -65,9 +65,9 @@ func (c *txServiceClient) AddTx(ctx context.Context, in *SignedTxMsg, opts ...gr
 	return out, nil
 }
 
-func (c *txServiceClient) GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*GetTransactionStatusResponse, error) {
+func (c *txServiceClient) GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*TransactionStatusInfo, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetTransactionStatusResponse)
+	out := new(TransactionStatusInfo)
 	err := c.cc.Invoke(ctx, TxService_GetTransactionStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -75,13 +75,13 @@ func (c *txServiceClient) GetTransactionStatus(ctx context.Context, in *GetTrans
 	return out, nil
 }
 
-func (c *txServiceClient) SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusUpdate], error) {
+func (c *txServiceClient) SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusInfo], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &TxService_ServiceDesc.Streams[0], TxService_SubscribeTransactionStatus_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[SubscribeTransactionStatusRequest, TransactionStatusUpdate]{ClientStream: stream}
+	x := &grpc.GenericClientStream[SubscribeTransactionStatusRequest, TransactionStatusInfo]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (c *txServiceClient) SubscribeTransactionStatus(ctx context.Context, in *Su
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type TxService_SubscribeTransactionStatusClient = grpc.ServerStreamingClient[TransactionStatusUpdate]
+type TxService_SubscribeTransactionStatusClient = grpc.ServerStreamingClient[TransactionStatusInfo]
 
 // TxServiceServer is the server API for TxService service.
 // All implementations must embed UnimplementedTxServiceServer
@@ -101,9 +101,9 @@ type TxServiceServer interface {
 	TxBroadcast(context.Context, *SignedTxMsg) (*TxResponse, error)
 	AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error)
 	// Get current status of a transaction
-	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*GetTransactionStatusResponse, error)
+	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error)
 	// Subscribe to status updates for all transactions
-	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusUpdate]) error
+	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error
 	mustEmbedUnimplementedTxServiceServer()
 }
 
@@ -120,10 +120,10 @@ func (UnimplementedTxServiceServer) TxBroadcast(context.Context, *SignedTxMsg) (
 func (UnimplementedTxServiceServer) AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddTx not implemented")
 }
-func (UnimplementedTxServiceServer) GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*GetTransactionStatusResponse, error) {
+func (UnimplementedTxServiceServer) GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTransactionStatus not implemented")
 }
-func (UnimplementedTxServiceServer) SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusUpdate]) error {
+func (UnimplementedTxServiceServer) SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeTransactionStatus not implemented")
 }
 func (UnimplementedTxServiceServer) mustEmbedUnimplementedTxServiceServer() {}
@@ -206,11 +206,11 @@ func _TxService_SubscribeTransactionStatus_Handler(srv interface{}, stream grpc.
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(TxServiceServer).SubscribeTransactionStatus(m, &grpc.GenericServerStream[SubscribeTransactionStatusRequest, TransactionStatusUpdate]{ServerStream: stream})
+	return srv.(TxServiceServer).SubscribeTransactionStatus(m, &grpc.GenericServerStream[SubscribeTransactionStatusRequest, TransactionStatusInfo]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type TxService_SubscribeTransactionStatusServer = grpc.ServerStreamingServer[TransactionStatusUpdate]
+type TxService_SubscribeTransactionStatusServer = grpc.ServerStreamingServer[TransactionStatusInfo]
 
 // TxService_ServiceDesc is the grpc.ServiceDesc for TxService service.
 // It's only intended for direct use with grpc.RegisterService,
