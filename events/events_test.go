@@ -6,26 +6,17 @@ import (
 	"time"
 )
 
-// mockBlockStore implements BlockStore interface for testing
-type mockBlockStore struct {
-	txHashes map[uint64][]string
-}
-
-func (m *mockBlockStore) GetTransactionHashes(slot uint64) []string {
-	return m.txHashes[slot]
-}
-
 func TestEventBus(t *testing.T) {
 	eventBus := NewEventBus()
-	
+
 	// Test subscription to all events
 	eventChan := eventBus.Subscribe()
-	
+
 	// Verify subscription count
 	if count := eventBus.GetTotalSubscriptions(); count != 1 {
 		t.Errorf("Expected 1 subscriber, got %d", count)
 	}
-	
+
 	// Test publishing event
 	tx := &types.Transaction{
 		Type:      types.TxTypeTransfer,
@@ -34,15 +25,15 @@ func TestEventBus(t *testing.T) {
 		Amount:    100,
 		Timestamp: uint64(time.Now().Unix()),
 	}
-	
+
 	txHash := "test-tx-hash"
 	event := NewTransactionAddedToMempool(txHash, tx)
-	
+
 	// Publish event in goroutine to avoid blocking
 	go func() {
 		eventBus.Publish(event)
 	}()
-	
+
 	// Wait for event
 	select {
 	case receivedEvent := <-eventChan:
@@ -55,10 +46,10 @@ func TestEventBus(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event")
 	}
-	
+
 	// Test unsubscribe
 	eventBus.Unsubscribe(eventChan)
-	
+
 	// Verify subscription count is 0
 	if count := eventBus.GetTotalSubscriptions(); count != 0 {
 		t.Errorf("Expected 0 subscribers after unsubscribe, got %d", count)
@@ -74,12 +65,12 @@ func TestBlockchainEvents(t *testing.T) {
 		Amount:    100,
 		Timestamp: uint64(time.Now().Unix()),
 	}
-	
+
 	event := NewTransactionAddedToMempool("tx-hash", tx)
 	if event.Type() != "TransactionAddedToMempool" {
 		t.Errorf("Expected TransactionAddedToMempool, got %s", event.Type())
 	}
-	
+
 	// Test TransactionIncludedInBlock
 	blockEvent := NewTransactionIncludedInBlock("tx-hash", 123, "block-hash")
 	if blockEvent.Type() != "TransactionIncludedInBlock" {
@@ -88,7 +79,7 @@ func TestBlockchainEvents(t *testing.T) {
 	if blockEvent.BlockSlot() != 123 {
 		t.Errorf("Expected block slot 123, got %d", blockEvent.BlockSlot())
 	}
-	
+
 	// Test TransactionFailed
 	failedEvent := NewTransactionFailed("tx-hash", "insufficient funds")
 	if failedEvent.Type() != "TransactionFailed" {
@@ -97,7 +88,7 @@ func TestBlockchainEvents(t *testing.T) {
 	if failedEvent.ErrorMessage() != "insufficient funds" {
 		t.Errorf("Expected error message 'insufficient funds', got %s", failedEvent.ErrorMessage())
 	}
-	
+
 	// Test BlockFinalized
 	blockFinalizedEvent := NewBlockFinalized(123, "block-hash")
 	if blockFinalizedEvent.Type() != "BlockFinalized" {
@@ -112,22 +103,15 @@ func TestBlockchainEvents(t *testing.T) {
 }
 
 func TestEventRouter(t *testing.T) {
-	// Create mock block store
-	mockBlockStore := &mockBlockStore{
-		txHashes: map[uint64][]string{
-			123: {"tx1", "tx2", "tx3"},
-		},
-	}
-	
 	eventBus := NewEventBus()
-	eventRouter := NewEventRouter(eventBus, mockBlockStore)
-	
+	eventRouter := NewEventRouter(eventBus)
+
 	// Subscribe to all events
 	eventChan := eventRouter.Subscribe()
-	
+
 	// Publish block finalized event
 	eventRouter.PublishBlockFinalized(123, "block-hash")
-	
+
 	// Wait for event
 	select {
 	case event := <-eventChan:
@@ -144,23 +128,23 @@ func TestEventRouter(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event")
 	}
-	
+
 	// Clean up
 	eventRouter.Unsubscribe(eventChan)
 }
 
 func TestMultipleSubscribers(t *testing.T) {
 	eventBus := NewEventBus()
-	
+
 	// Subscribe multiple clients to all events
 	eventChan1 := eventBus.Subscribe()
 	eventChan2 := eventBus.Subscribe()
-	
+
 	// Verify subscription count
 	if count := eventBus.GetTotalSubscriptions(); count != 2 {
 		t.Errorf("Expected 2 subscribers, got %d", count)
 	}
-	
+
 	// Test publishing event
 	tx := &types.Transaction{
 		Type:      types.TxTypeTransfer,
@@ -169,13 +153,13 @@ func TestMultipleSubscribers(t *testing.T) {
 		Amount:    100,
 		Timestamp: uint64(time.Now().Unix()),
 	}
-	
+
 	txHash := "test-tx-hash"
 	event := NewTransactionAddedToMempool(txHash, tx)
-	
+
 	// Publish event
 	eventBus.Publish(event)
-	
+
 	// Both subscribers should receive the event
 	select {
 	case receivedEvent := <-eventChan1:
@@ -185,7 +169,7 @@ func TestMultipleSubscribers(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event on channel 1")
 	}
-	
+
 	select {
 	case receivedEvent := <-eventChan2:
 		if receivedEvent.TxHash() != txHash {
@@ -194,11 +178,11 @@ func TestMultipleSubscribers(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event on channel 2")
 	}
-	
+
 	// Clean up
 	eventBus.Unsubscribe(eventChan1)
 	eventBus.Unsubscribe(eventChan2)
-	
+
 	// Verify subscription count is 0
 	if count := eventBus.GetTotalSubscriptions(); count != 0 {
 		t.Errorf("Expected 0 subscribers after unsubscribe, got %d", count)

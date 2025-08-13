@@ -339,39 +339,12 @@ func (s *RocksDBStore) LatestFinalized() uint64 {
 func (s *RocksDBStore) GetConfirmations(blockSlot uint64) uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	latest := s.latestFinalized
 	if latest >= blockSlot {
 		return latest - blockSlot + 1
 	}
 	return 1 // Confirmed but not yet finalized
-}
-
-// GetTransactionHashes returns all transaction hashes for a given block slot
-func (s *RocksDBStore) GetTransactionHashes(slot uint64) []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	
-	if s.db == nil {
-		return nil
-	}
-	
-	block := s.Block(slot)
-	if block == nil {
-		return nil
-	}
-	
-	var txHashes []string
-	for _, entry := range block.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil {
-				continue
-			}
-			txHashes = append(txHashes, tx.Hash())
-		}
-	}
-	return txHashes
 }
 
 // GetTransactionBlockInfo searches all stored blocks for a transaction whose
@@ -397,11 +370,11 @@ func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint6
 	for iter.Valid() {
 		key := iter.Key()
 		value := iter.Value()
-		
+
 		// Parse slot from key
 		if len(key.Data()) == slotKeySize {
 			slotNum := binary.BigEndian.Uint64(key.Data())
-			
+
 			// Parse block from value
 			var blk block.Block
 			if err := json.Unmarshal(value.Data(), &blk); err == nil {
@@ -419,7 +392,7 @@ func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint6
 				}
 			}
 		}
-		
+
 		iter.Next()
 	}
 

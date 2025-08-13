@@ -76,9 +76,9 @@ func runNode(currentNode string) {
 
 	// --- Event Bus ---
 	eventBus := events.NewEventBus()
-	
+
 	// --- Event Router ---
-	eventRouter := events.NewEventRouter(eventBus, bs)
+	eventRouter := events.NewEventRouter(eventBus)
 
 	ld := ledger.NewLedger(cfg.Faucet.Address)
 	collector := consensus.NewCollector(len(cfg.PeerNodes) + 1)

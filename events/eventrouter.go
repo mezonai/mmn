@@ -6,23 +6,16 @@ import (
 	"time"
 )
 
-// BlockStore interface for getting transaction hashes
-type BlockStore interface {
-	GetTransactionHashes(slot uint64) []string
-}
-
 // EventRouter handles complex event routing logic
 type EventRouter struct {
-	eventBus   *EventBus
-	blockStore BlockStore
-	mu         sync.RWMutex
+	eventBus *EventBus
+	mu       sync.RWMutex
 }
 
 // NewEventRouter creates a new EventRouter instance
-func NewEventRouter(eventBus *EventBus, blockStore BlockStore) *EventRouter {
+func NewEventRouter(eventBus *EventBus) *EventRouter {
 	return &EventRouter{
-		eventBus:   eventBus,
-		blockStore: blockStore,
+		eventBus: eventBus,
 	}
 }
 
@@ -33,12 +26,9 @@ func (er *EventRouter) PublishBlockFinalized(slot uint64, blockHash string) {
 
 	// Create minimal block event (no transaction hashes)
 	event := NewBlockFinalized(slot, blockHash)
-	
-	// Get transaction hashes from BlockStore (single source of truth)
-	txHashes := er.blockStore.GetTransactionHashes(slot)
-	
-	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
-	
+
+	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d\n", slot)
+
 	// Use EventBus.Publish to handle subscribers
 	er.eventBus.Publish(event)
 }
@@ -50,12 +40,9 @@ func (er *EventRouter) PublishBlockFinalizedWithTimestamp(slot uint64, blockHash
 
 	// Create block event with specific timestamp
 	event := NewBlockFinalizedWithTimestamp(slot, blockHash, timestamp)
-	
-	// Get transaction hashes from BlockStore (single source of truth)
-	txHashes := er.blockStore.GetTransactionHashes(slot)
-	
-	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d with %d transactions\n", slot, len(txHashes))
-	
+
+	fmt.Printf("[EventRouter] Publishing BlockFinalized for slot %d \n", slot)
+
 	// Use EventBus.Publish to handle subscribers
 	er.eventBus.Publish(event)
 }

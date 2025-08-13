@@ -101,7 +101,7 @@ func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 		return err
 	}
 	bs.data[b.Slot] = b
-	
+
 	fmt.Printf("Pending block %d added to blockstore\n", b.Slot)
 	return nil
 }
@@ -124,7 +124,7 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	if slot > bs.latestFinalized {
 		bs.latestFinalized = slot
 	}
-	
+
 	fmt.Printf("Block %d marked as finalized\n", slot)
 	fmt.Printf("Latest finalized block: %d\n", bs.latestFinalized)
 	return nil
@@ -177,37 +177,12 @@ func (bs *BlockStore) LatestFinalized() uint64 {
 func (bs *BlockStore) GetConfirmations(blockSlot uint64) uint64 {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
-	
+
 	latest := bs.latestFinalized
 	if latest >= blockSlot {
 		return latest - blockSlot + 1
 	}
 	return 1 // Confirmed but not yet finalized
-}
-
-
-
-// GetTransactionHashes returns all transaction hashes for a given block slot
-func (bs *BlockStore) GetTransactionHashes(slot uint64) []string {
-	bs.mu.RLock()
-	defer bs.mu.RUnlock()
-	
-	block := bs.data[slot]
-	if block == nil {
-		return nil
-	}
-	
-	var txHashes []string
-	for _, entry := range block.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil {
-				continue
-			}
-			txHashes = append(txHashes, tx.Hash())
-		}
-	}
-	return txHashes
 }
 
 // GetTransactionBlockInfo searches all stored blocks for a transaction whose
