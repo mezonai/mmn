@@ -3,14 +3,14 @@ package config
 import (
 	"crypto/ed25519"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"mmn/logx"
 	"mmn/poh"
 	"os"
+	"strings"
 
+	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,7 +31,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: SelfNode=%+v, PeerNodes=%d, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.PeerNodes), len(cfgFile.Config.LeaderSchedule))
+	log.Printf("[config] Successfully loaded config: SelfNode=%+v, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.LeaderSchedule))
 	return &cfgFile.Config, nil
 }
 
@@ -68,26 +68,88 @@ func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
 	return ls
 }
 
-func NewConfig(nodeConfigFileName string) (*GenesisConfig, NodeConfig, []byte, []NodeConfig, []LeaderSchedule, ed25519.PrivateKey) {
-	// load node config
-	current_node := flag.String("node", nodeConfigFileName, "The node to run")
-	flag.Parse()
+type PohConfig struct {
+	HashesPerTick  uint64 `ini:"hashes_per_tick"`
+	TicksPerSlot   uint64 `ini:"ticks_per_slot"`
+	TickIntervalMs int    `ini:"tick_interval_ms"`
+}
 
-	cfg, err := LoadGenesisConfig(fmt.Sprintf("config/genesis.%s.yml", *current_node))
+type MempoolConfig struct {
+	MaxTxs int `ini:"max_txs"`
+}
+
+type ValidatorConfig struct {
+	BatchSize                 int `ini:"batch_size"`
+	LeaderTimeout             int `ini:"leader_timeout"`
+	LeaderTimeoutLoopInterval int `ini:"leader_timeout_loop_interval"`
+}
+
+// LoadPohConfig reads PoH config from an .ini file
+func LoadPohConfig(path string) (*PohConfig, error) {
+	cfg, err := ini.Load(path)
 	if err != nil {
-		logx.Error("LOAD CONFIG", "Failed to load config: ", err)
+		return nil, err
 	}
-	self := cfg.SelfNode
-	seed := []byte(self.PubKey)
-	peers := cfg.PeerNodes
-	leaderSchedule := cfg.LeaderSchedule
-
-	// --- Load private key from file ---
-	privKey, err := LoadEd25519PrivKey(self.PrivKeyPath)
+	pohSection := cfg.Section("poh")
+	pohCfg := &PohConfig{}
+	err = pohSection.MapTo(pohCfg)
 	if err != nil {
-		logx.Error("LOAD CONFIG", "Failed to load private key", err)
+		return nil, err
+	}
+	return pohCfg, nil
+}
+
+func LoadMempoolConfig(path string) (*MempoolConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	mempoolSection := cfg.Section("mempool")
+	mempoolCfg := &MempoolConfig{}
+	err = mempoolSection.MapTo(mempoolCfg)
+	if err != nil {
+		return nil, err
+	}
+	return mempoolCfg, nil
+}
+
+func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
+	cfg, err := ini.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	validatorSection := cfg.Section("validator")
+	validatorCfg := &ValidatorConfig{}
+	err = validatorSection.MapTo(validatorCfg)
+	if err != nil {
+		return nil, err
+	}
+	return validatorCfg, nil
+}
+
+func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
+	data, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read private key file: %w", err)
 	}
 
-	return cfg, self, seed, peers, leaderSchedule, privKey
+	keyHex := strings.TrimSpace(string(data))
 
+	privBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex private key: %w", err)
+	}
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return "", fmt.Errorf("invalid ed25519 private key length: %d", len(privBytes))
+	}
+
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	return hex.EncodeToString(pubKey), nil
 }

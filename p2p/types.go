@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"context"
 	"crypto/ed25519"
 	"mmn/block"
 	"mmn/blockstore"
@@ -23,7 +24,7 @@ type Libp2pNetwork struct {
 	peers       map[peer.ID]*PeerInfo
 	mu          sync.RWMutex
 
-	blockStore *blockstore.BlockStore
+	blockStore blockstore.Store
 
 	topicBlocks       *pubsub.Topic
 	topicVotes        *pubsub.Topic
@@ -40,6 +41,9 @@ type Libp2pNetwork struct {
 	txStreams    map[peer.ID]network.Stream
 	streamMu     sync.RWMutex
 	maxPeers     int
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type PeerInfo struct {

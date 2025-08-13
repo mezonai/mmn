@@ -8,7 +8,7 @@ import (
 type PohService struct {
 	Recorder     *PohRecorder
 	TickInterval time.Duration
-	OnEntry      func(entry Entry)
+	OnEntry      func(entry []Entry)
 	stopCh       chan struct{}
 }
 
@@ -39,10 +39,8 @@ func (s *PohService) tickAndFlush() {
 			if tickEntry := s.Recorder.Tick(); tickEntry != nil {
 				entries = append(entries, *tickEntry)
 			}
-			for _, entry := range entries {
-				if s.OnEntry != nil {
-					s.OnEntry(entry)
-				}
+			if len(entries) > 0 && s.OnEntry != nil {
+				s.OnEntry(entries)
 			}
 		case <-s.stopCh:
 			fmt.Println("Ticking and flushing stop")

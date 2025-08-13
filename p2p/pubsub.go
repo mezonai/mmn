@@ -64,10 +64,20 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs *blockstore.BlockStore, collector *consensus.Collector, mp *mempool.Mempool) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
 	ln.SetCallbacks(
 		func(blk *block.Block) error {
 			logx.Info("BLOCK", "Received block from network: slot=", blk.Slot)
+
+			// TODO: need to verify signature and leader ID
+			// Verify PoH
+			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
+			if err := blk.VerifyPoH(); err != nil {
+				logx.Error("BLOCK", "Invalid PoH:", err)
+				return fmt.Errorf("invalid PoH")
+			}
+
+			// Verify block
 			if err := ld.VerifyBlock(blk); err != nil {
 				logx.Error("BLOCK", "Block verification failed: ", err)
 				return err
@@ -84,6 +94,27 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				VoterID:   self.PubKey,
 			}
 			vote.Sign(privKey)
+
+			committed, needApply, err := collector.AddVote(vote)
+			if err != nil {
+				logx.Error("VOTE", "Failed to add vote: ", err)
+				return err
+			}
+
+			if committed && needApply {
+				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
+				// Apply block to ledger
+				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+					return fmt.Errorf("apply block error: %w", err)
+				}
+
+				// Mark block as finalized
+				if err := bs.MarkFinalized(vote.Slot); err != nil {
+					return fmt.Errorf("mark block as finalized error: %w", err)
+				}
+
+				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
+			}
 
 			ln.BroadcastVote(context.Background(), vote)
 
@@ -126,39 +157,38 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	)
 }
 
-func (ln *Libp2pNetwork) SetupPubSubTopics() {
+func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
-			go ln.HandleBlockTopic(sub)
+			go ln.HandleBlockTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicVotes, err = ln.pubsub.Join(TopicVotes); err == nil {
 		if sub, err := ln.topicVotes.Subscribe(); err == nil {
-			go ln.HandleVoteTopic(sub)
+			go ln.HandleVoteTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
 		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			go ln.HandleTxTopic(sub)
+			go ln.HandleTxTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
 		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
-			go ln.handleBlockSyncRequestTopic(sub)
+			go ln.handleBlockSyncRequestTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicBlockSyncRes, err = ln.pubsub.Join(BlockSyncResponseTopic); err == nil {
 		if sub, err := ln.topicBlockSyncRes.Subscribe(); err == nil {
-			go ln.handleBlockSyncResponseTopic(sub)
+			go ln.handleBlockSyncResponseTopic(ctx, sub)
 		}
 	}
-
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(
@@ -222,4 +252,8 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) e
 		}
 	}
 	return nil
+}
+
+func (ln *Libp2pNetwork) GetPeersConnected() int {
+	return len(ln.peers)
 }

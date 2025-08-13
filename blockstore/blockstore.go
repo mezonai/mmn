@@ -8,12 +8,31 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"mmn/block"
 )
 
+// BlockStore manages the chain of blocks, persisting them and tracking the latest hash.
+// It is safe for concurrent use.
+// Deprecated
+type BlockStore struct {
+	dir  string
+	mu   sync.RWMutex
+	data map[uint64]*block.Block
+
+	latestFinalized uint64
+	SeedHash        [32]byte
+}
+
+type SlotBoundary struct {
+	Slot uint64
+	Hash [32]byte
+}
+
 // NewBlockStore initializes a BlockStore, loading existing chain if present.
 // TODO: should dynamic follow up config
+// Deprecated
 func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
 	bs := &BlockStore{
 		dir:      dir,
@@ -109,17 +128,21 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	return nil
 }
 
+func (bs *BlockStore) Seed() [32]byte {
+	return bs.SeedHash
+}
+
 func (bs *BlockStore) LatestSlot() uint64 {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
-	var maxSlot uint64
+	var latest uint64
 	for slot := range bs.data {
-		if slot > maxSlot {
-			maxSlot = slot
+		if slot > latest {
+			latest = slot
 		}
 	}
-	return maxSlot
+	return latest
 }
 
 // LoadBlock reads a block file by slot.
