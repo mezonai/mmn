@@ -3,10 +3,12 @@ package config
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"mmn/poh"
 	"os"
+	"strings"
 
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
@@ -123,4 +125,31 @@ func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
 		return nil, err
 	}
 	return validatorCfg, nil
+}
+
+func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
+	data, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	keyHex := strings.TrimSpace(string(data))
+
+	privBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex private key: %w", err)
+	}
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return "", fmt.Errorf("invalid ed25519 private key length: %d", len(privBytes))
+	}
+
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	return hex.EncodeToString(pubKey), nil
 }

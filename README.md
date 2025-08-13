@@ -22,7 +22,6 @@ go run main.go run \
   --grpc-addr ":9001" \
   --libp2p-addr "/ip4/0.0.0.0/tcp/10001" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/10002/p2p/<peerID>" \
-  --faucet-address "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7" \
   --faucet-amount 2000000000
 
 # Build

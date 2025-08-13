@@ -7,13 +7,11 @@ services:
     command:
       [
         "./mmn", "run",
-        "--pubkey", "6a4dd9b6efe0fc8f125be331735b0e33239e24f02c84e555ade9ea50bd1369db",
         "--privkey-path", "config/key1.txt",
         "--listen-addr", ":8001",
         "--grpc-addr", ":9001",
         "--libp2p-addr", "/ip4/0.0.0.0/tcp/10001",
         "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
-        "--faucet-address", "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -29,13 +27,11 @@ services:
     command:
       [
         "./mmn", "run",
-        "--pubkey", "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248",
         "--privkey-path", "config/key2.txt",
         "--listen-addr", ":8002",
         "--grpc-addr", ":9002",
         "--libp2p-addr", "/ip4/0.0.0.0/tcp/10002",
         "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
-        "--faucet-address", "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -51,13 +47,11 @@ services:
     command:
       [
         "./mmn", "run",
-        "--pubkey", "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b",
         "--privkey-path", "config/key3.txt",
         "--listen-addr", ":8003",
         "--grpc-addr", ":9003",
         "--libp2p-addr", "/ip4/0.0.0.0/tcp/10003",
         "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
-        "--faucet-address", "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7",
         "--faucet-amount", "2000000000"
       ]
     ports:

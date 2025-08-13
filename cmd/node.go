@@ -36,7 +36,6 @@ const (
 )
 
 var (
-	pubKey             string
 	privKeyPath        string
 	listenAddr         string
 	libp2pAddr         string
@@ -64,14 +63,13 @@ func init() {
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	runCmd.Flags().StringVar(&pubKey, "pubkey", cfg.SelfNode.PubKey, "Self node public key")
 	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", cfg.SelfNode.PrivKeyPath, "Path to private key file")
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", cfg.SelfNode.ListenAddr, "Listen address for API server :<port>")
 	runCmd.Flags().StringVar(&listenAddr, "grpc-addr", cfg.SelfNode.ListenAddr, "Listen address for Grpc server :<port>")
 	runCmd.Flags().StringVar(&libp2pAddr, "libp2p-addr", cfg.SelfNode.Libp2pAddr, "LibP2P listen multiaddress /ip4/0.0.0.0/tcp/<port>")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", cfg.SelfNode.BootStrapAddresses, "List of bootstrap peer multiaddresses")
-	runCmd.Flags().StringVar(&faucetAddress, "faucet-address", cfg.Faucet.Address, "Faucet Address")
 	runCmd.Flags().StringVar(&faucetAmount, "faucet-amount", string(cfg.Faucet.Amount), "Faucet Amount")
+	faucetAddress = cfg.Faucet.Address
 	leaderSchedule = cfg.LeaderSchedule
 }
 
@@ -96,6 +94,10 @@ func runNode() {
 		logx.Warn("Warning: Failed to create directory %s: %v", absRocksdbBlockDir, err)
 	}
 
+	pubKey, err := config.LoadPubKeyFromPriv(privKeyPath)
+	if err != nil {
+		logx.Error("Public Key", err.Error())
+	}
 	// Initialize components with absolute paths
 	bs, err := initializeRocksDBBlockstore(pubKey, absRocksdbBlockDir)
 	if err != nil {
