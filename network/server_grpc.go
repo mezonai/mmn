@@ -230,6 +230,21 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	}, nil
 }
 
+func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
+	tx, err := s.ledger.GetTxByHash(in.TxHash)
+	if err != nil {
+		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
+	}
+	txInfo := &pb.TxInfo{
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    tx.Amount,
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+	}
+	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
+}
+
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
 	addr := in.Address
 	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)

@@ -166,6 +166,14 @@ func addHistory(acc *types.Account, rec types.TxRecord) {
 	acc.History = append(acc.History, rec)
 }
 
+func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
+	tx, err := l.txStore.GetByHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
 // TODO: need to optimize this by using BadgerDB
 func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []types.TxRecord) {
 	l.mu.RLock()

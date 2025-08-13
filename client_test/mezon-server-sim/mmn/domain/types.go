@@ -107,3 +107,12 @@ type TxHistoryResponse struct {
 	Total uint32
 	Txs   []*TxMetaResponse
 }
+
+// TxInfo represents transaction information returned by GetTxByHash
+type TxInfo struct {
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Amount    uint64 `json:"amount"`
+	Timestamp uint64 `json:"timestamp"`
+	TextData  string `json:"text_data"`
+}

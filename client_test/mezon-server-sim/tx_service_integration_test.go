@@ -330,3 +330,67 @@ func Test_GetListFaucetTransactions(t *testing.T) {
 
 	t.Logf("ListTransactions: %v", txs)
 }
+
+// TestGetTxByHash_Integration tests the GetTxByHash functionality
+func TestGetTxByHash_Integration(t *testing.T) {
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// First, create a transaction to get a valid hash
+	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
+	toAddress := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
+
+	// Send a transaction to get a valid hash
+	faucetSeed := faucetPrivateKey.Seed()
+	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeFaucet)
+	if err != nil {
+		t.Fatalf("Failed to create test transaction: %v", err)
+	}
+
+	t.Logf("Created test transaction with hash: %s", txHash)
+
+	// Wait a bit for the transaction to be processed
+	time.Sleep(3 * time.Second)
+
+	// Test: Get transaction by hash
+	txInfo, err := service.GetTxByHash(ctx, txHash)
+	if err != nil {
+		t.Fatalf("GetTxByHash failed: %v", err)
+	}
+
+	// Assert: Verify the transaction details
+	if txInfo.Sender != faucetPublicKey {
+		t.Errorf("Expected sender %s, got %s", faucetPublicKey, txInfo.Sender)
+	}
+	if txInfo.Recipient != toAddress {
+		t.Errorf("Expected recipient %s, got %s", toAddress, txInfo.Recipient)
+	}
+	if txInfo.Amount != 1 {
+		t.Errorf("Expected amount 1, got %d", txInfo.Amount)
+	}
+	if txInfo.TextData != "GetTxByHash test transfer" {
+		t.Errorf("Expected text data 'GetTxByHash test transfer', got '%s'", txInfo.TextData)
+	}
+
+	t.Logf("Successfully retrieved transaction: sender=%s, recipient=%s, amount=%d, text=%s",
+		txInfo.Sender, txInfo.Recipient, txInfo.Amount, txInfo.TextData)
+}
+
+// TestGetTxByHash_InvalidHash tests GetTxByHash with invalid hash
+func TestGetTxByHash_InvalidHash(t *testing.T) {
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Test with invalid hash
+	invalidHash := "invalid_hash_format"
+	_, err := service.GetTxByHash(ctx, invalidHash)
+	if err == nil {
+		t.Fatal("Expected error for invalid hash format")
+	}
+
+	t.Logf("Correctly rejected invalid hash: %v", err)
+}

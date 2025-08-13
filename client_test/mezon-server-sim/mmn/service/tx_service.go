@@ -169,3 +169,8 @@ func (s *TxService) ListFaucetTransactions(ctx context.Context, limit, page, fil
 		WalletLedger: txs,
 	}, nil
 }
+
+// GetTxByHash retrieves transaction information by its hash
+func (s *TxService) GetTxByHash(ctx context.Context, txHash string) (domain.TxInfo, error) {
+	return s.bc.GetTxByHash(txHash)
+}
