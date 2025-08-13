@@ -8,6 +8,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -27,11 +28,11 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Service để kiểm tra health của node
+// Service to check the health of the node
 type HealthServiceClient interface {
-	// Kiểm tra health cơ bản
+	// Basic health check
 	Check(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*HealthCheckResponse, error)
-	// Stream health status liên tục
+	// Stream continuous health status
 	Watch(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HealthCheckResponse], error)
 }
 
@@ -76,11 +77,11 @@ type HealthService_WatchClient = grpc.ServerStreamingClient[HealthCheckResponse]
 // All implementations must embed UnimplementedHealthServiceServer
 // for forward compatibility.
 //
-// Service để kiểm tra health của node
+// Service to check the health of the node
 type HealthServiceServer interface {
-	// Kiểm tra health cơ bản
+	// Basic health check
 	Check(context.Context, *Empty) (*HealthCheckResponse, error)
-	// Stream health status liên tục
+	// Stream continuous health status
 	Watch(*Empty, grpc.ServerStreamingServer[HealthCheckResponse]) error
 	mustEmbedUnimplementedHealthServiceServer()
 }

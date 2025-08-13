@@ -7,11 +7,12 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -114,16 +115,16 @@ func (*Empty) Descriptor() ([]byte, []int) {
 type HealthCheckResponse struct {
 	state         protoimpl.MessageState            `protogen:"open.v1"`
 	Status        HealthCheckResponse_ServingStatus `protobuf:"varint,1,opt,name=status,proto3,enum=mmn.HealthCheckResponse_ServingStatus" json:"status,omitempty"`
-	NodeId        string                            `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`                    // ID của node trả lời
-	Timestamp     uint64                            `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`                           // Timestamp của response
-	CurrentSlot   uint64                            `protobuf:"varint,4,opt,name=current_slot,json=currentSlot,proto3" json:"current_slot,omitempty"`    // Slot hiện tại của node
-	BlockHeight   uint64                            `protobuf:"varint,5,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`    // Block height hiện tại
-	MempoolSize   uint64                            `protobuf:"varint,6,opt,name=mempool_size,json=mempoolSize,proto3" json:"mempool_size,omitempty"`    // Số transaction trong mempool
-	IsLeader      bool                              `protobuf:"varint,7,opt,name=is_leader,json=isLeader,proto3" json:"is_leader,omitempty"`             // Node có phải là leader không
-	IsFollower    bool                              `protobuf:"varint,8,opt,name=is_follower,json=isFollower,proto3" json:"is_follower,omitempty"`       // Node có phải là follower không
-	Version       string                            `protobuf:"bytes,9,opt,name=version,proto3" json:"version,omitempty"`                                // Version của node
-	Uptime        uint64                            `protobuf:"varint,10,opt,name=uptime,proto3" json:"uptime,omitempty"`                                // Thời gian uptime (giây)
-	ErrorMessage  string                            `protobuf:"bytes,11,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Thông báo lỗi nếu có
+	NodeId        string                            `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`                    // ID of the responding node
+	Timestamp     uint64                            `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`                           // Timestamp of the response
+	CurrentSlot   uint64                            `protobuf:"varint,4,opt,name=current_slot,json=currentSlot,proto3" json:"current_slot,omitempty"`    // Current slot of the node
+	BlockHeight   uint64                            `protobuf:"varint,5,opt,name=block_height,json=blockHeight,proto3" json:"block_height,omitempty"`    // Current block height
+	MempoolSize   uint64                            `protobuf:"varint,6,opt,name=mempool_size,json=mempoolSize,proto3" json:"mempool_size,omitempty"`    // Number of transactions in mempool
+	IsLeader      bool                              `protobuf:"varint,7,opt,name=is_leader,json=isLeader,proto3" json:"is_leader,omitempty"`             // Whether the node is a leader
+	IsFollower    bool                              `protobuf:"varint,8,opt,name=is_follower,json=isFollower,proto3" json:"is_follower,omitempty"`       // Whether the node is a follower
+	Version       string                            `protobuf:"bytes,9,opt,name=version,proto3" json:"version,omitempty"`                                // Version of the node
+	Uptime        uint64                            `protobuf:"varint,10,opt,name=uptime,proto3" json:"uptime,omitempty"`                                // Uptime in seconds
+	ErrorMessage  string                            `protobuf:"bytes,11,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Error message if any
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

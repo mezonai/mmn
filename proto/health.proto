@@ -17,23 +17,23 @@ message HealthCheckResponse {
   }
   
   ServingStatus status = 1;
-  string node_id = 2;           // ID của node trả lời
-  uint64 timestamp = 3;         // Timestamp của response
-  uint64 current_slot = 4;      // Slot hiện tại của node
-  uint64 block_height = 5;      // Block height hiện tại
-  uint64 mempool_size = 6;      // Số transaction trong mempool
-  bool is_leader = 7;           // Node có phải là leader không
-  bool is_follower = 8;         // Node có phải là follower không
-  string version = 9;           // Version của node
-  uint64 uptime = 10;           // Thời gian uptime (giây)
-  string error_message = 11;    // Thông báo lỗi nếu có
+  string node_id = 2;           // ID of the responding node
+  uint64 timestamp = 3;         // Timestamp of the response
+  uint64 current_slot = 4;      // Current slot of the node
+  uint64 block_height = 5;      // Current block height
+  uint64 mempool_size = 6;      // Number of transactions in mempool
+  bool is_leader = 7;           // Whether the node is a leader
+  bool is_follower = 8;         // Whether the node is a follower
+  string version = 9;           // Version of the node
+  uint64 uptime = 10;           // Uptime in seconds
+  string error_message = 11;    // Error message if any
 }
 
-// Service để kiểm tra health của node
+// Service to check the health of the node
 service HealthService {
-  // Kiểm tra health cơ bản
+  // Basic health check
   rpc Check(Empty) returns (HealthCheckResponse);
   
-  // Stream health status liên tục
+  // Stream continuous health status
   rpc Watch(Empty) returns (stream HealthCheckResponse);
 }
