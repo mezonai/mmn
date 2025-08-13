@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	mmnpb "mmn/proto"
+	mmnpb "github.com/mezonai/mmn/proto"
 )
 
 const faucetAddress = "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"

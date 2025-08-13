@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"mmn/client_test/mezon-server-sim/mezoncfg"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	pb "mmn/client_test/mezon-server-sim/mmn/proto"
-	"mmn/client_test/mezon-server-sim/mmn/service"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	pb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"

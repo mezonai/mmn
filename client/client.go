@@ -3,7 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
-	mmnpb "mmn/proto"
+
+	mmnpb "github.com/mezonai/mmn/proto"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

@@ -5,16 +5,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"mmn/client_test/mezon-server-sim/mezoncfg"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	"mmn/client_test/mezon-server-sim/mmn/service"
 	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 )
 
 const (
