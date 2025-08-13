@@ -1,0 +1,40 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/client_test/mezon-server-sim/mmn/proto;proto";
+
+
+// Empty message for health check requests
+message Empty {
+}
+
+// Health check response message
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;
+  }
+  
+  ServingStatus status = 1;
+  string node_id = 2;           // ID của node trả lời
+  uint64 timestamp = 3;         // Timestamp của response
+  uint64 current_slot = 4;      // Slot hiện tại của node
+  uint64 block_height = 5;      // Block height hiện tại
+  uint64 mempool_size = 6;      // Số transaction trong mempool
+  bool is_leader = 7;           // Node có phải là leader không
+  bool is_follower = 8;         // Node có phải là follower không
+  string version = 9;           // Version của node
+  uint64 uptime = 10;           // Thời gian uptime (giây)
+  string error_message = 11;    // Thông báo lỗi nếu có
+}
+
+// Service để kiểm tra health của node
+service HealthService {
+  // Kiểm tra health cơ bản
+  rpc Check(Empty) returns (HealthCheckResponse);
+  
+  // Stream health status liên tục
+  rpc Watch(Empty) returns (stream HealthCheckResponse);
+}
