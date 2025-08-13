@@ -81,3 +81,11 @@ func (c *GRPCClient) GetTxHistory(addr string, limit, offset, filter int) (domai
 	}
 	return utils.FromProtoTxHistory(res), nil
 }
+
+func (c *GRPCClient) SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxService_SubscribeTransactionStatusClient, error) {
+	stream, err := c.txCli.SubscribeTransactionStatus(ctx, &mmnpb.SubscribeTransactionStatusRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return stream, nil
+}
