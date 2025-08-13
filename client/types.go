@@ -3,8 +3,9 @@ package client
 import (
 	"errors"
 	"fmt"
-	mmnpb "mmn/proto"
 	"strings"
+
+	mmnpb "github.com/mezonai/mmn/proto"
 )
 
 const addressExpectedLength = 64

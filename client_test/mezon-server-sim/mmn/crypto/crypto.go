@@ -5,7 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
+
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
 )
 
 var ErrUnsupportedKey = errors.New("crypto: unsupported private key length")

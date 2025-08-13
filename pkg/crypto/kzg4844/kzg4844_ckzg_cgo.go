@@ -23,7 +23,7 @@ import (
 	"errors"
 	"sync"
 
-	"mmn/pkg/common/hexutil"
+	"github.com/mezonai/mmn/pkg/common/hexutil"
 
 	gokzg4844 "github.com/crate-crypto/go-eth-kzg"
 	ckzg4844 "github.com/ethereum/c-kzg-4844/v2/bindings/go"

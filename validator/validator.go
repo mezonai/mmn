@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"mmn/block"
-	"mmn/blockstore"
-	"mmn/consensus"
-	"mmn/interfaces"
-	"mmn/ledger"
-	"mmn/mempool"
-	"mmn/poh"
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/poh"
 )
 
 const NoSlot = ^uint64(0)
