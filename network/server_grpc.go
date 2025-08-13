@@ -271,8 +271,14 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
+	
 	txHash, ok := s.mempool.AddTx(tx, true)
 	if !ok {
+		// Publish failure event for mempool rejection
+		if s.eventRouter != nil {
+			event := events.NewTransactionFailed(tx.Hash(), "mempool full")
+			s.eventRouter.PublishTransactionEvent(event)
+		}
 		return &pb.AddTxResponse{Ok: false, Error: "mempool full"}, nil
 	}
 	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil

@@ -102,7 +102,7 @@ func runNode(currentNode string) {
 	}
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, pohService, recorder, mp, netClient, bs, ld, collector)
+	val, err := initializeValidator(cfg, pohService, recorder, mp, netClient, bs, ld, collector, eventRouter)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -217,7 +217,7 @@ func initializeMempool(netClient *network.GRPCClient, eventRouter *events.EventR
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, netClient *network.GRPCClient, bs blockstore.Store, ld *ledger.Ledger,
-	collector *consensus.Collector) (*validator.Validator, error) {
+	collector *consensus.Collector, eventRouter *events.EventRouter) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(configPath)
 	if err != nil {
@@ -245,7 +245,7 @@ func initializeValidator(cfg *config.GenesisConfig, pohService *poh.PohService, 
 		cfg.SelfNode.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, netClient, bs, ld, collector,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, netClient, bs, ld, collector, eventRouter,
 	)
 	val.Run()
 

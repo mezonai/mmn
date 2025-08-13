@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"mmn/block"
+	"mmn/events"
 	"mmn/types"
 	"mmn/utils"
 	"os"
@@ -345,18 +346,26 @@ func (s *Session) CopyWithOverlayClone() *Session {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
+func (s *Session) FilterValid(raws [][]byte, router *events.EventRouter) ([][]byte, []error) {
 	valid := make([][]byte, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
 		if err != nil || !tx.Verify() {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			if router != nil {
+				event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("sig/format: %v", err))
+				router.PublishTransactionEvent(event)
+			}
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
 		if err := s.view.ApplyTx(tx, s.ledger.faucetAddr); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			if router != nil {
+				event := events.NewTransactionFailed(tx.Hash(), err.Error())
+				router.PublishTransactionEvent(event)
+			}
 			errs = append(errs, err)
 			continue
 		}

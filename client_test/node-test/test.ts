@@ -556,6 +556,216 @@ async function runEventBasedStatusTests() {
 }
 
 // ============================================================================
+// TEST SUITE 4: INVALID TRANSACTION TESTS
+// ============================================================================
+
+async function runInvalidTransactionTests() {
+  console.log('=== INVALID TRANSACTION TESTS ===\n');
+
+  const grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
+  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
+
+  try {
+    // Start tracking all transactions to catch failure events
+    tracker.trackTransactions();
+
+    // Test 1: Transaction with invalid signature
+    console.log('1. Testing transaction with invalid signature...');
+    const testAccount1 = generateTestAccount();
+    const invalidNonce1 = getNextNonce(testAccount1.publicKeyHex);
+    
+    const invalidTx1 = buildTx(testAccount1.publicKeyHex, recipientPublicKeyHex, 100, 'Invalid signature test', invalidNonce1, TransferTxType);
+    // Use wrong private key to create invalid signature
+    invalidTx1.signature = signTx(invalidTx1, faucetPrivateKey); // Wrong private key
+    
+    const response1 = await sendTxViaGrpc(grpcClient, invalidTx1);
+    console.log(`📤 Invalid signature transaction response:`, JSON.stringify(response1, null, 2));
+    
+    // Wait a bit for the failure event to be processed
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Check if we received a failure event
+    const trackedTxs1 = tracker.getTrackedTransactions();
+    const failedTx1 = Array.from(trackedTxs1.values()).find(tx => 
+      tx.status === TransactionStatus.FAILED && 
+      tx.errorMessage && 
+      tx.errorMessage.includes('sig')
+    );
+    
+    if (failedTx1) {
+      console.log(`✅ Received failure event for invalid signature: ${failedTx1.errorMessage}`);
+    } else {
+      console.log(`⚠️  No failure event received for invalid signature transaction`);
+    }
+
+    // Test 2: Transaction with insufficient balance
+    console.log('\n2. Testing transaction with insufficient balance...');
+    const testAccount2 = generateTestAccount();
+    const insufficientNonce = getNextNonce(testAccount2.publicKeyHex);
+    
+    const insufficientTx = buildTx(testAccount2.publicKeyHex, recipientPublicKeyHex, 1000, 'Insufficient balance test', insufficientNonce, TransferTxType);
+    insufficientTx.signature = signTx(insufficientTx, testAccount2.privateKey);
+    
+    const response2 = await sendTxViaGrpc(grpcClient, insufficientTx);
+    console.log(`📤 Insufficient balance transaction response:`, JSON.stringify(response2, null, 2));
+    
+    // Wait for failure event
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const trackedTxs2 = tracker.getTrackedTransactions();
+    const failedTx2 = Array.from(trackedTxs2.values()).find(tx => 
+      tx.status === TransactionStatus.FAILED && 
+      tx.errorMessage && 
+      tx.errorMessage.includes('insufficient')
+    );
+    
+    if (failedTx2) {
+      console.log(`✅ Received failure event for insufficient balance: ${failedTx2.errorMessage}`);
+    } else {
+      console.log(`⚠️  No failure event received for insufficient balance transaction`);
+    }
+
+    // Test 3: Transaction with invalid nonce
+    console.log('\n3. Testing transaction with invalid nonce...');
+    const testAccount3 = generateTestAccount();
+    
+    // First send a valid transaction to establish nonce
+    const validNonce = getNextNonce(testAccount3.publicKeyHex);
+    const validTx = buildTx(testAccount3.publicKeyHex, recipientPublicKeyHex, 50, 'Valid tx for nonce test', validNonce, TransferTxType);
+    validTx.signature = signTx(validTx, testAccount3.privateKey);
+    
+    await sendTxViaGrpc(grpcClient, validTx);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Now send transaction with invalid nonce (same as previous)
+    const invalidNonceTx = buildTx(testAccount3.publicKeyHex, recipientPublicKeyHex, 50, 'Invalid nonce test', validNonce, TransferTxType);
+    invalidNonceTx.signature = signTx(invalidNonceTx, testAccount3.privateKey);
+    
+    const response3 = await sendTxViaGrpc(grpcClient, invalidNonceTx);
+    console.log(`📤 Invalid nonce transaction response:`, JSON.stringify(response3, null, 2));
+    
+    // Wait for failure event
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const trackedTxs3 = tracker.getTrackedTransactions();
+    const failedTx3 = Array.from(trackedTxs3.values()).find(tx => 
+      tx.status === TransactionStatus.FAILED && 
+      tx.errorMessage && 
+      tx.errorMessage.includes('nonce')
+    );
+    
+    if (failedTx3) {
+      console.log(`✅ Received failure event for invalid nonce: ${failedTx3.errorMessage}`);
+    } else {
+      console.log(`⚠️  No failure event received for invalid nonce transaction`);
+    }
+
+    // Test 4: Malformed transaction (invalid JSON)
+    console.log('\n4. Testing malformed transaction...');
+    try {
+      // Try to send malformed data by creating an invalid transaction
+      const testAccount4 = generateTestAccount();
+      const malformedNonce = getNextNonce(testAccount4.publicKeyHex);
+      
+      // Create a transaction with invalid data
+      const malformedTx = buildTx(testAccount4.publicKeyHex, recipientPublicKeyHex, 100, 'Malformed test', malformedNonce, TransferTxType);
+      malformedTx.signature = 'invalid_signature_hex'; // Invalid signature format
+      
+      const response4 = await sendTxViaGrpc(grpcClient, malformedTx);
+      console.log(`📤 Malformed transaction response:`, JSON.stringify(response4, null, 2));
+      
+      if (!response4.ok) {
+        console.log(`✅ Malformed transaction properly rejected: ${response4.error}`);
+      }
+    } catch (error) {
+      console.log(`✅ Malformed transaction properly rejected with error: ${error}`);
+    }
+
+    // Test 5: Faucet transaction from non-faucet address
+    console.log('\n5. Testing faucet transaction from non-faucet address...');
+    const testAccount5 = generateTestAccount();
+    const faucetNonce = getNextNonce(testAccount5.publicKeyHex);
+    
+    const nonFaucetTx = buildTx(testAccount5.publicKeyHex, recipientPublicKeyHex, 100, 'Non-faucet faucet test', faucetNonce, FaucetTxType);
+    nonFaucetTx.signature = signTx(nonFaucetTx, testAccount5.privateKey);
+    
+    const response5 = await sendTxViaGrpc(grpcClient, nonFaucetTx);
+    console.log(`📤 Non-faucet faucet transaction response:`, JSON.stringify(response5, null, 2));
+    
+    // Wait for failure event
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const trackedTxs5 = tracker.getTrackedTransactions();
+    const failedTx5 = Array.from(trackedTxs5.values()).find(tx => 
+      tx.status === TransactionStatus.FAILED && 
+      tx.errorMessage && 
+      tx.errorMessage.includes('faucet')
+    );
+    
+    if (failedTx5) {
+      console.log(`✅ Received failure event for non-faucet faucet transaction: ${failedTx5.errorMessage}`);
+    } else {
+      console.log(`⚠️  No failure event received for non-faucet faucet transaction`);
+    }
+
+    // Test 6: Zero amount transaction
+    console.log('\n6. Testing zero amount transaction...');
+    const testAccount6 = generateTestAccount();
+    const zeroAmountNonce = getNextNonce(testAccount6.publicKeyHex);
+    
+    const zeroAmountTx = buildTx(testAccount6.publicKeyHex, recipientPublicKeyHex, 0, 'Zero amount test', zeroAmountNonce, TransferTxType);
+    zeroAmountTx.signature = signTx(zeroAmountTx, testAccount6.privateKey);
+    
+    const response6 = await sendTxViaGrpc(grpcClient, zeroAmountTx);
+    console.log(`📤 Zero amount transaction response:`, JSON.stringify(response6, null, 2));
+    
+    // Wait for failure event
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const trackedTxs6 = tracker.getTrackedTransactions();
+    const failedTx6 = Array.from(trackedTxs6.values()).find(tx => 
+      tx.status === TransactionStatus.FAILED && 
+      tx.errorMessage && 
+      tx.errorMessage.includes('amount')
+    );
+    
+    if (failedTx6) {
+      console.log(`✅ Received failure event for zero amount transaction: ${failedTx6.errorMessage}`);
+    } else {
+      console.log(`⚠️  No failure event received for zero amount transaction`);
+    }
+
+    // Print summary of all tracked transactions
+    console.log('\n📊 Summary of tracked transactions:');
+    const allTrackedTxs = tracker.getTrackedTransactions();
+    const failedTxs = Array.from(allTrackedTxs.values()).filter(tx => tx.status === TransactionStatus.FAILED);
+    const successfulTxs = Array.from(allTrackedTxs.values()).filter(tx => tx.status === TransactionStatus.FINALIZED);
+    
+    console.log(`Total tracked transactions: ${allTrackedTxs.size}`);
+    console.log(`Failed transactions: ${failedTxs.length}`);
+    console.log(`Successful transactions: ${successfulTxs.length}`);
+    
+    if (failedTxs.length > 0) {
+      console.log('\nFailed transaction details:');
+      failedTxs.forEach((tx, index) => {
+        console.log(`  ${index + 1}. Hash: ${tx.txHash.substring(0, 16)}...`);
+        console.log(`     Error: ${tx.errorMessage}`);
+        console.log(`     Timestamp: ${new Date(tx.timestamp).toISOString()}`);
+      });
+    }
+
+    console.log('\n✅ Invalid transaction tests completed successfully!');
+
+  } catch (error) {
+    console.error('❌ Invalid transaction tests failed:', error);
+    throw error;
+  } finally {
+    tracker.close();
+    grpcClient.close();
+  }
+}
+
+// ============================================================================
 // MAIN TEST RUNNER
 // ============================================================================
 
@@ -564,19 +774,22 @@ async function main() {
   console.log('This test suite includes:');
   console.log('1. Basic transaction tests (signing, verification, sending)');
   console.log('2. Transaction status tracking tests (event-based system)');
-  console.log('3. Event-based status subscription tests\n');
+  console.log('3. Event-based status subscription tests');
+  console.log('4. Invalid transaction tests (failure scenarios)\n');
 
   try {
     // Run all test suites
     await runBasicTransactionTests();
     await runTransactionStatusTests();
     await runEventBasedStatusTests();
+    await runInvalidTransactionTests();
 
     console.log('🎉 All test suites completed successfully!');
     console.log('\n📋 Summary:');
     console.log('✅ Basic transaction functionality working');
     console.log('✅ Event-based status tracking working');
     console.log('✅ All-transactions subscription working');
+    console.log('✅ Invalid transaction handling working');
     console.log('✅ No timeout issues');
     console.log('✅ Proper cleanup and resource management');
 

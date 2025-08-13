@@ -9,6 +9,7 @@ import (
 	"mmn/block"
 	"mmn/blockstore"
 	"mmn/consensus"
+	"mmn/events"
 	"mmn/interfaces"
 	"mmn/ledger"
 	"mmn/mempool"
@@ -40,6 +41,7 @@ type Validator struct {
 	session     *ledger.Session
 	lastSession *ledger.Session
 	collector   *consensus.Collector
+	eventRouter *events.EventRouter // Event router for transaction status updates
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
@@ -65,6 +67,7 @@ func NewValidator(
 	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
+	eventRouter *events.EventRouter,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -88,6 +91,7 @@ func NewValidator(
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
+		eventRouter:               eventRouter,
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -266,7 +270,7 @@ func (v *Validator) leaderBatchLoop() {
 
 			previousSession := v.session.CopyWithOverlayClone()
 			fmt.Println("[LEADER] Filtering batch")
-			valids, errs := v.session.FilterValid(batch)
+			valids, errs := v.session.FilterValid(batch, v.eventRouter)
 			if len(errs) > 0 {
 				fmt.Println("[LEADER] Invalid transactions:", errs)
 			}
