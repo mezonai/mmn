@@ -235,55 +235,7 @@ export class TransactionTracker extends EventEmitter {
     return this.trackedTransactions.get(txHash);
   }
 
-  /**
-   * Get the current real-time terminal count
-   */
-  getCurrentTerminalCount(): number {
-    return this.terminalCount;
-  }
 
-  /**
-   * Reset the terminal count (useful for new test runs)
-   */
-  resetTerminalCount(): void {
-    this.terminalCount = 0;
-    this.lastTerminalCountLog = 0;
-    console.log('🔄 Terminal count reset to 0');
-  }
-
-  /**
-   * Get terminal status counts from tracked transactions
-   */
-  getTerminalStatusCounts(): {
-    total: number;
-    finalized: number;
-    failed: number;
-    pending: number;
-    confirmed: number;
-    terminal: number;
-    nonTerminal: number;
-  } {
-    const transactions = Array.from(this.trackedTransactions.values());
-    
-    const finalized = transactions.filter(tx => tx.status === TransactionStatus.FINALIZED).length;
-    const failed = transactions.filter(tx => tx.status === TransactionStatus.FAILED).length;
-    const pending = transactions.filter(tx => tx.status === TransactionStatus.PENDING).length;
-    const confirmed = transactions.filter(tx => tx.status === TransactionStatus.CONFIRMED).length;
-    
-    const terminal = finalized + failed;
-    const nonTerminal = pending + confirmed;
-    const total = this.trackedTransactions.size;
-    
-    return {
-      total,
-      finalized,
-      failed,
-      pending,
-      confirmed,
-      terminal,
-      nonTerminal
-    };
-  }
 
   /**
    * Check if a transaction status is terminal (FINALIZED, FAILED)
@@ -304,98 +256,9 @@ export class TransactionTracker extends EventEmitter {
     console.log(`🎯 [REAL-TIME] Transaction reached ${statusName} status! Total terminal transactions: ${this.terminalCount} ${statusEmoji}`);
   }
 
-  /**
-   * Get current transaction status from server
-   */
-  async getCurrentStatus(txHash: string): Promise<TransactionStatusInfo | null> {
-    try {
-      const status = await this.grpcClient.getTransactionStatus(txHash);
-      
-      // Log the raw status response from the server (with BigInt handling)
-      const serializableStatus = {
-        tx_hash: status.tx_hash,
-        status: status.status,
-        block_slot: status.block_slot,
-        block_hash: status.block_hash,
-        confirmations: status.confirmations,
-        error_message: status.error_message,
-        timestamp: status.timestamp,
-      };
-      console.log(`📊 Current Status Response for ${txHash.substring(0, 16)}...:`, JSON.stringify(serializableStatus, null, 2));
-      
-      // Convert server status to our enum
-      const statusMap: { [key: string]: TransactionStatus } = {
-        UNKNOWN: TransactionStatus.UNKNOWN,
-        PENDING: TransactionStatus.PENDING,
-        CONFIRMED: TransactionStatus.CONFIRMED,
-        FINALIZED: TransactionStatus.FINALIZED,
-        FAILED: TransactionStatus.FAILED,
 
-      };
 
-      const statusEnum = statusMap[status.status || 'UNKNOWN'] || TransactionStatus.UNKNOWN;
 
-      return {
-        txHash: status.tx_hash,
-        status: statusEnum,
-        blockSlot: status.block_slot ? parseInt(status.block_slot) : undefined,
-        blockHash: status.block_hash,
-        confirmations: status.confirmations ? parseInt(status.confirmations) : undefined,
-        errorMessage: status.error_message,
-        timestamp: status.timestamp ? parseInt(status.timestamp) * 1000 : Date.now(), // Convert to milliseconds
-      };
-    } catch (error) {
-      console.error(`Failed to get current status for ${txHash}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Wait for a transaction to reach a specific status
-   */
-  async waitForStatus(
-    txHash: string,
-    targetStatus: TransactionStatus,
-    timeoutMs: number = 30000
-  ): Promise<TransactionStatusInfo> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.off('statusChanged', statusListener);
-        reject(new Error(`Timeout waiting for status ${TransactionStatus[targetStatus]} for ${txHash.substring(0, 16)}...`));
-      }, timeoutMs);
-
-      const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
-        if (eventTxHash === txHash && newStatus.status === targetStatus) {
-          clearTimeout(timeout);
-          this.off('statusChanged', statusListener);
-          resolve(newStatus);
-        }
-      };
-
-      this.on('statusChanged', statusListener);
-
-      // Check if already at target status
-      const currentStatus = this.getTrackedTransactionStatus(txHash);
-      if (currentStatus && currentStatus.status === targetStatus) {
-        clearTimeout(timeout);
-        this.off('statusChanged', statusListener);
-        resolve(currentStatus);
-        return;
-      }
-
-      // Start tracking all transactions if not already tracking
-      if (!this.subscriptions.has('*all*')) {
-        this.trackTransactions();
-      }
-    });
-  }
-
-  /**
-   * Wait for a transaction to be finalized
-   */
-  async waitForFinalization(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
-    return this.waitForStatus(txHash, TransactionStatus.FINALIZED, timeoutMs);
-  }
 
   /**
    * Wait for a transaction to reach any terminal status (FINALIZED, FAILED)
@@ -434,56 +297,6 @@ export class TransactionTracker extends EventEmitter {
   }
 
   /**
-   * Wait for a transaction to be confirmed
-   */
-  async waitForConfirmation(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
-    return this.waitForStatus(txHash, TransactionStatus.CONFIRMED, timeoutMs);
-  }
-
-  /**
-   * Wait for any status update for a transaction
-   */
-  async waitForAnyStatusUpdate(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.off('statusChanged', statusListener);
-        reject(new Error(`Timeout waiting for any status update for ${txHash.substring(0, 16)}...`));
-      }, timeoutMs);
-
-      const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
-        if (eventTxHash === txHash) {
-          clearTimeout(timeout);
-          this.off('statusChanged', statusListener);
-          resolve(newStatus);
-        }
-      };
-
-      this.on('statusChanged', statusListener);
-
-      // Check if we already have a status
-      const currentStatus = this.getTrackedTransactionStatus(txHash);
-      if (currentStatus) {
-        clearTimeout(timeout);
-        this.off('statusChanged', statusListener);
-        resolve(currentStatus);
-        return;
-      }
-
-      // Start tracking all transactions if not already tracking
-      if (!this.subscriptions.has('*all*')) {
-        this.trackTransactions();
-      }
-    });
-  }
-
-  /**
-   * Get status string for enum value
-   */
-  static getStatusString(status: TransactionStatus): string {
-    return TransactionStatus[status];
-  }
-
-  /**
    * Check if a status represents a terminal state
    */
   static isTerminalStatus(status: TransactionStatus): boolean {
@@ -504,66 +317,4 @@ export class TransactionTracker extends EventEmitter {
   }
 }
 
-// Utility functions for transaction status tracking
-export class TransactionStatusUtils {
-  /**
-   * Create a simple transaction tracker with default settings
-   */
-  static createTracker(serverAddress?: string): TransactionTracker {
-    return new TransactionTracker({ serverAddress });
-  }
 
-  /**
-   * Static method to wait for a transaction to be finalized
-   */
-  static async waitForFinalization(
-    serverAddress: string,
-    txHash: string,
-    timeoutMs: number = 30000
-  ): Promise<TransactionStatusInfo> {
-    const tracker = new TransactionTracker({ serverAddress });
-
-    try {
-      tracker.trackTransactions();
-      return await tracker.waitForFinalization(txHash, timeoutMs);
-    } finally {
-      tracker.stopTracking();
-    }
-  }
-
-  /**
-   * Static method to wait for a transaction to be confirmed
-   */
-  static async waitForConfirmation(
-    serverAddress: string,
-    txHash: string,
-    timeoutMs: number = 30000
-  ): Promise<TransactionStatusInfo> {
-    const tracker = new TransactionTracker({ serverAddress });
-
-    try {
-      tracker.trackTransactions();
-      return await tracker.waitForConfirmation(txHash, timeoutMs);
-    } finally {
-      tracker.stopTracking();
-    }
-  }
-
-  /**
-   * Static method to wait for any status update
-   */
-  static async waitForAnyStatusUpdate(
-    serverAddress: string,
-    txHash: string,
-    timeoutMs: number = 30000
-  ): Promise<TransactionStatusInfo> {
-    const tracker = new TransactionTracker({ serverAddress });
-
-    try {
-      tracker.trackTransactions();
-      return await tracker.waitForAnyStatusUpdate(txHash, timeoutMs);
-    } finally {
-      tracker.stopTracking();
-    }
-  }
-}

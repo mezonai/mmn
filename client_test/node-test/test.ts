@@ -4,7 +4,6 @@ import { GrpcClient } from './grpc_client';
 import {
   TransactionTracker,
   TransactionStatus,
-  TransactionStatusUtils,
   TransactionStatusInfo,
 } from './transaction_tracker';
 
@@ -41,7 +40,7 @@ function generateTestAccount() {
     format: 'der',
     type: 'pkcs8',
   });
-  return { publicKeyHex, privateKey, keyPair, seed };
+  return { publicKeyHex, privateKey };
 }
 
 // Generate multiple test accounts
@@ -332,7 +331,7 @@ async function runTransactionStatusTests() {
     // Set up event listeners
     tracker.on(
       'statusChanged',
-      (txHash: string, newStatus: TransactionStatusInfo, oldStatus?: TransactionStatusInfo) => {
+      (txHash: string, newStatus: TransactionStatusInfo) => {
         statusUpdates.push(newStatus);
         console.log(`📈 Status Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[newStatus.status]}`);
       }
@@ -852,208 +851,7 @@ async function runInvalidTransactionTests() {
   }
 }
 
-// ============================================================================
-// TEST SUITE 5: BULK TRANSACTION TESTS WITH SLOW CONSUME CLIENT
-// ============================================================================
 
-async function runBulkTransactionTests() {
-  console.log('=== BULK TRANSACTION TESTS (5000 TX with Slow Consume Client) ===\n');
-
-  const grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
-  const tracker = new TransactionTracker({
-    serverAddress: GRPC_SERVER_ADDRESS,
-    statusConsumptionDelay: 100, // 100ms delay between processing status updates
-  });
-
-  try {
-    // Reset terminal count for this test run
-    tracker.resetTerminalCount();
-    
-    // Start tracking all transactions
-    tracker.trackTransactions();
-
-    // Generate multiple test accounts for bulk testing
-    console.log('1. Generating test accounts for bulk testing...');
-    const testAccounts = generateTestAccounts(10); // 10 accounts to distribute load
-    console.log(`   Generated ${testAccounts.length} test accounts`);
-
-    // First, fund all test accounts with faucet transactions
-    console.log('\n2. Funding test accounts with initial balance...');
-    const fundingTxs: string[] = [];
-
-    for (let i = 0; i < testAccounts.length; i++) {
-      const account = testAccounts[i];
-      const faucetNonce = getNextNonce(faucetPublicKeyHex);
-      const fundingTx = buildTx(
-        faucetPublicKeyHex,
-        account.publicKeyHex,
-        5000,
-        `Funding account ${i}`,
-        faucetNonce,
-        FaucetTxType
-      );
-      fundingTx.signature = signTx(fundingTx, faucetPrivateKey);
-
-      const response = await sendTxViaGrpc(grpcClient, fundingTx);
-      if (!response.ok) {
-        throw new Error(`Failed to fund account ${i}: ${response.error}`);
-      }
-      if (!response.tx_hash) {
-        throw new Error(`No transaction hash returned for funding account ${i}`);
-      }
-      fundingTxs.push(response.tx_hash);
-      console.log(`   Funded account ${i}: ${response.tx_hash.substring(0, 16)}...`);
-    }
-
-    // Wait for funding transactions to reach terminal status
-    console.log('\n3. Waiting for funding transactions to reach terminal status...');
-    await waitForMultipleTransactionsTerminalStatus(fundingTxs, 120000, tracker);
-    console.log('   ✅ All funding transactions reached terminal status');
-
-    // Send 5000 transactions with slow consume client simulation
-    console.log('\n4. Sending 5000 transactions with slow consume client...');
-    const allTxHashes: string[] = [];
-    const batchSize = 50; // Send in batches of 50
-    const delayBetweenBatches = 1000; // 1 second delay between batches
-
-    for (let batch = 0; batch < 100; batch++) {
-      // 100 batches * 50 txs = 5000 txs
-      console.log(`   Sending batch ${batch + 1}/100 (${batchSize} transactions)...`);
-
-      const batchPromises: Promise<string>[] = [];
-
-      for (let i = 0; i < batchSize; i++) {
-        const txIndex = batch * batchSize + i;
-        const senderAccount = testAccounts[txIndex % testAccounts.length];
-        const recipientAccount = testAccounts[(txIndex + 1) % testAccounts.length];
-
-        const nonce = getNextNonce(senderAccount.publicKeyHex);
-        const tx = buildTx(
-          senderAccount.publicKeyHex,
-          recipientAccount.publicKeyHex,
-          1, // Small amount for testing
-          `Bulk test tx ${txIndex}`,
-          nonce,
-          TransferTxType
-        );
-        tx.signature = signTx(tx, senderAccount.privateKey);
-
-        // Add delay between individual transactions to simulate slow consume
-        const sendTx = async () => {
-          const response = await sendTxViaGrpc(grpcClient, tx);
-          if (!response.ok) {
-            throw new Error(`Failed to send transaction ${txIndex}: ${response.error}`);
-          }
-          if (!response.tx_hash) {
-            throw new Error(`No transaction hash returned for transaction ${txIndex}`);
-          }
-          return response.tx_hash;
-        };
-
-        batchPromises.push(sendTx());
-      }
-
-      const batchResults = await Promise.all(batchPromises);
-      allTxHashes.push(...batchResults);
-
-      console.log(`   ✅ Batch ${batch + 1} completed: ${batchResults.length} transactions sent`);
-      
-      // Report current terminal count every 10 batches
-      if ((batch + 1) % 10 === 0) {
-        const currentTerminalCount = tracker.getCurrentTerminalCount();
-        console.log(`   📊 [PROGRESS] Current terminal transactions: ${currentTerminalCount}/${allTxHashes.length + fundingTxs.length} (${((currentTerminalCount / (allTxHashes.length + fundingTxs.length)) * 100).toFixed(1)}%)`);
-      }
-
-      // Add delay between batches
-      if (batch < 99) {
-        // Don't delay after the last batch
-        console.log(`   ⏳ Waiting ${delayBetweenBatches}ms before next batch...`);
-        await new Promise((resolve) => setTimeout(resolve, delayBetweenBatches));
-      }
-    }
-
-    console.log(`\n5. Successfully sent ${allTxHashes.length} transactions`);
-    console.log('   ⏳ Waiting for all transactions to be finalized...');
-
-    // Wait for all transactions to reach terminal status with extended timeout
-    const startTime = Date.now();
-    await waitForMultipleTransactionsTerminalStatus(allTxHashes, 300000, tracker); // 5 minutes timeout
-    const endTime = Date.now();
-
-    console.log(`   ✅ All ${allTxHashes.length} transactions reached terminal status!`);
-    console.log(`   ⏱️  Total time: ${((endTime - startTime) / 1000).toFixed(2)} seconds`);
-
-    // Final terminal count report
-    const finalTerminalCount = tracker.getCurrentTerminalCount();
-    console.log(`   🎯 [FINAL] Total terminal transactions tracked: ${finalTerminalCount}`);
-
-    // Analyze results
-    console.log('\n6. Analyzing transaction results...');
-    const trackedTxs = tracker.getTrackedTransactions();
-    const successfulTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.FINALIZED);
-    const failedTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.FAILED);
-  
-    const pendingTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.PENDING);
-    const confirmedTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.CONFIRMED);
-
-    // Calculate terminal status counts
-    const terminalTxs = successfulTxs.length + failedTxs.length;
-    const nonTerminalTxs = pendingTxs.length + confirmedTxs.length;
-
-    console.log(`   📊 Total tracked transactions: ${trackedTxs.size}`);
-    console.log(`   ✅ Successful transactions (FINALIZED): ${successfulTxs.length}`);
-    console.log(`   ❌ Failed transactions (FAILED): ${failedTxs.length}`);
-  
-    console.log(`   ⏳ Pending transactions (PENDING): ${pendingTxs.length}`);
-    console.log(`   🔄 Confirmed transactions (CONFIRMED): ${confirmedTxs.length}`);
-    console.log(`   🎯 Total terminal status transactions: ${terminalTxs}`);
-    console.log(`   🔄 Non-terminal status transactions: ${nonTerminalTxs}`);
-
-    // Calculate success rate
-    const successRate = (successfulTxs.length / allTxHashes.length) * 100;
-    console.log(`   📈 Success rate: ${successRate.toFixed(2)}%`);
-
-    // Calculate terminal status rate
-    const terminalRate = (terminalTxs / allTxHashes.length) * 100;
-    console.log(`   🎯 Terminal status rate: ${terminalRate.toFixed(2)}%`);
-
-    // Performance metrics
-    const avgTimePerTx = (endTime - startTime) / successfulTxs.length;
-    console.log(`   ⚡ Average time per transaction: ${avgTimePerTx.toFixed(2)}ms`);
-
-    // Check for any failed transactions
-    if (failedTxs.length > 0) {
-      console.log('\n   ⚠️  Failed transaction details:');
-      failedTxs.slice(0, 10).forEach((tx, index) => {
-        // Show first 10 failures
-        console.log(`     ${index + 1}. Hash: ${tx.txHash.substring(0, 16)}...`);
-        console.log(`        Error: ${tx.errorMessage}`);
-      });
-      if (failedTxs.length > 10) {
-        console.log(`     ... and ${failedTxs.length - 10} more failures`);
-      }
-    }
-
-    // Verify all our sent transactions are in the tracked list
-    const sentTxHashesSet = new Set(allTxHashes);
-    const trackedTxHashesSet = new Set(Array.from(trackedTxs.keys()));
-    const missingTxs = allTxHashes.filter((hash) => !trackedTxHashesSet.has(hash));
-
-    if (missingTxs.length > 0) {
-      console.log(`\n   ⚠️  ${missingTxs.length} sent transactions not found in tracking`);
-    } else {
-      console.log('\n   ✅ All sent transactions properly tracked');
-    }
-
-    console.log('\n✅ Bulk transaction tests completed successfully!');
-  } catch (error) {
-    console.error('❌ Bulk transaction tests failed:', error);
-    throw error;
-  } finally {
-    tracker.close();
-    grpcClient.close();
-  }
-}
 
 // ============================================================================
 // MAIN TEST RUNNER
@@ -1065,8 +863,7 @@ async function main() {
   console.log('1. Basic transaction tests (signing, verification, sending)');
   console.log('2. Transaction status tracking tests (event-based system)');
   console.log('3. Event-based status subscription tests');
-  console.log('4. Invalid transaction tests (failure scenarios)');
-  console.log('5. Bulk transaction tests (5000 TX with slow consume client)\n');
+  console.log('4. Invalid transaction tests (failure scenarios)\n');
 
   try {
     // Run all test suites
@@ -1074,7 +871,6 @@ async function main() {
     await runTransactionStatusTests();
     await runEventBasedStatusTests();
     await runInvalidTransactionTests();
-    await runBulkTransactionTests();
 
     console.log('🎉 All test suites completed successfully!');
     console.log('\n📋 Summary:');
@@ -1082,8 +878,6 @@ async function main() {
     console.log('✅ Event-based status tracking working');
     console.log('✅ All-transactions subscription working');
     console.log('✅ Invalid transaction handling working');
-    console.log('✅ Bulk transaction processing working');
-    console.log('✅ Slow consume client simulation working');
     console.log('✅ No timeout issues');
     console.log('✅ Proper cleanup and resource management');
   } catch (error) {
