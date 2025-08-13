@@ -6,15 +6,10 @@ config:
     pubkey: "pubkey"
     privkey_path: "privkey_path"
     listen_addr: "listen_addr"
+    libp2p_addr: "libp2p_addr"
     grpc_addr: "grpc_addr"
-
-  peer_nodes:
-    - pubkey: "pubkey1"
-      grpc_addr: "grpc_addr1"
-    - pubkey: "pubkey2"
-      grpc_addr: "grpc_addr2"
-    - pubkey: "pubkey3"
-      grpc_addr: "grpc_addr3"
+    bootstrap_addresses: 
+      - "bootstrap_addresses"
 
   leader_schedule:
     - start_slot: start_slot

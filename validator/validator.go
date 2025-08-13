@@ -12,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
 )
 
@@ -61,7 +62,7 @@ func NewValidator(
 	leaderTimeout time.Duration,
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
-	netClient interfaces.Broadcaster,
+	p2pClient *p2p.Libp2pNetwork,
 	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
@@ -79,7 +80,7 @@ func NewValidator(
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
-		netClient:                 netClient,
+		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		session:                   ledger.NewSession(),

@@ -1,0 +1,41 @@
+package logx
+
+import (
+	"fmt"
+	"log"
+	"os"
+)
+
+const (
+	ColorReset  = "\033[0m"
+	ColorRed    = "\033[31m"
+	ColorGreen  = "\033[32m"
+	ColorYellow = "\033[33m"
+	ColorBlue   = "\033[34m"
+)
+
+var logger = log.New(os.Stdout, "", log.LstdFlags)
+
+func Info(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[%s]%s", ColorGreen, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
+}
+
+func Error(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[ERROR][%s]%s", ColorRed, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
+}
+
+func Warn(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[WARN][%s]%s", ColorYellow, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
+}
+
+func Debug(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[DEBUG][%s]%s", ColorBlue, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
+}

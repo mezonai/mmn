@@ -1,21 +1,43 @@
+version: "3.8"
+
 services:
   node1:
     build: .
     container_name: node1
-    command: ["./mmn", "run", "--node", "node1"]
+    command:
+      [
+        "./mmn", "run",
+        "--privkey-path", "config/key1.txt",
+        "--listen-addr", ":8001",
+        "--grpc-addr", ":9001",
+        "--p2p-port", "10001",
+        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--faucet-amount", "2000000000"
+      ]
     ports:
       - "8001:8001"
       - "9001:9001"
+      - "10001:10001"
     networks:
       - mezon
     restart: always
   node2:
     build: .
     container_name: node2
-    command: ["./mmn", "run", "--node", "node2"]
+    command:
+      [
+        "./mmn", "run",
+        "--privkey-path", "config/key2.txt",
+        "--listen-addr", ":8002",
+        "--grpc-addr", ":9002",
+        "--p2p-port", "10002",
+        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--faucet-amount", "2000000000"
+      ]
     ports:
       - "8002:8002"
       - "9002:9002"
+      - "10002:10002"
     networks:
       - mezon
     restart: always
@@ -24,10 +46,21 @@ services:
   node3:
     build: .
     container_name: node3
-    command: ["./mmn", "run", "--node", "node3"]
+    command:
+      [
+        "./mmn", "run",
+        "--privkey-path", "config/key3.txt",
+        "--listen-addr", ":8003",
+        "--grpc-addr", ":9003",
+        "--p2p-port", "10003",
+        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--faucet-amount", "2000000000"
+      ]
     ports:
       - "8003:8003"
       - "9003:9003"
+      - "10003:10003"
     networks:
       - mezon
     restart: always

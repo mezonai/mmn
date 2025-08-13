@@ -3,48 +3,17 @@ package config
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/mezonai/mmn/poh"
 
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
-
-// NodeConfig represents a node's configuration
-type NodeConfig struct {
-	PubKey      string `yaml:"pubkey"`
-	PrivKeyPath string `yaml:"privkey_path"`
-	ListenAddr  string `yaml:"listen_addr"`
-	GRPCAddr    string `yaml:"grpc_addr"`
-}
-
-// LeaderSchedule represents a leader schedule entry
-type LeaderSchedule struct {
-	StartSlot int    `yaml:"start_slot"`
-	EndSlot   int    `yaml:"end_slot"`
-	Leader    string `yaml:"leader"`
-}
-
-type Faucet struct {
-	Address string `yaml:"address"`
-	Amount  uint64 `yaml:"amount"`
-}
-
-// GenesisConfig holds the configuration from genesis.yml
-type GenesisConfig struct {
-	SelfNode       NodeConfig       `yaml:"self_node"`
-	PeerNodes      []NodeConfig     `yaml:"peer_nodes"`
-	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
-	Faucet         Faucet           `yaml:"faucet"`
-}
-
-// ConfigFile is the top-level structure for genesis.yml
-type ConfigFile struct {
-	Config GenesisConfig `yaml:"config"`
-}
 
 // LoadGenesisConfig reads and parses the genesis.yml file
 func LoadGenesisConfig(path string) (*GenesisConfig, error) {
@@ -63,7 +32,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: SelfNode=%+v, PeerNodes=%d, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.PeerNodes), len(cfgFile.Config.LeaderSchedule))
+	log.Printf("[config] Successfully loaded config: SelfNode=%+v, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.LeaderSchedule))
 	return &cfgFile.Config, nil
 }
 
@@ -157,4 +126,31 @@ func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
 		return nil, err
 	}
 	return validatorCfg, nil
+}
+
+func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
+	data, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	keyHex := strings.TrimSpace(string(data))
+
+	privBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex private key: %w", err)
+	}
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return "", fmt.Errorf("invalid ed25519 private key length: %d", len(privBytes))
+	}
+
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	return hex.EncodeToString(pubKey), nil
 }

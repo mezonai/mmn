@@ -4,10 +4,22 @@
 # run (dev)
 go mod tidy
 
-go run cmd/main.go --node <node name> 
+go run main.go run \
+  --privkey-path <file path> \
+  --listen-addr ":<port>" \
+  --grpc-addr ":<port>" \
+  --libp2p-addr "/ip4/0.0.0.0/tcp/<port>" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/<port>/p2p/<peerID>" \
+  --faucet-amount <amount>
 
 example:
-go run cmd/main.go --node node3
+go run main.go run \
+  --privkey-path "config/key1.txt" \
+  --listen-addr ":8001" \
+  --grpc-addr ":9001" \
+  --libp2p-addr "/ip4/0.0.0.0/tcp/10001" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/10002/p2p/<peerID>" \
+  --faucet-amount 2000000000
 
 # Build
 go build -o bin/mmn ./cmd

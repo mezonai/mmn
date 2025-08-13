@@ -61,6 +61,7 @@ func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
 		}
 		return nil
 	})
+
 	return bs, err
 }
 
