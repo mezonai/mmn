@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"mmn/block"
-	"mmn/consensus"
-	pb "mmn/proto"
-	"mmn/types"
-	"mmn/utils"
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/consensus"
+	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

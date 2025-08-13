@@ -2,9 +2,10 @@ package interfaces
 
 import (
 	"context"
-	"mmn/block"
-	"mmn/consensus"
-	"mmn/types"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/types"
 )
 
 type Broadcaster interface {

@@ -1,6 +1,6 @@
 package poh
 
-import "mmn/types"
+import "github.com/mezonai/mmn/types"
 
 type Entry struct {
 	NumHashes    uint64               `json:"num_hashes"`

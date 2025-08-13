@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"mmn/types"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/linxGnu/grocksdb"
 )

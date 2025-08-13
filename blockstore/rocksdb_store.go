@@ -5,14 +5,15 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"mmn/db"
-	"mmn/types"
-	"mmn/utils"
 	"sync"
+
+	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/linxGnu/grocksdb"
 
-	"mmn/block"
+	"github.com/mezonai/mmn/block"
 )
 
 const (

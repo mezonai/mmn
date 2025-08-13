@@ -26,7 +26,7 @@ import (
 	"sync"
 	"testing"
 
-	"mmn/pkg/common/math"
+	"github.com/mezonai/mmn/pkg/common/math"
 
 	"github.com/holiman/uint256"
 )

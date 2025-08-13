@@ -25,8 +25,8 @@ import (
 	"reflect"
 	"testing"
 
-	"mmn/pkg/common"
-	"mmn/pkg/common/hexutil"
+	"github.com/mezonai/mmn/pkg/common"
+	"github.com/mezonai/mmn/pkg/common/hexutil"
 )
 
 var testAddrHex = "970e8128ab834e8eac17ab8e3812f010678cf791"
