@@ -163,7 +163,6 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 			block := s.blockStore.Block(vote.Slot)
 			if block != nil {
 				blockHashHex := hex.EncodeToString(block.Hash[:])
-				blockTimestamp := time.Unix(0, int64(block.Timestamp))
 
 				// Publish TransactionFinalized events for each transaction
 				// This ensures specific transaction subscribers get notified of finalization
@@ -173,8 +172,7 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 						if err != nil {
 							continue
 						}
-						txHash := tx.Hash()
-						event := events.NewTransactionFinalizedWithTimestamp(txHash, vote.Slot, blockHashHex, blockTimestamp)
+						event := events.NewTransactionFinalized(tx.Hash(), vote.Slot, blockHashHex)
 						s.eventRouter.PublishTransactionEvent(event)
 					}
 				}
@@ -235,7 +233,6 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 			block := s.blockStore.Block(v.Slot)
 			if block != nil {
 				blockHashHex := hex.EncodeToString(block.Hash[:])
-				blockTimestamp := time.Unix(0, int64(block.Timestamp))
 
 				// Publish TransactionFinalized events for each transaction
 				// This ensures specific transaction subscribers get notified of finalization
@@ -245,8 +242,7 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 						if err != nil {
 							continue
 						}
-						txHash := tx.Hash()
-						event := events.NewTransactionFinalizedWithTimestamp(txHash, v.Slot, blockHashHex, blockTimestamp)
+						event := events.NewTransactionFinalized(tx.Hash(), v.Slot, blockHashHex)
 						s.eventRouter.PublishTransactionEvent(event)
 					}
 				}

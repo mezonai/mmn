@@ -62,15 +62,11 @@ type TransactionIncludedInBlock struct {
 }
 
 func NewTransactionIncludedInBlock(txHash string, blockSlot uint64, blockHash string) *TransactionIncludedInBlock {
-	return NewTransactionIncludedInBlockWithTimestamp(txHash, blockSlot, blockHash, time.Now())
-}
-
-func NewTransactionIncludedInBlockWithTimestamp(txHash string, blockSlot uint64, blockHash string, timestamp time.Time) *TransactionIncludedInBlock {
 	return &TransactionIncludedInBlock{
 		txHash:    txHash,
 		blockSlot: blockSlot,
 		blockHash: blockHash,
-		timestamp: timestamp,
+		timestamp: time.Now(),
 	}
 }
 
@@ -103,15 +99,11 @@ type TransactionFinalized struct {
 }
 
 func NewTransactionFinalized(txHash string, blockSlot uint64, blockHash string) *TransactionFinalized {
-	return NewTransactionFinalizedWithTimestamp(txHash, blockSlot, blockHash, time.Now())
-}
-
-func NewTransactionFinalizedWithTimestamp(txHash string, blockSlot uint64, blockHash string, timestamp time.Time) *TransactionFinalized {
 	return &TransactionFinalized{
 		txHash:    txHash,
 		blockSlot: blockSlot,
 		blockHash: blockHash,
-		timestamp: timestamp,
+		timestamp: time.Now(),
 	}
 }
 
