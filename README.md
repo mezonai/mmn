@@ -24,11 +24,14 @@ go run main.go run \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/10002/p2p/<peerID>" \
   --faucet-amount 2000000000
 
-# run (docker)
+# run with docker
+## run bootstrap node
 docker compose -f docker-compose.bootstrap-node.yml build
 docker compose -f docker-compose.bootstrap-node.yml up
 
 Get the bootstrap node address -> bootstrap-addresses (docker-compose.yml)
+
+## run nodes
 
 docker compose build
 docker compose up

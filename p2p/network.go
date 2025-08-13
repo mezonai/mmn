@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"regexp"
-	"strings"
 
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/discovery"
@@ -108,28 +106,26 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 			continue
 		}
 
-		fomarttedAddress := ExtractOneBootstrapAddr(bootstrapPeer)
-
-		addr, err := ma.NewMultiaddr(fomarttedAddress)
+		addr, err := ma.NewMultiaddr(bootstrapPeer)
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", fomarttedAddress, err.Error())
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", bootstrapPeer, err.Error())
 			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Failed to parse peer info:", fomarttedAddress, err.Error())
+			logx.Error("NETWORK:SETUP", "Failed to parse peer info:", bootstrapPeer, err.Error())
 			continue
 		}
 
 		if err := ln.host.Connect(ctx, *info); err != nil {
-			logx.Error("NETWORK:SETUP", "Failed to connect to bootstrap:", fomarttedAddress, err.Error())
+			logx.Error("NETWORK:SETUP", "Failed to connect to bootstrap:", bootstrapPeer, err.Error())
 			continue
 		}
 
-		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", fomarttedAddress)
+		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 
-		go ln.RequestNodeInfo(fomarttedAddress, info)
+		go ln.RequestNodeInfo(bootstrapPeer, info)
 		// go ln.RequestBlockSync(ln.blockStore.LatestSlot() + 1)
 
 		break
@@ -144,11 +140,4 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 func (ln *Libp2pNetwork) Close() {
 	ln.cancel()
 	ln.host.Close()
-}
-
-func ExtractOneBootstrapAddr(logText string) string {
-	re := regexp.MustCompile(`(/ip4/\d+\.\d+\.\d+\.\d+/tcp/\d+/p2p/[A-Za-z0-9]+)`)
-	match := re.FindString(logText)
-
-	return strings.TrimSpace(match)
 }
