@@ -32,19 +32,18 @@ const (
 	fileBlockDir    = "./blockstore/blocks"
 	rocksdbBlockDir = "blockstore/rocksdb"
 	// Config paths
-	configPath = "config/config.ini"
+	configPath    = "config/config.ini"
+	faucetAddress = "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
 )
 
 var (
 	privKeyPath        string
 	listenAddr         string
-	libp2pAddr         string
+	p2pPort            string
 	bootstrapAddresses []string
 	grpcAddr           string
 	// faucet
-	faucetAddress  string
-	faucetAmount   string
-	leaderSchedule []config.LeaderSchedule
+	faucetAmount string
 )
 
 var runCmd = &cobra.Command{
@@ -58,19 +57,12 @@ var runCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	// Load configuration
-	cfg, err := loadConfiguration("node")
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
-	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", cfg.SelfNode.PrivKeyPath, "Path to private key file")
-	runCmd.Flags().StringVar(&listenAddr, "listen-addr", cfg.SelfNode.ListenAddr, "Listen address for API server :<port>")
-	runCmd.Flags().StringVar(&listenAddr, "grpc-addr", cfg.SelfNode.ListenAddr, "Listen address for Grpc server :<port>")
-	runCmd.Flags().StringVar(&libp2pAddr, "libp2p-addr", cfg.SelfNode.Libp2pAddr, "LibP2P listen multiaddress /ip4/0.0.0.0/tcp/<port>")
-	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", cfg.SelfNode.BootStrapAddresses, "List of bootstrap peer multiaddresses")
-	runCmd.Flags().StringVar(&faucetAmount, "faucet-amount", string(cfg.Faucet.Amount), "Faucet Amount")
-	faucetAddress = cfg.Faucet.Address
-	leaderSchedule = cfg.LeaderSchedule
+	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", "", "Path to private key file")
+	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
+	runCmd.Flags().StringVar(&listenAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
+	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "10001", "LibP2P listen multiaddress /ip4/0.0.0.0/tcp/<port>")
+	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
+	runCmd.Flags().StringVar(&faucetAmount, "faucet-amount", "2000000000", "Faucet Amount")
 }
 
 func runNode() {
@@ -112,16 +104,23 @@ func runNode() {
 		return
 	}
 
+	if privKeyPath == "" {
+		logx.Error("Private Key Empty")
+		return
+	}
+
+	Libp2pAddr := fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort)
+
 	cfg := config.GenesisConfig{
 		SelfNode: config.NodeConfig{
 			PubKey:             pubKey,
 			PrivKeyPath:        privKeyPath,
 			ListenAddr:         listenAddr,
-			Libp2pAddr:         libp2pAddr,
+			Libp2pAddr:         Libp2pAddr,
 			GRPCAddr:           grpcAddr,
 			BootStrapAddresses: bootstrapAddresses,
 		},
-		LeaderSchedule: leaderSchedule,
+		LeaderSchedule: config.LeaderSchedules,
 		Faucet: config.Faucet{
 			Address: faucetAddress,
 			Amount:  faucetAmountNumber,

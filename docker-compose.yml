@@ -10,8 +10,8 @@ services:
         "--privkey-path", "config/key1.txt",
         "--listen-addr", ":8001",
         "--grpc-addr", ":9001",
-        "--libp2p-addr", "/ip4/0.0.0.0/tcp/10001",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--p2p-port", "10001",
+        "--bootstrap-addresses", "/ip4/172.18.0.2/tcp/9000/p2p/12D3KooWPsYt3DgLHuFt3TzYuLmzzeZBw4JjHKwyZAtskTkHzUH7",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -20,7 +20,7 @@ services:
       - "10001:10001"
     networks:
       - mezon
-
+    restart: always
   node2:
     build: .
     container_name: node2
@@ -30,8 +30,8 @@ services:
         "--privkey-path", "config/key2.txt",
         "--listen-addr", ":8002",
         "--grpc-addr", ":9002",
-        "--libp2p-addr", "/ip4/0.0.0.0/tcp/10002",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--p2p-port", "10002",
+        "--bootstrap-addresses", "/ip4/172.18.0.2/tcp/9000/p2p/12D3KooWPsYt3DgLHuFt3TzYuLmzzeZBw4JjHKwyZAtskTkHzUH7",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -40,6 +40,8 @@ services:
       - "10002:10002"
     networks:
       - mezon
+    restart: always
+
 
   node3:
     build: .
@@ -50,8 +52,8 @@ services:
         "--privkey-path", "config/key3.txt",
         "--listen-addr", ":8003",
         "--grpc-addr", ":9003",
-        "--libp2p-addr", "/ip4/0.0.0.0/tcp/10003",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--p2p-port", "10003",
+        "--bootstrap-addresses", "/ip4/172.18.0.2/tcp/9000/p2p/12D3KooWPsYt3DgLHuFt3TzYuLmzzeZBw4JjHKwyZAtskTkHzUH7",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -60,6 +62,7 @@ services:
       - "10003:10003"
     networks:
       - mezon
+    restart: always
 
 networks:
   mezon:

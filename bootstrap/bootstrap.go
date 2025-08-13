@@ -1,8 +1,10 @@
-package main
+package bootstrap
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -17,8 +19,7 @@ import (
 	connmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
 )
 
-func CreateNode(ctx context.Context, cfg *Config) (h host.Host, ddht *dht.IpfsDHT, err error) {
-	// Create a connection manager
+func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h host.Host, ddht *dht.IpfsDHT, err error) {
 	lowWater := 80
 	highWater := 100
 	gracePeriod := time.Minute
@@ -27,15 +28,19 @@ func CreateNode(ctx context.Context, cfg *Config) (h host.Host, ddht *dht.IpfsDH
 	if err != nil {
 		return nil, nil, err
 	}
+	bootstrapP2pAddr := fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", bootstrapP2pPort)
 
 	options := []libp2p.Option{
+		libp2p.ListenAddrStrings(
+			bootstrapP2pAddr,
+		),
 		libp2p.EnableAutoNATv2(),
 		libp2p.NATPortMap(),
 		libp2p.EnableNATService(),
 		libp2p.ForceReachabilityPublic(),
 		libp2p.ConnectionManager(mgr),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer)) // server mode for stable DHT nodes
+			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
 			if err != nil {
 				return nil, err
 			}
@@ -86,7 +91,6 @@ func CreateNode(ctx context.Context, cfg *Config) (h host.Host, ddht *dht.IpfsDH
 			logx.Info("BOOTSTRAP NODE", "New peer connected:", addrs.String(), peerID.String())
 
 			go openSteam(peerID, h)
-
 		},
 
 		DisconnectedF: func(n network.Network, c network.Conn) {
@@ -95,9 +99,16 @@ func CreateNode(ctx context.Context, cfg *Config) (h host.Host, ddht *dht.IpfsDH
 		},
 	})
 
-	logx.Info("BOOTSTRAP NODE", "Node ID: ", h.ID())
+	logx.Info("BOOTSTRAP NODE", "Node ID:", h.ID())
 	for _, addr := range h.Addrs() {
 		logx.Info("BOOTSTRAP NODE", "Listening on:", addr)
+	}
+
+	for _, addr := range h.Addrs() {
+		if strings.HasPrefix(addr.String(), "/ip4") && strings.Contains(addr.String(), "/tcp/") {
+			fullAddr := fmt.Sprintf("%s/p2p/%s", addr.String(), h.ID().String())
+			fmt.Println(fullAddr)
+		}
 	}
 
 	return h, ddht, nil
@@ -117,5 +128,4 @@ func openSteam(peerID peer.ID, h host.Host) {
 	}
 	data, _ := json.Marshal(info)
 	stream.Write(data)
-
 }
