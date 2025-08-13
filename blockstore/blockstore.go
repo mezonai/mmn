@@ -187,14 +187,14 @@ func (bs *BlockStore) GetConfirmations(blockSlot uint64) uint64 {
 
 // GetTransactionBlockInfo searches all stored blocks for a transaction whose
 // client-computed hash (sha256 of the canonical Serialize() fields) matches the
-// provided hex string. It returns the containing slot, block hash, whether the
+// provided hex string. It returns the containing slot, the whole block, whether the
 // block is finalized, and whether it was found.
-func (bs *BlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool) {
+func (bs *BlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blk *block.Block, finalized bool, found bool) {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
-	for s, blk := range bs.data {
-		for _, entry := range blk.Entries {
+	for s, blockData := range bs.data {
+		for _, entry := range blockData.Entries {
 			for _, raw := range entry.Transactions {
 				// Follow the same approach as ApplyBlock
 				tx, err := utils.ParseTx(raw)
@@ -202,10 +202,10 @@ func (bs *BlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64
 					continue
 				}
 				if tx.Hash() == clientHashHex {
-					return s, blk.Hash, blk.Status == block.BlockFinalized, true
+					return s, blockData, blockData.Status == block.BlockFinalized, true
 				}
 			}
 		}
 	}
-	return 0, [32]byte{}, false, false
+	return 0, nil, false, false
 }

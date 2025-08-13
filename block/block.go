@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"mmn/poh"
 	"time"
 )
@@ -24,6 +25,16 @@ type Block struct {
 	Hash      [32]byte
 	Signature []byte
 	Status    BlockStatus
+}
+
+// HashString returns the block hash as a hex string
+func (b *Block) HashString() string {
+	return hex.EncodeToString(b.Hash[:])
+}
+
+// PrevHashString returns the previous block hash as a hex string
+func (b *Block) PrevHashString() string {
+	return hex.EncodeToString(b.PrevHash[:])
 }
 
 func AssembleBlock(

@@ -12,6 +12,6 @@ type Store interface {
 	MarkFinalized(slot uint64) error
 	Seed() [32]byte
 	LatestFinalized() uint64
-	GetTransactionBlockInfo(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool)
+	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 }

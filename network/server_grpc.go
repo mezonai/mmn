@@ -3,7 +3,6 @@ package network
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/hex"
 	"fmt"
 	"mmn/blockstore"
 	"mmn/consensus"
@@ -107,7 +106,7 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 
 		// Publish events for transactions included in this block
 		if s.eventRouter != nil {
-			blockHashHex := hex.EncodeToString(blk.Hash[:])
+			blockHashHex := blk.HashString()
 			for _, entry := range blk.Entries {
 				for _, raw := range entry.Transactions {
 					tx, err := utils.ParseTx(raw)
@@ -162,7 +161,7 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 		if s.eventRouter != nil {
 			block := s.blockStore.Block(vote.Slot)
 			if block != nil {
-				blockHashHex := hex.EncodeToString(block.Hash[:])
+				blockHashHex := block.HashString()
 
 				// Publish TransactionFinalized events for each transaction
 				// This ensures specific transaction subscribers get notified of finalization
@@ -232,7 +231,7 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 		if s.eventRouter != nil {
 			block := s.blockStore.Block(v.Slot)
 			if block != nil {
-				blockHashHex := hex.EncodeToString(block.Hash[:])
+				blockHashHex := block.HashString()
 
 				// Publish TransactionFinalized events for each transaction
 				// This ensures specific transaction subscribers get notified of finalization
@@ -347,10 +346,10 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 
 	// 2) Search in stored blocks
 	if s.blockStore != nil {
-		slot, blkHash, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
+		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
 		if found {
 			resp.BlockSlot = slot
-			resp.BlockHash = hex.EncodeToString(blkHash[:])
+			resp.BlockHash = blk.HashString()
 			resp.Confirmations = s.blockStore.GetConfirmations(slot)
 
 			// Determine status based on confirmations

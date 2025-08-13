@@ -349,14 +349,14 @@ func (s *RocksDBStore) GetConfirmations(blockSlot uint64) uint64 {
 
 // GetTransactionBlockInfo searches all stored blocks for a transaction whose
 // client-computed hash (sha256 of the canonical Serialize() fields) matches the
-// provided hex string. It returns the containing slot, block hash, whether the
+// provided hex string. It returns the containing slot, the whole block, whether the
 // block is finalized, and whether it was found.
-func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blockHash [32]byte, finalized bool, found bool) {
+func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blk *block.Block, finalized bool, found bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if s.db == nil {
-		return 0, [32]byte{}, false, false
+		return 0, nil, false, false
 	}
 
 	// Iterate through all blocks in the database
@@ -376,17 +376,17 @@ func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint6
 			slotNum := binary.BigEndian.Uint64(key.Data())
 
 			// Parse block from value
-			var blk block.Block
-			if err := json.Unmarshal(value.Data(), &blk); err == nil {
+			var blockData block.Block
+			if err := json.Unmarshal(value.Data(), &blockData); err == nil {
 				// Search through all transactions in this block
-				for _, entry := range blk.Entries {
+				for _, entry := range blockData.Entries {
 					for _, raw := range entry.Transactions {
 						tx, err := utils.ParseTx(raw)
 						if err != nil {
 							continue
 						}
 						if tx.Hash() == clientHashHex {
-							return slotNum, blk.Hash, blk.Status == block.BlockFinalized, true
+							return slotNum, &blockData, blockData.Status == block.BlockFinalized, true
 						}
 					}
 				}
@@ -396,5 +396,5 @@ func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint6
 		iter.Next()
 	}
 
-	return 0, [32]byte{}, false, false
+	return 0, nil, false, false
 }
