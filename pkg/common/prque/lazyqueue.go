@@ -21,7 +21,7 @@ import (
 	"container/heap"
 	"time"
 
-	"mmn/pkg/common/mclock"
+	"github.com/mezonai/mmn/pkg/common/mclock"
 )
 
 // LazyQueue is a priority queue data structure where priorities can change over

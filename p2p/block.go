@@ -4,8 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"mmn/block"
-	"mmn/logx"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )

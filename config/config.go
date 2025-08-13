@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"mmn/poh"
 	"os"
 	"strings"
+
+	"github.com/mezonai/mmn/poh"
 
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"

@@ -3,7 +3,8 @@ package p2p
 import (
 	"context"
 	"encoding/json"
-	"mmn/logx"
+
+	"github.com/mezonai/mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )

@@ -3,8 +3,9 @@ package p2p
 import (
 	"crypto/ed25519"
 	"fmt"
-	"mmn/block"
-	"mmn/consensus"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/consensus"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	ma "github.com/multiformats/go-multiaddr"

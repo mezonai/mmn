@@ -1,7 +1,7 @@
 package main
 
 import (
-	"mmn/cmd"
+	"github.com/mezonai/mmn/cmd"
 )
 
 func main() {

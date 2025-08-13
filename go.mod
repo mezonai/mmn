@@ -1,4 +1,4 @@
-module mmn
+module github.com/mezonai/mmn
 
 go 1.23.8
 
