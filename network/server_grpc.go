@@ -362,7 +362,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 		}
 	}
 
-	// 3) Not found anywhere -> UNKNOWN for now (could EXPIRED after TTL if we tracked submission time)
+	// 3) Not found anywhere -> UNKNOWN for now
 	return resp, nil
 }
 

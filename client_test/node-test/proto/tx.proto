@@ -10,7 +10,6 @@ enum TransactionStatus {
   CONFIRMED = 2;    // Transaction is included in a block
   FINALIZED = 3;    // Transaction is finalized (block has enough votes)
   FAILED = 4;       // Transaction failed validation
-  EXPIRED = 5;      // Transaction expired (timeout)
 }
 
 message TxMsg { 

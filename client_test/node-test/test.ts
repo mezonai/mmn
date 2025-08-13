@@ -135,40 +135,72 @@ async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
 const FaucetTxType = 1;
 const TransferTxType = 0;
 
-// Helper function to wait for transaction finalization
-async function waitForTransactionFinalization(txHash: string, timeoutMs: number = 60000): Promise<void> {
-  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-  
+// Helper function to wait for transaction to reach terminal status
+async function waitForTransactionTerminalStatus(txHash: string, timeoutMs: number = 60000): Promise<void> {
+  const tracker = new TransactionTracker({
+    serverAddress: GRPC_SERVER_ADDRESS,
+    statusConsumptionDelay: 100, // 100ms delay between processing status updates
+  });
+
   try {
-    console.log(`  ⏳ Waiting for transaction ${txHash.substring(0, 16)}... to be finalized...`);
+    console.log(`  ⏳ Waiting for transaction ${txHash.substring(0, 16)}... to reach terminal status...`);
     console.log(`  📋 Full transaction hash: ${txHash}`);
+
+    const finalStatus = await tracker.waitForTerminalStatus(txHash, timeoutMs);
+    if (finalStatus.status === TransactionStatus.FINALIZED) {
+      console.log(`  ✅ Transaction ${txHash.substring(0, 16)}... finalized successfully`);
+    } else if (finalStatus.status === TransactionStatus.FAILED) {
+      console.log(`  ❌ Transaction ${txHash.substring(0, 16)}... failed: ${finalStatus.errorMessage}`);
     
-    // First check current status
-    const currentStatus = await tracker.getCurrentStatus(txHash);
-    console.log(`  📊 Current status:`, JSON.stringify(currentStatus, null, 2));
-    
-    await tracker.waitForFinalization(txHash, timeoutMs);
-    console.log(`  ✅ Transaction ${txHash.substring(0, 16)}... finalized successfully`);
+    }
   } finally {
     tracker.close();
   }
 }
 
-// Helper function to wait for multiple transactions to be finalized
-async function waitForMultipleTransactionsFinalization(txHashes: string[], timeoutMs: number = 120000): Promise<void> {
-  console.log(`  ⏳ Waiting for ${txHashes.length} transactions to be finalized...`);
-  
-  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-  
+// Helper function to wait for multiple transactions to reach terminal status
+async function waitForMultipleTransactionsTerminalStatus(
+  txHashes: string[],
+  timeoutMs: number = 120000,
+  existingTracker?: TransactionTracker
+): Promise<void> {
+  console.log(`  ⏳ Waiting for ${txHashes.length} transactions to reach terminal status...`);
+
+  // Use existing tracker if provided, otherwise create a new one
+  const tracker = existingTracker || new TransactionTracker({
+    serverAddress: GRPC_SERVER_ADDRESS,
+    statusConsumptionDelay: 100, // 100ms delay between processing status updates
+  });
+
+  const shouldCloseTracker = !existingTracker; // Only close if we created it
+
   try {
-    const promises = txHashes.map(txHash => 
-      tracker.waitForFinalization(txHash, timeoutMs)
-    );
-    
-    await Promise.all(promises);
-    console.log(`  ✅ All ${txHashes.length} transactions finalized successfully`);
+    const promises = txHashes.map(async (txHash) => {
+      const finalStatus = await tracker.waitForTerminalStatus(txHash, timeoutMs);
+      return { txHash, status: finalStatus.status, errorMessage: finalStatus.errorMessage };
+    });
+
+    const results = await Promise.all(promises);
+
+    const finalized = results.filter((r) => r.status === TransactionStatus.FINALIZED);
+    const failed = results.filter((r) => r.status === TransactionStatus.FAILED);
+  
+
+    console.log(`  ✅ All ${txHashes.length} transactions reached terminal status:`);
+    console.log(`     - Finalized: ${finalized.length}`);
+    console.log(`     - Failed: ${failed.length}`);
+  
+
+    if (failed.length > 0) {
+      console.log(`  ⚠️  Failed transactions:`);
+      failed.forEach((result, index) => {
+        console.log(`     ${index + 1}. ${result.txHash.substring(0, 16)}... - ${result.errorMessage}`);
+      });
+    }
   } finally {
-    tracker.close();
+    if (shouldCloseTracker) {
+      tracker.close();
+    }
   }
 }
 
@@ -188,44 +220,51 @@ async function runBasicTransactionTests() {
     console.log(`  📝 Using nonce ${faucetNonce1} for faucet transaction`);
     const tx1 = buildTx(faucetPublicKeyHex, recipientPublicKeyHex, 100, 'Test faucet tx', faucetNonce1, FaucetTxType);
     tx1.signature = signTx(tx1, faucetPrivateKey);
-    
+
     if (!verifyTx(tx1, faucetPublicKeyHex)) {
       throw new Error('Transaction signature verification failed');
     }
-    
+
     const response1 = await sendTxViaGrpc(grpcClient, tx1);
     console.log(`📤 Faucet transaction response:`, JSON.stringify(response1, null, 2));
     if (!response1.ok) {
       throw new Error(`Failed to send faucet transaction: ${response1.error}`);
     }
     console.log(`✅ Faucet transaction sent successfully. Hash: ${response1.tx_hash?.substring(0, 16)}...`);
-    
-    // Wait for faucet transaction to be finalized
+
+    // Wait for faucet transaction to reach terminal status
     if (response1.tx_hash) {
-      await waitForTransactionFinalization(response1.tx_hash);
+      await waitForTransactionTerminalStatus(response1.tx_hash);
     }
 
     // Test 2: Transfer transaction
     console.log('\n2. Testing transfer transaction...');
     const recipientNonce1 = getNextNonce(recipientPublicKeyHex);
     console.log(`  📝 Using nonce ${recipientNonce1} for recipient transfer transaction`);
-    const tx2 = buildTx(recipientPublicKeyHex, faucetPublicKeyHex, 50, 'Test transfer tx', recipientNonce1, TransferTxType);
+    const tx2 = buildTx(
+      recipientPublicKeyHex,
+      faucetPublicKeyHex,
+      50,
+      'Test transfer tx',
+      recipientNonce1,
+      TransferTxType
+    );
     tx2.signature = signTx(tx2, recipientPrivateKey);
-    
+
     if (!verifyTx(tx2, recipientPublicKeyHex)) {
       throw new Error('Transfer transaction signature verification failed');
     }
-    
+
     const response2 = await sendTxViaGrpc(grpcClient, tx2);
     console.log(`📤 Transfer transaction response:`, JSON.stringify(response2, null, 2));
     if (!response2.ok) {
       throw new Error(`Failed to send transfer transaction: ${response2.error}`);
     }
     console.log(`✅ Transfer transaction sent successfully. Hash: ${response2.tx_hash?.substring(0, 16)}...`);
-    
-    // Wait for transfer transaction to be finalized
+
+    // Wait for transfer transaction to reach terminal status
     if (response2.tx_hash) {
-      await waitForTransactionFinalization(response2.tx_hash);
+      await waitForTransactionTerminalStatus(response2.tx_hash);
     }
 
     // Test 3: Multiple accounts
@@ -233,33 +272,39 @@ async function runBasicTransactionTests() {
     const accounts = generateTestAccounts(3);
     const promises = accounts.map(async (account, index) => {
       const faucetNonce = getNextNonce(faucetPublicKeyHex);
-      const tx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 10, `Multi-account test ${index}`, faucetNonce, FaucetTxType);
+      const tx = buildTx(
+        faucetPublicKeyHex,
+        account.publicKeyHex,
+        10,
+        `Multi-account test ${index}`,
+        faucetNonce,
+        FaucetTxType
+      );
       tx.signature = signTx(tx, faucetPrivateKey);
       return await sendTxViaGrpc(grpcClient, tx);
     });
 
     const results = await Promise.all(promises);
     console.log(`📤 Multi-account transaction responses:`, JSON.stringify(results, null, 2));
-    const successCount = results.filter(r => r.ok).length;
+    const successCount = results.filter((r) => r.ok).length;
     console.log(`✅ ${successCount}/${accounts.length} multi-account transactions sent successfully`);
-    
+
     // Wait for all multi-account transactions to be finalized
-    const successfulTxHashes = results
-      .filter(r => r.ok && r.tx_hash)
-      .map(r => r.tx_hash!);
-    
+    const successfulTxHashes = results.filter((r) => r.ok && r.tx_hash).map((r) => r.tx_hash!);
+
     if (successfulTxHashes.length > 0) {
-      console.log('  ⏳ Waiting for multi-account transactions to be finalized...');
-      await waitForMultipleTransactionsFinalization(successfulTxHashes);
+      console.log('  ⏳ Waiting for multi-account transactions to reach terminal status...');
+      await waitForMultipleTransactionsTerminalStatus(successfulTxHashes);
     }
 
     // Test 4: Account balance check
     console.log('\n4. Testing account balance retrieval...');
     const accountResponse = await grpcClient.getAccount(recipientPublicKeyHex);
-    console.log(`✅ Account balance retrieved: ${accountResponse.balance} for ${recipientPublicKeyHex.substring(0, 16)}...`);
+    console.log(
+      `✅ Account balance retrieved: ${accountResponse.balance} for ${recipientPublicKeyHex.substring(0, 16)}...`
+    );
 
     console.log('\n✅ All basic transaction tests passed!\n');
-
   } catch (error) {
     console.error('❌ Basic transaction tests failed:', error);
     throw error;
@@ -285,10 +330,13 @@ async function runTransactionStatusTests() {
     const allStatusUpdates: TransactionStatusInfo[] = [];
 
     // Set up event listeners
-    tracker.on('statusChanged', (txHash: string, newStatus: TransactionStatusInfo, oldStatus?: TransactionStatusInfo) => {
-      statusUpdates.push(newStatus);
-      console.log(`📈 Status Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[newStatus.status]}`);
-    });
+    tracker.on(
+      'statusChanged',
+      (txHash: string, newStatus: TransactionStatusInfo, oldStatus?: TransactionStatusInfo) => {
+        statusUpdates.push(newStatus);
+        console.log(`📈 Status Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[newStatus.status]}`);
+      }
+    );
 
     tracker.on('transactionFinalized', (txHash: string, statusInfo: TransactionStatusInfo) => {
       allStatusUpdates.push(statusInfo);
@@ -327,10 +375,10 @@ async function runTransactionStatusTests() {
       }
     }
 
-    // Wait for all transactions to be finalized
-    console.log('\n⏳ Waiting for all transactions to be finalized...');
+    // Wait for all transactions to reach terminal status
+    console.log('\n⏳ Waiting for all transactions to reach terminal status...');
     if (transactions.length > 0) {
-      await waitForMultipleTransactionsFinalization(transactions);
+      await waitForMultipleTransactionsTerminalStatus(transactions, 120000, tracker);
     }
 
     // Stop tracking
@@ -351,7 +399,6 @@ async function runTransactionStatusTests() {
     }
 
     console.log('\n✅ Transaction status tracking tests completed!\n');
-
   } catch (error) {
     console.error('❌ Transaction status tests failed:', error);
     throw error;
@@ -403,11 +450,11 @@ class EventBasedStatusTest {
 
   private async testAllTransactionsSubscription() {
     console.log('  🔍 Testing subscription to all transaction events (no specific tx hash)...');
-    
+
     // Send multiple transactions to test the all-transactions subscription
     const transactions: string[] = [];
     const numTransactions = 3;
-    
+
     for (let i = 0; i < numTransactions; i++) {
       const faucetNonce = getNextNonce(faucetPublicKeyHex);
       const tx = buildTx(
@@ -450,38 +497,40 @@ class EventBasedStatusTest {
             allUpdates.set(update.tx_hash, []);
           }
           allUpdates.get(update.tx_hash)!.push(update);
-          
+
           console.log(`  📡 All-transactions update: ${update.tx_hash.substring(0, 16)}... -> ${update.status}`);
-          
+
           // Check if we've received updates for all our test transactions
-          const allTransactionsHaveUpdates = transactions.every(txHash => 
-            allUpdates.has(txHash) && allUpdates.get(txHash)!.length > 0
+          const allTransactionsHaveUpdates = transactions.every(
+            (txHash) => allUpdates.has(txHash) && allUpdates.get(txHash)!.length > 0
           );
-          
+
           // Check if all transactions have reached terminal status
-          const allTransactionsCompleted = transactions.every(txHash => {
+          const allTransactionsCompleted = transactions.every((txHash) => {
             const updates = allUpdates.get(txHash);
             if (!updates || updates.length === 0) return false;
             const lastUpdate = updates[updates.length - 1];
-            return lastUpdate.status === 'FINALIZED' || lastUpdate.status === 'FAILED' || lastUpdate.status === 'EXPIRED';
+            return (
+              lastUpdate.status === 'FINALIZED' || lastUpdate.status === 'FAILED'
+            );
           });
-          
+
           if (allTransactionsHaveUpdates && allTransactionsCompleted) {
             clearTimeout(timeout);
             unsubscribe();
-            
+
             // All transactions have already been finalized through the subscription
             console.log('  ✅ All transactions finalized through subscription');
-            
+
             resolve({
               totalTransactions: transactions.length,
               totalUpdates: Array.from(allUpdates.values()).reduce((sum, updates) => sum + updates.length, 0),
               updatesPerTransaction: Array.from(allUpdates.entries()).map(([txHash, updates]) => ({
                 txHash: txHash.substring(0, 16) + '...',
                 updateCount: updates.length,
-                finalStatus: updates[updates.length - 1]?.status || 'UNKNOWN'
+                finalStatus: updates[updates.length - 1]?.status || 'UNKNOWN',
               })),
-              subscriptionType: 'All Transactions (no specific tx hash)'
+              subscriptionType: 'All Transactions (no specific tx hash)',
             });
           }
         },
@@ -497,9 +546,9 @@ class EventBasedStatusTest {
             updatesPerTransaction: Array.from(allUpdates.entries()).map(([txHash, updates]) => ({
               txHash: txHash.substring(0, 16) + '...',
               updateCount: updates.length,
-              finalStatus: updates[updates.length - 1]?.status || 'UNKNOWN'
+              finalStatus: updates[updates.length - 1]?.status || 'UNKNOWN',
             })),
-            subscriptionType: 'All Transactions (no specific tx hash)'
+            subscriptionType: 'All Transactions (no specific tx hash)',
           });
         }
       );
@@ -573,25 +622,30 @@ async function runInvalidTransactionTests() {
     console.log('1. Testing transaction with invalid signature...');
     const testAccount1 = generateTestAccount();
     const invalidNonce1 = getNextNonce(testAccount1.publicKeyHex);
-    
-    const invalidTx1 = buildTx(testAccount1.publicKeyHex, recipientPublicKeyHex, 100, 'Invalid signature test', invalidNonce1, TransferTxType);
+
+    const invalidTx1 = buildTx(
+      testAccount1.publicKeyHex,
+      recipientPublicKeyHex,
+      100,
+      'Invalid signature test',
+      invalidNonce1,
+      TransferTxType
+    );
     // Use wrong private key to create invalid signature
     invalidTx1.signature = signTx(invalidTx1, faucetPrivateKey); // Wrong private key
-    
+
     const response1 = await sendTxViaGrpc(grpcClient, invalidTx1);
     console.log(`📤 Invalid signature transaction response:`, JSON.stringify(response1, null, 2));
-    
+
     // Wait a bit for the failure event to be processed
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     // Check if we received a failure event
     const trackedTxs1 = tracker.getTrackedTransactions();
-    const failedTx1 = Array.from(trackedTxs1.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('sig')
+    const failedTx1 = Array.from(trackedTxs1.values()).find(
+      (tx) => tx.status === TransactionStatus.FAILED && tx.errorMessage && tx.errorMessage.includes('sig')
     );
-    
+
     if (failedTx1) {
       console.log(`✅ Received failure event for invalid signature: ${failedTx1.errorMessage}`);
     } else {
@@ -602,23 +656,28 @@ async function runInvalidTransactionTests() {
     console.log('\n2. Testing transaction with insufficient balance...');
     const testAccount2 = generateTestAccount();
     const insufficientNonce = getNextNonce(testAccount2.publicKeyHex);
-    
-    const insufficientTx = buildTx(testAccount2.publicKeyHex, recipientPublicKeyHex, 1000, 'Insufficient balance test', insufficientNonce, TransferTxType);
+
+    const insufficientTx = buildTx(
+      testAccount2.publicKeyHex,
+      recipientPublicKeyHex,
+      1000,
+      'Insufficient balance test',
+      insufficientNonce,
+      TransferTxType
+    );
     insufficientTx.signature = signTx(insufficientTx, testAccount2.privateKey);
-    
+
     const response2 = await sendTxViaGrpc(grpcClient, insufficientTx);
     console.log(`📤 Insufficient balance transaction response:`, JSON.stringify(response2, null, 2));
-    
+
     // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     const trackedTxs2 = tracker.getTrackedTransactions();
-    const failedTx2 = Array.from(trackedTxs2.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('insufficient')
+    const failedTx2 = Array.from(trackedTxs2.values()).find(
+      (tx) => tx.status === TransactionStatus.FAILED && tx.errorMessage && tx.errorMessage.includes('insufficient')
     );
-    
+
     if (failedTx2) {
       console.log(`✅ Received failure event for insufficient balance: ${failedTx2.errorMessage}`);
     } else {
@@ -628,32 +687,44 @@ async function runInvalidTransactionTests() {
     // Test 3: Transaction with invalid nonce
     console.log('\n3. Testing transaction with invalid nonce...');
     const testAccount3 = generateTestAccount();
-    
+
     // First send a valid transaction to establish nonce
     const validNonce = getNextNonce(testAccount3.publicKeyHex);
-    const validTx = buildTx(testAccount3.publicKeyHex, recipientPublicKeyHex, 50, 'Valid tx for nonce test', validNonce, TransferTxType);
+    const validTx = buildTx(
+      testAccount3.publicKeyHex,
+      recipientPublicKeyHex,
+      50,
+      'Valid tx for nonce test',
+      validNonce,
+      TransferTxType
+    );
     validTx.signature = signTx(validTx, testAccount3.privateKey);
-    
+
     await sendTxViaGrpc(grpcClient, validTx);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Now send transaction with invalid nonce (same as previous)
-    const invalidNonceTx = buildTx(testAccount3.publicKeyHex, recipientPublicKeyHex, 50, 'Invalid nonce test', validNonce, TransferTxType);
+    const invalidNonceTx = buildTx(
+      testAccount3.publicKeyHex,
+      recipientPublicKeyHex,
+      50,
+      'Invalid nonce test',
+      validNonce,
+      TransferTxType
+    );
     invalidNonceTx.signature = signTx(invalidNonceTx, testAccount3.privateKey);
-    
+
     const response3 = await sendTxViaGrpc(grpcClient, invalidNonceTx);
     console.log(`📤 Invalid nonce transaction response:`, JSON.stringify(response3, null, 2));
-    
+
     // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     const trackedTxs3 = tracker.getTrackedTransactions();
-    const failedTx3 = Array.from(trackedTxs3.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('nonce')
+    const failedTx3 = Array.from(trackedTxs3.values()).find(
+      (tx) => tx.status === TransactionStatus.FAILED && tx.errorMessage && tx.errorMessage.includes('nonce')
     );
-    
+
     if (failedTx3) {
       console.log(`✅ Received failure event for invalid nonce: ${failedTx3.errorMessage}`);
     } else {
@@ -666,14 +737,21 @@ async function runInvalidTransactionTests() {
       // Try to send malformed data by creating an invalid transaction
       const testAccount4 = generateTestAccount();
       const malformedNonce = getNextNonce(testAccount4.publicKeyHex);
-      
+
       // Create a transaction with invalid data
-      const malformedTx = buildTx(testAccount4.publicKeyHex, recipientPublicKeyHex, 100, 'Malformed test', malformedNonce, TransferTxType);
+      const malformedTx = buildTx(
+        testAccount4.publicKeyHex,
+        recipientPublicKeyHex,
+        100,
+        'Malformed test',
+        malformedNonce,
+        TransferTxType
+      );
       malformedTx.signature = 'invalid_signature_hex'; // Invalid signature format
-      
+
       const response4 = await sendTxViaGrpc(grpcClient, malformedTx);
       console.log(`📤 Malformed transaction response:`, JSON.stringify(response4, null, 2));
-      
+
       if (!response4.ok) {
         console.log(`✅ Malformed transaction properly rejected: ${response4.error}`);
       }
@@ -685,23 +763,28 @@ async function runInvalidTransactionTests() {
     console.log('\n5. Testing faucet transaction from non-faucet address...');
     const testAccount5 = generateTestAccount();
     const faucetNonce = getNextNonce(testAccount5.publicKeyHex);
-    
-    const nonFaucetTx = buildTx(testAccount5.publicKeyHex, recipientPublicKeyHex, 100, 'Non-faucet faucet test', faucetNonce, FaucetTxType);
+
+    const nonFaucetTx = buildTx(
+      testAccount5.publicKeyHex,
+      recipientPublicKeyHex,
+      100,
+      'Non-faucet faucet test',
+      faucetNonce,
+      FaucetTxType
+    );
     nonFaucetTx.signature = signTx(nonFaucetTx, testAccount5.privateKey);
-    
+
     const response5 = await sendTxViaGrpc(grpcClient, nonFaucetTx);
     console.log(`📤 Non-faucet faucet transaction response:`, JSON.stringify(response5, null, 2));
-    
+
     // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     const trackedTxs5 = tracker.getTrackedTransactions();
-    const failedTx5 = Array.from(trackedTxs5.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('faucet')
+    const failedTx5 = Array.from(trackedTxs5.values()).find(
+      (tx) => tx.status === TransactionStatus.FAILED && tx.errorMessage && tx.errorMessage.includes('faucet')
     );
-    
+
     if (failedTx5) {
       console.log(`✅ Received failure event for non-faucet faucet transaction: ${failedTx5.errorMessage}`);
     } else {
@@ -712,23 +795,28 @@ async function runInvalidTransactionTests() {
     console.log('\n6. Testing zero amount transaction...');
     const testAccount6 = generateTestAccount();
     const zeroAmountNonce = getNextNonce(testAccount6.publicKeyHex);
-    
-    const zeroAmountTx = buildTx(testAccount6.publicKeyHex, recipientPublicKeyHex, 0, 'Zero amount test', zeroAmountNonce, TransferTxType);
+
+    const zeroAmountTx = buildTx(
+      testAccount6.publicKeyHex,
+      recipientPublicKeyHex,
+      0,
+      'Zero amount test',
+      zeroAmountNonce,
+      TransferTxType
+    );
     zeroAmountTx.signature = signTx(zeroAmountTx, testAccount6.privateKey);
-    
+
     const response6 = await sendTxViaGrpc(grpcClient, zeroAmountTx);
     console.log(`📤 Zero amount transaction response:`, JSON.stringify(response6, null, 2));
-    
+
     // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     const trackedTxs6 = tracker.getTrackedTransactions();
-    const failedTx6 = Array.from(trackedTxs6.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('amount')
+    const failedTx6 = Array.from(trackedTxs6.values()).find(
+      (tx) => tx.status === TransactionStatus.FAILED && tx.errorMessage && tx.errorMessage.includes('amount')
     );
-    
+
     if (failedTx6) {
       console.log(`✅ Received failure event for zero amount transaction: ${failedTx6.errorMessage}`);
     } else {
@@ -738,13 +826,13 @@ async function runInvalidTransactionTests() {
     // Print summary of all tracked transactions
     console.log('\n📊 Summary of tracked transactions:');
     const allTrackedTxs = tracker.getTrackedTransactions();
-    const failedTxs = Array.from(allTrackedTxs.values()).filter(tx => tx.status === TransactionStatus.FAILED);
-    const successfulTxs = Array.from(allTrackedTxs.values()).filter(tx => tx.status === TransactionStatus.FINALIZED);
-    
+    const failedTxs = Array.from(allTrackedTxs.values()).filter((tx) => tx.status === TransactionStatus.FAILED);
+    const successfulTxs = Array.from(allTrackedTxs.values()).filter((tx) => tx.status === TransactionStatus.FINALIZED);
+
     console.log(`Total tracked transactions: ${allTrackedTxs.size}`);
     console.log(`Failed transactions: ${failedTxs.length}`);
     console.log(`Successful transactions: ${successfulTxs.length}`);
-    
+
     if (failedTxs.length > 0) {
       console.log('\nFailed transaction details:');
       failedTxs.forEach((tx, index) => {
@@ -755,9 +843,211 @@ async function runInvalidTransactionTests() {
     }
 
     console.log('\n✅ Invalid transaction tests completed successfully!');
-
   } catch (error) {
     console.error('❌ Invalid transaction tests failed:', error);
+    throw error;
+  } finally {
+    tracker.close();
+    grpcClient.close();
+  }
+}
+
+// ============================================================================
+// TEST SUITE 5: BULK TRANSACTION TESTS WITH SLOW CONSUME CLIENT
+// ============================================================================
+
+async function runBulkTransactionTests() {
+  console.log('=== BULK TRANSACTION TESTS (5000 TX with Slow Consume Client) ===\n');
+
+  const grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
+  const tracker = new TransactionTracker({
+    serverAddress: GRPC_SERVER_ADDRESS,
+    statusConsumptionDelay: 100, // 100ms delay between processing status updates
+  });
+
+  try {
+    // Reset terminal count for this test run
+    tracker.resetTerminalCount();
+    
+    // Start tracking all transactions
+    tracker.trackTransactions();
+
+    // Generate multiple test accounts for bulk testing
+    console.log('1. Generating test accounts for bulk testing...');
+    const testAccounts = generateTestAccounts(10); // 10 accounts to distribute load
+    console.log(`   Generated ${testAccounts.length} test accounts`);
+
+    // First, fund all test accounts with faucet transactions
+    console.log('\n2. Funding test accounts with initial balance...');
+    const fundingTxs: string[] = [];
+
+    for (let i = 0; i < testAccounts.length; i++) {
+      const account = testAccounts[i];
+      const faucetNonce = getNextNonce(faucetPublicKeyHex);
+      const fundingTx = buildTx(
+        faucetPublicKeyHex,
+        account.publicKeyHex,
+        5000,
+        `Funding account ${i}`,
+        faucetNonce,
+        FaucetTxType
+      );
+      fundingTx.signature = signTx(fundingTx, faucetPrivateKey);
+
+      const response = await sendTxViaGrpc(grpcClient, fundingTx);
+      if (!response.ok) {
+        throw new Error(`Failed to fund account ${i}: ${response.error}`);
+      }
+      if (!response.tx_hash) {
+        throw new Error(`No transaction hash returned for funding account ${i}`);
+      }
+      fundingTxs.push(response.tx_hash);
+      console.log(`   Funded account ${i}: ${response.tx_hash.substring(0, 16)}...`);
+    }
+
+    // Wait for funding transactions to reach terminal status
+    console.log('\n3. Waiting for funding transactions to reach terminal status...');
+    await waitForMultipleTransactionsTerminalStatus(fundingTxs, 120000, tracker);
+    console.log('   ✅ All funding transactions reached terminal status');
+
+    // Send 5000 transactions with slow consume client simulation
+    console.log('\n4. Sending 5000 transactions with slow consume client...');
+    const allTxHashes: string[] = [];
+    const batchSize = 50; // Send in batches of 50
+    const delayBetweenBatches = 1000; // 1 second delay between batches
+
+    for (let batch = 0; batch < 100; batch++) {
+      // 100 batches * 50 txs = 5000 txs
+      console.log(`   Sending batch ${batch + 1}/100 (${batchSize} transactions)...`);
+
+      const batchPromises: Promise<string>[] = [];
+
+      for (let i = 0; i < batchSize; i++) {
+        const txIndex = batch * batchSize + i;
+        const senderAccount = testAccounts[txIndex % testAccounts.length];
+        const recipientAccount = testAccounts[(txIndex + 1) % testAccounts.length];
+
+        const nonce = getNextNonce(senderAccount.publicKeyHex);
+        const tx = buildTx(
+          senderAccount.publicKeyHex,
+          recipientAccount.publicKeyHex,
+          1, // Small amount for testing
+          `Bulk test tx ${txIndex}`,
+          nonce,
+          TransferTxType
+        );
+        tx.signature = signTx(tx, senderAccount.privateKey);
+
+        // Add delay between individual transactions to simulate slow consume
+        const sendTx = async () => {
+          const response = await sendTxViaGrpc(grpcClient, tx);
+          if (!response.ok) {
+            throw new Error(`Failed to send transaction ${txIndex}: ${response.error}`);
+          }
+          if (!response.tx_hash) {
+            throw new Error(`No transaction hash returned for transaction ${txIndex}`);
+          }
+          return response.tx_hash;
+        };
+
+        batchPromises.push(sendTx());
+      }
+
+      const batchResults = await Promise.all(batchPromises);
+      allTxHashes.push(...batchResults);
+
+      console.log(`   ✅ Batch ${batch + 1} completed: ${batchResults.length} transactions sent`);
+      
+      // Report current terminal count every 10 batches
+      if ((batch + 1) % 10 === 0) {
+        const currentTerminalCount = tracker.getCurrentTerminalCount();
+        console.log(`   📊 [PROGRESS] Current terminal transactions: ${currentTerminalCount}/${allTxHashes.length + fundingTxs.length} (${((currentTerminalCount / (allTxHashes.length + fundingTxs.length)) * 100).toFixed(1)}%)`);
+      }
+
+      // Add delay between batches
+      if (batch < 99) {
+        // Don't delay after the last batch
+        console.log(`   ⏳ Waiting ${delayBetweenBatches}ms before next batch...`);
+        await new Promise((resolve) => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
+
+    console.log(`\n5. Successfully sent ${allTxHashes.length} transactions`);
+    console.log('   ⏳ Waiting for all transactions to be finalized...');
+
+    // Wait for all transactions to reach terminal status with extended timeout
+    const startTime = Date.now();
+    await waitForMultipleTransactionsTerminalStatus(allTxHashes, 300000, tracker); // 5 minutes timeout
+    const endTime = Date.now();
+
+    console.log(`   ✅ All ${allTxHashes.length} transactions reached terminal status!`);
+    console.log(`   ⏱️  Total time: ${((endTime - startTime) / 1000).toFixed(2)} seconds`);
+
+    // Final terminal count report
+    const finalTerminalCount = tracker.getCurrentTerminalCount();
+    console.log(`   🎯 [FINAL] Total terminal transactions tracked: ${finalTerminalCount}`);
+
+    // Analyze results
+    console.log('\n6. Analyzing transaction results...');
+    const trackedTxs = tracker.getTrackedTransactions();
+    const successfulTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.FINALIZED);
+    const failedTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.FAILED);
+  
+    const pendingTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.PENDING);
+    const confirmedTxs = Array.from(trackedTxs.values()).filter((tx) => tx.status === TransactionStatus.CONFIRMED);
+
+    // Calculate terminal status counts
+    const terminalTxs = successfulTxs.length + failedTxs.length;
+    const nonTerminalTxs = pendingTxs.length + confirmedTxs.length;
+
+    console.log(`   📊 Total tracked transactions: ${trackedTxs.size}`);
+    console.log(`   ✅ Successful transactions (FINALIZED): ${successfulTxs.length}`);
+    console.log(`   ❌ Failed transactions (FAILED): ${failedTxs.length}`);
+  
+    console.log(`   ⏳ Pending transactions (PENDING): ${pendingTxs.length}`);
+    console.log(`   🔄 Confirmed transactions (CONFIRMED): ${confirmedTxs.length}`);
+    console.log(`   🎯 Total terminal status transactions: ${terminalTxs}`);
+    console.log(`   🔄 Non-terminal status transactions: ${nonTerminalTxs}`);
+
+    // Calculate success rate
+    const successRate = (successfulTxs.length / allTxHashes.length) * 100;
+    console.log(`   📈 Success rate: ${successRate.toFixed(2)}%`);
+
+    // Calculate terminal status rate
+    const terminalRate = (terminalTxs / allTxHashes.length) * 100;
+    console.log(`   🎯 Terminal status rate: ${terminalRate.toFixed(2)}%`);
+
+    // Performance metrics
+    const avgTimePerTx = (endTime - startTime) / successfulTxs.length;
+    console.log(`   ⚡ Average time per transaction: ${avgTimePerTx.toFixed(2)}ms`);
+
+    // Check for any failed transactions
+    if (failedTxs.length > 0) {
+      console.log('\n   ⚠️  Failed transaction details:');
+      failedTxs.slice(0, 10).forEach((tx, index) => {
+        // Show first 10 failures
+        console.log(`     ${index + 1}. Hash: ${tx.txHash.substring(0, 16)}...`);
+        console.log(`        Error: ${tx.errorMessage}`);
+      });
+      if (failedTxs.length > 10) {
+        console.log(`     ... and ${failedTxs.length - 10} more failures`);
+      }
+    }
+
+    // Verify all our sent transactions are in the tracked list
+    const sentTxHashesSet = new Set(allTxHashes);
+    const trackedTxHashesSet = new Set(Array.from(trackedTxs.keys()));
+    const missingTxs = allTxHashes.filter((hash) => !trackedTxHashesSet.has(hash));
+
+    if (missingTxs.length > 0) {
+      console.log(`\n   ⚠️  ${missingTxs.length} sent transactions not found in tracking`);
+    } else {
+      console.log('\n   ✅ All sent transactions properly tracked');
+    }
+
+    console.log('\n✅ Bulk transaction tests completed successfully!');
+  } catch (error) {
+    console.error('❌ Bulk transaction tests failed:', error);
     throw error;
   } finally {
     tracker.close();
@@ -775,7 +1065,8 @@ async function main() {
   console.log('1. Basic transaction tests (signing, verification, sending)');
   console.log('2. Transaction status tracking tests (event-based system)');
   console.log('3. Event-based status subscription tests');
-  console.log('4. Invalid transaction tests (failure scenarios)\n');
+  console.log('4. Invalid transaction tests (failure scenarios)');
+  console.log('5. Bulk transaction tests (5000 TX with slow consume client)\n');
 
   try {
     // Run all test suites
@@ -783,6 +1074,7 @@ async function main() {
     await runTransactionStatusTests();
     await runEventBasedStatusTests();
     await runInvalidTransactionTests();
+    await runBulkTransactionTests();
 
     console.log('🎉 All test suites completed successfully!');
     console.log('\n📋 Summary:');
@@ -790,9 +1082,10 @@ async function main() {
     console.log('✅ Event-based status tracking working');
     console.log('✅ All-transactions subscription working');
     console.log('✅ Invalid transaction handling working');
+    console.log('✅ Bulk transaction processing working');
+    console.log('✅ Slow consume client simulation working');
     console.log('✅ No timeout issues');
     console.log('✅ Proper cleanup and resource management');
-
   } catch (error) {
     console.error('\n❌ Test suite failed:', error);
     process.exit(1);

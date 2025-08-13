@@ -30,7 +30,6 @@ const (
 	TransactionStatus_CONFIRMED TransactionStatus = 2 // Transaction is included in a block
 	TransactionStatus_FINALIZED TransactionStatus = 3 // Transaction is finalized (block has enough votes)
 	TransactionStatus_FAILED    TransactionStatus = 4 // Transaction failed validation
-	TransactionStatus_EXPIRED   TransactionStatus = 5 // Transaction expired (timeout)
 )
 
 // Enum value maps for TransactionStatus.
@@ -41,7 +40,6 @@ var (
 		2: "CONFIRMED",
 		3: "FINALIZED",
 		4: "FAILED",
-		5: "EXPIRED",
 	}
 	TransactionStatus_value = map[string]int32{
 		"UNKNOWN":   0,
@@ -49,7 +47,6 @@ var (
 		"CONFIRMED": 2,
 		"FINALIZED": 3,
 		"FAILED":    4,
-		"EXPIRED":   5,
 	}
 )
 
@@ -548,15 +545,14 @@ const file_tx_proto_rawDesc = "" +
 	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
 	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"#\n" +
-	"!SubscribeTransactionStatusRequest*d\n" +
+	"!SubscribeTransactionStatusRequest*W\n" +
 	"\x11TransactionStatus\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\v\n" +
 	"\aPENDING\x10\x01\x12\r\n" +
 	"\tCONFIRMED\x10\x02\x12\r\n" +
 	"\tFINALIZED\x10\x03\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x04\x12\v\n" +
-	"\aEXPIRED\x10\x052\xa6\x02\n" +
+	"\x06FAILED\x10\x042\xa6\x02\n" +
 	"\tTxService\x120\n" +
 	"\vTxBroadcast\x12\x10.mmn.SignedTxMsg\x1a\x0f.mmn.TxResponse\x12-\n" +
 	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12T\n" +

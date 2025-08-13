@@ -175,13 +175,7 @@ export enum TransactionStatus {
      *
      * @generated from protobuf enum value: FAILED = 4;
      */
-    FAILED = 4,
-    /**
-     * Transaction expired (timeout)
-     *
-     * @generated from protobuf enum value: EXPIRED = 5;
-     */
-    EXPIRED = 5
+    FAILED = 4
 }
 // @generated message type with reflection information, may provide speed optimized methods
 class TxMsg$Type extends MessageType<TxMsg> {

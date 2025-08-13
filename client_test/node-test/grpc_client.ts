@@ -204,7 +204,7 @@ export class GrpcClient {
           };
           
           // Log the processed update
-          console.log(`📤 Processed Update:`, JSON.stringify(processedUpdate, null, 2));
+          console.log(`📤 Processing Update:`, JSON.stringify(processedUpdate, null, 2));
           
           onUpdate(processedUpdate);
         }
