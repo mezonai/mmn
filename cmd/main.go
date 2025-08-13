@@ -117,18 +117,6 @@ func initializeRocksDBBlockstore(pubKey string, rocksdbDir string) (blockstore.S
 	return rocksdb, nil
 }
 
-// Deprecated: use initializeBlockstore instead
-func initializeFileBlockstore(pubKey string, fileBlockDir string) (blockstore.Store, error) {
-	// File-based storage
-	seed := []byte(pubKey)
-	fbs, err := blockstore.NewBlockStore(fileBlockDir, seed)
-	if err != nil {
-		return nil, fmt.Errorf("init file blockstore: %w", err)
-	}
-
-	return fbs, nil
-}
-
 // initializePoH initializes Proof of History components
 func initializePoH(cfg *config.GenesisConfig) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(configPath)

@@ -8,7 +8,7 @@ type Store interface {
 	Block(slot uint64) *block.Block
 	HasCompleteBlock(slot uint64) bool
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
-	AddBlockPending(b *block.Block) error
+	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
 	Seed() [32]byte
 }

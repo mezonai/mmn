@@ -188,7 +188,7 @@ func (s *RocksDBStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 }
 
 // AddBlockPending adds a new block to the store
-func (s *RocksDBStore) AddBlockPending(b *block.Block) error {
+func (s *RocksDBStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}

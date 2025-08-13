@@ -42,7 +42,7 @@ func (l *Ledger) Balance(addr string) uint64 {
 	return acc.Balance
 }
 
-func (l *Ledger) VerifyBlock(b *block.Block) error {
+func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 	l.mu.RLock()
 	base := l.state
 	l.mu.RUnlock()
@@ -52,11 +52,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 		overlay: make(map[string]*types.SnapshotAccount),
 	}
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil || !tx.Verify() {
-				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
+		for _, tx := range entry.Transactions {
 			if err := view.ApplyTx(tx, l.faucetAddr); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
@@ -328,8 +324,8 @@ type Session struct {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
-	valid := make([][]byte, 0, len(raws))
+func (s *Session) FilterValid(raws [][]byte) ([]*types.Transaction, []error) {
+	valid := make([]*types.Transaction, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
@@ -343,7 +339,7 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 			errs = append(errs, err)
 			continue
 		}
-		valid = append(valid, r)
+		valid = append(valid, tx)
 	}
 	return valid, errs
 }
