@@ -1,8 +1,8 @@
 package utils
 
 import (
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	proto "mmn/client_test/mezon-server-sim/mmn/proto"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	proto "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
 )
 
 func ToProtoTx(tx *domain.Tx) *proto.TxMsg {

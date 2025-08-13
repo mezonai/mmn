@@ -4,12 +4,13 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"mmn/block"
-	"mmn/types"
-	"mmn/utils"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 )
 
 type Ledger struct {
@@ -325,6 +326,23 @@ func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
 type Session struct {
 	ledger *Ledger
 	view   *LedgerView
+}
+
+// Copy session with clone overlay
+func (s *Session) CopyWithOverlayClone() *Session {
+	overlayCopy := make(map[string]*types.SnapshotAccount, len(s.view.overlay))
+	for k, v := range s.view.overlay {
+		accCopy := *v
+		overlayCopy[k] = &accCopy
+	}
+
+	return &Session{
+		ledger: s.ledger,
+		view: &LedgerView{
+			base:    s.view.base,
+			overlay: overlayCopy,
+		},
+	}
 }
 
 // Session API for filtering valid transactions

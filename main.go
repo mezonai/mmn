@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"mmn/cmd"
 	"os"
 	"runtime/debug"
+
+	"github.com/mezonai/mmn/cmd"
 )
 
 func main() {
