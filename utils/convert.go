@@ -30,6 +30,33 @@ func fromPBEntry(e *pb.Entry) (poh.Entry, error) {
 	}, nil
 }
 
+func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
+	entries := make([]poh.PersistentEntry, len(b.Entries))
+	for i, entry := range b.Entries {
+		txHashes := make([]string, len(b.Entries))
+		for i, tx := range entry.Transactions {
+			txHashes[i] = tx.Hash()
+		}
+		entries[i] = poh.PersistentEntry{
+			Hash:     entry.Hash,
+			TxHashes: txHashes,
+		}
+	}
+
+	blk := &block.Block{
+		Slot:      b.Slot,
+		Status:    block.BlockPending,
+		PrevHash:  b.PrevHash,
+		Entries:   entries,
+		LeaderID:  b.LeaderID,
+		Timestamp: b.Timestamp,
+		Hash:      b.Hash,
+		Signature: b.Signature,
+	}
+
+	return blk
+}
+
 func FromProtoBlock(pbBlk *pb.Block) (*block.BroadcastedBlock, error) {
 	var prev [32]byte
 	if len(pbBlk.PrevHash) != 32 {

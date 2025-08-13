@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"mmn/db"
 	"os"
 	"path/filepath"
 	"time"
@@ -54,13 +55,22 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Initialize components with absolute paths
-	bs, err := initializeRocksDBBlockstore(cfg.SelfNode.PubKey, absRocksdbBlockDir)
+	// Initialize databases with absolute paths
+	rocksdb, err := initializeRocksDB(absRocksdbBlockDir)
+	if err != nil {
+		log.Fatalf("Failed to initialize rocksdb: %v", err)
+	}
+	defer rocksdb.Close()
+	txStore, err := initializeRocksDBTxStore(rocksdb)
+	if err != nil {
+		log.Fatalf("Failed to initialize tx store: %v", err)
+	}
+	bs, err := initializeRocksDBBlockstore(cfg.SelfNode.PubKey, rocksdb, txStore)
 	if err != nil {
 		log.Fatalf("Failed to initialize blockstore: %v", err)
 	}
 
-	ld := ledger.NewLedger(cfg.Faucet.Address)
+	ld := ledger.NewLedger(cfg.Faucet.Address, txStore)
 	collector := consensus.NewCollector(len(cfg.PeerNodes) + 1)
 
 	// Initialize PoH components
@@ -103,18 +113,33 @@ func loadConfiguration(nodeName string) (*config.GenesisConfig, error) {
 	return cfg, nil
 }
 
+func initializeRocksDB(rocksdbDir string) (*db.RocksDB, error) {
+	rocksdb, err := db.NewRocksDB(rocksdbDir)
+	if err != nil {
+		return nil, fmt.Errorf("init rocksdb: %w", err)
+	}
+	return rocksdb, nil
+}
+
+func initializeRocksDBTxStore(rocksdb *db.RocksDB) (db.TxStore, error) {
+	txStore, err := db.NewTxRocksStore(rocksdb)
+	if err != nil {
+		return nil, fmt.Errorf("init tx store: %w", err)
+	}
+	return txStore, nil
+}
+
 // initializeBlockstore initializes the block storage backend
-func initializeRocksDBBlockstore(pubKey string, rocksdbDir string) (blockstore.Store, error) {
+func initializeRocksDBBlockstore(pubKey string, rocksdb *db.RocksDB, txStore db.TxStore) (blockstore.Store, error) {
 	seed := []byte(pubKey)
 
 	// Try RocksDB first
-	rocksdb, err := blockstore.NewRocksDBStore(rocksdbDir, seed)
+	blockStore, err := blockstore.NewRocksDBBlockStore(rocksdb, txStore, seed)
 	if err != nil {
 		return nil, fmt.Errorf("init rocksdb blockstore: %w", err)
 	}
-	log.Printf("Using RocksDB blockstore at %s", rocksdbDir)
 
-	return rocksdb, nil
+	return blockStore, nil
 }
 
 // initializePoH initializes Proof of History components

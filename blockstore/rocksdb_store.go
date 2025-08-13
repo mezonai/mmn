@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"mmn/db"
+	"mmn/types"
+	"mmn/utils"
 	"sync"
 
 	"github.com/linxGnu/grocksdb"
@@ -14,10 +16,6 @@ import (
 )
 
 const (
-	// Column family names
-	cfDefault = "default"
-	cfBlocks  = "blocks"
-
 	// Metadata keys
 	keyLatestFinalized = "latest_finalized"
 
@@ -31,43 +29,25 @@ const (
 // - default: metadata (e.g., latest_finalized)
 // - blocks:  key = slot (uint64 BE), value = json(block.Block)
 type RocksDBStore struct {
-	dir             string
 	mu              sync.RWMutex
 	db              *grocksdb.DB
+	txStore         db.TxStore
 	metaCF          *grocksdb.ColumnFamilyHandle
 	blocksCF        *grocksdb.ColumnFamilyHandle
 	latestFinalized uint64
 	seedHash        [32]byte
 }
 
-// NewRocksDBStore opens (or creates) a RocksDB database at dir.
-func NewRocksDBStore(dir string, seed []byte) (Store, error) {
-	if dir == "" {
-		return nil, fmt.Errorf("directory path cannot be empty")
-	}
-
-	opts := grocksdb.NewDefaultOptions()
-	opts.SetCreateIfMissing(true)
-	opts.SetCreateIfMissingColumnFamilies(true)
-
-	cfNames := []string{cfDefault, cfBlocks}
-	cfOpts := []*grocksdb.Options{opts, opts}
-
-	db, handles, err := grocksdb.OpenDbColumnFamilies(opts, filepath.Clean(dir), cfNames, cfOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open RocksDB at %s: %w", dir, err)
-	}
-
+func NewRocksDBBlockStore(rocks *db.RocksDB, txStore db.TxStore, seed []byte) (Store, error) {
 	store := &RocksDBStore{
-		dir:      dir,
-		db:       db,
-		metaCF:   handles[0],
-		blocksCF: handles[1],
+		db:       rocks.DB,
+		txStore:  txStore,
+		metaCF:   rocks.MustGetColumnFamily(db.CfDefault),
+		blocksCF: rocks.MustGetColumnFamily(db.CfBlocks),
 		seedHash: sha256.Sum256(seed),
 	}
 
 	if err := store.loadLatestFinalized(); err != nil {
-		store.Close()
 		return nil, fmt.Errorf("failed to load latest finalized slot: %w", err)
 	}
 
@@ -207,13 +187,7 @@ func (s *RocksDBStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		return err
 	}
 
-	// Marshal and write block
-	bytes, err := json.Marshal(b)
-	if err != nil {
-		return fmt.Errorf("failed to marshal block: %w", err)
-	}
-
-	return s.writeBlock(key, bytes)
+	return s.writeBlock(key, b)
 }
 
 // checkBlockExists verifies that a block doesn't already exist
@@ -235,11 +209,26 @@ func (s *RocksDBStore) checkBlockExists(key []byte, slot uint64) error {
 }
 
 // writeBlock writes a block to RocksDB
-func (s *RocksDBStore) writeBlock(key, value []byte) error {
+func (s *RocksDBStore) writeBlock(key []byte, b *block.BroadcastedBlock) error {
 	wb := grocksdb.NewWriteBatch()
 	defer wb.Destroy()
 
-	wb.PutCF(s.blocksCF, key, value)
+	// Store block
+	blk := utils.BroadcastedBlockToBlock(b)
+	bytes, err := json.Marshal(blk)
+	if err != nil {
+		return fmt.Errorf("failed to marshal block: %w", err)
+	}
+	wb.PutCF(s.blocksCF, key, bytes)
+
+	// Store txs
+	txs := make([]*types.Transaction, 0)
+	for _, entry := range b.Entries {
+		txs = append(txs, entry.Transactions...)
+	}
+	if err := s.txStore.StoreBatch(txs); err != nil {
+		return fmt.Errorf("failed to store txs: %w", err)
+	}
 
 	wo := grocksdb.NewDefaultWriteOptions()
 	defer wo.Destroy()
