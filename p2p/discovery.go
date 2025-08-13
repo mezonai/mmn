@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"mmn/discovery"
-	"mmn/logx"
 	"time"
+
+	"github.com/mezonai/mmn/discovery"
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"

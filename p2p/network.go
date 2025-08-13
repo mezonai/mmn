@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"mmn/blockstore"
-	"mmn/discovery"
-	"mmn/logx"
+
+	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/discovery"
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"

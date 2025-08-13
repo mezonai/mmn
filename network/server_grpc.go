@@ -4,16 +4,20 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"mmn/blockstore"
-	"mmn/consensus"
-	"mmn/ledger"
-	"mmn/mempool"
-	pb "mmn/proto"
-	"mmn/utils"
-	"mmn/validator"
 	"net"
+	"time"
+
+	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/mempool"
+	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/utils"
+	"github.com/mezonai/mmn/validator"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type server struct {
@@ -21,6 +25,7 @@ type server struct {
 	pb.UnimplementedVoteServiceServer
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
+	pb.UnimplementedHealthServiceServer
 	pubKeys       map[string]ed25519.PublicKey
 	blockDir      string
 	ledger        *ledger.Ledger
@@ -47,11 +52,13 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		validator:     validator,
 		mempool:       mempool,
 	}
+
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
+	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, _ := net.Listen("tcp", addr)
 	go grpcSrv.Serve(lis)
 	fmt.Printf("[gRPC] server listening on %s", addr)
@@ -106,4 +113,111 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		Total: total,
 		Txs:   txMetas,
 	}, nil
+}
+
+// Health check methods
+func (s *server) Check(ctx context.Context, in *pb.Empty) (*pb.HealthCheckResponse, error) {
+	return s.performHealthCheck(ctx)
+}
+
+func (s *server) Watch(in *pb.Empty, stream pb.HealthService_WatchServer) error {
+	ticker := time.NewTicker(5 * time.Second) // Send health status every 5 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-ticker.C:
+			resp, err := s.performHealthCheck(stream.Context())
+			if err != nil {
+				return err
+			}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// performHealthCheck performs the actual health check logic
+func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckResponse, error) {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return nil, status.Errorf(codes.DeadlineExceeded, "health check timeout")
+	default:
+	}
+
+	// Get current node status
+	now := time.Now()
+
+	// Calculate uptime (assuming server started at some point)
+	// In a real implementation, you'd track server start time
+	uptime := uint64(now.Unix()) // Placeholder for actual uptime
+
+	// Get current slot and block height
+	currentSlot := uint64(0)
+	blockHeight := uint64(0)
+
+	if s.validator != nil && s.validator.Recorder != nil {
+		currentSlot = s.validator.Recorder.CurrentSlot()
+	}
+
+	if s.blockStore != nil {
+		// Get the latest finalized block height
+		// For now, we'll use a simple approach to get block height
+		// In a real implementation, you might want to track this separately
+		blockHeight = currentSlot // Use current slot as approximation
+	}
+
+	// Get mempool size
+	mempoolSize := uint64(0)
+	if s.mempool != nil {
+		mempoolSize = uint64(s.mempool.Size())
+	}
+
+	// Determine if node is leader or follower
+	isLeader := false
+	isFollower := false
+	if s.validator != nil {
+		isLeader = s.validator.IsLeader(currentSlot)
+		isFollower = s.validator.IsFollower(currentSlot)
+	}
+
+	// Check if core services are healthy
+	status := pb.HealthCheckResponse_SERVING
+
+	// Basic health checks
+	if s.ledger == nil {
+		status = pb.HealthCheckResponse_NOT_SERVING
+	}
+	if s.blockStore == nil {
+		status = pb.HealthCheckResponse_NOT_SERVING
+	}
+	if s.mempool == nil {
+		status = pb.HealthCheckResponse_NOT_SERVING
+	}
+
+	// Create response
+	resp := &pb.HealthCheckResponse{
+		Status:       status,
+		NodeId:       s.selfID,
+		Timestamp:    uint64(now.Unix()),
+		CurrentSlot:  currentSlot,
+		BlockHeight:  blockHeight,
+		MempoolSize:  mempoolSize,
+		IsLeader:     isLeader,
+		IsFollower:   isFollower,
+		Version:      "1.0.0", // You can make this configurable
+		Uptime:       uptime,
+		ErrorMessage: "",
+	}
+
+	// If there are any errors, set status accordingly
+	if status == pb.HealthCheckResponse_NOT_SERVING {
+		resp.ErrorMessage = "One or more core services are not available"
+	}
+
+	return resp, nil
 }

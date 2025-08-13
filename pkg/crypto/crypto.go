@@ -27,12 +27,13 @@ import (
 	"hash"
 	"io"
 	"math/big"
-	"mmn/pkg/common"
-	"mmn/pkg/rlp"
 	"os"
 	"sync"
 
-	"mmn/pkg/common/math"
+	"github.com/mezonai/mmn/pkg/common"
+	"github.com/mezonai/mmn/pkg/rlp"
+
+	"github.com/mezonai/mmn/pkg/common/math"
 
 	"golang.org/x/crypto/sha3"
 )

@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"mmn/logx"
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"

@@ -3,12 +3,13 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"mmn/block"
-	"mmn/blockstore"
-	"mmn/consensus"
-	"mmn/types"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/types"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
