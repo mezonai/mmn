@@ -145,9 +145,7 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 		fmt.Printf("[follower] slot %d finalized! votes=%d", vote.Slot, len(s.voteCollector.VotesForSlot(vote.Slot)))
 	}
 
-	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := s.grpcClient.BroadcastVote(ctxTimeout, vote); err != nil {
+	if err := s.grpcClient.BroadcastVote(context.Background(), vote); err != nil {
 		fmt.Printf("[follower] Broadcast vote error: %v", err)
 		return &pb.BroadcastResponse{Ok: false, Error: "broadcast vote failed"}, nil
 	}
