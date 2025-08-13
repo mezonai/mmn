@@ -39,8 +39,10 @@ func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 			txHashes[i] = tx.Hash()
 		}
 		entries[i] = poh.PersistentEntry{
-			Hash:     entry.Hash,
-			TxHashes: txHashes,
+			NumHashes: entry.NumHashes,
+			Hash:      entry.Hash,
+			TxHashes:  txHashes,
+			Tick:      entry.Tick,
 		}
 	}
 
