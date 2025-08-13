@@ -12,8 +12,7 @@ import (
 const (
 	CfDefault = "default"
 	CfBlocks  = "blocks"
-	CfTxHash  = "tx_hash"    // transactions by hash
-	CfAccount = "tx_account" // transaction hashes by account
+	CfTxHash  = "tx_hash" // transactions by hash
 )
 
 type RocksDB struct {
@@ -30,8 +29,8 @@ func NewRocksDB(dir string) (*RocksDB, error) {
 	opts.SetCreateIfMissing(true)
 	opts.SetCreateIfMissingColumnFamilies(true)
 
-	cfNames := []string{CfDefault, CfBlocks, CfTxHash, CfAccount}
-	cfOpts := []*grocksdb.Options{opts, opts, opts, opts}
+	cfNames := []string{CfDefault, CfBlocks, CfTxHash}
+	cfOpts := []*grocksdb.Options{opts, opts, opts}
 
 	db, cfHandles, err := grocksdb.OpenDbColumnFamilies(opts, filepath.Clean(dir), cfNames, cfOpts)
 	if err != nil {

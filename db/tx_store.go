@@ -19,18 +19,16 @@ type TxStore interface {
 
 // TxRocksStore provides transaction storage operations
 type TxRocksStore struct {
-	db          *grocksdb.DB
-	cfTxHash    *grocksdb.ColumnFamilyHandle
-	cfTxAccount *grocksdb.ColumnFamilyHandle
-	mu          sync.RWMutex
+	db       *grocksdb.DB
+	cfTxHash *grocksdb.ColumnFamilyHandle
+	mu       sync.RWMutex
 }
 
 // NewTxRocksStore creates a new transaction store
 func NewTxRocksStore(rocks *RocksDB) (*TxRocksStore, error) {
 	return &TxRocksStore{
-		db:          rocks.DB,
-		cfTxHash:    rocks.MustGetColumnFamily(CfTxHash),
-		cfTxAccount: rocks.MustGetColumnFamily(CfAccount),
+		db:       rocks.DB,
+		cfTxHash: rocks.MustGetColumnFamily(CfTxHash),
 	}, nil
 }
 
@@ -55,12 +53,6 @@ func (ts *TxRocksStore) StoreBatch(txs []*types.Transaction) error {
 		}
 
 		wb.PutCF(ts.cfTxHash, txHashBytes, txData)
-
-		senderKey := fmt.Sprintf("%s:sender", tx.Sender)
-		wb.PutCF(ts.cfTxAccount, []byte(senderKey), txHashBytes)
-
-		recipientKey := fmt.Sprintf("%s:recipient", tx.Recipient)
-		wb.PutCF(ts.cfTxAccount, []byte(recipientKey), txHashBytes)
 	}
 
 	wo := grocksdb.NewDefaultWriteOptions()
@@ -114,36 +106,29 @@ func (ts *TxRocksStore) GetBatch(txHashes []string) ([]*types.Transaction, error
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
-	transactions := make([]*types.Transaction, 0, len(txHashes))
-	notFound := make([]string, 0)
-
-	// Retrieve transactions one by one using GetCF for each hash
+	txHashesBytes := make([][]byte, 0, len(txHashes))
 	for _, txHash := range txHashes {
-		data, err := ts.db.GetCF(ro, ts.cfTxHash, []byte(txHash))
-		if err != nil {
-			return nil, fmt.Errorf("failed to read transaction %s: %w", txHash, err)
-		}
+		txHashesBytes = append(txHashesBytes, []byte(txHash))
+	}
 
-		if !data.Exists() {
-			notFound = append(notFound, txHash)
-			data.Free()
+	transactions := make([]*types.Transaction, 0, len(txHashes))
+	txs, err := ts.db.MultiGetCF(ro, ts.cfTxHash, txHashesBytes...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read transactions: %w", err)
+	}
+	for i, tx := range txs {
+		if !tx.Exists() {
+			tx.Free()
 			continue
 		}
 
-		// Deserialize transaction
-		var tx types.Transaction
-		err = json.Unmarshal(data.Data(), &tx)
-		data.Free()
+		var t types.Transaction
+		err = json.Unmarshal(tx.Data(), &t)
+		tx.Free()
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txHash, err)
+			return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txHashes[i], err)
 		}
-
-		transactions = append(transactions, &tx)
-	}
-
-	// If some transactions were not found, return an error with details
-	if len(notFound) > 0 {
-		return transactions, fmt.Errorf("some transactions not found: %v", notFound)
+		transactions = append(transactions, &t)
 	}
 
 	return transactions, nil

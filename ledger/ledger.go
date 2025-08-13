@@ -82,19 +82,9 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
-			rec := types.TxRecord{
-				Slot:      b.Slot,
-				Amount:    tx.Amount,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Timestamp: tx.Timestamp,
-				TextData:  tx.TextData,
-				Type:      tx.Type,
-				Nonce:     tx.Nonce,
-			}
-			addHistory(l.state[tx.Sender], rec)
+			addHistory(l.state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
-				addHistory(l.state[tx.Recipient], rec)
+				addHistory(l.state[tx.Recipient], tx)
 			}
 		}
 	}
@@ -131,12 +121,12 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr string) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
-		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
+		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
 		sender = state[tx.Sender]
 	}
 	recipient, ok := state[tx.Recipient]
 	if !ok {
-		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
+		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0}
 		recipient = state[tx.Recipient]
 	}
 
@@ -162,8 +152,8 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr 
 	return nil
 }
 
-func addHistory(acc *types.Account, rec types.TxRecord) {
-	acc.History = append(acc.History, rec)
+func addHistory(acc *types.Account, tx *types.Transaction) {
+	acc.History = append(acc.History, tx.Hash())
 }
 
 func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
@@ -175,19 +165,23 @@ func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
 }
 
 // TODO: need to optimize this by using BadgerDB
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []types.TxRecord) {
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*types.Transaction) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	txs := make([]types.TxRecord, 0)
+	txs := make([]*types.Transaction, 0)
 	acc, ok := l.state[addr]
 	if !ok {
 		return 0, txs
 	}
 
 	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]types.TxRecord, 0)
-	for _, tx := range acc.History {
+	filteredHistory := make([]*types.Transaction, 0)
+	transactions, err := l.txStore.GetBatch(acc.History)
+	if err != nil {
+		return 0, txs
+	}
+	for _, tx := range transactions {
 		if filter == 0 {
 			filteredHistory = append(filteredHistory, tx)
 		} else if filter == 1 && tx.Sender == addr {
