@@ -41,7 +41,7 @@ type Validator struct {
 	session     *ledger.Session
 	lastSession *ledger.Session
 	collector   *consensus.Collector
-	eventRouter *events.EventRouter // Event router for transaction status updates
+	eventRouter *events.EventRouter
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
