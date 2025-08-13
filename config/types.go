@@ -2,12 +2,12 @@ package config
 
 // NodeConfig represents a node's configuration
 type NodeConfig struct {
-	PubKey           string `yaml:"pubkey"`
-	PrivKeyPath      string `yaml:"privkey_path"`
-	ListenAddr       string `yaml:"listen_addr"`
-	Libp2pAddr       string `yaml:"libp2p_addr"`
-	GRPCAddr         string `yaml:"grpc_addr"`
-	BootStrapAddress string `yaml:"bootstrap_address"`
+	PubKey             string   `yaml:"pubkey"`
+	PrivKeyPath        string   `yaml:"privkey_path"`
+	ListenAddr         string   `yaml:"listen_addr"`
+	Libp2pAddr         string   `yaml:"libp2p_addr"`
+	GRPCAddr           string   `yaml:"grpc_addr"`
+	BootStrapAddresses []string `yaml:"bootstrap_addresses"`
 }
 
 // LeaderSchedule represents a leader schedule entry
@@ -25,7 +25,6 @@ type Faucet struct {
 // GenesisConfig holds the configuration from genesis.yml
 type GenesisConfig struct {
 	SelfNode       NodeConfig       `yaml:"self_node"`
-	PeerNodes      []NodeConfig     `yaml:"peer_nodes"`
 	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
 	Faucet         Faucet           `yaml:"faucet"`
 }

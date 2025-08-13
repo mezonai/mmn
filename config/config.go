@@ -29,7 +29,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: SelfNode=%+v, PeerNodes=%d, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.PeerNodes), len(cfgFile.Config.LeaderSchedule))
+	log.Printf("[config] Successfully loaded config: SelfNode=%+v, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.LeaderSchedule))
 	return &cfgFile.Config, nil
 }
 

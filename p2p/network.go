@@ -23,9 +23,8 @@ func NewNetWork(
 	selfPubKey string,
 	selfPrivKey ed25519.PrivateKey,
 	listenAddr string,
-	bootstrapPeer string,
+	bootstrapPeers []string,
 	blockStore blockstore.Store,
-	isBootstrap bool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -43,29 +42,23 @@ func NewNetWork(
 		libp2p.NATPortMap(),
 		libp2p.EnableNATService(),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
-			dhtMode := dht.ModeClient
-			if isBootstrap {
-				dhtMode = dht.ModeServer
-			}
-			ddht, err = dht.New(ctx, h, dht.Mode(dhtMode))
+			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
 			return ddht, err
 		}),
 	)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create libp2p host: %w", err)
 	}
 
 	if err := ddht.Bootstrap(ctx); err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to bootstrap DHT: %w", err)
-	}
-
-	if isBootstrap {
-		HandleNewpPeerConnected(h)
-		NotifyNewPeerConnected(h)
 	}
 
 	customDiscovery, err := discovery.NewDHTDiscovery(ctx, cancel, h, ddht, discovery.DHTConfig{})
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create custom discovery: %w", err)
 	}
 
@@ -73,6 +66,7 @@ func NewNetWork(
 
 	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()))
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)
 	}
 
@@ -87,18 +81,14 @@ func NewNetWork(
 		txStreams:    make(map[peer.ID]network.Stream),
 		blockStore:   blockStore,
 		maxPeers:     int(MaxPeers),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 
-	ln.setupHandlers(bootstrapPeer)
+	ln.setupHandlers(ctx, bootstrapPeers) // ✅ truyền ctx xuống
 	go ln.Discovery(customDiscovery, ctx, h)
 
 	logx.Info("NETWORK", fmt.Sprintf("Libp2p network started with ID: %s", h.ID().String()))
-
-	for _, addr := range h.Addrs() {
-		fullAddr := fmt.Sprintf("%s/p2p/%s", addr.String(), h.ID().String())
-		logx.Info("BOOTSTRAP NODE ADDRESS", "Full multiaddr:", fullAddr)
-	}
-
 	for _, addr := range h.Addrs() {
 		logx.Info("NETWORK", "Listening on:", addr.String())
 	}
@@ -106,37 +96,47 @@ func NewNetWork(
 	return ln, nil
 }
 
-func (ln *Libp2pNetwork) setupHandlers(bootstrapPeer string) {
+func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) {
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
-	ln.SetupPubSubTopics()
+	ln.SetupPubSubTopics(ctx)
 
-	if bootstrapPeer != "" {
+	for _, bootstrapPeer := range bootstrapPeers {
+		if bootstrapPeer == "" {
+			continue
+		}
+
 		addr, err := ma.NewMultiaddr(bootstrapPeer)
 		if err != nil {
-			logx.Error("NETWORK:SETUP", err.Error())
-			return
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", bootstrapPeer, err.Error())
+			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
-			logx.Error("NETWORK:SETUP", err.Error())
-			return
+			logx.Error("NETWORK:SETUP", "Failed to parse peer info:", bootstrapPeer, err.Error())
+			continue
 		}
+
+		if err := ln.host.Connect(ctx, *info); err != nil {
+			logx.Error("NETWORK:SETUP", "Failed to connect to bootstrap:", bootstrapPeer, err.Error())
+			continue
+		}
+
+		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 
 		go ln.RequestNodeInfo(bootstrapPeer, info)
-		// TODO handle sync block here
 		// go ln.RequestBlockSync(ln.blockStore.LatestSlot() + 1)
 
-		if len(ln.host.Network().Peers()) < ln.maxPeers {
-			if err := ln.host.Connect(context.Background(), *info); err != nil {
-				logx.Error("NETWORK:SETUP", "Failed to connect bootstrap peer: "+err.Error())
-			} else {
-				logx.Info("NETWORK:SETUP", "Connected to bootstrap peer "+info.ID.String())
-			}
-		}
+		break
 	}
 
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Libp2p network started with ID: %s", ln.host.ID().String()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
+}
+
+// this func will call if node shutdown for now just cancle when error
+func (ln *Libp2pNetwork) Close() {
+	ln.cancel()
+	ln.host.Close()
 }

@@ -64,7 +64,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs *blockstore.BlockStore, collector *consensus.Collector, mp *mempool.Mempool) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
 	ln.SetCallbacks(
 		func(blk *block.Block) error {
 			logx.Info("BLOCK", "Received block from network: slot=", blk.Slot)
@@ -157,39 +157,38 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	)
 }
 
-func (ln *Libp2pNetwork) SetupPubSubTopics() {
+func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
-			go ln.HandleBlockTopic(sub)
+			go ln.HandleBlockTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicVotes, err = ln.pubsub.Join(TopicVotes); err == nil {
 		if sub, err := ln.topicVotes.Subscribe(); err == nil {
-			go ln.HandleVoteTopic(sub)
+			go ln.HandleVoteTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
 		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			go ln.HandleTxTopic(sub)
+			go ln.HandleTxTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
 		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
-			go ln.handleBlockSyncRequestTopic(sub)
+			go ln.handleBlockSyncRequestTopic(ctx, sub)
 		}
 	}
 
 	if ln.topicBlockSyncRes, err = ln.pubsub.Join(BlockSyncResponseTopic); err == nil {
 		if sub, err := ln.topicBlockSyncRes.Subscribe(); err == nil {
-			go ln.handleBlockSyncResponseTopic(sub)
+			go ln.handleBlockSyncResponseTopic(ctx, sub)
 		}
 	}
-
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(
@@ -253,4 +252,8 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) e
 		}
 	}
 	return nil
+}
+
+func (ln *Libp2pNetwork) GetPeersConnected() int {
+	return len(ln.peers)
 }

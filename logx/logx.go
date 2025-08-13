@@ -27,3 +27,15 @@ func Error(category string, content ...interface{}) {
 	coloredCategory := fmt.Sprintf("%s[ERROR][%s]%s", ColorRed, category, ColorReset)
 	logger.Printf("%s: %s", coloredCategory, message)
 }
+
+func Warn(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[WARN][%s]%s", ColorYellow, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
+}
+
+func Debug(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[DEBUG][%s]%s", ColorBlue, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
+}

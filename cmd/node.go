@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"crypto/ed25519"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
 
 	"mmn/api"
@@ -13,6 +17,7 @@ import (
 	"mmn/config"
 	"mmn/consensus"
 	"mmn/ledger"
+	"mmn/logx"
 	"mmn/mempool"
 	"mmn/network"
 	"mmn/p2p"
@@ -26,35 +31,61 @@ const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
 	rocksdbBlockDir = "blockstore/rocksdb"
-
 	// Config paths
 	configPath = "config/config.ini"
 )
 
 var (
-	nodeName    string
-	isbootstrap bool
+	pubKey             string
+	privKeyPath        string
+	listenAddr         string
+	libp2pAddr         string
+	bootstrapAddresses []string
+	grpcAddr           string
+	// faucet
+	faucetAddress  string
+	faucetAmount   string
+	leaderSchedule []config.LeaderSchedule
 )
 
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run the blockchain node",
 	Run: func(cmd *cobra.Command, args []string) {
-		runNode(nodeName, isbootstrap)
+		runNode()
+
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().StringVarP(&nodeName, "node", "n", "node1", "The node to run")
-	runCmd.Flags().BoolVar(&isbootstrap, "bootstrap", false, "Run as bootstrap node")
+	// Load configuration
+	cfg, err := loadConfiguration("node")
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+	runCmd.Flags().StringVar(&pubKey, "pubkey", cfg.SelfNode.PubKey, "Self node public key")
+	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", cfg.SelfNode.PrivKeyPath, "Path to private key file")
+	runCmd.Flags().StringVar(&listenAddr, "listen-addr", cfg.SelfNode.ListenAddr, "Listen address for API server :<port>")
+	runCmd.Flags().StringVar(&listenAddr, "grpc-addr", cfg.SelfNode.ListenAddr, "Listen address for Grpc server :<port>")
+	runCmd.Flags().StringVar(&libp2pAddr, "libp2p-addr", cfg.SelfNode.Libp2pAddr, "LibP2P listen multiaddress /ip4/0.0.0.0/tcp/<port>")
+	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", cfg.SelfNode.BootStrapAddresses, "List of bootstrap peer multiaddresses")
+	runCmd.Flags().StringVar(&faucetAddress, "faucet-address", cfg.Faucet.Address, "Faucet Address")
+	runCmd.Flags().StringVar(&faucetAmount, "faucet-amount", string(cfg.Faucet.Amount), "Faucet Amount")
+	leaderSchedule = cfg.LeaderSchedule
 }
 
-func runNode(currentNode string, isbootstrap bool) {
+func runNode() {
+	// Handle Docker stop or Ctrl+C
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+
 	// Get current directory and create absolute path
 	currentDir, err := os.Getwd()
 	if err != nil {
-		log.Fatalf("Failed to get current directory: %v", err)
+		logx.Warn("Failed to get current directory: %v", err)
 	}
 
 	// Create absolute path for storage
@@ -62,59 +93,86 @@ func runNode(currentNode string, isbootstrap bool) {
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(absRocksdbBlockDir, 0755); err != nil {
-		log.Printf("Warning: Failed to create directory %s: %v", absRocksdbBlockDir, err)
-	}
-
-	// Load configuration
-	cfg, err := loadConfiguration(currentNode)
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		logx.Warn("Warning: Failed to create directory %s: %v", absRocksdbBlockDir, err)
 	}
 
 	// Initialize components with absolute paths
-	bs, err := initializeRocksDBBlockstore(cfg.SelfNode.PubKey, absRocksdbBlockDir)
+	bs, err := initializeRocksDBBlockstore(pubKey, absRocksdbBlockDir)
 	if err != nil {
-		log.Fatalf("Failed to initialize blockstore: %v", err)
+		logx.Warn("Failed to initialize blockstore: %v", err)
 	}
 
-	ld := ledger.NewLedger(cfg.Faucet.Address)
-	collector := consensus.NewCollector(len(cfg.PeerNodes) + 1)
+	ld := ledger.NewLedger(faucetAddress)
+
+	faucetAmountNumber, err := strconv.ParseUint(faucetAmount, 10, 64)
+	if err != nil {
+		logx.Error("Faucet Amount Not A Number", err)
+		return
+	}
+
+	cfg := config.GenesisConfig{
+		SelfNode: config.NodeConfig{
+			PubKey:             pubKey,
+			PrivKeyPath:        privKeyPath,
+			ListenAddr:         listenAddr,
+			Libp2pAddr:         libp2pAddr,
+			GRPCAddr:           grpcAddr,
+			BootStrapAddresses: bootstrapAddresses,
+		},
+		LeaderSchedule: leaderSchedule,
+		Faucet: config.Faucet{
+			Address: faucetAddress,
+			Amount:  faucetAmountNumber,
+		},
+	}
 
 	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg)
+	_, pohService, recorder, err := initializePoH(&cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
 
 	// Load private key
-	privKey, err := config.LoadEd25519PrivKey(cfg.SelfNode.PrivKeyPath)
+	privKey, err := config.LoadEd25519PrivKey(privKeyPath)
 	if err != nil {
 		log.Fatalf("load private key: %w", err)
 	}
 
 	// Initialize network
-	netClient, err := initializeNetwork(cfg.SelfNode, bs, privKey)
+	libP2pClient, err := initializeNetwork(cfg.SelfNode, bs, privKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
 	// Initialize mempool
-	mp, err := initializeMempool(netClient)
+	mp, err := initializeMempool(libP2pClient)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
+	collector := consensus.NewCollector(libP2pClient.GetPeersConnected() + 1)
+
+	libP2pClient.SetupCallbacks(ld, privKey, cfg.SelfNode, bs, collector, mp)
+
 	// Initialize validator
-	val, err := initializeValidator(cfg, pohService, recorder, mp, netClient, bs, ld, collector, privKey)
+	val, err := initializeValidator(&cfg, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
 	// Start services
-	startServices(cfg, netClient, ld, collector, val, bs, mp)
+	startServices(&cfg, libP2pClient, ld, collector, val, bs, mp)
 
-	// Block forever
-	select {}
+	go func() {
+		<-sigCh
+		log.Println("Shutting down node...")
+		// for now just shutdown p2p network
+		libP2pClient.Close()
+		cancel()
+	}()
+
+	//  block until cancel
+	<-ctx.Done()
 
 }
 
@@ -187,9 +245,8 @@ func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25
 		self.PubKey,
 		privKey,
 		self.Libp2pAddr,
-		self.BootStrapAddress,
+		self.BootStrapAddresses,
 		bs,
-		isbootstrap,
 	)
 
 	return libp2pNetwork, err
@@ -266,4 +323,34 @@ func startServices(cfg *config.GenesisConfig, p2pClient *p2p.Libp2pNetwork, ld *
 	// Start API server
 	apiSrv := api.NewAPIServer(mp, ld, cfg.SelfNode.ListenAddr)
 	apiSrv.Start()
+}
+
+func mergeWithDefaultConfig(defaultCfg, loadedCfg *config.GenesisConfig) *config.GenesisConfig {
+	if loadedCfg.Faucet.Address == "" {
+		loadedCfg.Faucet.Address = defaultCfg.Faucet.Address
+	}
+	if loadedCfg.Faucet.Amount == 0 {
+		loadedCfg.Faucet.Amount = defaultCfg.Faucet.Amount
+	}
+	if loadedCfg.SelfNode.PubKey == "" {
+		loadedCfg.SelfNode.PubKey = defaultCfg.SelfNode.PubKey
+	}
+	if loadedCfg.SelfNode.PrivKeyPath == "" {
+		loadedCfg.SelfNode.PrivKeyPath = defaultCfg.SelfNode.PrivKeyPath
+	}
+	if loadedCfg.SelfNode.ListenAddr == "" {
+		loadedCfg.SelfNode.ListenAddr = defaultCfg.SelfNode.ListenAddr
+	}
+	if loadedCfg.SelfNode.Libp2pAddr == "" {
+		loadedCfg.SelfNode.Libp2pAddr = defaultCfg.SelfNode.Libp2pAddr
+	}
+	if loadedCfg.SelfNode.GRPCAddr == "" {
+		loadedCfg.SelfNode.GRPCAddr = defaultCfg.SelfNode.GRPCAddr
+	}
+	if len(loadedCfg.SelfNode.BootStrapAddresses) == 0 {
+		loadedCfg.SelfNode.BootStrapAddresses = defaultCfg.SelfNode.BootStrapAddresses
+	}
+	loadedCfg.LeaderSchedule = defaultCfg.LeaderSchedule
+
+	return loadedCfg
 }
