@@ -104,7 +104,7 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 		fmt.Printf("[follower] Store block error: %v", err)
 	} else {
 		fmt.Printf("[follower] Stored block slot=%d", blk.Slot)
-		
+
 		// Publish events for transactions included in this block
 		if s.eventRouter != nil {
 			blockHashHex := hex.EncodeToString(blk.Hash[:])
@@ -157,14 +157,14 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 			fmt.Printf("[follower] Mark block as finalized error: %v", err)
 			return &pb.BroadcastResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
-		
+
 		// Publish transaction finalization events for each transaction in the block
 		if s.eventRouter != nil {
 			block := s.blockStore.Block(vote.Slot)
 			if block != nil {
 				blockHashHex := hex.EncodeToString(block.Hash[:])
 				blockTimestamp := time.Unix(0, int64(block.Timestamp))
-				
+
 				// Publish TransactionFinalized events for each transaction
 				// This ensures specific transaction subscribers get notified of finalization
 				for _, entry := range block.Entries {
@@ -178,12 +178,9 @@ func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastR
 						s.eventRouter.PublishTransactionEvent(event)
 					}
 				}
-				
-				// Also publish the block finalization event for all-events subscribers
-				s.eventRouter.PublishBlockFinalizedWithTimestamp(vote.Slot, blockHashHex, blockTimestamp)
 			}
 		}
-		
+
 		fmt.Printf("[follower] slot %d finalized! votes=%d", vote.Slot, len(s.voteCollector.VotesForSlot(vote.Slot)))
 	}
 
@@ -232,14 +229,14 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 			fmt.Printf("[consensus] Mark block as finalized error: %v\n", err)
 			return &pb.VoteResponse{Ok: false, Error: "mark block as finalized failed"}, nil
 		}
-		
+
 		// Publish transaction finalization events for each transaction in the block
 		if s.eventRouter != nil {
 			block := s.blockStore.Block(v.Slot)
 			if block != nil {
 				blockHashHex := hex.EncodeToString(block.Hash[:])
 				blockTimestamp := time.Unix(0, int64(block.Timestamp))
-				
+
 				// Publish TransactionFinalized events for each transaction
 				// This ensures specific transaction subscribers get notified of finalization
 				for _, entry := range block.Entries {
@@ -253,12 +250,9 @@ func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse
 						s.eventRouter.PublishTransactionEvent(event)
 					}
 				}
-				
-				// Also publish the block finalization event for all-events subscribers
-				s.eventRouter.PublishBlockFinalizedWithTimestamp(v.Slot, blockHashHex, blockTimestamp)
 			}
 		}
-		
+
 		fmt.Printf("[consensus] slot %d finalized!\n", v.Slot)
 	}
 
@@ -356,7 +350,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			resp.BlockSlot = slot
 			resp.BlockHash = hex.EncodeToString(blkHash[:])
 			resp.Confirmations = s.blockStore.GetConfirmations(slot)
-			
+
 			// Determine status based on confirmations
 			if resp.Confirmations > 1 {
 				resp.Status = pb.TransactionStatus_FINALIZED
@@ -409,7 +403,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 	case *events.TransactionIncludedInBlock:
 		// Transaction included in block = CONFIRMED status
 		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
-		
+
 		return &pb.TransactionStatusUpdate{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_CONFIRMED,
@@ -422,7 +416,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 	case *events.TransactionFinalized:
 		// Transaction finalized = FINALIZED status
 		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
-		
+
 		return &pb.TransactionStatusUpdate{
 			TxHash:        txHash,
 			Status:        pb.TransactionStatus_FINALIZED,
@@ -439,21 +433,6 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ErrorMessage:  e.ErrorMessage(),
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
-		}
-
-	case *events.BlockFinalized:
-		// Check if our transaction is in this finalized block
-		if slot, _, _, found := s.blockStore.GetTransactionBlockInfo(txHash); found && slot == e.BlockSlot() {
-			confirmations := s.blockStore.GetConfirmations(slot)
-			
-			return &pb.TransactionStatusUpdate{
-				TxHash:        txHash,
-				Status:        pb.TransactionStatus_FINALIZED,
-				BlockSlot:     e.BlockSlot(),
-				BlockHash:     e.BlockHash(),
-				Confirmations: confirmations,
-				Timestamp:     uint64(e.Timestamp().Unix()),
-			}
 		}
 	}
 

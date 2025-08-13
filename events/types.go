@@ -9,16 +9,15 @@ import (
 type EventType string
 
 const (
-    EventTransactionAddedToMempool EventType = "TransactionAddedToMempool"
-    EventTransactionIncludedInBlock EventType = "TransactionIncludedInBlock"
-    EventTransactionFinalized       EventType = "TransactionFinalized"
-    EventTransactionFailed          EventType = "TransactionFailed"
-    EventBlockFinalized             EventType = "BlockFinalized"
+	EventTransactionAddedToMempool  EventType = "TransactionAddedToMempool"
+	EventTransactionIncludedInBlock EventType = "TransactionIncludedInBlock"
+	EventTransactionFinalized       EventType = "TransactionFinalized"
+	EventTransactionFailed          EventType = "TransactionFailed"
 )
 
 // BlockchainEvent represents any event that occurs in the blockchain
 type BlockchainEvent interface {
-    Type() EventType
+	Type() EventType
 	Timestamp() time.Time
 	TxHash() string
 }
@@ -39,7 +38,7 @@ func NewTransactionAddedToMempool(txHash string, tx *types.Transaction) *Transac
 }
 
 func (e *TransactionAddedToMempool) Type() EventType {
-    return EventTransactionAddedToMempool
+	return EventTransactionAddedToMempool
 }
 
 func (e *TransactionAddedToMempool) Timestamp() time.Time {
@@ -76,7 +75,7 @@ func NewTransactionIncludedInBlockWithTimestamp(txHash string, blockSlot uint64,
 }
 
 func (e *TransactionIncludedInBlock) Type() EventType {
-    return EventTransactionIncludedInBlock
+	return EventTransactionIncludedInBlock
 }
 
 func (e *TransactionIncludedInBlock) Timestamp() time.Time {
@@ -117,7 +116,7 @@ func NewTransactionFinalizedWithTimestamp(txHash string, blockSlot uint64, block
 }
 
 func (e *TransactionFinalized) Type() EventType {
-    return EventTransactionFinalized
+	return EventTransactionFinalized
 }
 
 func (e *TransactionFinalized) Timestamp() time.Time {
@@ -152,7 +151,7 @@ func NewTransactionFailed(txHash string, errorMessage string) *TransactionFailed
 }
 
 func (e *TransactionFailed) Type() EventType {
-    return EventTransactionFailed
+	return EventTransactionFailed
 }
 
 func (e *TransactionFailed) Timestamp() time.Time {
@@ -165,43 +164,4 @@ func (e *TransactionFailed) TxHash() string {
 
 func (e *TransactionFailed) ErrorMessage() string {
 	return e.errorMessage
-}
-
-// BlockFinalized event when a block is finalized
-type BlockFinalized struct {
-	blockSlot uint64
-	blockHash string
-	timestamp time.Time
-}
-
-func NewBlockFinalized(blockSlot uint64, blockHash string) *BlockFinalized {
-	return NewBlockFinalizedWithTimestamp(blockSlot, blockHash, time.Now())
-}
-
-func NewBlockFinalizedWithTimestamp(blockSlot uint64, blockHash string, timestamp time.Time) *BlockFinalized {
-	return &BlockFinalized{
-		blockSlot: blockSlot,
-		blockHash: blockHash,
-		timestamp: timestamp,
-	}
-}
-
-func (e *BlockFinalized) Type() EventType {
-    return EventBlockFinalized
-}
-
-func (e *BlockFinalized) Timestamp() time.Time {
-	return e.timestamp
-}
-
-func (e *BlockFinalized) TxHash() string {
-	return "" // Block events don't have a specific tx hash
-}
-
-func (e *BlockFinalized) BlockSlot() uint64 {
-	return e.blockSlot
-}
-
-func (e *BlockFinalized) BlockHash() string {
-	return e.blockHash
 }

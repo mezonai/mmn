@@ -88,49 +88,6 @@ func TestBlockchainEvents(t *testing.T) {
 	if failedEvent.ErrorMessage() != "insufficient funds" {
 		t.Errorf("Expected error message 'insufficient funds', got %s", failedEvent.ErrorMessage())
 	}
-
-	// Test BlockFinalized
-	blockFinalizedEvent := NewBlockFinalized(123, "block-hash")
-	if blockFinalizedEvent.Type() != "BlockFinalized" {
-		t.Errorf("Expected BlockFinalized, got %s", blockFinalizedEvent.Type())
-	}
-	if blockFinalizedEvent.BlockSlot() != 123 {
-		t.Errorf("Expected block slot 123, got %d", blockFinalizedEvent.BlockSlot())
-	}
-	if blockFinalizedEvent.BlockHash() != "block-hash" {
-		t.Errorf("Expected block hash 'block-hash', got %s", blockFinalizedEvent.BlockHash())
-	}
-}
-
-func TestEventRouter(t *testing.T) {
-	eventBus := NewEventBus()
-	eventRouter := NewEventRouter(eventBus)
-
-	// Subscribe to all events
-	eventChan := eventRouter.Subscribe()
-
-	// Publish block finalized event
-	eventRouter.PublishBlockFinalized(123, "block-hash")
-
-	// Wait for event
-	select {
-	case event := <-eventChan:
-		if event.Type() != "BlockFinalized" {
-			t.Errorf("Expected BlockFinalized, got %s", event.Type())
-		}
-		if blockEvent, ok := event.(*BlockFinalized); ok {
-			if blockEvent.BlockSlot() != 123 {
-				t.Errorf("Expected block slot 123, got %d", blockEvent.BlockSlot())
-			}
-		} else {
-			t.Error("Expected BlockFinalized event type")
-		}
-	case <-time.After(1 * time.Second):
-		t.Error("Timeout waiting for event")
-	}
-
-	// Clean up
-	eventRouter.Unsubscribe(eventChan)
 }
 
 func TestMultipleSubscribers(t *testing.T) {
