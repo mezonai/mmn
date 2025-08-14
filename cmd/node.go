@@ -244,18 +244,6 @@ func initializeBlockstore(pubKey string, dataDir string, backend string) (blocks
 	return blockstore.CreateStore(config, seed)
 }
 
-// Deprecated: use initializeBlockstore instead
-func initializeFileBlockstore(pubKey string, fileBlockDir string) (blockstore.Store, error) {
-	// File-based storage
-	seed := []byte(pubKey)
-	fbs, err := blockstore.NewBlockStore(fileBlockDir, seed)
-	if err != nil {
-		return nil, fmt.Errorf("init file blockstore: %w", err)
-	}
-
-	return fbs, nil
-}
-
 // initializePoH initializes Proof of History components
 func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
@@ -368,18 +356,6 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	// Start API server
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
-}
-
-func mergeWithDefaultConfig(defaultCfg, loadedCfg *config.GenesisConfig) *config.GenesisConfig {
-	if loadedCfg.Faucet.Address == "" {
-		loadedCfg.Faucet.Address = defaultCfg.Faucet.Address
-	}
-	if loadedCfg.Faucet.Amount == 0 {
-		loadedCfg.Faucet.Amount = defaultCfg.Faucet.Amount
-	}
-	loadedCfg.LeaderSchedule = defaultCfg.LeaderSchedule
-
-	return loadedCfg
 }
 
 // generatePrivateKey generates a new Ed25519 seed and saves it to privkey.txt
