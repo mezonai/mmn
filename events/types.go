@@ -1,8 +1,9 @@
 package events
 
 import (
-	"mmn/types"
 	"time"
+
+	"github.com/mezonai/mmn/types"
 )
 
 // EventType is an enum-like string type for blockchain events

@@ -10,12 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"mmn/client_test/mezon-server-sim/mezoncfg"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"mmn/client_test/mezon-server-sim/mmn/service"
-
 	_ "github.com/lib/pq"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 )
 
 const (
@@ -57,7 +56,7 @@ func main() {
 
 	// Setup MMN client configuration
 	config := mezoncfg.MmnConfig{
-		Endpoint: endpoint,
+		Endpoints: endpoint,
 		Timeout:  5000, // 5 seconds
 	}
 
