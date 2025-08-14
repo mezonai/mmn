@@ -94,6 +94,42 @@ func (s *TxService) GetAccountByAddress(ctx context.Context, addr string) (domai
 	return s.bc.GetAccount(addr)
 }
 
+func (s *TxService) GiveCoffee(ctx context.Context, nonce uint64, fromUID, toUID uint64) (string, error) {
+	// Test data
+	amount := uint64(1)
+	textData := "give coffee"
+
+	// Act
+	TxHash, err := s.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+
+	if err != nil {
+		return "", err
+	}
+
+	return TxHash, nil
+}
+
+func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID, itemUID uint64, itemType string) (string, error) {
+	// Test data
+	amount := uint64(1)
+	textData := "unlock item"
+
+	// Act
+	TxHash, err := s.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+
+	if err != nil {
+		return "", err
+	}
+
+	err = s.insertUnlockItem(ctx, itemUID, fromUID, itemType, TxHash)
+
+	if err != nil {
+		return "", err
+	}
+
+	return TxHash, nil
+}
+
 func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, page, filter int) (*api.WalletLedgerList, error) {
 	addr, _, err := s.ks.LoadKey(uid)
 	if err != nil {
@@ -213,53 +249,61 @@ func (s *TxService) SubscribeTransactionStatus(ctx context.Context) error {
 
 // processTransactionStatusUpdate handles the business logic for each transaction status update
 func (s *TxService) processTransactionStatusUpdate(ctx context.Context, update *mmnpb.TransactionStatusUpdate) error {
-	// Example business logic based on transaction status
+	// Check if this transaction is an unlock item transaction
+	isUnlockTransaction, err := s.isUnlockItemTransaction(ctx, update.TxHash)
+	if err != nil {
+		return fmt.Errorf("failed to check if transaction is unlock item: %w", err)
+	}
+
+	// Only update unlock item status if this is an unlock transaction
+	if isUnlockTransaction {
+		// Convert protobuf status to domain status
+		var status int32
+		switch update.Status {
+		case mmnpb.TransactionStatus_PENDING:
+			status = domain.UNLOCK_ITEM_STATUS_PENDING
+		case mmnpb.TransactionStatus_CONFIRMED:
+			status = domain.UNLOCK_ITEM_STATUS_SUCCESS
+		case mmnpb.TransactionStatus_FINALIZED:
+			status = domain.UNLOCK_ITEM_STATUS_SUCCESS
+		case mmnpb.TransactionStatus_FAILED:
+			status = domain.UNLOCK_ITEM_STATUS_FAILED
+		case mmnpb.TransactionStatus_EXPIRED:
+			status = domain.UNLOCK_ITEM_STATUS_FAILED
+		default:
+			return fmt.Errorf("unknown transaction status: %v", update.Status)
+		}
+
+		// Update the unlock item status in database
+		err := s.updateUnlockItemStatus(ctx, update.TxHash, status)
+		if err != nil {
+			return fmt.Errorf("failed to update unlock item status: %w", err)
+		}
+	}
+
+	// Handle status-specific business logic for all transactions
 	switch update.Status {
 	case mmnpb.TransactionStatus_PENDING:
-		// Handle pending transactions
 		log.Printf("Transaction %s is pending", update.TxHash)
-		return s.updateTransactionStatusInDB(ctx, update.TxHash, "PENDING", update.Timestamp)
-
 	case mmnpb.TransactionStatus_CONFIRMED:
-		// Handle confirmed transactions
 		log.Printf("Transaction %s confirmed in block %s at slot %d",
 			update.TxHash, update.BlockHash, update.BlockSlot)
-
-		if err := s.updateTransactionStatusInDB(ctx, update.TxHash, "CONFIRMED", update.Timestamp); err != nil {
-			return err
+		if err := s.handleConfirmedTransaction(ctx, update); err != nil {
+			log.Printf("Error handling confirmed transaction: %v", err)
 		}
-
-		// Additional logic for confirmed transactions
-		return s.handleConfirmedTransaction(ctx, update)
-
 	case mmnpb.TransactionStatus_FINALIZED:
-		// Handle finalized transactions
 		log.Printf("Transaction %s finalized with %d confirmations",
 			update.TxHash, update.Confirmations)
-
-		if err := s.updateTransactionStatusInDB(ctx, update.TxHash, "FINALIZED", update.Timestamp); err != nil {
-			return err
+		if err := s.handleFinalizedTransaction(ctx, update); err != nil {
+			log.Printf("Error handling finalized transaction: %v", err)
 		}
-
-		// Additional logic for finalized transactions
-		return s.handleFinalizedTransaction(ctx, update)
-
 	case mmnpb.TransactionStatus_FAILED:
-		// Handle failed transactions
 		log.Printf("Transaction %s failed: %s", update.TxHash, update.ErrorMessage)
-
-		if err := s.updateTransactionStatusInDB(ctx, update.TxHash, "FAILED", update.Timestamp); err != nil {
-			return err
+		if err := s.handleFailedTransaction(ctx, update); err != nil {
+			log.Printf("Error handling failed transaction: %v", err)
 		}
-
-		// Additional logic for failed transactions
-		return s.handleFailedTransaction(ctx, update)
-
 	case mmnpb.TransactionStatus_EXPIRED:
-		// Handle expired transactions
 		log.Printf("Transaction %s expired", update.TxHash)
-		return s.updateTransactionStatusInDB(ctx, update.TxHash, "EXPIRED", update.Timestamp)
-
 	default:
 		log.Printf("Unknown transaction status for tx %s: %s", update.TxHash, update.Status.String())
 	}
@@ -267,21 +311,39 @@ func (s *TxService) processTransactionStatusUpdate(ctx context.Context, update *
 	return nil
 }
 
-// updateTransactionStatusInDB updates transaction status in the database
-func (s *TxService) updateTransactionStatusInDB(ctx context.Context, txHash, status string, timestamp uint64) error {
-	query := `
-		INSERT INTO transaction_status (tx_hash, status, timestamp, updated_at) 
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (tx_hash) 
-		DO UPDATE SET 
-			status = EXCLUDED.status, 
-			timestamp = EXCLUDED.timestamp,
-			updated_at = EXCLUDED.updated_at
+// InsertUnlockItem updates transaction status in the database
+func (s *TxService) insertUnlockItem(ctx context.Context, itemId, userId uint64, itemType, txHash string) error {
+	query := `INSERT INTO unlocked_items (user_id, item_id, item_type, tx_hash, status) VALUES ($1, $2, $3, $4, $5);
 	`
 
-	_, err := s.db.ExecContext(ctx, query, txHash, status, timestamp, time.Now().Unix())
+	_, err := s.db.ExecContext(ctx, query, userId, itemId, itemType, txHash, domain.UNLOCK_ITEM_STATUS_PENDING)
 	if err != nil {
-		return fmt.Errorf("failed to update transaction status in database: %w", err)
+		return fmt.Errorf("failed to insert unlocked item in database: %w", err)
+	}
+
+	return nil
+}
+
+// isUnlockItemTransaction checks if a transaction hash exists in the unlocked_items table
+func (s *TxService) isUnlockItemTransaction(ctx context.Context, txHash string) (bool, error) {
+	query := `SELECT COUNT(*) FROM unlocked_items WHERE tx_hash = $1`
+
+	var count int
+	err := s.db.QueryRowContext(ctx, query, txHash).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check unlock item transaction: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// updateUnlockItemStatus updates transaction status in the database
+func (s *TxService) updateUnlockItemStatus(ctx context.Context, txHash string, status int32) error {
+	query := `UPDATE unlocked_items SET status = $1, updated_at = NOW() WHERE tx_hash = $2`
+
+	_, err := s.db.ExecContext(ctx, query, status, txHash)
+	if err != nil {
+		return fmt.Errorf("failed to update unlock item status in database: %w", err)
 	}
 
 	return nil
@@ -293,10 +355,6 @@ func (s *TxService) handleConfirmedTransaction(ctx context.Context, update *mmnp
 	log.Printf("Processing confirmed transaction %s in block %s", update.TxHash, update.BlockHash)
 
 	// Add custom business logic here, such as:
-	// - Updating user balances
-	// - Sending push notifications
-	// - Triggering webhooks
-	// - Updating analytics data
 
 	return nil
 }
@@ -308,10 +366,6 @@ func (s *TxService) handleFinalizedTransaction(ctx context.Context, update *mmnp
 		update.TxHash, update.Confirmations)
 
 	// Add custom business logic here, such as:
-	// - Final settlement processing
-	// - Compliance reporting
-	// - Archiving transaction data
-	// - Updating final account states
 
 	return nil
 }
@@ -322,10 +376,6 @@ func (s *TxService) handleFailedTransaction(ctx context.Context, update *mmnpb.T
 	log.Printf("Processing failed transaction %s: %s", update.TxHash, update.ErrorMessage)
 
 	// Add custom business logic here, such as:
-	// - Processing refunds
-	// - Sending error notifications to users
-	// - Logging failed transaction details
-	// - Rolling back related operations
 
 	return nil
 }

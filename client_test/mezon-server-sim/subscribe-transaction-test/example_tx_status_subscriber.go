@@ -50,9 +50,9 @@ func main() {
 	}
 	cancel()
 
-	// Create database table for transaction status if it doesn't exist
-	if err := createTransactionStatusTable(db); err != nil {
-		log.Fatalf("Failed to create transaction status table: %v", err)
+	// Create database table for unlocked items if it doesn't exist
+	if err := createUnlockedItemsTable(db); err != nil {
+		log.Fatalf("Failed to unlocked items status table: %v", err)
 	}
 
 	// Setup MMN client configuration
@@ -120,28 +120,26 @@ func maskPassword(dbURL string) string {
 	return "postgres://mezon:***@localhost:5432/mezon?sslmode=disable"
 }
 
-// createTransactionStatusTable creates the transaction_status table if it doesn't exist
-func createTransactionStatusTable(db *sql.DB) error {
+// createUnlockedItemsTable creates the transaction_status table if it doesn't exist
+func createUnlockedItemsTable(db *sql.DB) error {
 	query := `
-		CREATE TABLE IF NOT EXISTS transaction_status (
-			id SERIAL PRIMARY KEY,
-			tx_hash VARCHAR(64) UNIQUE NOT NULL,
-			status VARCHAR(20) NOT NULL,
-			timestamp BIGINT NOT NULL,
-			updated_at BIGINT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		CREATE TABLE IF NOT EXISTS unlocked_items (
+	 		id SERIAL PRIMARY KEY,
+	 		item_id BIGINT NOT NULL,
+	 		user_id BIGINT NOT NULL,
+	 		tx_hash TEXT UNIQUE NOT NULL,
+	 		item_type VARCHAR(50) NOT NULL,
+	 		status INT NOT NULL,
+	 		created_at TIMESTAMPTZ DEFAULT now(),
+	 		updated_at TIMESTAMPTZ DEFAULT now()
 		);
-		
-		CREATE INDEX IF NOT EXISTS idx_transaction_status_tx_hash ON transaction_status(tx_hash);
-		CREATE INDEX IF NOT EXISTS idx_transaction_status_status ON transaction_status(status);
-		CREATE INDEX IF NOT EXISTS idx_transaction_status_timestamp ON transaction_status(timestamp);
 	`
 
 	_, err := db.Exec(query)
 	if err != nil {
-		return fmt.Errorf("failed to create transaction_status table: %w", err)
+		return fmt.Errorf("failed to create unlocked_items table: %w", err)
 	}
 
-	log.Printf("Transaction status table ready")
+	log.Printf("Unlocked items table ready!")
 	return nil
 }
