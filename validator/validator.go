@@ -295,12 +295,12 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
-				fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
+				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
-				fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
+				// fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot != NoSlot {
 					v.onLeaderSlotEnd()
 				}

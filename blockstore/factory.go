@@ -49,8 +49,35 @@ func NewStoreFactory() *StoreFactory {
 	return &StoreFactory{}
 }
 
-// CreateStore creates a new blockstore instance
+// CreateStore creates a new blockstore instance using the legacy approach
+// Deprecated: Use CreateStoreWithProvider for better abstraction
 func (sf *StoreFactory) CreateStore(config *StoreConfig, seed []byte) (Store, error) {
+	// Redirect to the provider-based implementation for consistency
+	return sf.CreateStoreWithProvider(config, seed)
+}
+
+// CreateStoreWithProvider creates a new blockstore instance using the provider pattern
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, seed []byte) (Store, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	// Create the appropriate provider
+	provider, err := sf.CreateProvider(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create provider: %w", err)
+	}
+
+	// Create generic blockstore with the provider
+	return NewGenericBlockStore(provider, seed)
+}
+
+// CreateProvider creates a database provider based on the configuration
+func (sf *StoreFactory) CreateProvider(config *StoreConfig) (DatabaseProvider, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -61,10 +88,10 @@ func (sf *StoreFactory) CreateStore(config *StoreConfig, seed []byte) (Store, er
 
 	switch config.Type {
 	case LevelDBStoreType:
-		return NewLevelDBStore(config.Directory, seed)
+		return NewLevelDBProvider(config.Directory)
 
 	case RocksDBStoreType:
-		return NewRocksDBStore(config.Directory, seed)
+		return NewRocksDBProvider(config.Directory)
 
 	default:
 		return nil, fmt.Errorf("unsupported store type: %s", config.Type)
@@ -76,7 +103,7 @@ var globalFactory = NewStoreFactory()
 
 // CreateStore creates a new blockstore instance using the global factory
 func CreateStore(config *StoreConfig, seed []byte) (Store, error) {
-	return globalFactory.CreateStore(config, seed)
+	return globalFactory.CreateStoreWithProvider(config, seed)
 }
 
 // NewLevelDBConfig creates a LevelDB store configuration

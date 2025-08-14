@@ -70,8 +70,8 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	runCmd.AddCommand(initCmd)
 	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", "", "Path to private key file")
-	// runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
-	runCmd.Flags().StringVar(&listenAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
+	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
+	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
 	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
@@ -145,8 +145,8 @@ func runNode() {
 	nodeConfig := config.NodeConfig{
 		PubKey:             pubKey,
 		PrivKeyPath:        privKeyPath,
-		ListenAddr:         listenAddr,
 		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
+		ListenAddr:         listenAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
 	}
@@ -353,7 +353,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start API server
+	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
 }
