@@ -28,7 +28,7 @@ import (
 	"strings"
 	"sync"
 
-	"mmn/pkg/rlp/internal/rlpstruct"
+	"github.com/mezonai/mmn/pkg/rlp/internal/rlpstruct"
 
 	"github.com/holiman/uint256"
 )

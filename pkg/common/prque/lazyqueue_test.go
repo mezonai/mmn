@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"mmn/pkg/common/mclock"
+	"github.com/mezonai/mmn/pkg/common/mclock"
 )
 
 const (

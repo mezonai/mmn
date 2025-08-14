@@ -3,14 +3,19 @@ package blockchain
 import (
 	"context"
 	"fmt"
-	"mmn/client_test/mezon-server-sim/mezoncfg"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	mmnpb "mmn/client_test/mezon-server-sim/mmn/proto"
-	"mmn/client_test/mezon-server-sim/mmn/utils"
+	"strings"
 	"time"
 
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	mmnpb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/utils"
+
 	"google.golang.org/grpc"
+	_ "google.golang.org/grpc/balancer/roundrobin"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/resolver"
+	manual "google.golang.org/grpc/resolver/manual"
 )
 
 type GRPCClient struct {
@@ -21,16 +26,51 @@ type GRPCClient struct {
 }
 
 func NewGRPCClient(cfg mezoncfg.MmnConfig) (*GRPCClient, error) {
-	conn, err := grpc.Dial(
-		cfg.Endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()), // dev-net not TLS yet
-		grpc.WithBlock(),
-		grpc.WithTimeout(time.Duration(cfg.Timeout)*time.Millisecond),
-		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
-	)
+	var conn *grpc.ClientConn
+	var err error
+
+	// Check if endpoint contains multiple addresses (comma-separated)
+	if strings.Contains(cfg.Endpoints, ",") {
+		// Parse comma-separated endpoints
+		endpoints := strings.Split(cfg.Endpoints, ",")
+		addresses := make([]resolver.Address, 0, len(endpoints))
+
+		for _, endpoint := range endpoints {
+			endpoint = strings.TrimSpace(endpoint)
+			if endpoint != "" {
+				addresses = append(addresses, resolver.Address{Addr: endpoint})
+			}
+		}
+
+		if len(addresses) == 0 {
+			return nil, fmt.Errorf("no valid endpoints found in: %s", cfg.Endpoints)
+		}
+
+		// Create manual resolver for multiple endpoints
+		r := manual.NewBuilderWithScheme("mmn")
+		r.InitialState(resolver.State{
+			Addresses: addresses,
+		})
+
+		conn, err = grpc.NewClient(
+			"mmn:///",
+			grpc.WithResolvers(r),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
+		)
+	} else {
+		// Single endpoint - use original logic
+		conn, err = grpc.NewClient(
+			cfg.Endpoints,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
+		)
+	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	return &GRPCClient{
 		cfg:    cfg,
 		conn:   conn,

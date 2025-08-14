@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"io"
 
-	"mmn/pkg/rlp"
+	"github.com/mezonai/mmn/pkg/rlp"
 )
 
 type MyCoolType struct {

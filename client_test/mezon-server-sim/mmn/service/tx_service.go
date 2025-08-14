@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"time"
 
-	"mmn/client_test/mezon-server-sim/api"
-	"mmn/client_test/mezon-server-sim/mmn/crypto"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	"mmn/client_test/mezon-server-sim/mmn/outbound"
-	mmnpb "mmn/client_test/mezon-server-sim/mmn/proto"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/api"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/crypto"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/outbound"
+	mmnpb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
 )
 
 // -------- TxService --------

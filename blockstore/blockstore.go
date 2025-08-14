@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"mmn/block"
-	"mmn/utils"
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/utils"
 )
 
 // BlockStore manages the chain of blocks, persisting them and tracking the latest hash.

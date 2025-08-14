@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"time"
 
-	"mmn/pkg/blockchain"
-	"mmn/pkg/contract"
-	"mmn/pkg/p2p"
-	"mmn/pkg/utils"
+	"github.com/mezonai/mmn/pkg/blockchain"
+	"github.com/mezonai/mmn/pkg/contract"
+	"github.com/mezonai/mmn/pkg/p2p"
+	"github.com/mezonai/mmn/pkg/utils"
 )
 
 const (

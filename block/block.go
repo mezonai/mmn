@@ -5,8 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"mmn/poh"
 	"time"
+
+	"github.com/mezonai/mmn/poh"
 )
 
 type BlockStatus uint8

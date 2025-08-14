@@ -2,8 +2,9 @@ package outbound
 
 import (
 	"context"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	mmnpb "mmn/client_test/mezon-server-sim/mmn/proto"
+
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	mmnpb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
 )
 
 type MainnetClient interface {

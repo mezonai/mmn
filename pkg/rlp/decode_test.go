@@ -24,10 +24,11 @@ import (
 	"io"
 	gomath "math"
 	"math/big"
-	"mmn/pkg/common/math"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/mezonai/mmn/pkg/common/math"
 
 	"github.com/holiman/uint256"
 )

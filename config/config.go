@@ -5,8 +5,9 @@ import (
 	"encoding/hex"
 	"io/ioutil"
 	"log"
-	"mmn/poh"
 	"os"
+
+	"github.com/mezonai/mmn/poh"
 
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"

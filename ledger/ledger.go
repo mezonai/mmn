@@ -4,13 +4,14 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"mmn/block"
-	"mmn/events"
-	"mmn/types"
-	"mmn/utils"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 )
 
 type Ledger struct {

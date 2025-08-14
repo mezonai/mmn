@@ -10,8 +10,8 @@ import (
 
 	"github.com/linxGnu/grocksdb"
 
-	"mmn/block"
-	"mmn/utils"
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/utils"
 )
 
 const (
