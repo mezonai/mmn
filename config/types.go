@@ -24,9 +24,11 @@ type Faucet struct {
 
 // GenesisConfig holds the configuration from genesis.yml
 type GenesisConfig struct {
-	SelfNode       NodeConfig       `yaml:"self_node"`
 	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
 	Faucet         Faucet           `yaml:"faucet"`
+	Poh            PohConfig        `yaml:"poh"`
+	Mempool        MempoolConfig    `yaml:"mempool"`
+	Validator      ValidatorConfig  `yaml:"validator"`
 }
 
 // ConfigFile is the top-level structure for genesis.yml

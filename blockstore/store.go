@@ -11,4 +11,5 @@ type Store interface {
 	AddBlockPending(b *block.Block) error
 	MarkFinalized(slot uint64) error
 	Seed() [32]byte
+	Close() error
 }

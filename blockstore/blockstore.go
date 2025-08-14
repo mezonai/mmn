@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/logx"
 )
 
 // BlockStore manages the chain of blocks, persisting them and tracking the latest hash.
@@ -92,7 +93,7 @@ func (bs *BlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
-	fmt.Printf("Adding pending block %d to blockstore\n", b.Slot)
+	logx.Info("blockstore", "Adding pending block", b.Slot, "to blockstore")
 
 	if _, ok := bs.data[b.Slot]; ok {
 		return fmt.Errorf("block %d already exists", b.Slot)
@@ -101,7 +102,7 @@ func (bs *BlockStore) AddBlockPending(b *block.Block) error {
 		return err
 	}
 	bs.data[b.Slot] = b
-	fmt.Printf("Pending block %d added to blockstore\n", b.Slot)
+	logx.Info("blockstore", "Pending block", b.Slot, "added to blockstore")
 	return nil
 }
 
@@ -123,13 +124,19 @@ func (bs *BlockStore) MarkFinalized(slot uint64) error {
 	if slot > bs.latestFinalized {
 		bs.latestFinalized = slot
 	}
-	fmt.Printf("Block %d marked as finalized\n", slot)
-	fmt.Printf("Latest finalized block: %d\n", bs.latestFinalized)
+	logx.Info("blockstore", "Block", slot, "marked as finalized")
+	logx.Info("blockstore", "Latest finalized block:", bs.latestFinalized)
 	return nil
 }
 
 func (bs *BlockStore) Seed() [32]byte {
 	return bs.SeedHash
+}
+
+// Close closes the BlockStore (no-op for file-based storage)
+func (bs *BlockStore) Close() error {
+	// File-based storage doesn't need explicit closing
+	return nil
 }
 
 // LoadBlock reads a block file by slot.

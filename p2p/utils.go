@@ -11,12 +11,20 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-func UnmarshalEd25519PrivateKey(private ed25519.PrivateKey) (crypto.PrivKey, error) {
-	if len(private) != ed25519.PrivateKeySize {
-		return nil, fmt.Errorf("invalid ed25519 private key length")
+// UnmarshalEd25519PrivateKey converts ed25519.PrivateKey to libp2p crypto.PrivKey
+func UnmarshalEd25519PrivateKey(privKey ed25519.PrivateKey) (crypto.PrivKey, error) {
+	// libp2p's UnmarshalEd25519PrivateKey only accepts 64-byte or 96-byte keys
+	// If we have a 32-byte seed, we need to generate the full 64-byte private key
+	switch len(privKey) {
+	case ed25519.SeedSize: // 32 bytes - this is a seed
+		// Generate full private key from seed
+		fullPrivKey := ed25519.NewKeyFromSeed(privKey)
+		return crypto.UnmarshalEd25519PrivateKey(fullPrivKey)
+	case ed25519.PrivateKeySize: // 64 bytes - this is already a full private key
+		return crypto.UnmarshalEd25519PrivateKey(privKey)
+	default:
+		return nil, fmt.Errorf("invalid Ed25519 private key length: got %d, expected %d or %d", len(privKey), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
-	seed := private[:32]
-	return crypto.UnmarshalEd25519PrivateKey(seed)
 }
 
 func (ln *Libp2pNetwork) GetOwnAddress() string {

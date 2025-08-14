@@ -39,8 +39,15 @@ COPY . .
 # Install dependencies
 RUN go mod download
 
-# Build binary
-RUN go build -o mmn .
+# Build argument for database selection
+ARG DATABASE=leveldb
+
+# Build binary with appropriate tags
+RUN if [ "$DATABASE" = "rocksdb" ]; then \
+        go build -tags rocksdb -o mmn .; \
+    else \
+        go build -o mmn .; \
+    fi
 
 # Runtime stage
 FROM debian:bookworm-slim AS runtime

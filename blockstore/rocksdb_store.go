@@ -1,3 +1,6 @@
+//go:build rocksdb
+// +build rocksdb
+
 package blockstore
 
 import (
@@ -19,10 +22,10 @@ const (
 	cfBlocks  = "blocks"
 
 	// Metadata keys
-	keyLatestFinalized = "latest_finalized"
+	rocksKeyLatestFinalized = "latest_finalized"
 
 	// Key sizes
-	slotKeySize = 8
+	rocksSlotKeySize = 8
 )
 
 // RocksDBStore is a RocksDB-backed implementation for storing blocks and metadata.
@@ -79,41 +82,22 @@ func (s *RocksDBStore) loadLatestFinalized() error {
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
-	val, err := s.db.GetCF(ro, s.metaCF, []byte(keyLatestFinalized))
+	val, err := s.db.GetCF(ro, s.metaCF, []byte(rocksKeyLatestFinalized))
 	if err != nil {
 		return fmt.Errorf("failed to get latest finalized key: %w", err)
 	}
 	defer val.Free()
 
-	if val.Exists() && len(val.Data()) == slotKeySize {
+	if val.Exists() && len(val.Data()) == rocksSlotKeySize {
 		s.latestFinalized = binary.BigEndian.Uint64(val.Data())
 	}
 
 	return nil
 }
 
-// Close releases all RocksDB resources
-func (s *RocksDBStore) Close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.blocksCF != nil {
-		s.blocksCF.Destroy()
-		s.blocksCF = nil
-	}
-	if s.metaCF != nil {
-		s.metaCF.Destroy()
-		s.metaCF = nil
-	}
-	if s.db != nil {
-		s.db.Close()
-		s.db = nil
-	}
-}
-
-// slotToKey converts slot number to RocksDB key
-func slotToKey(slot uint64) []byte {
-	key := make([]byte, slotKeySize)
+// rocksSlotToKey converts a slot number to a byte key
+func rocksSlotToKey(slot uint64) []byte {
+	key := make([]byte, rocksSlotKeySize)
 	binary.BigEndian.PutUint64(key, slot)
 	return key
 }
@@ -132,7 +116,7 @@ func (s *RocksDBStore) Block(slot uint64) *block.Block {
 		return nil
 	}
 
-	key := slotToKey(slot)
+	key := rocksSlotToKey(slot)
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
@@ -161,7 +145,7 @@ func (s *RocksDBStore) HasCompleteBlock(slot uint64) bool {
 		return false
 	}
 
-	key := slotToKey(slot)
+	key := rocksSlotToKey(slot)
 	ro := grocksdb.NewDefaultReadOptions()
 	defer ro.Destroy()
 
@@ -200,7 +184,7 @@ func (s *RocksDBStore) AddBlockPending(b *block.Block) error {
 		return fmt.Errorf("RocksDB is closed")
 	}
 
-	key := slotToKey(b.Slot)
+	key := rocksSlotToKey(b.Slot)
 
 	// Check if block already exists
 	if err := s.checkBlockExists(key, b.Slot); err != nil {
@@ -256,7 +240,7 @@ func (s *RocksDBStore) MarkFinalized(slot uint64) error {
 		return fmt.Errorf("RocksDB is closed")
 	}
 
-	key := slotToKey(slot)
+	key := rocksSlotToKey(slot)
 
 	// Get and update block
 	blk, err := s.getAndUpdateBlock(key, slot)
@@ -310,8 +294,8 @@ func (s *RocksDBStore) writeFinalizedBlock(key []byte, blk *block.Block, slot ui
 	// Update latest finalized if needed
 	if slot > s.latestFinalized {
 		s.latestFinalized = slot
-		lf := slotToKey(s.latestFinalized)
-		wb.PutCF(s.metaCF, []byte(keyLatestFinalized), lf)
+		lf := rocksSlotToKey(s.latestFinalized)
+		wb.PutCF(s.metaCF, []byte(rocksKeyLatestFinalized), lf)
 	}
 
 	wo := grocksdb.NewDefaultWriteOptions()
@@ -322,5 +306,32 @@ func (s *RocksDBStore) writeFinalizedBlock(key []byte, blk *block.Block, slot ui
 
 // Seed returns the seed hash used for the initial previous-hash
 func (s *RocksDBStore) Seed() [32]byte {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.seedHash
+}
+
+// Close closes the RocksDB store
+func (s *RocksDBStore) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.blocksCF != nil {
+		s.blocksCF.Destroy()
+		s.blocksCF = nil
+	}
+	if s.metaCF != nil {
+		s.metaCF.Destroy()
+		s.metaCF = nil
+	}
+	if s.db != nil {
+		s.db.Close()
+		s.db = nil
+	}
+	return nil
+}
+
+// IsRocksDBSupported returns true when RocksDB is compiled in
+func IsRocksDBSupported() bool {
+	return true
 }
