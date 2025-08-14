@@ -21,14 +21,16 @@ export class GrpcClient {
   private transport: GrpcTransport;
   private txClient: ITxServiceClient;
   private accountClient: IAccountServiceClient;
+  private debug: boolean;
 
-  constructor(serverAddress: string) {
+  constructor(serverAddress: string, debug: boolean = false) {
     this.transport = new GrpcTransport({
       host: serverAddress,
       channelCredentials: ChannelCredentials.createInsecure(),
     });
     this.txClient = new TxServiceClient(this.transport);
     this.accountClient = new AccountServiceClient(this.transport);
+    this.debug = debug;
   }
 
   async addTransaction(
@@ -125,7 +127,9 @@ export class GrpcClient {
             errorMessage: update.errorMessage,
             timestamp: update.timestamp?.toString(),
           };
+          if (this.debug) {
           console.log(`🔄 Raw Update from Server:`, JSON.stringify(serializableUpdate, null, 2));
+        }
 
           const statusStr = GenTxStatusEnum[update.status] as unknown as string;
           const processedUpdate = {
@@ -139,7 +143,9 @@ export class GrpcClient {
           };
 
           // Log the processed update
+          if (this.debug) {
           console.log(`📤 Processing Update:`, JSON.stringify(processedUpdate, null, 2));
+        }
 
           onUpdate(processedUpdate);
         }
@@ -166,5 +172,9 @@ export class GrpcClient {
 
   close(): void {
     this.transport.close();
+  }
+
+  setDebug(debug: boolean) {
+    this.debug = debug;
   }
 }

@@ -2,11 +2,10 @@ import { EventEmitter } from 'events';
 import { GrpcClient } from './grpc_client';
 
 export enum TransactionStatus {
-  UNKNOWN = 0,
-  PENDING = 1,
-  CONFIRMED = 2,
-  FINALIZED = 3,
-  FAILED = 4,
+  PENDING = 0,
+  CONFIRMED = 1,
+  FINALIZED = 2,
+  FAILED = 3,
 }
 
 export interface TransactionStatusInfo {
@@ -50,7 +49,7 @@ export class TransactionTracker extends EventEmitter {
    */
   trackTransactions(): void {
     console.log('🔍 Starting to track all transactions...');
-    
+
     // Subscribe to all transaction events
     const unsubscribe = this.grpcClient.subscribeTransactionStatus(
       async (update: {
@@ -77,7 +76,7 @@ export class TransactionTracker extends EventEmitter {
 
     // Store the unsubscribe function with a special key
     this.subscriptions.set('*all*', unsubscribe);
-    
+
     this.emit('allTransactionsTrackingStarted');
   }
 
@@ -86,14 +85,14 @@ export class TransactionTracker extends EventEmitter {
    */
   stopTracking(): void {
     console.log('🛑 Stopping tracking of all transactions...');
-    
+
     // Cancel the all-transactions subscription
     const unsubscribe = this.subscriptions.get('*all*');
     if (unsubscribe) {
       unsubscribe();
       this.subscriptions.delete('*all*');
     }
-    
+
     this.emit('allTransactionsTrackingStopped');
   }
 
@@ -127,21 +126,23 @@ export class TransactionTracker extends EventEmitter {
     }
   ): Promise<void> {
     const statusMap: { [key: string]: TransactionStatus } = {
-      UNKNOWN: TransactionStatus.UNKNOWN,
       PENDING: TransactionStatus.PENDING,
       CONFIRMED: TransactionStatus.CONFIRMED,
       FINALIZED: TransactionStatus.FINALIZED,
       FAILED: TransactionStatus.FAILED,
-
     };
 
     // Add delay to simulate slower status consumption
     if (this.statusConsumptionDelay > 0) {
-      console.log(`⏳ Slow consume: Waiting ${this.statusConsumptionDelay}ms before processing status update for ${txHash.substring(0, 16)}...`);
-      await new Promise(resolve => setTimeout(resolve, this.statusConsumptionDelay));
+      console.log(
+        `⏳ Slow consume: Waiting ${
+          this.statusConsumptionDelay
+        }ms before processing status update for ${txHash.substring(0, 16)}...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, this.statusConsumptionDelay));
     }
 
-    const statusEnum = statusMap[update.status || 'UNKNOWN'] || TransactionStatus.UNKNOWN;
+    const statusEnum = !update.status ? TransactionStatus.FAILED : statusMap[update.status];
 
     const newStatus: TransactionStatusInfo = {
       txHash,
@@ -184,8 +185,7 @@ export class TransactionTracker extends EventEmitter {
    * Check if a transaction status is terminal (FINALIZED, FAILED)
    */
   private isTerminalStatus(status: TransactionStatus): boolean {
-    return status === TransactionStatus.FINALIZED || 
-           status === TransactionStatus.FAILED;
+    return status === TransactionStatus.FINALIZED || status === TransactionStatus.FAILED;
   }
 
   /**
@@ -195,7 +195,7 @@ export class TransactionTracker extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.off('statusChanged', statusListener);
-        reject(new Error(`Timeout waiting for terminal status for ${txHash.substring(0, 16)}...`));
+        reject(new Error(`Timeout waiting for terminal status for ${txHash}`));
       }, timeoutMs);
 
       const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
@@ -228,10 +228,7 @@ export class TransactionTracker extends EventEmitter {
    * Check if a status represents a terminal state
    */
   static isTerminalStatus(status: TransactionStatus): boolean {
-    return (
-      status === TransactionStatus.FINALIZED ||
-      status === TransactionStatus.FAILED
-    );
+    return status === TransactionStatus.FINALIZED || status === TransactionStatus.FAILED;
   }
 
   /**
@@ -244,5 +241,3 @@ export class TransactionTracker extends EventEmitter {
     }
   }
 }
-
-
