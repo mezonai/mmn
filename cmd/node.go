@@ -24,6 +24,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/p2p"
+	"github.com/mezonai/mmn/pkg/blockchain"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/validator"
 
@@ -157,6 +158,15 @@ func runNode() {
 	}
 
 	ld := ledger.NewLedger(cfg.Faucet.Address)
+	
+	// Initialize blockchain with genesis block approach
+	blockchain, err := initializeBlockchainWithGenesis(cfg, ld)
+	if err != nil {
+		log.Fatalf("Failed to initialize blockchain with genesis: %v", err)
+	}
+	
+	// Log blockchain initialization status
+	logx.Info("BLOCKCHAIN", fmt.Sprintf("Blockchain initialized with %d blocks", len(blockchain.Blocks)))
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
@@ -167,7 +177,7 @@ func runNode() {
 	// Load private key
 	privKey, err := config.LoadEd25519PrivKey(privKeyPath)
 	if err != nil {
-		log.Fatalf("load private key: %w", err)
+		log.Fatalf("load private key: %v", err)
 	}
 
 	// Initialize network
@@ -326,6 +336,36 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	val.Run()
 
 	return val, nil
+}
+
+// initializeBlockchainWithGenesis initializes blockchain with genesis block and processes genesis transactions
+func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*blockchain.Blockchain, error) {
+	// Check if faucet account already exists (node restart scenario)
+	if ld.AccountExists(cfg.Faucet.Address) {
+		logx.Info("GENESIS", fmt.Sprintf("Faucet account %s already exists, skipping genesis initialization", cfg.Faucet.Address))
+		// Return empty blockchain for existing state
+		return blockchain.NewBlockchain(), nil
+	}
+
+	// Create blockchain with genesis block
+	bc := blockchain.NewBlockchainWithGenesis(cfg)
+	
+	// Process genesis transactions to initialize ledger state
+	genesisBlock := bc.Blocks[0]
+	err := blockchain.ProcessGenesisTransactions(genesisBlock, ld)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process genesis transactions: %w", err)
+	}
+	
+	// Validate genesis block
+	err = blockchain.ValidateGenesisBlock(genesisBlock, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("genesis block validation failed: %w", err)
+	}
+	
+	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block with faucet account %s (balance: %d)", cfg.Faucet.Address, cfg.Faucet.Amount))
+	
+	return bc, nil
 }
 
 // startServices starts all network and API services
