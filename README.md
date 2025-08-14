@@ -3,17 +3,27 @@
 
 # run (dev)
 go mod tidy
+### Run bootnode
+MSYS_NO_PATHCONV=1 go run main.go bootnode \
+  --privkey-path <file path> \
+  --bootstrap-p2p-port 9000
 
-go run main.go node \
+Example:
+MSYS_NO_PATHCONV=1 go run main.go bootnode \
+  --privkey-path "./config/bootnode_privkey.txt" \
+  --bootstrap-p2p-port 9000
+
+### Run node
+MSYS_NO_PATHCONV=1 go run main.go node \
   --privkey-path <file path> \
   --grpc-addr ":<port>" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/<port>/p2p/<peerID>"
 
 example:
-go run main.go node \
+MSYS_NO_PATHCONV=1 go run main.go node \
   --privkey-path "config/key1.txt" \
   --grpc-addr ":9001" \
-  --bootstrap-addresses "/ip4/127.0.0.1/tcp/10002/p2p/<peerID>"
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
 
