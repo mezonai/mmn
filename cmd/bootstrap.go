@@ -11,9 +11,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	bootstrapP2pPort string
+)
+
 var bootstrapCmd = &cobra.Command{
 	Use:   "bootstrap",
-	Short: "Run node in bootstrap mode",
+	Short: "Run bootstrap node",
 	Run: func(cmd *cobra.Command, args []string) {
 		runBootstrap()
 	},
@@ -21,6 +25,13 @@ var bootstrapCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(bootstrapCmd)
+	bootstrapCmd.Flags().StringVar(
+		&bootstrapP2pPort,
+		"bootstrap-p2p-port",
+		"9000",
+		"Bootstrap Node listen multiaddress /ip4/0.0.0.0/tcp/<port>",
+	)
+
 }
 
 func runBootstrap() {
@@ -36,7 +47,7 @@ func runBootstrap() {
 		Bootstrap:  true, // set false if you don't want to bootstrap
 	}
 
-	host, ddht, err := bootstrap.CreateNode(ctx, cfg)
+	host, ddht, err := bootstrap.CreateNode(ctx, cfg, bootstrapP2pPort)
 	if err != nil {
 		logx.Error("BOOTSTRAP NODE", "Failed to create node:", err)
 	}

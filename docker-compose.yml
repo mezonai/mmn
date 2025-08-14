@@ -11,7 +11,7 @@ services:
         "--listen-addr", ":8001",
         "--grpc-addr", ":9001",
         "--p2p-port", "10001",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--bootstrap-addresses", "/ip4/172.18.0.2/tcp/9000/p2p/12D3KooWGNdxmufnMDHKqtxAsxzj5jZtX6vtu7uyE3pt43f4XZKb",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -31,7 +31,7 @@ services:
         "--listen-addr", ":8002",
         "--grpc-addr", ":9002",
         "--p2p-port", "10002",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--bootstrap-addresses", "/ip4/172.18.0.2/tcp/9000/p2p/12D3KooWGNdxmufnMDHKqtxAsxzj5jZtX6vtu7uyE3pt43f4XZKb",
         "--faucet-amount", "2000000000"
       ]
     ports:
@@ -53,8 +53,7 @@ services:
         "--listen-addr", ":8003",
         "--grpc-addr", ":9003",
         "--p2p-port", "10003",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
-        "--bootstrap-addresses", "/ip4/10.10.30.50/tcp/50477/p2p/12D3KooWRy2RGkrMQS6v6M8cJNTMMGjgr5SPgAfNE2npLuyguwk3",
+        "--bootstrap-addresses", "/ip4/172.18.0.2/tcp/9000/p2p/12D3KooWGNdxmufnMDHKqtxAsxzj5jZtX6vtu7uyE3pt43f4XZKb",
         "--faucet-amount", "2000000000"
       ]
     ports:
