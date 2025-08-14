@@ -11,7 +11,6 @@ type Store interface {
 	AddBlockPending(b *block.Block) error
 	MarkFinalized(slot uint64) error
 	Seed() [32]byte
-	LatestFinalized() uint64
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 }

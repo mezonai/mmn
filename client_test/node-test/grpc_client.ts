@@ -1,13 +1,7 @@
 import { GrpcTransport } from '@protobuf-ts/grpc-transport';
 import { ChannelCredentials } from '@grpc/grpc-js';
-import {
-  TxServiceClient,
-  ITxServiceClient,
-} from './generated/tx.client';
-import {
-  AccountServiceClient,
-  IAccountServiceClient,
-} from './generated/account.client';
+import { TxServiceClient, ITxServiceClient } from './generated/tx.client';
+import { AccountServiceClient, IAccountServiceClient } from './generated/account.client';
 import type {
   TxMsg as GenTxMsg,
   SignedTxMsg as GenSignedTxMsg,
@@ -19,6 +13,8 @@ import { TransactionStatus as GenTxStatusEnum } from './generated/tx';
 import type {
   GetAccountRequest as GenGetAccountRequest,
   GetAccountResponse as GenGetAccountResponse,
+  GetTxHistoryRequest as GenGetTxHistoryRequest,
+  GetTxHistoryResponse as GenGetTxHistoryResponse,
 } from './generated/account';
 
 export class GrpcClient {
@@ -35,11 +31,15 @@ export class GrpcClient {
     this.accountClient = new AccountServiceClient(this.transport);
   }
 
-
-
   async addTransaction(
     txMsg: {
-      type: number; sender: string; recipient: string; amount: number; timestamp: number; text_data: string; nonce: number;
+      type: number;
+      sender: string;
+      recipient: string;
+      amount: number;
+      timestamp: number;
+      text_data: string;
+      nonce: number;
     },
     signature: string
   ): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
@@ -70,9 +70,30 @@ export class GrpcClient {
     };
   }
 
-
-
-
+  async getTxHistory(
+    address: string,
+    limit: number,
+    offset: number,
+    filter: number
+  ): Promise<{
+    total: number;
+    txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string }[];
+  }> {
+    const req: GenGetTxHistoryRequest = { address, limit, offset, filter };
+    const call = this.accountClient.getTxHistory(req);
+    const res: GenGetTxHistoryResponse = await call.response;
+    return {
+      total: res.total,
+      txs: res.txs.map((tx) => ({
+        sender: tx.sender,
+        recipient: tx.recipient,
+        amount: tx.amount.toString(),
+        nonce: tx.nonce.toString(),
+        timestamp: tx.timestamp.toString(),
+        status: ['PENDING', 'CONFIRMED', 'FINALIZED', 'FAILED'][tx.status] || 'PENDING',
+      })),
+    };
+  }
 
   subscribeTransactionStatus(
     onUpdate: (update: {
@@ -105,7 +126,7 @@ export class GrpcClient {
             timestamp: update.timestamp?.toString(),
           };
           console.log(`🔄 Raw Update from Server:`, JSON.stringify(serializableUpdate, null, 2));
-          
+
           const statusStr = GenTxStatusEnum[update.status] as unknown as string;
           const processedUpdate = {
             tx_hash: update.txHash,
@@ -116,10 +137,10 @@ export class GrpcClient {
             error_message: update.errorMessage || undefined,
             timestamp: update.timestamp ? update.timestamp.toString() : undefined,
           };
-          
+
           // Log the processed update
           console.log(`📤 Processing Update:`, JSON.stringify(processedUpdate, null, 2));
-          
+
           onUpdate(processedUpdate);
         }
         onComplete();

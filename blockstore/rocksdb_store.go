@@ -326,13 +326,6 @@ func (s *RocksDBStore) Seed() [32]byte {
 	return s.seedHash
 }
 
-// LatestFinalized returns the latest finalized slot number.
-func (s *RocksDBStore) LatestFinalized() uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.latestFinalized
-}
-
 // GetConfirmations calculates the number of confirmations for a transaction in a given block slot.
 // Confirmations = latestFinalized - blockSlot + 1 if the block is finalized,
 // otherwise returns 1 for confirmed but not finalized blocks.
@@ -347,9 +340,7 @@ func (s *RocksDBStore) GetConfirmations(blockSlot uint64) uint64 {
 	return 1 // Confirmed but not yet finalized
 }
 
-// GetTransactionBlockInfo searches all stored blocks for a transaction whose
-// client-computed hash (sha256 of the canonical Serialize() fields) matches the
-// provided hex string. It returns the containing slot, the whole block, whether the
+// GetTransactionBlockInfo searches all stored blocks for a transaction. It returns the containing slot, the whole block, whether the
 // block is finalized, and whether it was found.
 func (s *RocksDBStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blk *block.Block, finalized bool, found bool) {
 	s.mu.RLock()
