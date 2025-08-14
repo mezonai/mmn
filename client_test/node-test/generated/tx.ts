@@ -149,33 +149,29 @@ export interface SubscribeTransactionStatusRequest {
  */
 export enum TransactionStatus {
     /**
-     * @generated from protobuf enum value: UNKNOWN = 0;
-     */
-    UNKNOWN = 0,
-    /**
      * Transaction is in mempool
      *
-     * @generated from protobuf enum value: PENDING = 1;
+     * @generated from protobuf enum value: PENDING = 0;
      */
-    PENDING = 1,
+    PENDING = 0,
     /**
      * Transaction is included in a block
      *
-     * @generated from protobuf enum value: CONFIRMED = 2;
+     * @generated from protobuf enum value: CONFIRMED = 1;
      */
-    CONFIRMED = 2,
+    CONFIRMED = 1,
     /**
      * Transaction is finalized (block has enough votes)
      *
-     * @generated from protobuf enum value: FINALIZED = 3;
+     * @generated from protobuf enum value: FINALIZED = 2;
      */
-    FINALIZED = 3,
+    FINALIZED = 2,
     /**
      * Transaction failed validation
      *
-     * @generated from protobuf enum value: FAILED = 4;
+     * @generated from protobuf enum value: FAILED = 3;
      */
-    FAILED = 4
+    FAILED = 3
 }
 // @generated message type with reflection information, may provide speed optimized methods
 class TxMsg$Type extends MessageType<TxMsg> {

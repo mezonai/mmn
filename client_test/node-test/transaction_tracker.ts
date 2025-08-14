@@ -1,48 +1,5 @@
-import * as grpc from '@grpc/grpc-js';
-import * as protoLoader from '@grpc/proto-loader';
-import * as path from 'path';
 import { EventEmitter } from 'events';
 import { GrpcClient } from './grpc_client';
-
-// Load proto files from local client_test/proto directory
-const PROTO_PATH = path.join(__dirname, 'proto');
-
-const accountPackageDefinition = protoLoader.loadSync(path.join(PROTO_PATH, 'account.proto'), {
-  keepCase: true,
-  longs: String,
-  enums: String,
-  defaults: true,
-  oneofs: true,
-});
-
-// Define proper types for the account proto
-interface AccountServiceClient {
-  GetAccount: (
-    request: { address: string },
-    callback: (error: grpc.ServiceError | null, response: { address: string; balance: string; nonce: string }) => void
-  ) => void;
-  GetTxHistory: (
-    request: { address: string; limit: number; offset: number; filter: number },
-    callback: (
-      error: grpc.ServiceError | null,
-      response: {
-        total: number;
-        txs: Array<{
-          sender: string;
-          recipient: string;
-          amount: string;
-          nonce: string;
-          timestamp: string;
-          status: string;
-        }>;
-      }
-    ) => void
-  ) => void;
-}
-
-const accountProto = grpc.loadPackageDefinition(accountPackageDefinition) as unknown as {
-  mmn: { AccountService: new (address: string, credentials: grpc.ChannelCredentials) => AccountServiceClient };
-};
 
 export enum TransactionStatus {
   UNKNOWN = 0,
@@ -74,8 +31,6 @@ export class TransactionTracker extends EventEmitter {
   private trackedTransactions: Map<string, TransactionStatusInfo> = new Map();
   private subscriptions: Map<string, () => void> = new Map();
   private statusConsumptionDelay: number;
-  private terminalCount: number = 0; // Track total terminal transactions
-  private lastTerminalCountLog: number = 0; // Track last logged count to avoid duplicate logs
 
   constructor(options: TransactionTrackerOptions = {}) {
     super();
@@ -201,16 +156,6 @@ export class TransactionTracker extends EventEmitter {
     const oldStatus = this.trackedTransactions.get(txHash);
     this.trackedTransactions.set(txHash, newStatus);
 
-    // Check if this is a new terminal status (status changed to terminal)
-    const wasTerminal = oldStatus ? this.isTerminalStatus(oldStatus.status) : false;
-    const isTerminal = this.isTerminalStatus(newStatus.status);
-    
-    if (!wasTerminal && isTerminal) {
-      // Transaction just reached terminal status
-      this.terminalCount++;
-      this.logTerminalCount(newStatus.status);
-    }
-
     // Emit status change event
     this.emit('statusChanged', txHash, newStatus, oldStatus);
 
@@ -235,8 +180,6 @@ export class TransactionTracker extends EventEmitter {
     return this.trackedTransactions.get(txHash);
   }
 
-
-
   /**
    * Check if a transaction status is terminal (FINALIZED, FAILED)
    */
@@ -244,21 +187,6 @@ export class TransactionTracker extends EventEmitter {
     return status === TransactionStatus.FINALIZED || 
            status === TransactionStatus.FAILED;
   }
-
-  /**
-   * Log the current terminal count when a new transaction reaches terminal status
-   */
-  private logTerminalCount(terminalStatus: TransactionStatus): void {
-    const statusEmoji = terminalStatus === TransactionStatus.FINALIZED ? '✅' :
-                       terminalStatus === TransactionStatus.FAILED ? '❌' : '⏰';
-    const statusName = TransactionStatus[terminalStatus];
-    
-    console.log(`🎯 [REAL-TIME] Transaction reached ${statusName} status! Total terminal transactions: ${this.terminalCount} ${statusEmoji}`);
-  }
-
-
-
-
 
   /**
    * Wait for a transaction to reach any terminal status (FINALIZED, FAILED)

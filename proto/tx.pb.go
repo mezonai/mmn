@@ -25,28 +25,25 @@ const (
 type TransactionStatus int32
 
 const (
-	TransactionStatus_UNKNOWN   TransactionStatus = 0
-	TransactionStatus_PENDING   TransactionStatus = 1 // Transaction is in mempool
-	TransactionStatus_CONFIRMED TransactionStatus = 2 // Transaction is included in a block
-	TransactionStatus_FINALIZED TransactionStatus = 3 // Transaction is finalized (block has enough votes)
-	TransactionStatus_FAILED    TransactionStatus = 4 // Transaction failed validation
+	TransactionStatus_PENDING   TransactionStatus = 0 // Transaction is in mempool
+	TransactionStatus_CONFIRMED TransactionStatus = 1 // Transaction is included in a block
+	TransactionStatus_FINALIZED TransactionStatus = 2 // Transaction is finalized (block has enough votes)
+	TransactionStatus_FAILED    TransactionStatus = 3 // Transaction failed validation
 )
 
 // Enum value maps for TransactionStatus.
 var (
 	TransactionStatus_name = map[int32]string{
-		0: "UNKNOWN",
-		1: "PENDING",
-		2: "CONFIRMED",
-		3: "FINALIZED",
-		4: "FAILED",
+		0: "PENDING",
+		1: "CONFIRMED",
+		2: "FINALIZED",
+		3: "FAILED",
 	}
 	TransactionStatus_value = map[string]int32{
-		"UNKNOWN":   0,
-		"PENDING":   1,
-		"CONFIRMED": 2,
-		"FINALIZED": 3,
-		"FAILED":    4,
+		"PENDING":   0,
+		"CONFIRMED": 1,
+		"FINALIZED": 2,
+		"FAILED":    3,
 	}
 )
 
@@ -433,7 +430,7 @@ func (x *TransactionStatusInfo) GetStatus() TransactionStatus {
 	if x != nil {
 		return x.Status
 	}
-	return TransactionStatus_UNKNOWN
+	return TransactionStatus_PENDING
 }
 
 func (x *TransactionStatusInfo) GetBlockSlot() uint64 {
@@ -545,14 +542,13 @@ const file_tx_proto_rawDesc = "" +
 	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
 	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"#\n" +
-	"!SubscribeTransactionStatusRequest*W\n" +
+	"!SubscribeTransactionStatusRequest*J\n" +
 	"\x11TransactionStatus\x12\v\n" +
-	"\aUNKNOWN\x10\x00\x12\v\n" +
-	"\aPENDING\x10\x01\x12\r\n" +
-	"\tCONFIRMED\x10\x02\x12\r\n" +
-	"\tFINALIZED\x10\x03\x12\n" +
+	"\aPENDING\x10\x00\x12\r\n" +
+	"\tCONFIRMED\x10\x01\x12\r\n" +
+	"\tFINALIZED\x10\x02\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x042\xa6\x02\n" +
+	"\x06FAILED\x10\x032\xa6\x02\n" +
 	"\tTxService\x120\n" +
 	"\vTxBroadcast\x12\x10.mmn.SignedTxMsg\x1a\x0f.mmn.TxResponse\x12-\n" +
 	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12T\n" +

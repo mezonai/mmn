@@ -5,11 +5,10 @@ option go_package = "mmn/proto;proto";
 
 // Transaction status enum
 enum TransactionStatus {
-  UNKNOWN = 0;
-  PENDING = 1;      // Transaction is in mempool
-  CONFIRMED = 2;    // Transaction is included in a block
-  FINALIZED = 3;    // Transaction is finalized (block has enough votes)
-  FAILED = 4;       // Transaction failed validation
+  PENDING = 0;      // Transaction is in mempool
+  CONFIRMED = 1;    // Transaction is included in a block
+  FINALIZED = 2;    // Transaction is finalized (block has enough votes)
+  FAILED = 3;       // Transaction failed validation
 }
 
 message TxMsg { 

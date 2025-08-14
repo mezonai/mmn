@@ -329,11 +329,6 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 // GetTransactionStatus returns real-time status by checking mempool and blockstore.
 func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
 	txHash := in.TxHash
-	resp := &pb.TransactionStatusInfo{
-		TxHash:    txHash,
-		Status:    pb.TransactionStatus_UNKNOWN,
-		Timestamp: uint64(time.Now().Unix()),
-	}
 
 	// 1) Check mempool
 	if s.mempool != nil {
@@ -343,8 +338,12 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			tx, err := utils.ParseTx(data)
 			if err == nil {
 				if tx.Hash() == txHash {
-					resp.Status = pb.TransactionStatus_PENDING
-					return resp, nil
+					return &pb.TransactionStatusInfo{
+						TxHash:        txHash,
+						Status:        pb.TransactionStatus_PENDING,
+						Confirmations: 0, // No confirmations for mempool transactions
+						Timestamp:     uint64(time.Now().Unix()),
+					}, nil
 				}
 			}
 		}
@@ -354,22 +353,25 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 	if s.blockStore != nil {
 		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
 		if found {
-			resp.BlockSlot = slot
-			resp.BlockHash = blk.HashString()
-			resp.Confirmations = s.blockStore.GetConfirmations(slot)
-
-			// Determine status based on confirmations
-			if resp.Confirmations > 1 {
-				resp.Status = pb.TransactionStatus_FINALIZED
-			} else {
-				resp.Status = pb.TransactionStatus_CONFIRMED
+			confirmations := s.blockStore.GetConfirmations(slot)
+			status := pb.TransactionStatus_CONFIRMED
+			if confirmations > 1 {
+				status = pb.TransactionStatus_FINALIZED
 			}
-			return resp, nil
+
+			return &pb.TransactionStatusInfo{
+				TxHash:        txHash,
+				Status:        status,
+				BlockSlot:     slot,
+				BlockHash:     blk.HashString(),
+				Confirmations: confirmations,
+				Timestamp:     uint64(time.Now().Unix()),
+			}, nil
 		}
 	}
 
-	// 3) Not found anywhere -> UNKNOWN for now
-	return resp, nil
+	// 3) Transaction not found anywhere -> return nil and error
+	return nil, fmt.Errorf("transaction not found: %s", txHash)
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system
