@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"mmn/pkg/common/hexutil"
+	"github.com/mezonai/mmn/pkg/common/hexutil"
 )
 
 type MyType [5]byte

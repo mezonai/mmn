@@ -5,22 +5,23 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"mmn/client_test/mezon-server-sim/mezoncfg"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	"mmn/client_test/mezon-server-sim/mmn/service"
 	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 )
 
 const (
-	defaultMainnetEndpoint = "localhost:9001" // Your local mainnet gRPC endpoint
-	defaultDbURL           = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
-	defaultMasterKey       = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 của "mezon_test_master_key_1234567890"
+	defaultMainnetEndpoints = "localhost:9001,localhost:9002,localhost:9003" // Your local mainnet gRPC endpoint
+	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
+	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
 )
 
 const totalRequests = 2000
@@ -54,7 +55,7 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 	t.Helper()
 
 	// Get config from environment or use defaults
-	endpoint := getEnvOrDefault("MMN_ENDPOINT", defaultMainnetEndpoint)
+	endpoint := getEnvOrDefault("MMN_ENDPOINT", defaultMainnetEndpoints)
 	dbURL := getEnvOrDefault("DATABASE_URL", defaultDbURL)
 	masterKey := getEnvOrDefault("MASTER_KEY", defaultMasterKey)
 
@@ -89,7 +90,7 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 
 	// Setup mainnet client
 	config := mezoncfg.MmnConfig{
-		Endpoint:  endpoint,
+		Endpoints: endpoint,
 		Timeout:   30000,
 		ChainID:   "1",
 		MasterKey: masterKey,

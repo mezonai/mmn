@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"mmn/interfaces"
-	"mmn/types"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/types"
 )
 
 type Mempool struct {

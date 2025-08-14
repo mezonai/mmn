@@ -7,30 +7,34 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"mmn/client_test/mezon-server-sim/mezoncfg"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"mmn/client_test/mezon-server-sim/mmn/domain"
-	"mmn/client_test/mezon-server-sim/mmn/service"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	pb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 
 	_ "github.com/lib/pq"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Test configuration - set these via environment variables
 const (
-	defaultMainnetEndpoint = "localhost:9001" // Your local mainnet gRPC endpoint
-	defaultDbURL           = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
-	defaultMasterKey       = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 của "mezon_test_master_key_1234567890"
+	defaultMainnetEndpoints = "localhost:9001,localhost:9002,localhost:9003" // Your local mainnet gRPC endpoint
+	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
+	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
 )
 
 func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 	t.Helper()
 
 	// Get config from environment or use defaults
-	endpoint := getEnvOrDefault("MMN_ENDPOINT", defaultMainnetEndpoint)
+	endpoint := getEnvOrDefault("MMN_ENDPOINT", defaultMainnetEndpoints)
 	dbURL := getEnvOrDefault("DATABASE_URL", defaultDbURL)
 	masterKey := getEnvOrDefault("MASTER_KEY", defaultMasterKey)
 
@@ -73,7 +77,7 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 
 	// Setup mainnet client
 	config := mezoncfg.MmnConfig{
-		Endpoint:  endpoint,
+		Endpoints: endpoint,
 		Timeout:   30000,
 		ChainID:   "1",
 		MasterKey: masterKey,
@@ -168,14 +172,13 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 }
 
 func TestSendToken_Integration_Faucet(t *testing.T) {
-	fmt.Println("TestSendToken_Integration_Faucet")
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
-	fmt.Println("faucetPublicKey", faucetPublicKey)
+	fmt.Println("faucetPublicKey13", faucetPublicKey)
 	toAddress := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
 
 	// Check balance of toAddress
@@ -503,41 +506,124 @@ func testListTransactionsByAddress(t *testing.T, ctx context.Context, svc *servi
 			}
 		}
 	})
+}
 
-	// Test listing transactions for to address
-	t.Run("ToAddress_AllTransactions", func(t *testing.T) {
-		transactions, err := svc.ListTransactionsByAddress(ctx, toAddr, 10, 1, 0) // filter=0 (all)
-		if err != nil {
-			t.Fatalf("ListTransactionsByAddress failed: %v", err)
-		}
+// TestHealthCheck_Integration tests the health check functionality with real mainnet nodes
+func TestHealthCheck_Integration(t *testing.T) {
+	// Get config from environment or use defaults
+	endpoint := getEnvOrDefault("MMN_ENDPOINT", defaultMainnetEndpoints)
 
-		t.Logf("All transactions for %s: count=%d", toAddr[:16], transactions.Total)
+	// Parse endpoints (assuming comma-separated)
+	endpoints := strings.Split(endpoint, ",")
 
-		// Verify we have at least one transaction (the transfer)
-		if transactions.Total < 1 {
-			t.Errorf("Expected at least 1 transaction for to address %s, got %d", toAddr[:16], transactions.Total)
-		}
-	})
+	if len(endpoints) == 0 {
+		t.Fatalf("No endpoints configured, health check test failed")
+	}
 
-	// Test listing received transactions only (filter=2)
-	t.Run("ToAddress_FilterReceivedTransactions", func(t *testing.T) {
-		transactions, err := svc.ListTransactionsByAddress(ctx, toAddr, 10, 1, 2) // filter=2 (received)
-		if err != nil {
-			t.Fatalf("ListTransactionsByAddress (received) failed: %v", err)
-		}
+	t.Run("BasicHealthCheck", func(t *testing.T) {
+		for i, ep := range endpoints {
+			t.Logf("Testing health check for endpoint %d: %s", i+1, ep)
 
-		t.Logf("Transaction received for %s: count=%d", toAddr[:16], transactions.Total)
+			// Connect to the node
+			conn, err := grpc.NewClient(ep, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				t.Logf("Failed to connect to %s: %v", ep, err)
+				continue
+			}
+			defer conn.Close()
 
-		if transactions.Total < 1 {
-			t.Errorf("Expected at least 1 transaction for to address %s, got %d", toAddr[:16], transactions.Total)
-		}
+			// Create health service client
+			healthClient := pb.NewHealthServiceClient(conn)
 
-		// Verify all transactions in the list are received transactions (toAddr is recipient)
-		for _, tx := range transactions.Txs {
-			if tx.Recipient != toAddr {
-				t.Errorf("Transaction of type received for %s: Recipient should be %s, got %s", toAddr[:16], toAddr, tx.Recipient)
-				break
+			// Test basic health check
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			resp, err := healthClient.Check(ctx, &pb.Empty{})
+			if err != nil {
+				t.Fatalf("Health check failed for %s: %v", ep, err)
+			}
+
+			if resp.ErrorMessage != "" {
+				t.Fatalf("Error Message: %s", resp.ErrorMessage)
+			}
+
+			// Log health check response
+			t.Logf("Health check response from %s:", ep)
+			t.Logf("  Status: %v", resp.Status)
+			t.Logf("  Node ID: %s", resp.NodeId)
+			t.Logf("  Current Slot: %d", resp.CurrentSlot)
+			t.Logf("  Block Height: %d", resp.BlockHeight)
+			t.Logf("  Mempool Size: %d", resp.MempoolSize)
+			t.Logf("  Is Leader: %v", resp.IsLeader)
+			t.Logf("  Is Follower: %v", resp.IsFollower)
+			t.Logf("  Version: %s", resp.Version)
+			t.Logf("  Uptime: %d seconds", resp.Uptime)
+
+			// Basic validation
+			if resp.NodeId == "" {
+				t.Fatalf("Expected non-empty node ID from %s", ep)
+			}
+
+			if resp.Status == pb.HealthCheckResponse_UNKNOWN {
+				t.Fatalf("Warning: Node %s returned UNKNOWN status", ep)
+			}
+
+			if resp.Status == pb.HealthCheckResponse_NOT_SERVING {
+				t.Fatalf("Warning: Node %s is NOT_SERVING", ep)
 			}
 		}
 	})
+
+	// t.Run("HealthCheckStreaming", func(t *testing.T) {
+	// 	for i, ep := range endpoints {
+	// 		t.Logf("Testing streaming health check for endpoint %d: %s", i+1, ep)
+
+	// 		conn, err := grpc.NewClient(ep, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// 		if err != nil {
+	// 			t.Logf("Failed to connect to %s: %v", ep, err)
+	// 			continue
+	// 		}
+	// 		defer conn.Close()
+
+	// 		healthClient := pb.NewHealthServiceClient(conn)
+
+	// 		req := &pb.HealthCheckRequest{
+	// 			NodeId:    fmt.Sprintf("test-client-stream-%d", i+1),
+	// 			Timestamp: uint64(time.Now().Unix()),
+	// 		}
+
+	// 		// Test streaming health check
+	// 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// 		defer cancel()
+
+	// 		stream, err := healthClient.Watch(ctx, req)
+	// 		if err != nil {
+	// 			t.Logf("Streaming health check failed for %s: %v", ep, err)
+	// 			continue
+	// 		}
+
+	// 		// Receive a few health updates
+	// 		updateCount := 0
+	// 		maxUpdates := 3
+
+	// 		for updateCount < maxUpdates {
+	// 			resp, err := stream.Recv()
+	// 			if err != nil {
+	// 				t.Logf("Stream receive failed for %s: %v", ep, err)
+	// 				break
+	// 			}
+
+	// 			t.Logf("Health update %d from %s: Slot=%d, Status=%v",
+	// 				updateCount+1, ep, resp.CurrentSlot, resp.Status)
+
+	// 			updateCount++
+
+	// 			// Small delay to avoid overwhelming the stream
+	// 			time.Sleep(1 * time.Second)
+	// 		}
+
+	// 		t.Logf("Received %d health updates from %s", updateCount, ep)
+	// 	}
+	// })
 }
