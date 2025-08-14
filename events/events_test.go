@@ -1,9 +1,10 @@
 package events
 
 import (
-	"mmn/types"
 	"testing"
 	"time"
+
+	"github.com/mezonai/mmn/types"
 )
 
 func TestEventBus(t *testing.T) {

@@ -1,6 +1,6 @@
 package blockstore
 
-import "mmn/block"
+import "github.com/mezonai/mmn/block"
 
 // Store abstracts the block storage backend (filesystem, RocksDB, ...).
 // It is the minimal interface required by validator and network layers.

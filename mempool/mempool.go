@@ -3,11 +3,12 @@ package mempool
 import (
 	"context"
 	"fmt"
-	"mmn/events"
-	"mmn/interfaces"
-	"mmn/types"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/types"
 )
 
 type Mempool struct {

@@ -3,11 +3,12 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-	"mmn/types"
 
-	"mmn/block"
-	"mmn/poh"
-	pb "mmn/proto"
+	"github.com/mezonai/mmn/types"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/poh"
+	pb "github.com/mezonai/mmn/proto"
 )
 
 // -- Block --

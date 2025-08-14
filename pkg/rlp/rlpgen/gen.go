@@ -23,7 +23,7 @@ import (
 	"go/types"
 	"sort"
 
-	"mmn/pkg/rlp/internal/rlpstruct"
+	"github.com/mezonai/mmn/pkg/rlp/internal/rlpstruct"
 )
 
 // buildContext keeps the data needed for make*Op.
