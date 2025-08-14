@@ -1,4 +1,4 @@
-package main
+package bootstrap
 
 const NodeInfoProtocol = "/node-info"
 
