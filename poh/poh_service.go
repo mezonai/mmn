@@ -3,6 +3,8 @@ package poh
 import (
 	"fmt"
 	"time"
+
+	"github.com/mezonai/mmn/exception"
 )
 
 type PohService struct {
@@ -21,7 +23,9 @@ func NewPohService(recorder *PohRecorder, interval time.Duration) *PohService {
 }
 
 func (s *PohService) Start() {
-	go s.tickAndFlush()
+	exception.SafeGoWithPanic("stickAndFlush", func() {
+		s.tickAndFlush()
+	})
 }
 
 func (s *PohService) Stop() {

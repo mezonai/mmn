@@ -9,6 +9,7 @@ import (
 
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
@@ -60,7 +61,10 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterAccountServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, _ := net.Listen("tcp", addr)
-	go grpcSrv.Serve(lis)
+
+	exception.SafeGo("Grpc Server", func() {
+		grpcSrv.Serve(lis)
+	})
 	fmt.Printf("[gRPC] server listening on %s", addr)
 	return grpcSrv
 }

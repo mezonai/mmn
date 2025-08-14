@@ -16,6 +16,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
@@ -164,13 +165,13 @@ func runNode() {
 	// Start services
 	startServices(&cfg, libP2pClient, ld, collector, val, bs, mp)
 
-	go func() {
+	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
 		log.Println("Shutting down node...")
 		// for now just shutdown p2p network
 		libP2pClient.Close()
 		cancel()
-	}()
+	})
 
 	//  block until cancel
 	<-ctx.Done()

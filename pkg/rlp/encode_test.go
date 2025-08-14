@@ -576,6 +576,7 @@ func BenchmarkEncodeConcurrentInterface(b *testing.B) {
 	var wg sync.WaitGroup
 	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
 		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
 

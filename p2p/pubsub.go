@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
@@ -163,31 +164,43 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
-			go ln.HandleBlockTopic(ctx, sub)
+			exception.SafeGoWithPanic("HandleBlockTopic", func() {
+				ln.HandleBlockTopic(ctx, sub)
+			})
 		}
 	}
 
 	if ln.topicVotes, err = ln.pubsub.Join(TopicVotes); err == nil {
 		if sub, err := ln.topicVotes.Subscribe(); err == nil {
-			go ln.HandleVoteTopic(ctx, sub)
+			exception.SafeGoWithPanic("HandleVoteTopic", func() {
+				ln.HandleVoteTopic(ctx, sub)
+			})
 		}
 	}
 
 	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
 		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			go ln.HandleTxTopic(ctx, sub)
+			exception.SafeGoWithPanic("handleTxTopic", func() {
+				ln.HandleTxTopic(ctx, sub)
+			})
 		}
 	}
 
 	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
 		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
-			go ln.handleBlockSyncRequestTopic(ctx, sub)
+			exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
+				ln.handleBlockSyncRequestTopic(ctx, sub)
+			})
+
 		}
 	}
 
 	if ln.topicBlockSyncRes, err = ln.pubsub.Join(BlockSyncResponseTopic); err == nil {
 		if sub, err := ln.topicBlockSyncRes.Subscribe(); err == nil {
-			go ln.handleBlockSyncResponseTopic(ctx, sub)
+
+			exception.SafeGoWithPanic("handleBlockSyncResponseTopic", func() {
+				ln.handleBlockSyncResponseTopic(ctx, sub)
+			})
 		}
 	}
 }
