@@ -86,7 +86,7 @@ func NewNetWork(
 		cancel:       cancel,
 	}
 
-	ln.setupHandlers(ctx, bootstrapPeers) // ✅ truyền ctx xuống
+	ln.setupHandlers(ctx, bootstrapPeers)
 	go ln.Discovery(customDiscovery, ctx, h)
 
 	logx.Info("NETWORK", fmt.Sprintf("Libp2p network started with ID: %s", h.ID().String()))
@@ -108,37 +108,27 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 
 		addr, err := ma.NewMultiaddr(bootstrapPeer)
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", bootstrapPeer, err.Error())
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address: %s, error: %v", bootstrapPeer, err)
 			continue
 		}
 
 		info, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Failed to parse peer info:", bootstrapPeer, err.Error())
+			logx.Error("NETWORK:SETUP", "Failed to parse peer info: %s, error: %v", bootstrapPeer, err)
 			continue
 		}
 
 		if err := ln.host.Connect(ctx, *info); err != nil {
-			logx.Error("NETWORK:SETUP", "Failed to connect to bootstrap:", bootstrapPeer, err.Error())
+			logx.Error("NETWORK:SETUP", "Failed to connect to bootstrap: %s, error: %v", bootstrapPeer, err)
 			continue
 		}
 
-		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
+		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer: %s", bootstrapPeer)
 
 		go ln.RequestNodeInfo(bootstrapPeer, info)
-		var fromSlot uint64 = 0
-		if boundary, ok := ln.blockStore.LastEntryInfoAtSlot(0); ok {
-			fromSlot = boundary.Slot + 1
-		}
-
-		go ln.RequestBlockSync(ctx, fromSlot)
 
 		break
 	}
-
-	logx.Info("NETWORK:SETUP", fmt.Sprintf("Libp2p network started with ID: %s", ln.host.ID().String()))
-	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
-	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
 }
 
 // this func will call if node shutdown for now just cancle when error

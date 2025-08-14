@@ -33,9 +33,10 @@ type Libp2pNetwork struct {
 	topicBlockSyncReq *pubsub.Topic
 	topicBlockSyncRes *pubsub.Topic
 
-	onBlockReceived func(*block.Block) error
-	onVoteReceived  func(*consensus.Vote) error
-	onTxReceived    func(*types.Transaction) error
+	onBlockReceived        func(*block.Block) error
+	onVoteReceived         func(*consensus.Vote) error
+	onTxReceived           func(*types.Transaction) error
+	onSyncResponseReceived func([]*block.Block) error
 
 	blockStreams map[peer.ID]network.Stream
 	voteStreams  map[peer.ID]network.Stream

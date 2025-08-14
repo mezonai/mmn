@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
@@ -66,11 +67,57 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 }
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
+	ln.SetSyncResponseCallback(func(blocks []*block.Block) error {
+		logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
+
+		for _, blk := range blocks {
+			if blk == nil {
+				continue
+			}
+			// Verify PoH
+			if err := blk.VerifyPoH(); err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Invalid PoH for synced block: ", err)
+				continue
+			}
+
+			// Verify block
+			if err := ld.VerifyBlock(blk); err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Block verification failed for synced block: ", err)
+				continue
+			}
+
+			// Add to block store
+			if err := bs.AddBlockPending(blk); err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
+				continue
+			}
+
+			logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
+		}
+
+		return nil
+	})
+
+	logx.Info("NETWORK:SYNC BLOCK", "Sync response callback has been set up successfully")
+
+	go func() {
+		time.Sleep(2 * time.Second)
+
+		var fromSlot uint64 = 0
+		if boundary, ok := bs.LastEntryInfoAtSlot(0); ok {
+			fromSlot = boundary.Slot + 1
+		}
+
+		ctx := context.Background()
+		if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
+			logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
+		}
+	}()
+
 	ln.SetCallbacks(
 		func(blk *block.Block) error {
 			logx.Info("BLOCK", "Received block from network: slot=", blk.Slot)
 
-			// TODO: need to verify signature and leader ID
 			// Verify PoH
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
@@ -202,15 +249,17 @@ func (ln *Libp2pNetwork) SetCallbacks(
 	ln.onTxReceived = onTx
 }
 
+func (ln *Libp2pNetwork) SetSyncResponseCallback(onSyncResponse func([]*block.Block) error) {
+	ln.onSyncResponseReceived = onSyncResponse
+}
+
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
 	logx.Info("TX", "Broadcasting transaction to network")
-	// Serialize transaction to JSON
 	txData, err := json.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
-	// Publish to pubsub topic
 	if err := ln.topicTxs.Publish(ctx, txData); err != nil {
 		return fmt.Errorf("failed to publish transaction: %w", err)
 	}

@@ -17,13 +17,36 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 	req := SyncRequest{FromSlot: fromSlot}
 	data, err := json.Marshal(req)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed to marshal sync request: %v", err)
-		logx.Error("NETWORK:SYNC BLOCK", errMsg)
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to marshal sync request:", err)
 		return err
 	}
 
-	logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Requesting block sync from slot %d", fromSlot))
-	return ln.topicBlockSyncReq.Publish(ctx, data)
+	if ln.topicBlockSyncReq == nil {
+		errMsg := "sync request topic is not initialized"
+		logx.Error("NETWORK:SYNC BLOCK", errMsg)
+		return fmt.Errorf(errMsg)
+	}
+
+	err = ln.topicBlockSyncReq.Publish(ctx, data)
+	if err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to publish sync request for slot", fromSlot, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
+	var fromSlot uint64 = 0
+
+	if boundary, ok := ln.blockStore.LastEntryInfoAtSlot(0); ok {
+		fromSlot = boundary.Slot + 1
+		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", boundary.Slot, ",", " requesting sync from slot ", fromSlot)
+	} else {
+		logx.Info("NETWORK:SYNC BLOCK", "Block store appears empty, requesting sync from slot 0")
+	}
+
+	return ln.RequestBlockSync(ctx, fromSlot)
 }
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()
