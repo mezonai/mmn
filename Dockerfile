@@ -9,11 +9,12 @@ RUN apt-get update && apt-get install -y \
   libgflags-dev \
   liblz4-dev \
   libzstd-dev \
+  liburing-dev \
   git \
   cmake \
   wget \
   unzip
-
+RUN rm -rf /var/lib/apt/lists/*
 # Build RocksDB
 ## Option 1: Using RocksDB from source
 
@@ -32,7 +33,7 @@ COPY libs/rocksdb /usr/local/include/rocksdb
 # Set up CGO build environment
 ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-I/usr/local/include"
-ENV CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
+ENV CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
 
 WORKDIR /app
 COPY . .
@@ -53,6 +54,8 @@ RUN apt-get update && apt-get install -y \
   libbz2-1.0 \
   liblz4-1 \
   libzstd1 \
+  liburing-dev \
+  liburing2 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
