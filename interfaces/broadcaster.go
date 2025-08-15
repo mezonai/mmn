@@ -12,4 +12,8 @@ type Broadcaster interface {
 	BroadcastBlock(ctx context.Context, blk *block.Block) error
 	BroadcastVote(ctx context.Context, vt *consensus.Vote) error
 	TxBroadcast(ctx context.Context, tx *types.Transaction) error
+
+	// Shred broadcasting for optimized block transmission
+	BroadcastShred(ctx context.Context, shred *types.Shred) error
+	BroadcastShreds(ctx context.Context, shreds []types.Shred) error
 }

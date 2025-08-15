@@ -327,11 +327,22 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	log.Printf("Validator config: batchLoopInterval=%v, monitorLoopInterval=%v",
 		leaderBatchLoopInterval, roleMonitorLoopInterval)
 
+	shredderConfig := validator.ShredderConfig{
+		K:          32,
+		M:          8,
+		MaxPayload: 1024,
+	}
+	shredder, err := validator.New(shredderConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shredder: %w", err)
+	}
+
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
+		shredderConfig, shredder,
 	)
 	val.Run()
 

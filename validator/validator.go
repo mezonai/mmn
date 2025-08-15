@@ -3,6 +3,7 @@ package validator
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
@@ -41,6 +43,15 @@ type Validator struct {
 	session     *ledger.Session
 	lastSession *ledger.Session
 	collector   *consensus.Collector
+
+	// Shredding support
+	shredder *Shredder
+
+	// Entry buffer for shredding
+	entryBuffer   [][]byte // Serialized entries ready for shredding
+	bufferSize    int      // Current buffer size in bytes
+	maxBufferSize int      // Threshold to trigger shred broadcast
+
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
@@ -66,6 +77,8 @@ func NewValidator(
 	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
+	shredderCfg ShredderConfig,
+	shredder *Shredder,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -89,9 +102,113 @@ func NewValidator(
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
+		shredder:                  shredder,
+		entryBuffer:               make([][]byte, 0),
+		bufferSize:                0,
+		maxBufferSize:             shredderCfg.MaxPayload * shredderCfg.K,
 	}
 	svc.OnEntry = v.handleEntry
 	return v
+}
+
+// serializeEntry converts a PoH entry to bytes for shredding
+func (v *Validator) serializeEntry(entry poh.Entry) ([]byte, error) {
+	return json.Marshal(entry)
+}
+
+// tryBroadcastShreds checks if buffer threshold is reached and broadcasts shreds if so
+func (v *Validator) tryBroadcastShreds(slot uint64) error {
+	logx.Info("LEADER", "tryBroadcastShreds", "bufferSize", v.bufferSize, "maxBufferSize", v.maxBufferSize)
+	if v.bufferSize < v.maxBufferSize {
+		return nil // Not enough data yet
+	}
+
+	// Create signing function
+	signer := NewSigner(v.PrivKey)
+
+	// Generate shreds from buffered entries
+	dataShreds, codingShreds, err := v.shredder.MakeShreds(
+		slot,
+		v.entryBuffer,
+		signer,
+		1, // version
+		0, // not end_of_slot yet
+	)
+	if err != nil {
+		logx.Error("LEADER", "tryBroadcastShreds", "error", err)
+		return err
+	}
+
+	logx.Info("LEADER", "tryBroadcastShreds", "Broadcasting", len(dataShreds),
+		"data +", len(codingShreds),
+		"coding shreds for slot", slot,
+		"(buffer size:", v.bufferSize, "bytes)")
+
+	// Broadcast data shreds first (more important)
+	for i, shred := range dataShreds {
+		if err := v.netClient.BroadcastShred(context.Background(), &shred); err != nil {
+			logx.Warn("LEADER", "tryBroadcastShreds", "Failed to broadcast data shred", i, "error", err)
+		}
+	}
+
+	// Then broadcast coding shreds for redundancy
+	for i, shred := range codingShreds {
+		if err := v.netClient.BroadcastShred(context.Background(), &shred); err != nil {
+			logx.Warn("LEADER", "tryBroadcastShreds", "Failed to broadcast coding shred", i, "error", err)
+		}
+	}
+
+	// Clear buffer after broadcasting
+	v.entryBuffer = make([][]byte, 0)
+	v.bufferSize = 0
+
+	return nil
+}
+
+// broadcastEndOfSlotShreds broadcasts any remaining buffered entries as end-of-slot shreds
+func (v *Validator) broadcastEndOfSlotShreds(slot uint64) error {
+	logx.Info("LEADER", "broadcastEndOfSlotShreds", "Broadcasting", len(v.entryBuffer), "entries for slot", slot)
+	if len(v.entryBuffer) == 0 {
+		return nil // Nothing to broadcast
+	}
+
+	// Create signing function
+	signer := NewSigner(v.PrivKey)
+
+	// Generate final shreds with end_of_slot flag
+	dataShreds, codingShreds, err := v.shredder.MakeShreds(
+		slot,
+		v.entryBuffer,
+		signer,
+		1, // version
+		1, // end_of_slot flag
+	)
+	if err != nil {
+		logx.Error("LEADER", "broadcastEndOfSlotShreds", "error", err)
+		return err
+	}
+
+	logx.Info("LEADER", "broadcastEndOfSlotShreds", "Broadcasting", len(dataShreds),
+		"data +", len(codingShreds), "coding shreds for slot", slot, "(end of slot)")
+
+	// Broadcast all remaining shreds
+	for i, shred := range dataShreds {
+		if err := v.netClient.BroadcastShred(context.Background(), &shred); err != nil {
+			logx.Warn("LEADER", "broadcastEndOfSlotShreds", "Failed to broadcast final data shred", i, "error", err)
+		}
+	}
+
+	for i, shred := range codingShreds {
+		if err := v.netClient.BroadcastShred(context.Background(), &shred); err != nil {
+			logx.Warn("LEADER", "broadcastEndOfSlotShreds", "Failed to broadcast final coding shred", i, "error", err)
+		}
+	}
+
+	// Clear buffer
+	v.entryBuffer = make([][]byte, 0)
+	v.bufferSize = 0
+
+	return nil
 }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
@@ -136,6 +253,9 @@ waitLoop:
 func (v *Validator) onLeaderSlotEnd() {
 	v.leaderStartAtSlot = NoSlot
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+	// Reset shred buffer for new slot
+	v.entryBuffer = make([][]byte, 0)
+	v.bufferSize = 0
 	v.session = v.ledger.NewSession()
 	v.lastSession = v.ledger.NewSession()
 }
@@ -159,13 +279,18 @@ func (v *Validator) IsFollower(slot uint64) bool {
 	return v.IsLeader(slot)
 }
 
-// handleEntry buffers entries and assembles a block at slot boundary.
+// handleEntry buffers entries and broadcasts shreds when threshold is reached
 func (v *Validator) handleEntry(entries []poh.Entry) {
 	currentSlot := v.Recorder.CurrentSlot()
 
-	// When slot advances, assemble block for lastSlot if we were leader
+	// When slot advances, handle end of previous slot if we were leader
 	if currentSlot > v.lastSlot && v.IsLeader(v.lastSlot) {
-		// Retrieve previous block hash from blockStore
+		// Broadcast any remaining entries as end-of-slot shreds
+		if err := v.broadcastEndOfSlotShreds(v.lastSlot); err != nil {
+			logx.Error("LEADER", "handleEntry", "Failed to broadcast end-of-slot shreds", err)
+		}
+
+		// Still create traditional block for consensus and storage
 		var hash [32]byte
 		if v.lastSlot == 0 {
 			hash = v.blockStore.Seed()
@@ -181,20 +306,11 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			v.collectedEntries,
 		)
 
-		if err := v.ledger.VerifyBlock(blk); err != nil {
-			fmt.Printf("[LEADER] sanity verify fail: %v\n", err)
-			v.session = v.lastSession.CopyWithOverlayClone()
-			return
-		}
-
 		blk.Sign(v.PrivKey)
-		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
+		logx.Info("LEADER", "handleEntry", "Leader assembled block: slot", v.lastSlot, "entries", len(v.collectedEntries))
 
-		// Persist then broadcast
+		// Persist the block for consensus
 		v.blockStore.AddBlockPending(blk)
-		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-			fmt.Println("Failed to broadcast block:", err)
-		}
 
 		// Self-vote
 		vote := &consensus.Vote{
@@ -232,6 +348,23 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	if v.IsLeader(currentSlot) {
 		v.collectedEntries = append(v.collectedEntries, entries...)
 		fmt.Printf("Adding %d entries for slot %d\n", len(entries), currentSlot)
+
+		// NEW: Also buffer entries for immediate shred broadcasting
+		for _, entry := range entries {
+			entryBytes, err := v.serializeEntry(entry)
+			if err != nil {
+				fmt.Printf("[LEADER] Failed to serialize entry: %v\n", err)
+				continue
+			}
+
+			v.entryBuffer = append(v.entryBuffer, entryBytes)
+			v.bufferSize += len(entryBytes)
+
+			// Check if we should broadcast shreds now
+			if err := v.tryBroadcastShreds(currentSlot); err != nil {
+				fmt.Printf("[LEADER] Failed to broadcast shreds: %v\n", err)
+			}
+		}
 	}
 
 	// Update lastSlot

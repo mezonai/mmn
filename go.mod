@@ -46,6 +46,7 @@ require (
 	github.com/ipfs/boxo v0.30.0 // indirect
 	github.com/ipfs/go-datastore v0.8.2 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
+	github.com/klauspost/reedsolomon v1.12.5 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-libp2p-kbucket v0.7.0 // indirect
 	github.com/libp2p/go-libp2p-record v0.3.1 // indirect

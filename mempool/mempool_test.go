@@ -38,6 +38,14 @@ func (mb *MockBroadcaster) Reset() {
 	mb.broadcastedTxs = nil
 }
 
+func (mb *MockBroadcaster) BroadcastShred(ctx context.Context, shred *types.Shred) error {
+	return nil
+}
+
+func (mb *MockBroadcaster) BroadcastShreds(ctx context.Context, shreds []types.Shred) error {
+	return nil
+}
+
 // Helper function to create a test transaction
 func createTestTx(txType int32, sender, recipient string, amount uint64, nonce uint64) *types.Transaction {
 	return &types.Transaction{

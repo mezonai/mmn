@@ -33,9 +33,15 @@ type Libp2pNetwork struct {
 	topicBlockSyncReq *pubsub.Topic
 	topicBlockSyncRes *pubsub.Topic
 
+	// Shred-related topics
+	topicShreds    *pubsub.Topic
+	topicRepairReq *pubsub.Topic
+	topicRepairRes *pubsub.Topic
+
 	onBlockReceived func(*block.Block) error
 	onVoteReceived  func(*consensus.Vote) error
 	onTxReceived    func(*types.Transaction) error
+	onShredReceived func(*types.Shred) error
 
 	blockStreams map[peer.ID]network.Stream
 	voteStreams  map[peer.ID]network.Stream
@@ -82,4 +88,28 @@ type SyncRequest struct {
 
 type SyncResponse struct {
 	Block *block.Block `json:"block"`
+}
+
+// Shred-related message types
+type ShredMessage struct {
+	Slot        uint64 `json:"slot"`
+	Index       uint32 `json:"index"`
+	FECSetIndex uint32 `json:"fec_set_index"`
+	Version     uint16 `json:"version"`
+	Type        uint8  `json:"type"` // 0=data, 1=coding
+	Flags       uint8  `json:"flags"`
+	PayloadSize uint16 `json:"payload_size"`
+	Signature   []byte `json:"signature"`
+	Payload     []byte `json:"payload"`
+}
+
+type RepairRequestMessage struct {
+	Slot        uint64   `json:"slot"`
+	FECSetIndex uint32   `json:"fec_set_index"`
+	Missing     []uint32 `json:"missing"`
+}
+
+type RepairResponseMessage struct {
+	Slot   uint64         `json:"slot"`
+	Shreds []ShredMessage `json:"shreds"`
 }

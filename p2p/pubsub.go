@@ -155,6 +155,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			mp.AddTx(txData, false)
 			return nil
 		},
+		func(shred *types.Shred) error {
+			logx.Info("SHRED", "Received shred from network: slot=", shred.Header.Slot, ",index=", shred.Header.Index)
+			return nil
+		},
 	)
 }
 
@@ -190,16 +194,37 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 			go ln.handleBlockSyncResponseTopic(ctx, sub)
 		}
 	}
+
+	// Shred topics
+	if ln.topicShreds, err = ln.pubsub.Join(TopicShreds); err == nil {
+		if sub, err := ln.topicShreds.Subscribe(); err == nil {
+			go ln.HandleShredTopic(ctx, sub)
+		}
+	}
+
+	if ln.topicRepairReq, err = ln.pubsub.Join(TopicRepairRequest); err == nil {
+		if sub, err := ln.topicRepairReq.Subscribe(); err == nil {
+			go ln.HandleRepairRequestTopic(ctx, sub)
+		}
+	}
+
+	if ln.topicRepairRes, err = ln.pubsub.Join(TopicRepairResponse); err == nil {
+		if sub, err := ln.topicRepairRes.Subscribe(); err == nil {
+			go ln.HandleRepairResponseTopic(ctx, sub)
+		}
+	}
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(
 	onBlock func(*block.Block) error,
 	onVote func(*consensus.Vote) error,
 	onTx func(*types.Transaction) error,
+	onShred func(*types.Shred) error,
 ) {
 	ln.onBlockReceived = onBlock
 	ln.onVoteReceived = onVote
 	ln.onTxReceived = onTx
+	ln.onShredReceived = onShred
 }
 
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
