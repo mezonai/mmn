@@ -125,9 +125,10 @@ func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool
 		return SlotBoundary{}, false
 	}
 
+	lastEntryHash := blk.LastEntryHash()
 	return SlotBoundary{
 		Slot: slot,
-		Hash: blk.Hash,
+		Hash: lastEntryHash,
 	}, true
 }
 

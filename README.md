@@ -10,8 +10,22 @@ MSYS_NO_PATHCONV=1 go run main.go bootnode \
 
 Example:
 MSYS_NO_PATHCONV=1 go run main.go bootnode \
-  --privkey-path "./config/bootnode_privkey.txt" \
+  --privkey-path "./node-data/bootnode_privkey.txt" \
   --bootstrap-p2p-port 9000
+
+### Run init node
+go run main.go init \
+  --data-dir <file folder> \
+  --genesis "config/genesis.yml" \
+  --database "leveldb" \
+  --privkey-path <existing private key file> (optional)
+
+Example with existing private key:
+go run main.go init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "leveldb"  --privkey-path "config/key1.txt"
+
+go run main.go init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "leveldb"  --privkey-path "config/key2.txt"
+
+go run main.go init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "leveldb"  --privkey-path "config/key3.txt"
 
 ### Run node
 MSYS_NO_PATHCONV=1 go run main.go node \
@@ -21,8 +35,21 @@ MSYS_NO_PATHCONV=1 go run main.go node \
 
 example:
 MSYS_NO_PATHCONV=1 go run main.go node \
-  --privkey-path "config/key1.txt" \
+  --data-dir "./node-data/node1" \
   --grpc-addr ":9001" \
+  --listen-addr ":8001" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+
+MSYS_NO_PATHCONV=1 go run main.go node \
+  --data-dir "./node-data/node2" \
+  --listen-addr ":8002" \
+  --grpc-addr ":9002" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+
+MSYS_NO_PATHCONV=1 go run main.go node \
+  --data-dir "./node-data/node3" \
+  --listen-addr ":8003" \
+  --grpc-addr ":9003" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)

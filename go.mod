@@ -37,6 +37,7 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/dgraph-io/badger v1.6.2 // indirect
 	github.com/dgraph-io/ristretto v0.0.2 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -54,6 +55,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
+	github.com/redis/go-redis/v9 v9.12.1 // indirect
 	github.com/tecbot/gorocksdb v0.0.0-20191217155057-f0fad39f321c // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
