@@ -59,6 +59,7 @@ coverage.txt
 
 # Local configuration that shouldn't be in container
 mmn-keys/
+node-data/
 
 # Docker files themselves
 Dockerfile*

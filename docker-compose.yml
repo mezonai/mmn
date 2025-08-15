@@ -15,21 +15,14 @@ services:
       - mezon
     restart: unless-stopped
   node1:
-    build:
-      context: .
-      args:
-        DATABASE: rocksdb
-    image: mmn-node:rocksdb
+    image: mmn-node:leveldb
     container_name: node1
-    command:
-      [
-        "./mmn", "node",
-        "--database", "rocksdb",
-        "--data-dir", "./node-data/node1",
-        "--listen-addr", ":8001",
-        "--grpc-addr", ":9001",
-        "--bootstrap-addresses", "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
-      ]
+    command: >
+      sh -c '
+        rm -rf ./node-data/node1 &&
+        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key1.txt" &&
+        ./mmn node --database leveldb --data-dir "./node-data/node1" --listen-addr ":8001" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
     depends_on:
       - bootnode
     ports:
@@ -39,17 +32,14 @@ services:
       - mezon
     restart: unless-stopped
   node2:
-    image: mmn-node:rocksdb
+    image: mmn-node:leveldb
     container_name: node2
-    command:
-      [
-        "./mmn", "node",
-        "--database", "rocksdb",
-        "--data-dir", "./node-data/node2",
-        "--listen-addr", ":8002",
-        "--grpc-addr", ":9002",
-        "--bootstrap-addresses", "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
-      ]
+    command: >
+      sh -c '
+        rm -rf ./node-data/node2 &&
+        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key2.txt" &&
+        ./mmn node --database leveldb --data-dir "./node-data/node2" --listen-addr ":8002" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
     depends_on:
       - bootnode
     ports:
@@ -60,17 +50,14 @@ services:
     restart: unless-stopped
 
   node3:
-    image: mmn-node:rocksdb
+    image: mmn-node:leveldb
     container_name: node3
-    command:
-      [
-        "./mmn", "node",
-        "--database", "rocksdb",
-        "--data-dir", "./node-data/node3",
-        "--listen-addr", ":8003",
-        "--grpc-addr", ":9003",
-        "--bootstrap-addresses", "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
-      ]
+    command: >
+      sh -c '
+        rm -rf ./node-data/node3 &&
+        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key3.txt" &&
+        ./mmn node --database leveldb --data-dir "./node-data/node3" --listen-addr ":8003" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
     depends_on:
       - bootnode
     ports:
