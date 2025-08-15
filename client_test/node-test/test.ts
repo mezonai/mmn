@@ -14,7 +14,8 @@
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import { GrpcClient } from './grpc_client';
-import { TransactionTracker, TransactionStatus } from './transaction_tracker';
+import { TransactionTracker } from './transaction_tracker';
+import { TransactionStatus } from './generated/tx';
 
 // Fixed Ed25519 keypair for faucet (hardcoded for genesis config)
 const faucetPrivateKeyHex =
@@ -381,6 +382,8 @@ class TestSuite {
     const faucetResponse = await sendTxViaGrpc(this.grpcClient, faucetTx);
     if (!faucetResponse.ok) throw new Error('Faucet transaction failed');
 
+    console.log("Waiting for faucet transaction to be finalized");
+
     // Wait for faucet transaction to be finalized
     if (faucetResponse.tx_hash) {
       await this.waitForTransactionFinalization(faucetResponse.tx_hash);
@@ -395,6 +398,8 @@ class TestSuite {
     const response1 = await sendTxViaGrpc(this.grpcClient, tx);
     if (!response1.ok) throw new Error('First transaction should succeed');
 
+    console.log("Waiting for first transaction to be finalized");
+
     // Wait for first transaction to be finalized
     if (response1.tx_hash) {
       await this.waitForTransactionFinalization(response1.tx_hash);
@@ -406,6 +411,8 @@ class TestSuite {
       console.log('✅ Duplicate transaction correctly rejected by server');
       return;
     }
+
+    console.log("Waiting for second transaction to be failed");
     
     // If the server accepted the duplicate, wait for it to fail during processing
     if (response2.tx_hash) {

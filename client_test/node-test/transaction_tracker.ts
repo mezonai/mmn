@@ -1,22 +1,6 @@
 import { EventEmitter } from 'events';
 import { GrpcClient } from './grpc_client';
-
-export enum TransactionStatus {
-  PENDING = 0,
-  CONFIRMED = 1,
-  FINALIZED = 2,
-  FAILED = 3,
-}
-
-export interface TransactionStatusInfo {
-  txHash: string;
-  status: TransactionStatus;
-  blockSlot?: number;
-  blockHash?: string;
-  confirmations?: number;
-  errorMessage?: string;
-  timestamp: number;
-}
+import { TransactionStatus, TransactionStatusInfo } from './generated/tx';
 
 export interface TransactionTrackerOptions {
   serverAddress?: string;
@@ -147,11 +131,11 @@ export class TransactionTracker extends EventEmitter {
     const newStatus: TransactionStatusInfo = {
       txHash,
       status: statusEnum,
-      blockSlot: update.block_slot ? Number(update.block_slot) : undefined,
-      blockHash: update.block_hash,
-      confirmations: update.confirmations ? Number(update.confirmations) : undefined,
-      errorMessage: update.error_message,
-      timestamp: update.timestamp ? Number(update.timestamp) : Date.now(),
+      blockSlot: update.block_slot ? BigInt(update.block_slot) : 0n,
+      blockHash: update.block_hash || "",
+      confirmations: update.confirmations ? BigInt(update.confirmations) : 0n,
+      errorMessage: update.error_message || "",
+      timestamp: update.timestamp ? BigInt(update.timestamp) : BigInt(Date.now()),
     };
 
     const oldStatus = this.trackedTransactions.get(txHash);
