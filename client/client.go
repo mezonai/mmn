@@ -80,6 +80,10 @@ func (c *MmnClient) GetTxHistory(ctx context.Context, addr string, limit, offset
 	return res, nil
 }
 
+func (c *MmnClient) Conn() *grpc.ClientConn {
+	return c.conn
+}
+
 // Close closes the gRPC connection
 func (c *MmnClient) Close() error {
 	if c.conn != nil {
