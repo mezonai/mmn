@@ -1,10 +1,8 @@
 package p2p
 
 const (
-	BlockProtocol    = "/block"
-	VoteProtocol     = "/vote"
-	TxProtocol       = "/tx"
-	NodeInfoProtocol = "/node-info"
+	NodeInfoProtocol       = "/node-info"
+	RequestBlockSyncStream = "/sync-block-request"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"

@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/types"
+	"github.com/multiformats/go-multiaddr"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -31,18 +32,15 @@ type Libp2pNetwork struct {
 	topicVotes        *pubsub.Topic
 	topicTxs          *pubsub.Topic
 	topicBlockSyncReq *pubsub.Topic
-	topicBlockSyncRes *pubsub.Topic
 
 	onBlockReceived        func(*block.Block) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTxReceived           func(*types.Transaction) error
 	onSyncResponseReceived func([]*block.Block) error
 
-	blockStreams map[peer.ID]network.Stream
-	voteStreams  map[peer.ID]network.Stream
-	txStreams    map[peer.ID]network.Stream
-	streamMu     sync.RWMutex
-	maxPeers     int
+	syncStreams map[peer.ID]network.Stream
+	streamMu    sync.RWMutex
+	maxPeers    int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -78,7 +76,8 @@ type TxMessage struct {
 }
 
 type SyncRequest struct {
-	FromSlot uint64 `json:"from_slot"`
+	FromSlot uint64                `json:"from_slot"`
+	Addrs    []multiaddr.Multiaddr `json:"addrs"`
 }
 
 type SyncResponse struct {

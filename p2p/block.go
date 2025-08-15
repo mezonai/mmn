@@ -3,12 +3,16 @@ package p2p
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"time"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/network"
 )
 
 func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subscription) {
@@ -50,68 +54,9 @@ func (ln *Libp2pNetwork) GetBlock(slot uint64) *block.Block {
 	return blk
 }
 
-func (ln *Libp2pNetwork) handleBlockSyncResponseTopic(parentCtx context.Context, sub *pubsub.Subscription) error {
-	ctx, cancel := context.WithCancel(parentCtx)
-	defer cancel()
-
-	logx.Info("NETWORK:SYNC BLOCK", "Starting sync response topic handler")
-
-	for {
-		select {
-		case <-ctx.Done():
-			logx.Info("NETWORK:SYNC BLOCK", "Stopping sync response topic handler")
-			return nil
-		default:
-			msg, err := sub.Next(ctx)
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-				logx.Error("NETWORK:SYNC BLOCK", "Next ", err.Error())
-				continue
-			}
-			if msg.ReceivedFrom == ln.host.ID() {
-				logx.Debug("NETWORK:SYNC BLOCK", "Skipping sync response from self")
-				continue
-			}
-
-			var resp SyncResponse
-			if err := json.Unmarshal(msg.Data, &resp); err != nil {
-				logx.Error("NETWORK:SYNC BLOCK", "Unmarshal ", err.Error())
-				continue
-			}
-
-			if len(resp.Blocks) > 0 {
-				firstSlot := resp.Blocks[0].Slot
-				lastSlot := resp.Blocks[len(resp.Blocks)-1].Slot
-				logx.Info("NETWORK:SYNC BLOCK", "Received", len(resp.Blocks), " blocks from slot ", firstSlot, " to ", lastSlot)
-			}
-
-			if ln.onSyncResponseReceived != nil {
-				if err := ln.onSyncResponseReceived(resp.Blocks); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
-				} else {
-					logx.Info("NETWORK:SYNC BLOCK", "Sync response callback completed successfully")
-				}
-			}
-
-			if len(resp.Blocks) > 0 && ln.onBlockReceived != nil {
-				for _, blk := range resp.Blocks {
-					if blk != nil {
-						ln.onBlockReceived(blk)
-					}
-				}
-				logx.Info("NETWORK:SYNC BLOCK", "All blocks processed through onBlockReceived callback")
-			}
-		}
-	}
-}
-
 func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(parentCtx context.Context, sub *pubsub.Subscription) {
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
-
-	const batchSize = 10
 
 	logx.Info("NETWORK:SYNC BLOCK", "Starting sync request topic handler")
 
@@ -140,93 +85,146 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(parentCtx context.Context, 
 				continue
 			}
 
-			logx.Info("NETWORK:SYNC BLOCK", "Received sync request from peer", msg.ReceivedFrom.String(), "for slot", req.FromSlot)
-
-			if boundary, ok := ln.blockStore.LastEntryInfoAtSlot(0); ok {
-				logx.Info("NETWORK:SYNC BLOCK", "Block store has blocks up to slot", boundary.Slot)
-			} else {
-				logx.Info("NETWORK:SYNC BLOCK", "Block store appears to be empty")
+			stream, err := ln.host.NewStream(context.Background(), msg.ReceivedFrom, RequestBlockSyncStream)
+			if err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Failed to open stream to peer:", err)
+				continue
 			}
+			defer stream.Close()
 
-			var batch []*block.Block
-			slot := req.FromSlot
-			totalBlocksFound := 0
-			totalBlocksSent := 0
+			ln.sendBlocksOverStream(req, stream)
 
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					blk := ln.GetBlock(slot)
-					if blk == nil {
-						if _, ok := ln.blockStore.LastEntryInfoAtSlot(slot); ok {
-							logx.Info("NETWORK:SYNC BLOCK", "Highest slot in store")
-						}
-
-						if len(batch) > 0 {
-							logx.Info("NETWORK:SYNC BLOCK", "Sending final batch of", len(batch), "blocks, ending at slot", slot-1)
-							ln.sendBlockBatch(batch)
-							totalBlocksSent += len(batch)
-						}
-						goto EndCurrentRequest
-					}
-
-					totalBlocksFound++
-					batch = append(batch, blk)
-					if len(batch) >= batchSize {
-						logx.Info("NETWORK:SYNC BLOCK", "Sending batch of", len(batch), "blocks, ending at slot", slot, "Total sent so far", totalBlocksSent+len(batch))
-						ln.sendBlockBatch(batch)
-						totalBlocksSent += len(batch)
-
-						batch = batch[:0]
-					}
-
-					slot++
-				}
-			}
-
-		EndCurrentRequest:
 			continue
 		}
 	}
 }
 
-func (ln *Libp2pNetwork) sendBlockBatch(blocks []*block.Block) {
-	if len(blocks) == 0 {
-		logx.Debug("NETWORK:SYNC BLOCK", "No blocks to send in batch")
+func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
+	defer s.Close()
+	ln.streamMu.Lock()
+	if len(ln.syncStreams) > 1 {
+		ln.streamMu.Unlock()
+		s.Close()
 		return
 	}
 
-	resp := SyncResponse{Blocks: blocks}
-	data, err := json.Marshal(resp)
+	ln.syncStreams[s.Conn().RemotePeer()] = s
+	ln.streamMu.Unlock()
+
+	logx.Info("NETWORK:SYNC BLOCK", "Starting sync response stream handler from peer", s.Conn().RemotePeer().String())
+
+	decoder := json.NewDecoder(s)
+	batchCount := 0
+	totalBlocks := 0
+
+	for {
+		var blocks []*block.Block
+		if err := decoder.Decode(&blocks); err != nil {
+			if errors.Is(err, io.EOF) {
+				logx.Info("NETWORK:SYNC BLOCK", "Stream closed by peer after ", batchCount, " batches, ", totalBlocks, " blocks received")
+				break
+			}
+			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
+			break
+		}
+
+		batchCount++
+		totalBlocks += len(blocks)
+
+		if len(blocks) > 0 {
+			firstSlot := blocks[0].Slot
+			lastSlot := blocks[len(blocks)-1].Slot
+			logx.Info("NETWORK:SYNC BLOCK",
+				"Received batch ", batchCount,
+				" with ", len(blocks), " blocks from slot ", firstSlot, " to ", lastSlot,
+			)
+		} else {
+			logx.Warn("NETWORK:SYNC BLOCK", "Received empty batch", batchCount)
+		}
+
+		if ln.onSyncResponseReceived != nil {
+			if err := ln.onSyncResponseReceived(blocks); err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
+			} else {
+				logx.Info("NETWORK:SYNC BLOCK", "Sync response callback completed successfully for batch ", batchCount)
+			}
+		}
+
+		if len(blocks) > 0 && ln.onBlockReceived != nil {
+			for _, blk := range blocks {
+				if blk != nil {
+					ln.onBlockReceived(blk)
+				}
+			}
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
+	data, err := json.Marshal(batch)
 	if err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Marshal error:", err.Error())
-		return
+		return err
+	}
+	_, err = s.Write(data)
+	return err
+}
+
+func (ln *Libp2pNetwork) RequestBlockSyncStream() error {
+	time.Sleep(15 * time.Second)
+
+	ctx := context.Background()
+	logx.Info("REQUEST BLOCK SYNC")
+
+	peers := ln.host.Network().Peers()
+
+	if len(peers) < 2 {
+		logx.Warn("NETWORK:SYNC", "Not enough peers to request block sync")
+		return fmt.Errorf("not enough peers")
 	}
 
-	// Check if topic is available
-	if ln.topicBlockSyncRes == nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Sync response topic is not initialized")
-		return
+	targetPeer := peers[1]
+
+	info := ln.host.Peerstore().PeerInfo(targetPeer)
+
+	if err := ln.host.Connect(ctx, info); err != nil {
+		logx.Error("NETWORK:SETUP", "connect peer", err.Error())
+		return err
 	}
 
-	// Publish with retry
-	maxRetries := 3
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		err = ln.topicBlockSyncRes.Publish(context.Background(), data)
-		if err == nil {
-			logx.Info("NETWORK:SYNC BLOCK", "Successfully published sync response with", len(blocks), "blocks")
-			return
+	logx.Info("NETWORK:SYNC", "Connected to peer", targetPeer.String())
+	return nil
+}
+
+func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, s network.Stream) {
+	const batchSize = 10
+
+	if boundary, ok := ln.blockStore.LastEntryInfoAtSlot(0); ok {
+		logx.Info("NETWORK:SYNC BLOCK", "Block store has blocks up to slot", boundary.Slot)
+	}
+
+	var batch []*block.Block
+	slot := req.FromSlot
+	totalBlocksSent := 0
+
+	for {
+		blk := ln.GetBlock(slot)
+		if blk == nil {
+			if len(batch) > 0 {
+				logx.Info("NETWORK:SYNC BLOCK", "Sending final batch of ", len(batch), " blocks, ending at slot ", slot-1)
+				ln.sendBlockBatchStream(batch, s)
+				totalBlocksSent += len(batch)
+			}
+			break
 		}
 
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to publish sync response (attempt", attempt, "/", maxRetries, "):", err.Error())
-
-		if attempt < maxRetries {
-			// Wait before retry
-			time.Sleep(time.Duration(attempt) * time.Second)
+		batch = append(batch, blk)
+		if len(batch) >= batchSize {
+			logx.Info("NETWORK:SYNC BLOCK", "Sending batch of", len(batch), " blocks, ending at slot ", slot, " Total sent so far ", totalBlocksSent+len(batch))
+			ln.sendBlockBatchStream(batch, s)
+			totalBlocksSent += len(batch)
+			batch = batch[:0]
 		}
-	}
 
-	logx.Error("NETWORK:SYNC BLOCK", "Failed to publish sync response after", maxRetries, "attempts")
+		slot++
+	}
 }

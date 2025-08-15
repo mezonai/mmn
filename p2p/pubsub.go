@@ -231,12 +231,6 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 			go ln.handleBlockSyncRequestTopic(ctx, sub)
 		}
 	}
-
-	if ln.topicBlockSyncRes, err = ln.pubsub.Join(BlockSyncResponseTopic); err == nil {
-		if sub, err := ln.topicBlockSyncRes.Subscribe(); err == nil {
-			go ln.handleBlockSyncResponseTopic(ctx, sub)
-		}
-	}
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(

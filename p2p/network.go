@@ -47,6 +47,7 @@ func NewNetWork(
 			return ddht, err
 		}),
 	)
+
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create libp2p host: %w", err)
@@ -72,18 +73,16 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:         h,
-		pubsub:       ps,
-		selfPubKey:   selfPubKey,
-		selfPrivKey:  selfPrivKey,
-		peers:        make(map[peer.ID]*PeerInfo),
-		blockStreams: make(map[peer.ID]network.Stream),
-		voteStreams:  make(map[peer.ID]network.Stream),
-		txStreams:    make(map[peer.ID]network.Stream),
-		blockStore:   blockStore,
-		maxPeers:     int(MaxPeers),
-		ctx:          ctx,
-		cancel:       cancel,
+		host:        h,
+		pubsub:      ps,
+		selfPubKey:  selfPubKey,
+		selfPrivKey: selfPrivKey,
+		peers:       make(map[peer.ID]*PeerInfo),
+		syncStreams: make(map[peer.ID]network.Stream),
+		blockStore:  blockStore,
+		maxPeers:    int(MaxPeers),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	ln.setupHandlers(ctx, bootstrapPeers)
@@ -99,6 +98,8 @@ func NewNetWork(
 
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) {
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
+	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
+
 	ln.SetupPubSubTopics(ctx)
 
 	for _, bootstrapPeer := range bootstrapPeers {
