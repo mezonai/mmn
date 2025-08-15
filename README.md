@@ -23,6 +23,19 @@ example:
 MSYS_NO_PATHCONV=1 go run main.go node \
   --privkey-path "config/key1.txt" \
   --grpc-addr ":9001" \
+  --listen-addr ":8001" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+
+MSYS_NO_PATHCONV=1 go run main.go node \
+  --privkey-path "config/key2.txt" \
+  --listen-addr ":8002" \
+  --grpc-addr ":9002" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+
+MSYS_NO_PATHCONV=1 go run main.go node \
+  --privkey-path "config/key3.txt" \
+  --listen-addr ":8003" \
+  --grpc-addr ":9003" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
