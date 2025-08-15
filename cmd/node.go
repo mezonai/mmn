@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -24,7 +22,6 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/p2p"
-	"github.com/mezonai/mmn/pkg/blockchain"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/validator"
 
@@ -38,15 +35,13 @@ const (
 )
 
 var (
-	privKeyPath        string
+	dataDir            string
 	listenAddr         string
 	p2pPort            string
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
-	genesisPath        string
-	// init command
-	outputDir string
+	// legacy init command
 	// database backend
 	databaseBackend string
 )
@@ -59,28 +54,18 @@ var runCmd = &cobra.Command{
 	},
 }
 
-var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize node by generating a private key",
-	Run: func(cmd *cobra.Command, args []string) {
-		generatePrivateKey()
-	},
-}
-
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.AddCommand(initCmd)
-	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", "", "Path to private key file")
+
+	// Run command flags
+	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
 	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
 	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
-	runCmd.Flags().StringVar(&genesisPath, "genesis-path", "config/genesis.yml", "Path to genesis configuration file")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 
-	// Init command flags
-	initCmd.Flags().StringVar(&outputDir, "output-dir", ".", "Output directory for the generated private key file")
 }
 
 // getRandomFreePort returns a random free port
@@ -101,44 +86,57 @@ func runNode() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
-	// Get current directory and create absolute path
-	currentDir, err := os.Getwd()
-	if err != nil {
-		logx.Warn("Failed to get current directory: %v", err)
+	// Construct paths from data directory
+	privKeyPath := filepath.Join(dataDir, "privkey.txt")
+	genesisPath := filepath.Join(dataDir, "genesis.yml")
+	blockstoreDir := filepath.Join(dataDir, "blockstore")
+
+	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
+	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
+		logx.Error("NODE", "Private key file not found at:", privKeyPath)
+		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
+		return
 	}
 
-	// Create absolute path for storage
-	absLeveldbBlockDir := filepath.Join(currentDir, leveldbBlockDir)
+	// Check if genesis.yml exists in data dir, fallback to config/genesis.yml
+	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
+		logx.Info("NODE", "Genesis file not found in data directory, using default config/genesis.yml")
+		genesisPath = "config/genesis.yml"
+	}
 
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(absLeveldbBlockDir, 0755); err != nil {
-		logx.Warn("Warning: Failed to create directory %s: %v", absLeveldbBlockDir, err)
+	// Create blockstore directory if it doesn't exist
+	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
+		logx.Error("NODE", "Failed to create blockstore directory:", err.Error())
+		return
 	}
 
 	pubKey, err := config.LoadPubKeyFromPriv(privKeyPath)
 	if err != nil {
-		logx.Error("Public Key", err.Error())
+		logx.Error("NODE", "Failed to load public key:", err.Error())
+		return
 	}
-	// Initialize components with absolute paths
-	bs, err := initializeBlockstore(pubKey, absLeveldbBlockDir, databaseBackend)
+
+	// Initialize blockstore with data directory
+	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend)
 	if err != nil {
-		logx.Warn("Failed to initialize blockstore: %v", err)
+		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
+		return
 	}
 
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {
 		p2pPort, err = getRandomFreePort()
 		if err != nil {
-			logx.Error("Failed to get random free port: %v", err)
+			logx.Error("NODE", "Failed to get random free port:", err.Error())
 			return
 		}
-		logx.Info("Using random P2P port: %s", p2pPort)
+		logx.Info("NODE", "Using random P2P port:", p2pPort)
 	}
 
 	// Load genesis configuration from file
 	cfg, err := loadConfiguration(genesisPath)
 	if err != nil {
-		logx.Error("Failed to load genesis configuration: %v", err)
+		logx.Error("NODE", "Failed to load genesis configuration:", err.Error())
 		return
 	}
 
@@ -152,21 +150,7 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	if privKeyPath == "" {
-		logx.Error("Private Key Empty")
-		return
-	}
-
 	ld := ledger.NewLedger(cfg.Faucet.Address)
-	
-	// Initialize blockchain with genesis block approach
-	blockchain, err := initializeBlockchainWithGenesis(cfg, ld)
-	if err != nil {
-		log.Fatalf("Failed to initialize blockchain with genesis: %v", err)
-	}
-	
-	// Log blockchain initialization status
-	logx.Info("BLOCKCHAIN", fmt.Sprintf("Blockchain initialized with %d blocks", len(blockchain.Blocks)))
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
@@ -230,13 +214,6 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 // initializeBlockstore initializes the block storage backend using the factory pattern
 func initializeBlockstore(pubKey string, dataDir string, backend string) (blockstore.Store, error) {
 	seed := []byte(pubKey)
-	if len(seed) > 32 {
-		seed = seed[:32]
-	} else if len(seed) < 32 {
-		padded := make([]byte, 32)
-		copy(padded, seed)
-		seed = padded
-	}
 
 	// Create store configuration with StoreType
 	storeType := blockstore.StoreType(backend)
@@ -338,36 +315,6 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	return val, nil
 }
 
-// initializeBlockchainWithGenesis initializes blockchain with genesis block and processes genesis transactions
-func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*blockchain.Blockchain, error) {
-	// Check if faucet account already exists (node restart scenario)
-	if ld.AccountExists(cfg.Faucet.Address) {
-		logx.Info("GENESIS", fmt.Sprintf("Faucet account %s already exists, skipping genesis initialization", cfg.Faucet.Address))
-		// Return empty blockchain for existing state
-		return blockchain.NewBlockchain(), nil
-	}
-
-	// Create blockchain with genesis block
-	bc := blockchain.NewBlockchainWithGenesis(cfg)
-	
-	// Process genesis transactions to initialize ledger state
-	genesisBlock := bc.Blocks[0]
-	err := blockchain.ProcessGenesisTransactions(genesisBlock, ld)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process genesis transactions: %w", err)
-	}
-	
-	// Validate genesis block
-	err = blockchain.ValidateGenesisBlock(genesisBlock, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("genesis block validation failed: %w", err)
-	}
-	
-	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block with faucet account %s (balance: %d)", cfg.Faucet.Address, cfg.Faucet.Amount))
-	
-	return bc, nil
-}
-
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
 	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool) {
@@ -396,32 +343,4 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
-}
-
-// generatePrivateKey generates a new Ed25519 seed and saves it to privkey.txt
-func generatePrivateKey() {
-	// Generate 32-byte Ed25519 seed
-	seed := make([]byte, ed25519.SeedSize)
-	_, err := rand.Read(seed)
-	if err != nil {
-		log.Fatalf("Failed to generate Ed25519 seed: %v", err)
-	}
-
-	// Convert seed to hex string
-	seedHex := hex.EncodeToString(seed)
-
-	// Ensure output directory exists
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
-	}
-
-	// Create full path for the private key file
-	filename := filepath.Join(outputDir, "privkey.txt")
-	err = os.WriteFile(filename, []byte(seedHex), 0600)
-	if err != nil {
-		log.Fatalf("Failed to write private key to file: %v", err)
-	}
-
-	logx.Info("KEYGEN", "Successfully generated Ed25519 seed and saved to", filename)
-	logx.Info("KEYGEN", "Seed length:", len(seed), "bytes")
 }
