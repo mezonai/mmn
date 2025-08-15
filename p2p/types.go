@@ -32,11 +32,13 @@ type Libp2pNetwork struct {
 	topicVotes        *pubsub.Topic
 	topicTxs          *pubsub.Topic
 	topicBlockSyncReq *pubsub.Topic
+	topicLatestSlot   *pubsub.Topic
 
 	onBlockReceived        func(*block.Block) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTxReceived           func(*types.Transaction) error
 	onSyncResponseReceived func([]*block.Block) error
+	onLatestSlotReceived   func(uint64, string) error
 
 	syncStreams map[peer.ID]network.Stream
 	streamMu    sync.RWMutex
@@ -82,4 +84,14 @@ type SyncRequest struct {
 
 type SyncResponse struct {
 	Blocks []*block.Block `json:"blocks"`
+}
+
+type LatestSlotRequest struct {
+	RequesterID string                `json:"requester_id"`
+	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+}
+
+type LatestSlotResponse struct {
+	LatestSlot uint64 `json:"latest_slot"`
+	PeerID     string `json:"peer_id"`
 }

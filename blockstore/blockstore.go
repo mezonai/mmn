@@ -76,6 +76,10 @@ func (bs *BlockStore) HasCompleteBlock(slot uint64) bool {
 	return ok
 }
 
+func (bs *BlockStore) GetLatestSlot() uint64 {
+	return uint64(len(bs.data))
+}
+
 func (bs *BlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 	b, ok := bs.data[slot]
 	if !ok {

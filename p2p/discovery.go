@@ -23,7 +23,6 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 
 	if ln.topicBlockSyncReq == nil {
 		errMsg := "sync request topic is not initialized"
-		logx.Error("NETWORK:SYNC BLOCK", errMsg)
 		return fmt.Errorf(errMsg)
 	}
 
@@ -39,11 +38,18 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 	var fromSlot uint64 = 0
 
-	if boundary, ok := ln.blockStore.LastEntryInfoAtSlot(0); ok {
-		fromSlot = boundary.Slot + 1
-		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", boundary.Slot, ",", " requesting sync from slot ", fromSlot)
-	} else {
-		logx.Info("NETWORK:SYNC BLOCK", "Block store appears empty, requesting sync from slot 0")
+	localLatestSlot := ln.blockStore.GetLatestSlot()
+	if localLatestSlot > 0 {
+		fromSlot = localLatestSlot + BatchSize
+		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
+	}
+
+	// Try to get latest slot from peers first
+	latestSlot, err := ln.RequestLatestSlotFromPeers(ctx)
+	if err != nil {
+		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
+	} else if latestSlot > fromSlot {
+		fromSlot = latestSlot + BatchSize
 	}
 
 	return ln.RequestBlockSync(ctx, fromSlot)
@@ -92,4 +98,28 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 			time.Sleep(30 * time.Second)
 		}
 	}()
+}
+
+func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64, error) {
+	req := LatestSlotRequest{
+		RequesterID: ln.host.ID().String(),
+		Addrs:       ln.host.Addrs(),
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		return 0, err
+	}
+
+	if ln.topicLatestSlot == nil {
+		errMsg := "latest slot topic is not initialized"
+		return 0, fmt.Errorf(errMsg)
+	}
+
+	err = ln.topicLatestSlot.Publish(ctx, data)
+	if err != nil {
+		return 0, err
+	}
+
+	return 0, nil
 }

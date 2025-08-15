@@ -99,6 +99,7 @@ func NewNetWork(
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) {
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
+	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 
 	ln.SetupPubSubTopics(ctx)
 

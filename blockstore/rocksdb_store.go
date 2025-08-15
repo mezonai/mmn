@@ -174,6 +174,36 @@ func (s *RocksDBStore) HasCompleteBlock(slot uint64) bool {
 	return val.Exists()
 }
 
+// GetLatestSlot returns the highest slot number that has a complete block
+func (s *RocksDBStore) GetLatestSlot() uint64 {
+	db, blocksCF := s.getDBAndCF()
+	if db == nil {
+		return 0
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ro := grocksdb.NewDefaultReadOptions()
+	defer ro.Destroy()
+
+	// Use RocksDB iterator to find the highest slot
+	it := db.NewIteratorCF(ro, blocksCF)
+	defer it.Close()
+
+	maxSlot := uint64(0)
+	it.SeekToLast()
+	if it.Valid() {
+		key := it.Key()
+		if len(key.Data()) == slotKeySize {
+			maxSlot = binary.BigEndian.Uint64(key.Data())
+		}
+		key.Free()
+	}
+
+	return maxSlot
+}
+
 // LastEntryInfoAtSlot returns the slot boundary information
 func (s *RocksDBStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 	b := s.Block(slot)
