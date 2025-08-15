@@ -192,15 +192,6 @@ export class TransactionTracker extends EventEmitter {
 
       this.on('statusChanged', statusListener);
 
-      // Check if already at terminal status
-      const currentStatus = this.getTrackedTransactionStatus(txHash);
-      if (currentStatus && TransactionTracker.isTerminalStatus(currentStatus.status)) {
-        clearTimeout(timeout);
-        this.off('statusChanged', statusListener);
-        resolve(currentStatus);
-        return;
-      }
-
       // Start tracking all transactions if not already tracking
       if (!this.subscriptions.has('*all*')) {
         this.trackTransactions();

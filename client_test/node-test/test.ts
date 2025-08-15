@@ -169,11 +169,11 @@ class TestSuite {
       const status = await this.transactionTracker.waitForTerminalStatus(txHash, timeoutMs);
       
       if (status.status === TransactionStatus.FAILED) {
-        console.log(`✅ Transaction ${txHash.substring(0, 16)}... failed as expected: ${status.errorMessage || 'Unknown error'}`);
+        console.log(`✅ Transaction ${txHash}... failed as expected: ${status.errorMessage || 'Unknown error'}`);
         return;
       }
       
-      throw new Error(`Transaction ${txHash.substring(0, 16)}... was expected to fail but reached status: ${status.status}`);
+      throw new Error(`Transaction ${txHash}... was expected to fail but reached status: ${status.status}`);
     } catch (error) {
       throw new Error(`Transaction failure check error: ${error instanceof Error ? error.message : String(error)}`);
     }
