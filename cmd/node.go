@@ -91,7 +91,7 @@ func runNode() {
 		logx.Error("Public Key", err.Error())
 	}
 	// Initialize components with absolute paths
-	bs, err := initializeRocksDBBlockstore(pubKey, absRocksdbBlockDir)
+	bs, err := initializeFileBlockstore(pubKey, absRocksdbBlockDir)
 	if err != nil {
 		logx.Warn("Failed to initialize blockstore: %v", err)
 	}
@@ -188,16 +188,15 @@ func loadConfiguration(nodeName string) (*config.GenesisConfig, error) {
 
 // initializeBlockstore initializes the block storage backend
 func initializeRocksDBBlockstore(pubKey string, rocksdbDir string) (blockstore.Store, error) {
+	// Use file-based storage instead of RocksDB
 	seed := []byte(pubKey)
-
-	// Try RocksDB first
-	rocksdb, err := blockstore.NewRocksDBStore(rocksdbDir, seed)
+	fbs, err := blockstore.NewBlockStore(rocksdbDir, seed)
 	if err != nil {
-		return nil, fmt.Errorf("init rocksdb blockstore: %w", err)
+		return nil, fmt.Errorf("init file blockstore: %w", err)
 	}
-	log.Printf("Using RocksDB blockstore at %s", rocksdbDir)
+	log.Printf("Using file blockstore at %s", rocksdbDir)
 
-	return rocksdb, nil
+	return fbs, nil
 }
 
 // Deprecated: use initializeBlockstore instead

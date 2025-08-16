@@ -66,6 +66,67 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
+func (ln *Libp2pNetwork) handleBlockSyncStream(s network.Stream) {
+	defer s.Close()
+
+	buf := make([]byte, 2048)
+	n, err := s.Read(buf)
+	if err != nil {
+		return
+	}
+
+	var req SyncRequest
+	if err := json.Unmarshal(buf[:n], &req); err != nil {
+		return
+	}
+
+	peerID := s.Conn().RemotePeer()
+	requestID := fmt.Sprintf("%s-%d-%d", peerID.String(), req.FromSlot, req.ToSlot)
+
+	ln.syncMu.Lock()
+	if existing, exists := ln.activeSyncRequests[requestID]; exists && existing.IsActive {
+		ln.syncMu.Unlock()
+		return
+	}
+
+	syncInfo := &SyncRequestInfo{
+		RequestID: requestID,
+		FromSlot:  req.FromSlot,
+		ToSlot:    req.ToSlot,
+		PeerID:    peerID,
+		Stream:    s,
+		StartTime: time.Now(),
+		IsActive:  true,
+	}
+	ln.activeSyncRequests[requestID] = syncInfo
+	ln.syncMu.Unlock()
+
+	defer func() {
+		ln.syncMu.Lock()
+		if info, exists := ln.activeSyncRequests[requestID]; exists {
+			info.IsActive = false
+		}
+		ln.syncMu.Unlock()
+	}()
+
+	var blocks []*block.Block
+	for slot := req.FromSlot; slot <= req.ToSlot; slot++ {
+		if blk := ln.blockStore.Block(slot); blk != nil {
+			blocks = append(blocks, blk)
+		}
+	}
+
+	resp := SyncResponse{Blocks: blocks}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+
+	if _, err := s.Write(data); err != nil {
+		return
+	}
+}
+
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
 	ln.SetSyncResponseCallback(func(blocks []*block.Block) error {
 		logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
@@ -99,18 +160,34 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	})
 
 	ln.SetLatestSlotCallback(func(latestSlot uint64, peerID string) error {
+		if ln.syncCompleted {
+			return nil
+		}
 
 		localLatestSlot := bs.GetLatestSlot()
 		if latestSlot > localLatestSlot {
 			fromSlot := localLatestSlot + 1
-			logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
 
-			ctx := context.Background()
-			if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-				logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
-			} else {
-				logx.Info("NETWORK:SYNC BLOCK", "✓ Sync request sent successfully for slot:", fromSlot)
+			peerIDDecoded, err := peer.Decode(peerID)
+			if err != nil {
+				return err
 			}
+
+			if ln.host.Network().Connectedness(peerIDDecoded) != network.Connected {
+				return nil
+			}
+
+			for fromSlot <= latestSlot {
+				toSlot := fromSlot + BatchSize - 1
+				if toSlot > latestSlot {
+					toSlot = latestSlot
+				}
+
+				ln.RequestBlocksViaStream(context.Background(), peerIDDecoded, fromSlot, toSlot)
+				fromSlot = toSlot + 1
+			}
+
+			ln.syncCompleted = true
 		}
 		return nil
 	})
@@ -317,43 +394,86 @@ func (ln *Libp2pNetwork) GetPeersConnected() int {
 	return len(ln.peers)
 }
 
+func (ln *Libp2pNetwork) RequestBlocksViaStream(ctx context.Context, peerID peer.ID, fromSlot, toSlot uint64) error {
+	stream, err := ln.host.NewStream(ctx, peerID, BlockSyncProtocol)
+	if err != nil {
+		return fmt.Errorf("failed to create stream to peer %s: %w", peerID, err)
+	}
+	defer stream.Close()
+
+	req := SyncRequest{FromSlot: fromSlot, ToSlot: toSlot}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync request: %w", err)
+	}
+
+	if _, err := stream.Write(data); err != nil {
+		return fmt.Errorf("failed to send sync request: %w", err)
+	}
+
+	buf := make([]byte, 65536)
+	n, err := stream.Read(buf)
+	if err != nil {
+		return fmt.Errorf("failed to read sync response: %w", err)
+	}
+
+	var resp SyncResponse
+	if err := json.Unmarshal(buf[:n], &resp); err != nil {
+		return fmt.Errorf("failed to unmarshal sync response: %w", err)
+	}
+
+	logx.Info("NETWORK:BLOCK SYNC STREAM", "Received sync response: blocks=", len(resp.Blocks), "from=", fromSlot, "to=", toSlot, "peer=", peerID)
+
+	if len(resp.Blocks) > 0 {
+		if ln.onSyncResponseReceived != nil {
+			if err := ln.onSyncResponseReceived(resp.Blocks); err != nil {
+				logx.Error("NETWORK:BLOCK SYNC STREAM", "Sync response callback error:", err)
+			}
+		} else if ln.onBlockReceived != nil {
+			for _, blk := range resp.Blocks {
+				if blk != nil {
+					if err := ln.onBlockReceived(blk); err != nil {
+						logx.Error("NETWORK:BLOCK SYNC STREAM", "Block processing error:", err)
+						continue
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
+	ln.syncMu.Lock()
+	defer ln.syncMu.Unlock()
+
+	now := time.Now()
+	for requestID, info := range ln.activeSyncRequests {
+		if !info.IsActive || now.Sub(info.StartTime) > 5*time.Minute {
+			delete(ln.activeSyncRequests, requestID)
+		}
+	}
+}
+
 // startInitialSync starts the initial sync process when node joins
 func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
 	time.Sleep(2 * time.Second)
-
 	ctx := context.Background()
-
-	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
-	}
-	// Also send initial sync request based on local state
-	var fromSlot uint64 = 0
-	localLatestSlot := bs.GetLatestSlot()
-	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + 1
-		logx.Info("NETWORK:SYNC BLOCK", "Local latest slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
-	}
-
-	if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
-	}
+	ln.RequestLatestSlotFromPeers(ctx)
+	time.Sleep(3 * time.Second)
 }
 
 func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
 	time.Sleep(10 * time.Second)
-
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			ctx := context.Background()
-			if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
-				logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers during periodic check:", err)
-			}
+			ln.cleanupOldSyncRequests()
 		case <-ln.ctx.Done():
-			logx.Info("NETWORK:SYNC BLOCK", "Stopping periodic sync check")
 			return
 		}
 	}

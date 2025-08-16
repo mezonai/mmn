@@ -13,47 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) error {
-	req := SyncRequest{FromSlot: fromSlot}
-	data, err := json.Marshal(req)
-	if err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to marshal sync request:", err)
-		return err
-	}
-
-	if ln.topicBlockSyncReq == nil {
-		errMsg := "sync request topic is not initialized"
-		return fmt.Errorf(errMsg)
-	}
-
-	err = ln.topicBlockSyncReq.Publish(ctx, data)
-	if err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to publish sync request for slot", fromSlot, "error", err)
-		return err
-	}
-
-	return nil
-}
-
-func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
-	var fromSlot uint64 = 0
-
-	localLatestSlot := ln.blockStore.GetLatestSlot()
-	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + BatchSize
-		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
-	}
-
-	// Try to get latest slot from peers first
-	latestSlot, err := ln.RequestLatestSlotFromPeers(ctx)
-	if err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
-	} else if latestSlot > fromSlot {
-		fromSlot = latestSlot + BatchSize
-	}
-
-	return ln.RequestBlockSync(ctx, fromSlot)
-}
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()
 
