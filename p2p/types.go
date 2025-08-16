@@ -41,15 +41,13 @@ type Libp2pNetwork struct {
 	onLatestSlotReceived   func(uint64, string) error
 
 	syncStreams map[peer.ID]network.Stream
-	streamMu    sync.RWMutex
 	maxPeers    int
 
-	// Stream-based sync tracking
 	activeSyncRequests map[string]*SyncRequestInfo
 	syncMu             sync.RWMutex
 
-	// Sync state tracking
-	syncCompleted bool
+	syncRequests  map[string]*SyncRequestTracker
+	syncTrackerMu sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -85,9 +83,10 @@ type TxMessage struct {
 }
 
 type SyncRequest struct {
-	FromSlot uint64                `json:"from_slot"`
-	ToSlot   uint64                `json:"to_slot"`
-	Addrs    []multiaddr.Multiaddr `json:"addrs"`
+	RequestID string                `json:"request_id"`
+	FromSlot  uint64                `json:"from_slot"`
+	ToSlot    uint64                `json:"to_slot"`
+	Addrs     []multiaddr.Multiaddr `json:"addrs"`
 }
 
 type SyncResponse struct {
@@ -112,4 +111,16 @@ type SyncRequestInfo struct {
 	Stream    network.Stream
 	StartTime time.Time
 	IsActive  bool
+}
+
+// for trach when multiples requests
+type SyncRequestTracker struct {
+	RequestID    string
+	FromSlot     uint64
+	ToSlot       uint64
+	ActivePeer   peer.ID
+	ActiveStream network.Stream
+	IsActive     bool
+	StartTime    time.Time
+	mu           sync.RWMutex
 }

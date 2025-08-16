@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -30,39 +31,52 @@ import (
 const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
-	rocksdbBlockDir = "blockstore/rocksdb"
-	// Config paths
-	configPath    = "config/config.ini"
-	faucetAddress = "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
+	leveldbBlockDir = "blockstore/leveldb"
 )
 
 var (
-	privKeyPath        string
+	dataDir            string
 	listenAddr         string
 	p2pPort            string
 	bootstrapAddresses []string
 	grpcAddr           string
-	// faucet
-	faucetAmount string
+	nodeName           string
+	// legacy init command
+	// database backend
+	databaseBackend string
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run",
+	Use:   "node",
 	Short: "Run the blockchain node",
 	Run: func(cmd *cobra.Command, args []string) {
 		runNode()
-
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().StringVar(&privKeyPath, "privkey-path", "", "Path to private key file")
+
+	// Run command flags
+	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
-	runCmd.Flags().StringVar(&listenAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
-	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "10001", "LibP2P listen multiaddress /ip4/0.0.0.0/tcp/<port>")
+	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
+	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
-	runCmd.Flags().StringVar(&faucetAmount, "faucet-amount", "2000000000", "Faucet Amount")
+	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
+	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
+
+}
+
+// getRandomFreePort returns a random free port
+func getRandomFreePort() (string, error) {
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return "", err
+	}
+	defer listener.Close()
+	addr := listener.Addr().(*net.TCPAddr)
+	return strconv.Itoa(addr.Port), nil
 }
 
 func runNode() {
@@ -72,63 +86,74 @@ func runNode() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
-	// Get current directory and create absolute path
-	currentDir, err := os.Getwd()
-	if err != nil {
-		logx.Warn("Failed to get current directory: %v", err)
+	// Construct paths from data directory
+	privKeyPath := filepath.Join(dataDir, "privkey.txt")
+	genesisPath := filepath.Join(dataDir, "genesis.yml")
+	blockstoreDir := filepath.Join(dataDir, "blockstore")
+
+	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
+	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
+		logx.Error("NODE", "Private key file not found at:", privKeyPath)
+		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
+		return
 	}
 
-	// Create absolute path for storage
-	absRocksdbBlockDir := filepath.Join(currentDir, rocksdbBlockDir)
+	// Check if genesis.yml exists in data dir, fallback to config/genesis.yml
+	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
+		logx.Info("NODE", "Genesis file not found in data directory, using default config/genesis.yml")
+		genesisPath = "config/genesis.yml"
+	}
 
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(absRocksdbBlockDir, 0755); err != nil {
-		logx.Warn("Warning: Failed to create directory %s: %v", absRocksdbBlockDir, err)
+	// Create blockstore directory if it doesn't exist
+	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
+		logx.Error("NODE", "Failed to create blockstore directory:", err.Error())
+		return
 	}
 
 	pubKey, err := config.LoadPubKeyFromPriv(privKeyPath)
 	if err != nil {
-		logx.Error("Public Key", err.Error())
-	}
-	// Initialize components with absolute paths
-	bs, err := initializeFileBlockstore(pubKey, absRocksdbBlockDir)
-	if err != nil {
-		logx.Warn("Failed to initialize blockstore: %v", err)
-	}
-
-	ld := ledger.NewLedger(faucetAddress)
-
-	faucetAmountNumber, err := strconv.ParseUint(faucetAmount, 10, 64)
-	if err != nil {
-		logx.Error("Faucet Amount Not A Number", err)
+		logx.Error("NODE", "Failed to load public key:", err.Error())
 		return
 	}
 
-	if privKeyPath == "" {
-		logx.Error("Private Key Empty")
+	// Initialize blockstore with data directory
+	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend)
+	if err != nil {
+		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
 	}
 
-	Libp2pAddr := fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort)
-
-	cfg := config.GenesisConfig{
-		SelfNode: config.NodeConfig{
-			PubKey:             pubKey,
-			PrivKeyPath:        privKeyPath,
-			ListenAddr:         listenAddr,
-			Libp2pAddr:         Libp2pAddr,
-			GRPCAddr:           grpcAddr,
-			BootStrapAddresses: bootstrapAddresses,
-		},
-		LeaderSchedule: config.LeaderSchedules,
-		Faucet: config.Faucet{
-			Address: faucetAddress,
-			Amount:  faucetAmountNumber,
-		},
+	// Handle optional p2p-port: use random free port if not specified
+	if p2pPort == "" {
+		p2pPort, err = getRandomFreePort()
+		if err != nil {
+			logx.Error("NODE", "Failed to get random free port:", err.Error())
+			return
+		}
+		logx.Info("NODE", "Using random P2P port:", p2pPort)
 	}
+
+	// Load genesis configuration from file
+	cfg, err := loadConfiguration(genesisPath)
+	if err != nil {
+		logx.Error("NODE", "Failed to load genesis configuration:", err.Error())
+		return
+	}
+
+	// Create node configuration from command-line arguments
+	nodeConfig := config.NodeConfig{
+		PubKey:             pubKey,
+		PrivKeyPath:        privKeyPath,
+		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
+		ListenAddr:         listenAddr,
+		GRPCAddr:           grpcAddr,
+		BootStrapAddresses: bootstrapAddresses,
+	}
+
+	ld := ledger.NewLedger(cfg.Faucet.Address)
 
 	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(&cfg)
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
@@ -136,33 +161,33 @@ func runNode() {
 	// Load private key
 	privKey, err := config.LoadEd25519PrivKey(privKeyPath)
 	if err != nil {
-		log.Fatalf("load private key: %w", err)
+		log.Fatalf("load private key: %v", err)
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(cfg.SelfNode, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient)
+	mp, err := initializeMempool(libP2pClient, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
 	collector := consensus.NewCollector(libP2pClient.GetPeersConnected() + 1)
 
-	libP2pClient.SetupCallbacks(ld, privKey, cfg.SelfNode, bs, collector, mp)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
 
 	// Initialize validator
-	val, err := initializeValidator(&cfg, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
 	// Start services
-	startServices(&cfg, libP2pClient, ld, collector, val, bs, mp)
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp)
 
 	go func() {
 		<-sigCh
@@ -178,47 +203,42 @@ func runNode() {
 }
 
 // loadConfiguration loads all configuration files
-func loadConfiguration(nodeName string) (*config.GenesisConfig, error) {
-	cfg, err := config.LoadGenesisConfig(fmt.Sprintf("config/genesis.%s.yml", nodeName))
+func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
+	cfg, err := config.LoadGenesisConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load genesis config: %w", err)
 	}
 	return cfg, nil
 }
 
-// initializeBlockstore initializes the block storage backend
-func initializeRocksDBBlockstore(pubKey string, rocksdbDir string) (blockstore.Store, error) {
-	// Use file-based storage instead of RocksDB
+// initializeBlockstore initializes the block storage backend using the factory pattern
+func initializeBlockstore(pubKey string, dataDir string, backend string) (blockstore.Store, error) {
 	seed := []byte(pubKey)
-	fbs, err := blockstore.NewBlockStore(rocksdbDir, seed)
-	if err != nil {
-		return nil, fmt.Errorf("init file blockstore: %w", err)
-	}
-	log.Printf("Using file blockstore at %s", rocksdbDir)
 
-	return fbs, nil
-}
-
-// Deprecated: use initializeBlockstore instead
-func initializeFileBlockstore(pubKey string, fileBlockDir string) (blockstore.Store, error) {
-	// File-based storage
-	seed := []byte(pubKey)
-	fbs, err := blockstore.NewBlockStore(fileBlockDir, seed)
-	if err != nil {
-		return nil, fmt.Errorf("init file blockstore: %w", err)
+	// Create store configuration with StoreType
+	storeType := blockstore.StoreType(backend)
+	config := &blockstore.StoreConfig{
+		Type:      storeType,
+		Directory: dataDir,
 	}
 
-	return fbs, nil
+	// Validate the configuration (this will check if the backend is supported)
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+	}
+
+	// Use the factory pattern to create the store
+	return blockstore.CreateStore(config, seed)
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
-	pohCfg, err := config.LoadPohConfig(configPath)
+func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
 	}
 
-	seed := []byte(cfg.SelfNode.PubKey)
+	seed := []byte(pubKey)
 	hashesPerTick := pohCfg.HashesPerTick
 	ticksPerSlot := pohCfg.TicksPerSlot
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
@@ -230,7 +250,7 @@ func initializePoH(cfg *config.GenesisConfig) (*poh.Poh, *poh.PohService, *poh.P
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
-	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, cfg.SelfNode.PubKey, pohSchedule)
+	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
@@ -253,8 +273,8 @@ func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork) (*mempool.Mempool, error) {
-	mempoolCfg, err := config.LoadMempoolConfig(configPath)
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, genesisPath string) (*mempool.Mempool, error) {
+	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
@@ -264,17 +284,17 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork) (*mempool.Mempool, error) {
 }
 
 // initializeValidator initializes the validator
-func initializeValidator(cfg *config.GenesisConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
+func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey) (*validator.Validator, error) {
+	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
 
-	validatorCfg, err := config.LoadValidatorConfig(configPath)
+	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load validator config: %w", err)
 	}
 
 	// Calculate intervals
-	pohCfg, _ := config.LoadPohConfig(configPath) // Already loaded in initializePoH
+	pohCfg, _ := config.LoadPohConfig(genesisPath) // Already loaded in initializePoH
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
 	leaderBatchLoopInterval := tickInterval / 2
 	roleMonitorLoopInterval := tickInterval
@@ -285,7 +305,7 @@ func initializeValidator(cfg *config.GenesisConfig, pohService *poh.PohService, 
 		leaderBatchLoopInterval, roleMonitorLoopInterval)
 
 	val := validator.NewValidator(
-		cfg.SelfNode.PubKey, privKey, recorder, pohService,
+		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
@@ -296,23 +316,23 @@ func initializeValidator(cfg *config.GenesisConfig, pohService *poh.PohService, 
 }
 
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
 	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool) {
 
 	// Load private key for gRPC server
-	privKey, err := config.LoadEd25519PrivKey(cfg.SelfNode.PrivKeyPath)
+	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
 	if err != nil {
 		log.Fatalf("Failed to load private key for gRPC server: %v", err)
 	}
 
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
-		cfg.SelfNode.GRPCAddr,
+		nodeConfig.GRPCAddr,
 		map[string]ed25519.PublicKey{},
 		fileBlockDir,
 		ld,
 		collector,
-		cfg.SelfNode.PubKey,
+		nodeConfig.PubKey,
 		privKey,
 		val,
 		bs,
@@ -320,37 +340,7 @@ func startServices(cfg *config.GenesisConfig, p2pClient *p2p.Libp2pNetwork, ld *
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start API server
-	apiSrv := api.NewAPIServer(mp, ld, cfg.SelfNode.ListenAddr)
+	// Start API server on a different port
+	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
-}
-
-func mergeWithDefaultConfig(defaultCfg, loadedCfg *config.GenesisConfig) *config.GenesisConfig {
-	if loadedCfg.Faucet.Address == "" {
-		loadedCfg.Faucet.Address = defaultCfg.Faucet.Address
-	}
-	if loadedCfg.Faucet.Amount == 0 {
-		loadedCfg.Faucet.Amount = defaultCfg.Faucet.Amount
-	}
-	if loadedCfg.SelfNode.PubKey == "" {
-		loadedCfg.SelfNode.PubKey = defaultCfg.SelfNode.PubKey
-	}
-	if loadedCfg.SelfNode.PrivKeyPath == "" {
-		loadedCfg.SelfNode.PrivKeyPath = defaultCfg.SelfNode.PrivKeyPath
-	}
-	if loadedCfg.SelfNode.ListenAddr == "" {
-		loadedCfg.SelfNode.ListenAddr = defaultCfg.SelfNode.ListenAddr
-	}
-	if loadedCfg.SelfNode.Libp2pAddr == "" {
-		loadedCfg.SelfNode.Libp2pAddr = defaultCfg.SelfNode.Libp2pAddr
-	}
-	if loadedCfg.SelfNode.GRPCAddr == "" {
-		loadedCfg.SelfNode.GRPCAddr = defaultCfg.SelfNode.GRPCAddr
-	}
-	if len(loadedCfg.SelfNode.BootStrapAddresses) == 0 {
-		loadedCfg.SelfNode.BootStrapAddresses = defaultCfg.SelfNode.BootStrapAddresses
-	}
-	loadedCfg.LeaderSchedule = defaultCfg.LeaderSchedule
-
-	return loadedCfg
 }

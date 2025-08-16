@@ -45,8 +45,15 @@ RUN go mod download
 # Copy the rest of the source code
 COPY . .
 
-# Build binary (leveldb by default)
-RUN go build -o mmn .
+# Build argument for database selection
+ARG DATABASE=leveldb
+
+# Build binary with appropriate tags
+RUN if [ "$DATABASE" = "rocksdb" ]; then \
+        go build -tags rocksdb -o mmn .; \
+    else \
+        go build -o mmn .; \
+    fi
 
 # Runtime stage
 FROM debian:bookworm-slim AS runtime
@@ -57,6 +64,8 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY libs/librocksdb.a /usr/local/lib/
+COPY libs/rocksdb /usr/local/include/rocksdb
 
 COPY --from=builder /app/mmn .
 COPY --from=builder /app/config/ /app/config/

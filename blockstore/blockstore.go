@@ -2,179 +2,234 @@ package blockstore
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/fs"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/logx"
 )
 
-// BlockStore manages the chain of blocks, persisting them and tracking the latest hash.
-// It is safe for concurrent use.
-// Deprecated
-type BlockStore struct {
-	dir  string
-	mu   sync.RWMutex
-	data map[uint64]*block.Block
+const (
+	// Key prefixes for generic store
+	genericPrefixMeta   = "meta:"
+	genericPrefixBlocks = "blocks:"
 
+	// Metadata keys
+	genericKeyLatestFinalized = "latest_finalized"
+)
+
+// GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
+// This allows it to work with any database backend (LevelDB, RocksDB, etc.)
+type GenericBlockStore struct {
+	provider        DatabaseProvider
+	mu              sync.RWMutex
 	latestFinalized uint64
-	SeedHash        [32]byte
+	seedHash        [32]byte
 }
 
-type SlotBoundary struct {
-	Slot uint64
-	Hash [32]byte
+// NewGenericBlockStore creates a new generic block store with the given provider
+func NewGenericBlockStore(provider DatabaseProvider, seed []byte) (Store, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("provider cannot be nil")
+	}
+
+	store := &GenericBlockStore{
+		provider: provider,
+		seedHash: sha256.Sum256(seed),
+	}
+
+	// Load existing metadata
+	if err := store.loadLatestFinalized(); err != nil {
+		return nil, fmt.Errorf("failed to load metadata: %w", err)
+	}
+
+	return store, nil
 }
 
-// NewBlockStore initializes a BlockStore, loading existing chain if present.
-// TODO: should dynamic follow up config
-// Deprecated
-func NewBlockStore(dir string, seed []byte) (*BlockStore, error) {
-	bs := &BlockStore{
-		dir:      dir,
-		data:     make(map[uint64]*block.Block),
-		SeedHash: sha256.Sum256(seed),
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
+// loadLatestFinalized loads the latest finalized slot from the database
+func (s *GenericBlockStore) loadLatestFinalized() error {
+	key := []byte(genericPrefixMeta + genericKeyLatestFinalized)
+	value, err := s.provider.Get(key)
+	if err != nil {
+		return fmt.Errorf("failed to get latest finalized: %w", err)
 	}
 
-	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, _ error) error {
-		if d.IsDir() || filepath.Ext(path) != ".json" {
-			return nil
-		}
-		var blk block.Block
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if err = json.Unmarshal(b, &blk); err != nil {
-			return err
-		}
-		bs.data[blk.Slot] = &blk
-		if blk.Status == block.BlockFinalized && blk.Slot > bs.latestFinalized {
-			bs.latestFinalized = blk.Slot
-		}
+	if value == nil {
+		// No existing data, start from 0
+		s.latestFinalized = 0
 		return nil
-	})
+	}
 
-	return bs, err
+	if len(value) != 8 {
+		return fmt.Errorf("invalid latest finalized value length: %d", len(value))
+	}
+
+	s.latestFinalized = binary.BigEndian.Uint64(value)
+	return nil
 }
 
-func (bs *BlockStore) Block(slot uint64) *block.Block {
-	bs.mu.RLock()
-	defer bs.mu.RUnlock()
-	return bs.data[slot]
+// slotToBlockKey converts a slot number to a block storage key
+func slotToBlockKey(slot uint64) []byte {
+	key := make([]byte, len(genericPrefixBlocks)+8)
+	copy(key, genericPrefixBlocks)
+	binary.BigEndian.PutUint64(key[len(genericPrefixBlocks):], slot)
+	return key
 }
 
-func (bs *BlockStore) HasCompleteBlock(slot uint64) bool {
-	_, ok := bs.data[slot]
-	return ok
+// Block retrieves a block by slot number
+func (s *GenericBlockStore) Block(slot uint64) *block.Block {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := slotToBlockKey(slot)
+	value, err := s.provider.Get(key)
+	if err != nil {
+		logx.Error("BLOCKSTORE", "Failed to get block", slot, "error:", err)
+		return nil
+	}
+
+	if value == nil {
+		return nil
+	}
+
+	var blk block.Block
+	if err := json.Unmarshal(value, &blk); err != nil {
+		logx.Error("BLOCKSTORE", "Failed to unmarshal block", slot, "error:", err)
+		return nil
+	}
+
+	return &blk
 }
 
-func (bs *BlockStore) GetLatestSlot() uint64 {
-	return uint64(len(bs.data))
+// HasCompleteBlock checks if a complete block exists at the given slot
+func (s *GenericBlockStore) HasCompleteBlock(slot uint64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := slotToBlockKey(slot)
+	exists, err := s.provider.Has(key)
+	if err != nil {
+		logx.Error("BLOCKSTORE", "Failed to check block existence", slot, "error:", err)
+		return false
+	}
+
+	return exists
 }
 
-func (bs *BlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
-	b, ok := bs.data[slot]
-	if !ok {
+// GetLatestSlot returns the latest finalized slot
+func (s *GenericBlockStore) GetLatestSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestFinalized
+}
+
+// LastEntryInfoAtSlot returns the slot boundary information for the given slot
+func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
+	blk := s.Block(slot)
+	if blk == nil {
 		return SlotBoundary{}, false
 	}
 
-	lastEntryHash := b.LastEntryHash()
+	lastEntryHash := blk.LastEntryHash()
 	return SlotBoundary{
 		Slot: slot,
 		Hash: lastEntryHash,
 	}, true
 }
 
-func (bs *BlockStore) AddBlockPending(b *block.Block) error {
-	bs.mu.Lock()
-	defer bs.mu.Unlock()
-	fmt.Printf("Adding pending block %d to blockstore\n", b.Slot)
+// AddBlockPending adds a pending block to the store
+func (s *GenericBlockStore) AddBlockPending(b *block.Block) error {
+	if b == nil {
+		return fmt.Errorf("block cannot be nil")
+	}
 
-	if _, ok := bs.data[b.Slot]; ok {
-		return fmt.Errorf("block %d already exists", b.Slot)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := slotToBlockKey(b.Slot)
+
+	// Check if block already exists
+	exists, err := s.provider.Has(key)
+	if err != nil {
+		return fmt.Errorf("failed to check block existence: %w", err)
 	}
-	if err := bs.writeToDisk(b); err != nil {
-		return err
+
+	if exists {
+		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
-	bs.data[b.Slot] = b
-	fmt.Printf("Pending block %d added to blockstore\n", b.Slot)
+
+	// Serialize block
+	value, err := json.Marshal(b)
+	if err != nil {
+		return fmt.Errorf("failed to marshal block: %w", err)
+	}
+
+	// Store block
+	if err := s.provider.Put(key, value); err != nil {
+		return fmt.Errorf("failed to store block: %w", err)
+	}
+
+	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
 	return nil
 }
 
-func (bs *BlockStore) MarkFinalized(slot uint64) error {
-	bs.mu.Lock()
-	defer bs.mu.Unlock()
+// MarkFinalized marks a block as finalized and updates metadata
+func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	blk, ok := bs.data[slot]
-	if !ok {
-		return fmt.Errorf("slot %d not found", slot)
+	// Check if block exists
+	key := slotToBlockKey(slot)
+	exists, err := s.provider.Has(key)
+	if err != nil {
+		return fmt.Errorf("failed to check block existence: %w", err)
 	}
-	if blk.Status == block.BlockFinalized {
-		return nil // idempotent
+
+	if !exists {
+		return fmt.Errorf("block at slot %d does not exist", slot)
 	}
-	blk.Status = block.BlockFinalized
-	if err := bs.writeToDisk(blk); err != nil {
-		return err
+
+	// Update latest finalized
+	s.latestFinalized = slot
+
+	// Store updated metadata
+	metaKey := []byte(genericPrefixMeta + genericKeyLatestFinalized)
+	metaValue := make([]byte, 8)
+	binary.BigEndian.PutUint64(metaValue, slot)
+
+	if err := s.provider.Put(metaKey, metaValue); err != nil {
+		return fmt.Errorf("failed to update latest finalized: %w", err)
 	}
-	if slot > bs.latestFinalized {
-		bs.latestFinalized = slot
-	}
-	fmt.Printf("Block %d marked as finalized\n", slot)
-	fmt.Printf("Latest finalized block: %d\n", bs.latestFinalized)
+
+	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
 	return nil
 }
 
-func (bs *BlockStore) Seed() [32]byte {
-	return bs.SeedHash
+// Seed returns the seed hash
+func (s *GenericBlockStore) Seed() [32]byte {
+	return s.seedHash
 }
 
-func (bs *BlockStore) LatestSlot() uint64 {
-	bs.mu.RLock()
-	defer bs.mu.RUnlock()
+// Close closes the underlying database provider
+func (s *GenericBlockStore) Close() error {
+	return s.provider.Close()
+}
 
-	var latest uint64
-	for slot := range bs.data {
-		if slot > latest {
-			latest = slot
+func (s *GenericBlockStore) GetHighestSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	highestSlot := s.latestFinalized
+
+	for slot := s.latestFinalized + 1; slot < s.latestFinalized+1000; slot++ {
+		if s.HasCompleteBlock(slot) {
+			highestSlot = slot
+		} else {
+			break
 		}
 	}
-	return latest
-}
 
-// LoadBlock reads a block file by slot.
-func LoadBlock(dir string, slot uint64) (*block.Block, error) {
-	path := filepath.Join(dir, fmt.Sprintf("%d.json", slot))
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read file %s: %w", path, err)
-	}
-	var b block.Block
-	if err := json.Unmarshal(data, &b); err != nil {
-		return nil, fmt.Errorf("unmarshal block: %w", err)
-	}
-	return &b, nil
-}
-
-// -------- internals -------------------------------------------------------------
-
-func (bs *BlockStore) writeToDisk(b *block.Block) error {
-	file := filepath.Join(bs.dir, fmt.Sprintf("%d.json", b.Slot))
-	tmp := file + ".tmp"
-
-	bytes, err := json.Marshal(b)
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(tmp, bytes, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, file) // atomic replace
+	return highestSlot
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/mezonai/mmn/poh"
 
-	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,7 +31,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: SelfNode=%+v, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.LeaderSchedule))
+	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Faucet)
 	return &cfgFile.Config, nil
 }
 
@@ -42,14 +41,24 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, err := hex.DecodeString(string(data))
+	keyHex := strings.TrimSpace(string(data))
+	privBytes, err := hex.DecodeString(keyHex)
 	if err != nil {
 		return nil, err
 	}
-	if len(key) != ed25519.PrivateKeySize {
-		return nil, err
+	
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		// 32-byte seed, generate full private key
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		// 64-byte full private key
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return nil, fmt.Errorf("invalid ed25519 private key length: %d, expected %d (seed) or %d (full key)", len(privBytes), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
-	return ed25519.PrivateKey(key), nil
+	
+	return privKey, nil
 }
 
 // ConvertLeaderSchedule converts []config.LeaderSchedule to *poh.LeaderSchedule
@@ -70,62 +79,44 @@ func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
 }
 
 type PohConfig struct {
-	HashesPerTick  uint64 `ini:"hashes_per_tick"`
-	TicksPerSlot   uint64 `ini:"ticks_per_slot"`
-	TickIntervalMs int    `ini:"tick_interval_ms"`
+	HashesPerTick  uint64 `yaml:"hashes_per_tick"`
+	TicksPerSlot   uint64 `yaml:"ticks_per_slot"`
+	TickIntervalMs int    `yaml:"tick_interval_ms"`
 }
 
 type MempoolConfig struct {
-	MaxTxs int `ini:"max_txs"`
+	MaxTxs int `yaml:"max_txs"`
 }
 
 type ValidatorConfig struct {
-	BatchSize                 int `ini:"batch_size"`
-	LeaderTimeout             int `ini:"leader_timeout"`
-	LeaderTimeoutLoopInterval int `ini:"leader_timeout_loop_interval"`
+	BatchSize                 int `yaml:"batch_size"`
+	LeaderTimeout             int `yaml:"leader_timeout"`
+	LeaderTimeoutLoopInterval int `yaml:"leader_timeout_loop_interval"`
 }
 
-// LoadPohConfig reads PoH config from an .ini file
+// LoadPohConfig reads PoH config from genesis.yml file
 func LoadPohConfig(path string) (*PohConfig, error) {
-	cfg, err := ini.Load(path)
+	genesisCfg, err := LoadGenesisConfig(path)
 	if err != nil {
 		return nil, err
 	}
-	pohSection := cfg.Section("poh")
-	pohCfg := &PohConfig{}
-	err = pohSection.MapTo(pohCfg)
-	if err != nil {
-		return nil, err
-	}
-	return pohCfg, nil
+	return &genesisCfg.Poh, nil
 }
 
 func LoadMempoolConfig(path string) (*MempoolConfig, error) {
-	cfg, err := ini.Load(path)
+	genesisCfg, err := LoadGenesisConfig(path)
 	if err != nil {
 		return nil, err
 	}
-	mempoolSection := cfg.Section("mempool")
-	mempoolCfg := &MempoolConfig{}
-	err = mempoolSection.MapTo(mempoolCfg)
-	if err != nil {
-		return nil, err
-	}
-	return mempoolCfg, nil
+	return &genesisCfg.Mempool, nil
 }
 
 func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
-	cfg, err := ini.Load(path)
+	genesisCfg, err := LoadGenesisConfig(path)
 	if err != nil {
 		return nil, err
 	}
-	validatorSection := cfg.Section("validator")
-	validatorCfg := &ValidatorConfig{}
-	err = validatorSection.MapTo(validatorCfg)
-	if err != nil {
-		return nil, err
-	}
-	return validatorCfg, nil
+	return &genesisCfg.Validator, nil
 }
 
 func LoadPubKeyFromPriv(privKeyPath string) (string, error) {

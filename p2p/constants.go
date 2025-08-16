@@ -1,8 +1,9 @@
 package p2p
 
 const (
-	NodeInfoProtocol  = "/node-info"
-	BlockSyncProtocol = "/block-sync"
+	NodeInfoProtocol       = "/node-info"
+	RequestBlockSyncStream = "/sync-block-request"
+	LatestSlotProtocol     = "/latest-slot-request"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
@@ -16,5 +17,5 @@ const (
 var (
 	ConnCount int32  = 0
 	MaxPeers  int32  = 50
-	BatchSize uint64 = 1000
+	BatchSize uint64 = 10 // for test only, should be 1000
 )
