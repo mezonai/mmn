@@ -183,6 +183,8 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
 			} else {
 				logx.Info("NETWORK:SYNC BLOCK", "Sync response callback completed successfully for batch ", batchCount)
+				tracker.CloseAllOtherPeers()
+				break
 			}
 		}
 
@@ -195,10 +197,10 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		}
 	}
 
-	// remove tracker
+	// Close all peer streams and remove tracker
 	ln.syncTrackerMu.Lock()
 	if tracker, exists := ln.syncRequests[syncRequest.RequestID]; exists {
-		tracker.CloseRequest()
+		tracker.CloseAllPeers()
 		delete(ln.syncRequests, syncRequest.RequestID)
 	}
 	ln.syncTrackerMu.Unlock()

@@ -73,7 +73,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				continue
 			}
 
-			// skip[ add pending if block already exists
+			// skip add pending if block already exists
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
 				continue
 			}

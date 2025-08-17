@@ -122,5 +122,6 @@ type SyncRequestTracker struct {
 	ActiveStream network.Stream
 	IsActive     bool
 	StartTime    time.Time
+	AllPeers     map[peer.ID]network.Stream
 	mu           sync.RWMutex
 }

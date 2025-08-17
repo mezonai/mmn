@@ -14,25 +14,25 @@ RUN apt-get update && apt-get install -y \
   wget \
   unzip
 
-# Build RocksDB (only when DATABASE=rocksdb)
-ARG DATABASE=leveldb
-RUN if [ "$DATABASE" = "rocksdb" ]; then \
-        git clone https://github.com/facebook/rocksdb.git && \
-        cd rocksdb && \
-        make static_lib && \
-        make install && \
-        cd .. && \
-        rm -rf rocksdb; \
-    fi
+# Build RocksDB
+## Option 1: Using RocksDB from source
+
+# RUN git clone https://github.com/facebook/rocksdb.git && \
+#     cd rocksdb && \
+#     make static_lib && \
+#     make install && \
+#     cd .. && \
+#     rm -rf rocksdb
+
+## Option 2: Using pre-built RocksDB binaries
+COPY libs/librocksdb.a /usr/local/lib/
+COPY libs/rocksdb /usr/local/include/rocksdb
 
 
 # Set up CGO build environment
 ENV CGO_ENABLED=1
 ENV CGO_CFLAGS="-I/usr/local/include"
-# Set environment variables for RocksDB (only when DATABASE=rocksdb)
-RUN if [ "$DATABASE" = "rocksdb" ]; then \
-        echo 'export CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"' >> /etc/environment; \
-    fi
+ENV CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
 
 WORKDIR /app
 
@@ -58,9 +58,14 @@ RUN if [ "$DATABASE" = "rocksdb" ]; then \
 # Runtime stage
 FROM debian:bookworm-slim AS runtime
 
-# Install runtime libraries needed for Go
+# Install runtime libraries needed for RocksDB and Go
 RUN apt-get update && apt-get install -y \
-  ca-certificates \
+  libstdc++6 \
+  libsnappy1v5 \
+  zlib1g \
+  libbz2-1.0 \
+  liblz4-1 \
+  libzstd1 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
