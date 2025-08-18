@@ -174,3 +174,13 @@ func (s *TxService) ListFaucetTransactions(ctx context.Context, limit, page, fil
 func (s *TxService) GetTxByHash(ctx context.Context, txHash string) (domain.TxInfo, error) {
 	return s.bc.GetTxByHash(txHash)
 }
+
+// ListTransactionsByAddress gets transaction history for a specific address
+func (s *TxService) ListTransactionsByAddress(ctx context.Context, addr string, limit, page, filter int) (*domain.TxHistoryResponse, error) {
+	offset := (page - 1) * limit
+	history, err := s.bc.GetTxHistory(addr, limit, offset, filter)
+	if err != nil {
+		return nil, err
+	}
+	return &history, nil
+}

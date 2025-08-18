@@ -1,17 +1,7 @@
 import { GrpcTransport } from '@protobuf-ts/grpc-transport';
 import { ChannelCredentials } from '@grpc/grpc-js';
-import {
-  TxServiceClient,
-  ITxServiceClient,
-} from './generated/tx.client';
-import {
-  AccountServiceClient,
-  IAccountServiceClient,
-} from './generated/account.client';
-import {
-  TransactionStatusServiceClient,
-  ITransactionStatusServiceClient,
-} from './generated/transaction_status.client';
+import { TxServiceClient, ITxServiceClient } from './generated/tx.client';
+import { AccountServiceClient, IAccountServiceClient } from './generated/account.client';
 import type {
   TxMsg as GenTxMsg,
   SignedTxMsg as GenSignedTxMsg,
@@ -41,7 +31,13 @@ export class GrpcClient {
 
   async broadcastTransaction(
     txMsg: {
-      type: number; sender: string; recipient: string; amount: number; timestamp: number; text_data: string; nonce: number;
+      type: number;
+      sender: string;
+      recipient: string;
+      amount: number;
+      timestamp: number;
+      text_data: string;
+      nonce: number;
     },
     signature: string
   ): Promise<{ ok: boolean; error?: string }> {
@@ -63,7 +59,13 @@ export class GrpcClient {
 
   async addTransaction(
     txMsg: {
-      type: number; sender: string; recipient: string; amount: number; timestamp: number; text_data: string; nonce: number;
+      type: number;
+      sender: string;
+      recipient: string;
+      amount: number;
+      timestamp: number;
+      text_data: string;
+      nonce: number;
     },
     signature: string
   ): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
@@ -99,19 +101,22 @@ export class GrpcClient {
     limit: number,
     offset: number,
     filter: number
-  ): Promise<{ total: number; txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string }[] }> {
+  ): Promise<{
+    total: number;
+    txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string }[];
+  }> {
     const req: GenGetTxHistoryRequest = { address, limit, offset, filter };
     const call = this.accountClient.getTxHistory(req);
     const res: GenGetTxHistoryResponse = await call.response;
     return {
       total: res.total,
-      txs: res.txs.map(tx => ({
+      txs: res.txs.map((tx) => ({
         sender: tx.sender,
         recipient: tx.recipient,
         amount: tx.amount.toString(),
         nonce: tx.nonce.toString(),
         timestamp: tx.timestamp.toString(),
-        status: ['PENDING','CONFIRMED','FINALIZED','FAILED'][tx.status] || 'PENDING',
+        status: ['PENDING', 'CONFIRMED', 'FINALIZED', 'FAILED'][tx.status] || 'PENDING',
       })),
     };
   }

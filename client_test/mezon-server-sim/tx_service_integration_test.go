@@ -125,6 +125,52 @@ func getFaucetAccount() (string, ed25519.PrivateKey) {
 	return faucetPublicKeyHex, faucetPrivateKey
 }
 
+// seedAccountFromFaucet sends initial tokens from faucet to a given address
+func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.TxService, toAddress string, amount uint64) (string, error) {
+	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
+
+	// Get faucet account info
+	faucetAccount, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to get faucet account: %w", err)
+	}
+
+	// Send tokens from faucet to recipient
+	faucetSeed := faucetPrivateKey.Seed()
+	txHash, err := service.SendTokenWithoutDatabase(
+		ctx,
+		faucetAccount.Nonce,
+		faucetPublicKey,
+		toAddress,
+		faucetSeed,
+		amount,
+		"Seed amount from faucet",
+		domain.TxTypeFaucet,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to send tokens from faucet: %w", err)
+	}
+
+	t.Logf("Seeding transaction sent: %s", txHash[:16])
+
+	// Wait for transaction to be processed
+	time.Sleep(5 * time.Second)
+
+	// Verify the account now has enough balance
+	updatedAccount, err := service.GetAccountByAddress(ctx, toAddress)
+	if err != nil {
+		return "", fmt.Errorf("failed to get updated account: %w", err)
+	}
+
+	if updatedAccount.Balance < amount {
+		return "", fmt.Errorf("account balance (%d) is less than seed amount (%d)", updatedAccount.Balance, amount)
+	}
+
+	t.Logf("Account seeded successfully! Balance: %d tokens", updatedAccount.Balance)
+
+	return txHash, nil
+}
+
 func TestSendToken_Integration_Faucet(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
@@ -397,6 +443,133 @@ func TestGetTxByHash_InvalidHash(t *testing.T) {
 	}
 
 	t.Logf("Correctly rejected invalid hash: %v", err)
+}
+
+// TestGetBalanceAndTransactions_Integration_CompleteFlow tests the complete flow
+func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
+	svc, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Setup test data - transfer from one account to another
+	toAddr := "8ac7e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7d"
+	seedAmount := uint64(25)
+	transferAmount := uint64(25)
+	fromPriv := []byte{216, 225, 123, 4, 170, 149, 32, 216, 126, 223, 75, 46, 184, 101, 133, 247, 98, 166, 96, 57, 12, 104, 188, 249, 247, 23, 108, 201, 37, 25, 40, 231}
+	fromPrivateKey := ed25519.NewKeyFromSeed(fromPriv)
+	fromPublicKey := fromPrivateKey.Public().(ed25519.PublicKey)
+	fromAddr := hex.EncodeToString(fromPublicKey[:])
+
+	// Seed the "from account" first
+	t.Logf("Seeding amount %d for %s", seedAmount, fromAddr[:16])
+	txHash, err := seedAccountFromFaucet(t, ctx, svc, fromAddr, seedAmount)
+	if err != nil {
+		t.Fatalf("Failed to seed from account: %v", err)
+	}
+	t.Logf("From account seeded successfully: %s", txHash[:16])
+
+	// Get initial balances after seeding
+	initialFromAccount, err := svc.GetAccountByAddress(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get initial from account: %v", err)
+	}
+	initialToAccount, err := svc.GetAccountByAddress(ctx, toAddr)
+	if err != nil {
+		t.Fatalf("Failed to get initial to account: %v", err)
+	}
+	t.Logf("Initial state - From %s: balance=%d, nonce=%d", fromAddr[:16], initialFromAccount.Balance, initialFromAccount.Nonce)
+	t.Logf("Initial state - To %s: balance=%d, nonce=%d", toAddr[:16], initialToAccount.Balance, initialToAccount.Nonce)
+
+	// Perform the transfer from account 1 to account 2
+	t.Logf("Performing transfer: %d tokens from %s to %s", transferAmount, fromAddr[:16], toAddr[:16])
+	transferTxHash, err := svc.SendTokenWithoutDatabase(ctx, initialFromAccount.Nonce+1, fromAddr, toAddr, fromPriv, transferAmount, "Account to account transfer", domain.TxTypeTransfer)
+	if err != nil {
+		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
+	}
+	t.Logf("Transfer transaction sent: %s", transferTxHash)
+
+	// Wait for transaction to be processed
+	time.Sleep(5 * time.Second)
+
+	// Run child tests
+	t.Run("TestGetBalance_UpdatedCorrectly", func(t *testing.T) {
+		testGetBalanceUpdatedCorrectly(t, ctx, svc, fromAddr, toAddr, initialFromAccount, initialToAccount, transferAmount)
+	})
+
+	t.Run("TestListTransactions_ByAddress", func(t *testing.T) {
+		testListTransactionsByAddress(t, ctx, svc, fromAddr, toAddr, transferAmount, transferTxHash)
+	})
+}
+
+// testGetBalanceUpdatedCorrectly verifies that balances are updated correctly after the transfer
+func testGetBalanceUpdatedCorrectly(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, initialFromAccount, initialToAccount domain.Account, transferAmount uint64) {
+	// Get updated balances after transfer
+	updatedFromAccount, err := svc.GetAccountByAddress(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get updated from account: %v", err)
+	}
+
+	updatedToAccount, err := svc.GetAccountByAddress(ctx, toAddr)
+	if err != nil {
+		t.Fatalf("Failed to get updated to account: %v", err)
+	}
+
+	t.Logf("Updated state - From account (%s): balance=%d, nonce=%d", fromAddr[:16], updatedFromAccount.Balance, updatedFromAccount.Nonce)
+	t.Logf("Updated state - To account (%s): balance=%d, nonce=%d", toAddr[:16], updatedToAccount.Balance, updatedToAccount.Nonce)
+
+	// Verify balances are updated correctly
+	expectedFromBalance := initialFromAccount.Balance - transferAmount
+	if updatedFromAccount.Balance != expectedFromBalance {
+		t.Errorf("From account balance incorrect: expected %d, got %d",
+			expectedFromBalance, updatedFromAccount.Balance)
+	}
+
+	expectedToBalance := initialToAccount.Balance + transferAmount
+	if updatedToAccount.Balance != expectedToBalance {
+		t.Errorf("To account balance incorrect: expected %d, got %d",
+			expectedToBalance, updatedToAccount.Balance)
+	}
+}
+
+// testListTransactionsByAddress verifies transaction listing by address with filters
+func testListTransactionsByAddress(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, transferAmount uint64, transferTxHash string) {
+	// Test listing transactions for from address
+	t.Run("FromAddress_AllTransactions", func(t *testing.T) {
+		transactions, err := svc.ListTransactionsByAddress(ctx, fromAddr, 10, 1, 0) // filter=0 (all)
+		if err != nil {
+			t.Fatalf("ListTransactionsByAddress failed: %v", err)
+		}
+
+		t.Logf("All transactions for %s: count=%d", fromAddr[:16], transactions.Total)
+
+		// Verify we have at least one transaction (the transfer)
+		if transactions.Total < 1 {
+			t.Errorf("Expected at least 1 transaction for from address %s, got %d", fromAddr[:16], transactions.Total)
+		}
+	})
+
+	// Test listing sent transactions only (filter=1)
+	t.Run("FromAddress_FilterSentTransactions", func(t *testing.T) {
+		transactions, err := svc.ListTransactionsByAddress(ctx, fromAddr, 10, 1, 1) // filter=1 (sent)
+		if err != nil {
+			t.Fatalf("ListTransactionsByAddress (sent) failed: %v", err)
+		}
+
+		t.Logf("Transaction sent from %s: count=%d", fromAddr[:16], transactions.Total)
+
+		if transactions.Total < 1 {
+			t.Errorf("Expected at least 1 transaction for from address %s, got %d", fromAddr[:16], transactions.Total)
+		}
+
+		// Verify all transactions in the list are sent transactions (fromAddr is sender)
+		for _, tx := range transactions.Txs {
+			if tx.Sender != fromAddr {
+				t.Errorf("Transaction of type sent for %s: Sender should be %s, got %s", fromAddr[:16], fromAddr, tx.Sender)
+				break
+			}
+		}
+	})
 }
 
 // TestHealthCheck_Integration tests the health check functionality with real mainnet nodes
