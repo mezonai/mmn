@@ -71,21 +71,7 @@ func runBootstrap() {
 		Bootstrap:  true, // set false if you don't want to bootstrap
 	}
 
-	host, ddht, err := bootstrap.CreateNode(ctx, cfg, bootstrapP2pPort)
-	if err != nil {
-		logx.Error("BOOTSTRAP NODE", "Failed to create node:", err)
-	}
-
-	logx.Info("BOOTSTRAP NODE", "Node ID:", host.ID().String())
-	for _, addr := range host.Addrs() {
-		logx.Info("BOOTNODE", "Listening on:", addr)
-	}
-
-	if !cfg.Bootstrap {
-		if err := ddht.Bootstrap(ctx); err != nil {
-			logx.Error("BOOTSTRAP NODE", "Failed to bootstrap DHT:", err)
-		}
-	}
+	bootstrap.CreateNode(ctx, cfg, bootstrapP2pPort)
 
 	select {}
 }

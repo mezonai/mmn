@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/types"
+	"github.com/multiformats/go-multiaddr"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -31,17 +32,22 @@ type Libp2pNetwork struct {
 	topicVotes        *pubsub.Topic
 	topicTxs          *pubsub.Topic
 	topicBlockSyncReq *pubsub.Topic
-	topicBlockSyncRes *pubsub.Topic
+	topicLatestSlot   *pubsub.Topic
 
-	onBlockReceived func(*block.Block) error
-	onVoteReceived  func(*consensus.Vote) error
-	onTxReceived    func(*types.Transaction) error
+	onBlockReceived        func(*block.Block) error
+	onVoteReceived         func(*consensus.Vote) error
+	onTransactionReceived  func(*types.Transaction) error
+	onSyncResponseReceived func([]*block.Block) error
+	onLatestSlotReceived   func(uint64, string) error
 
-	blockStreams map[peer.ID]network.Stream
-	voteStreams  map[peer.ID]network.Stream
-	txStreams    map[peer.ID]network.Stream
-	streamMu     sync.RWMutex
-	maxPeers     int
+	syncStreams map[peer.ID]network.Stream
+	maxPeers    int
+
+	activeSyncRequests map[string]*SyncRequestInfo
+	syncMu             sync.RWMutex
+
+	syncRequests  map[string]*SyncRequestTracker
+	syncTrackerMu sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -77,9 +83,53 @@ type TxMessage struct {
 }
 
 type SyncRequest struct {
-	FromSlot uint64 `json:"from_slot"`
+	RequestID string                `json:"request_id"`
+	FromSlot  uint64                `json:"from_slot"`
+	ToSlot    uint64                `json:"to_slot"`
+	Addrs     []multiaddr.Multiaddr `json:"addrs"`
 }
 
 type SyncResponse struct {
-	Block *block.Block `json:"block"`
+	Blocks []*block.Block `json:"blocks"`
+}
+
+type LatestSlotRequest struct {
+	RequesterID string                `json:"requester_id"`
+	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+}
+
+type LatestSlotResponse struct {
+	LatestSlot uint64 `json:"latest_slot"`
+	PeerID     string `json:"peer_id"`
+}
+
+type SyncRequestInfo struct {
+	RequestID string
+	FromSlot  uint64
+	ToSlot    uint64
+	PeerID    peer.ID
+	Stream    network.Stream
+	StartTime time.Time
+	IsActive  bool
+}
+
+// for trach when multiples requests
+type SyncRequestTracker struct {
+	RequestID    string
+	FromSlot     uint64
+	ToSlot       uint64
+	ActivePeer   peer.ID
+	ActiveStream network.Stream
+	IsActive     bool
+	StartTime    time.Time
+	AllPeers     map[peer.ID]network.Stream
+	mu           sync.RWMutex
+}
+
+type Callbacks struct {
+	OnBlockReceived        func(*block.Block) error
+	OnVoteReceived         func(*consensus.Vote) error
+	OnTransactionReceived  func(*types.Transaction) error
+	OnLatestSlotReceived   func(uint64, string) error
+	OnSyncResponseReceived func([]*block.Block) error
 }
