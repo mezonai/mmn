@@ -4,12 +4,12 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/blockstore"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
@@ -18,10 +18,10 @@ type Ledger struct {
 	state      map[string]*types.Account // address (public key hex) → account
 	faucetAddr string
 	mu         sync.RWMutex
-	txStore    db.TxStore
+	txStore    blockstore.TxStore
 }
 
-func NewLedger(faucetAddr string, txStore db.TxStore) *Ledger {
+func NewLedger(faucetAddr string, txStore blockstore.TxStore) *Ledger {
 	return &Ledger{
 		state:      make(map[string]*types.Account),
 		faucetAddr: faucetAddr,
@@ -35,6 +35,29 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) {
 	defer l.mu.Unlock()
 
 	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+}
+
+// CreateAccountFromGenesis creates an account from genesis block (implements LedgerInterface)
+func (l *Ledger) CreateAccountFromGenesis(addr string, balance uint64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Check if account already exists to prevent re-initialization
+	if _, exists := l.state[addr]; exists {
+		return fmt.Errorf("genesis account %s already exists", addr)
+	}
+
+	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+	return nil
+}
+
+// AccountExists checks if an account exists (implements LedgerInterface)
+func (l *Ledger) AccountExists(addr string) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	_, exists := l.state[addr]
+	return exists
 }
 
 // Query balance
@@ -83,6 +106,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
+			fmt.Printf("Applied tx %s\n", tx.Hash())
 			addHistory(l.state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
 				addHistory(l.state[tx.Recipient], tx)

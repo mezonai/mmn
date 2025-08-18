@@ -13,6 +13,7 @@ import (
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
 )
 
@@ -63,7 +64,7 @@ func NewValidator(
 	leaderTimeout time.Duration,
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
-	netClient interfaces.Broadcaster,
+	p2pClient *p2p.Libp2pNetwork,
 	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
@@ -81,7 +82,7 @@ func NewValidator(
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
-		netClient:                 netClient,
+		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		session:                   ledger.NewSession(),
@@ -327,12 +328,12 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
-				fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
+				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
-				fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
+				// fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot != NoSlot {
 					v.onLeaderSlotEnd()
 				}

@@ -102,7 +102,7 @@ func (r *PohRecorder) Tick() *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	fmt.Println("Starting Tick")
+	// fmt.Println("Starting Tick")
 	pohEntry := r.poh.Tick()
 	if pohEntry == nil {
 		return nil
