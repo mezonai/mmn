@@ -299,16 +299,18 @@ func (v *Validator) leaderBatchLoop() {
 			v.pendingValidTxs = append(v.pendingValidTxs, valids...)
 
 			recordTxs := v.peekPendingValidTxs(v.BatchSize)
-			if recordTxs != nil {
-				fmt.Println("[LEADER] Recording batch")
-				entry, err := v.Recorder.RecordTxs(recordTxs)
-				if err != nil {
-					fmt.Println("[LEADER] Record error:", err)
-					continue
-				}
-				v.dropPendingValidTxs(len(recordTxs))
-				fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(recordTxs), slot, entry.Hash[:6])
+			if recordTxs == nil {
+				fmt.Println("[LEADER] No valid transactions")
+				continue
 			}
+			fmt.Println("[LEADER] Recording batch")
+			entry, err := v.Recorder.RecordTxs(recordTxs)
+			if err != nil {
+				fmt.Println("[LEADER] Record error:", err)
+				continue
+			}
+			v.dropPendingValidTxs(len(recordTxs))
+			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(recordTxs), slot, entry.Hash[:6])
 		}
 	}
 }
