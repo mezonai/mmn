@@ -132,9 +132,9 @@ export class TransactionTracker extends EventEmitter {
       txHash,
       status: statusEnum,
       blockSlot: update.block_slot ? BigInt(update.block_slot) : 0n,
-      blockHash: update.block_hash || "",
+      blockHash: update.block_hash || '',
       confirmations: update.confirmations ? BigInt(update.confirmations) : 0n,
-      errorMessage: update.error_message || "",
+      errorMessage: update.error_message || '',
       timestamp: update.timestamp ? BigInt(update.timestamp) : BigInt(Date.now()),
     };
 
@@ -175,7 +175,18 @@ export class TransactionTracker extends EventEmitter {
   /**
    * Wait for a transaction to reach any terminal status (FINALIZED, FAILED)
    */
-  async waitForTerminalStatus(txHash: string, timeoutMs: number = 30000): Promise<TransactionStatusInfo> {
+  async waitForTerminalStatus(
+    txHash: string,
+    timeoutMs: number = 30000,
+    skipCachedStatus: boolean = false
+  ): Promise<TransactionStatusInfo> {
+    // First check if the transaction already exists and has a terminal status
+    const existingStatus = this.trackedTransactions.get(txHash);
+    if (existingStatus && this.isTerminalStatus(existingStatus.status) && !skipCachedStatus) {
+      console.log(`✅ Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`);
+      return existingStatus;
+    }
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.off('statusChanged', statusListener);
@@ -204,6 +215,50 @@ export class TransactionTracker extends EventEmitter {
    */
   static isTerminalStatus(status: TransactionStatus): boolean {
     return status === TransactionStatus.FINALIZED || status === TransactionStatus.FAILED;
+  }
+
+  /**
+   * Wait for a transaction to be finalized (successful completion)
+   */
+  async waitForTransactionFinalization(
+    txHash: string,
+    timeoutMs: number = 30000,
+    skipCachedStatus: boolean = false
+  ): Promise<TransactionStatusInfo> {
+    try {
+      const status = await this.waitForTerminalStatus(txHash, timeoutMs, skipCachedStatus);
+
+      if (status.status === TransactionStatus.FAILED) {
+        throw new Error(`Transaction ${txHash.substring(0, 16)}... failed: ${status.errorMessage || 'Unknown error'}`);
+      }
+
+      console.log(`✅ Transaction ${txHash.substring(0, 16)}... finalized`);
+      return status;
+    } catch (error) {
+      throw new Error(`Transaction finalization error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Wait for a transaction to fail (expected failure)
+   */
+  async waitForTransactionFailure(
+    txHash: string,
+    timeoutMs: number = 30000,
+    skipCachedStatus: boolean = false
+  ): Promise<TransactionStatusInfo> {
+    try {
+      const status = await this.waitForTerminalStatus(txHash, timeoutMs, skipCachedStatus);
+
+      if (status.status === TransactionStatus.FAILED) {
+        console.log(`✅ Transaction ${txHash}... failed as expected: ${status.errorMessage || 'Unknown error'}`);
+        return status;
+      }
+
+      throw new Error(`Transaction ${txHash}... was expected to fail but reached status: ${status.status}`);
+    } catch (error) {
+      throw new Error(`Transaction failure check error: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
