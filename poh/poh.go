@@ -146,7 +146,7 @@ func (p *Poh) AutoHash() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
-			fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
+			// fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
 			if p.RemainingHashes > 1 {
 				p.hashOnce(p.Hash[:])
 			}

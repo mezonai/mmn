@@ -47,3 +47,10 @@ func Warn(category string, content ...interface{}) {
 func Debug(category string, content ...interface{}) {
 	genericLog(ColorBlue, "DEBUG", category, content...)
 }
+
+// Errorf logs an error message and returns a formatted error
+func Errorf(format string, args ...interface{}) error {
+	err := fmt.Errorf(format, args...)
+	Error("ERROR", err.Error())
+	return err
+}

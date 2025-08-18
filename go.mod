@@ -16,10 +16,11 @@ require (
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1
 	github.com/libp2p/go-libp2p-pubsub v0.14.2
-	github.com/linxGnu/grocksdb v1.10.1
+	github.com/linxGnu/grocksdb v1.10.2
 	github.com/multiformats/go-multiaddr v0.16.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
+	github.com/syndtr/goleveldb v1.0.0
 	github.com/tetratelabs/wazero v1.9.0
 	go.etcd.io/bbolt v1.4.2
 	golang.org/x/crypto v0.40.0
@@ -36,10 +37,12 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/dgraph-io/badger v1.6.2 // indirect
 	github.com/dgraph-io/ristretto v0.0.2 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/ipfs/boxo v0.30.0 // indirect
 	github.com/ipfs/go-datastore v0.8.2 // indirect
@@ -49,7 +52,10 @@ require (
 	github.com/libp2p/go-libp2p-record v0.3.1 // indirect
 	github.com/libp2p/go-libp2p-routing-helpers v0.7.5 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
+	github.com/redis/go-redis/v9 v9.12.1 // indirect
+	github.com/tecbot/gorocksdb v0.0.0-20191217155057-f0fad39f321c // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.36.0 // indirect

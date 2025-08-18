@@ -60,12 +60,15 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
-	lis, _ := net.Listen("tcp", addr)
-
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		fmt.Printf("[gRPC] Failed to listen on %s: %v\n", addr, err)
+		return nil
+	}
 	exception.SafeGo("Grpc Server", func() {
 		grpcSrv.Serve(lis)
 	})
-	fmt.Printf("[gRPC] server listening on %s", addr)
+	fmt.Printf("[gRPC] server listening on %s\n", addr)
 	return grpcSrv
 }
 
