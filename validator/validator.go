@@ -274,6 +274,10 @@ func (v *Validator) leaderBatchLoop() {
 			if len(errs) > 0 {
 				fmt.Println("[LEADER] Invalid transactions:", errs)
 			}
+			if len(valids) == 0 {
+				fmt.Println("[LEADER] No valid transactions")
+				continue
+			}
 
 			fmt.Println("[LEADER] Recording batch")
 			entry, err := v.Recorder.RecordTxs(valids)
