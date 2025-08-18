@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 	"sync"
 
 	"github.com/mezonai/mmn/block"
@@ -164,7 +165,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	// Store block
-	value, err := json.Marshal(b)
+	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
