@@ -12,6 +12,8 @@ const (
 	LevelDBStoreType StoreType = "leveldb"
 	// RocksDBStoreType uses the RocksDB implementation
 	RocksDBStoreType StoreType = "rocksdb"
+	// RedisStoreType uses the Redis implementation
+	RedisStoreType StoreType = "redis"
 )
 
 // StoreConfig holds configuration for creating blockstore instances
@@ -19,7 +21,7 @@ type StoreConfig struct {
 	// Type specifies which store implementation to use
 	Type StoreType `json:"type" yaml:"type"`
 
-	// Directory is the database directory path
+	// Directory is the database directory path (for file-based databases)
 	Directory string `json:"directory" yaml:"directory"`
 }
 
@@ -34,7 +36,7 @@ func (sc *StoreConfig) Validate() error {
 	}
 
 	switch sc.Type {
-	case LevelDBStoreType, RocksDBStoreType:
+	case LevelDBStoreType, RocksDBStoreType, RedisStoreType:
 		return nil
 	default:
 		return fmt.Errorf("unsupported store type: %s", sc.Type)
@@ -92,6 +94,10 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (DatabaseProvider, e
 
 	case RocksDBStoreType:
 		return NewRocksDBProvider(config.Directory)
+
+	case RedisStoreType:
+		// just for debug
+		return NewRedisProvider("localhost:6379")
 
 	default:
 		return nil, fmt.Errorf("unsupported store type: %s", config.Type)

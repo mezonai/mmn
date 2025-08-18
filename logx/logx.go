@@ -39,3 +39,10 @@ func Debug(category string, content ...interface{}) {
 	coloredCategory := fmt.Sprintf("%s[DEBUG][%s]%s", ColorBlue, category, ColorReset)
 	logger.Printf("%s: %s", coloredCategory, message)
 }
+
+// Errorf logs an error message and returns a formatted error
+func Errorf(format string, args ...interface{}) error {
+	err := fmt.Errorf(format, args...)
+	Error("ERROR", err.Error())
+	return err
+}
