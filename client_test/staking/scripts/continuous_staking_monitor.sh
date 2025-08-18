@@ -286,7 +286,7 @@ main() {
         4)
             echo ""
             echo "🧪 Running PoH + PoS Integration Demo..."
-            go run poh_pos_integration_demo.go
+            go run client_test/staking/poh_pos_integration_demo.go
             ;;
         5)
             echo "👋 Goodbye!"

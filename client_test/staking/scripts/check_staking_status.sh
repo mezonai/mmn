@@ -173,17 +173,17 @@ monitor_active_validators() {
 simulate_staking_query() {
     echo -e "\n${BLUE}🧪 Staking System Test:${NC}"
     
-    if [ -f "poh_pos_integration_demo.go" ]; then
+    if [ -f "client_test/staking/poh_pos_integration_demo.go" ]; then
         echo "📋 Running staking integration test..."
         echo ""
         
         # Run demo and capture specific staking output
-        go run poh_pos_integration_demo.go 2>/dev/null | grep -A 20 "Test 2: Staking System"
+        go run client_test/staking/poh_pos_integration_demo.go 2>/dev/null | grep -A 20 "Test 2: Staking System"
         
-    elif [ -f "staking_test_standalone.go" ]; then
+    elif [ -f "client_test/staking/staking_test_standalone.go" ]; then
         echo "📋 Running standalone staking test..."
         echo ""
-        go run staking_test_standalone.go 2>/dev/null | head -20
+        go run client_test/staking/staking_test_standalone.go 2>/dev/null | head -20
         
     else
         echo "⚠️  No staking test files available"
@@ -245,7 +245,7 @@ main_monitor() {
     echo "   ./scripts/build_and_test.sh"
     echo ""
     echo "💡 To run detailed staking test:"
-    echo "   go run poh_pos_integration_demo.go"
+    echo "   go run client_test/staking/poh_pos_integration_demo.go"
 }
 
 # Run main monitor
