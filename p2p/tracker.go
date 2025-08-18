@@ -33,18 +33,6 @@ func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream)
 	return true
 }
 
-func (t *SyncRequestTracker) IsActiveRequest() bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.IsActive
-}
-
-func (t *SyncRequestTracker) GetActivePeer() peer.ID {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.ActivePeer
-}
-
 func (t *SyncRequestTracker) CloseRequest() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
