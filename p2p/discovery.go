@@ -2,6 +2,8 @@ package p2p
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/mezonai/mmn/discovery"
@@ -55,4 +57,94 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 			time.Sleep(30 * time.Second)
 		}
 	}()
+}
+
+func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64, error) {
+	logx.Info("NETWORK:LATEST SLOT", "Requesting latest slot from peers")
+
+	req := LatestSlotRequest{
+		RequesterID: ln.host.ID().String(),
+		Addrs:       ln.host.Addrs(),
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		logx.Error("NETWORK:LATEST SLOT", "Failed to marshal request:", err)
+		return 0, err
+	}
+
+	if ln.topicLatestSlot == nil {
+		errMsg := "latest slot topic is not initialized"
+		logx.Error("NETWORK:LATEST SLOT", errMsg)
+		return 0, fmt.Errorf(errMsg)
+	}
+
+	err = ln.topicLatestSlot.Publish(ctx, data)
+	if err != nil {
+		logx.Error("NETWORK:LATEST SLOT", "Failed to publish request:", err)
+		return 0, err
+	}
+
+	return 0, nil
+}
+
+func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) error {
+	if fromSlot == 0 {
+		return nil
+	}
+
+	toSlot := fromSlot + BatchSize - 1
+
+	requestID := GenerateSyncRequestID()
+
+	// new track
+	tracker := NewSyncRequestTracker(requestID, fromSlot, toSlot)
+
+	ln.syncTrackerMu.Lock()
+	ln.syncRequests[requestID] = tracker
+	ln.syncTrackerMu.Unlock()
+
+	req := SyncRequest{
+		RequestID: requestID,
+		FromSlot:  fromSlot,
+		ToSlot:    toSlot,
+	}
+
+	data, err := json.Marshal(req)
+	if err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to marshal sync request:", err)
+		return err
+	}
+
+	if ln.topicBlockSyncReq == nil {
+		errMsg := "sync request topic is not initialized"
+		return fmt.Errorf(errMsg)
+	}
+
+	err = ln.topicBlockSyncReq.Publish(ctx, data)
+	if err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to publish sync request for slot", fromSlot, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
+	var fromSlot uint64 = 0
+
+	localLatestSlot := ln.blockStore.GetHighestSlot()
+	if localLatestSlot > 0 {
+		fromSlot = localLatestSlot + BatchSize
+		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
+	}
+
+	latestSlot, err := ln.RequestLatestSlotFromPeers(ctx)
+	if err != nil {
+		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
+	} else if latestSlot > fromSlot {
+		fromSlot = latestSlot + BatchSize
+	}
+
+	return ln.RequestBlockSync(ctx, fromSlot)
 }
