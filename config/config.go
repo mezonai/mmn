@@ -119,6 +119,15 @@ func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
 	return &genesisCfg.Validator, nil
 }
 
+// LoadStakingConfig reads staking config from genesis.yml file
+func LoadStakingConfig(path string) (*StakingConfig, error) {
+	genesisCfg, err := LoadGenesisConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	return &genesisCfg.Staking, nil
+}
+
 func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 	data, err := os.ReadFile(privKeyPath)
 	if err != nil {

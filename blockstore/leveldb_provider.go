@@ -37,7 +37,7 @@ func (p *LevelDBProvider) Put(key, value []byte) error {
 	return p.db.Put(key, value, nil)
 }
 
-// Delete removes a key-value pair
+// Delete removes a key
 func (p *LevelDBProvider) Delete(key []byte) error {
 	return p.db.Delete(key, nil)
 }
@@ -49,15 +49,16 @@ func (p *LevelDBProvider) Has(key []byte) (bool, error) {
 
 // Close closes the database connection
 func (p *LevelDBProvider) Close() error {
-	return p.db.Close()
+	if p.db != nil {
+		return p.db.Close()
+	}
+	return nil
 }
 
-// Batch returns a new batch for atomic operations
+// Batch creates a new batch for atomic operations
 func (p *LevelDBProvider) Batch() DatabaseBatch {
-	return &LevelDBBatch{
-		batch: new(leveldb.Batch),
-		db:    p.db,
-	}
+	batch := new(leveldb.Batch)
+	return &LevelDBBatch{batch: batch, db: p.db}
 }
 
 // LevelDBBatch implements DatabaseBatch for LevelDB
@@ -66,27 +67,22 @@ type LevelDBBatch struct {
 	db    *leveldb.DB
 }
 
-// Put adds a key-value pair to the batch
 func (b *LevelDBBatch) Put(key, value []byte) {
 	b.batch.Put(key, value)
 }
 
-// Delete adds a deletion to the batch
 func (b *LevelDBBatch) Delete(key []byte) {
 	b.batch.Delete(key)
 }
 
-// Write commits all operations in the batch
 func (b *LevelDBBatch) Write() error {
 	return b.db.Write(b.batch, nil)
 }
 
-// Reset clears the batch
 func (b *LevelDBBatch) Reset() {
 	b.batch.Reset()
 }
 
-// Close releases batch resources
 func (b *LevelDBBatch) Close() error {
 	// LevelDB batch doesn't need explicit closing
 	return nil

@@ -1,0 +1,85 @@
+config:
+  # Faucet configuration
+  faucet:
+    address: "faucet_public_key_here"
+    amount: 1000000000000  # 1 trillion tokens for testing
+
+  # Proof of History configuration
+  poh:
+    hashes_per_tick: 1000
+    ticks_per_slot: 64
+    tick_interval_ms: 400  # 400ms slots
+
+  # Mempool configuration
+  mempool:
+    max_txs: 10000
+
+  # Validator configuration
+  validator:
+    batch_size: 100
+    leader_timeout: 5000
+    leader_timeout_loop_interval: 1000
+
+  # Staking configuration
+  staking:
+    enabled: true
+    slots_per_epoch: 8640        # ~1 hour epochs at 400ms slots
+    min_stake_amount: "1000000"  # 1 million tokens minimum stake
+    max_validators: 1000         # Maximum number of validators
+    epoch_reward_amount: "100000000"  # 100 million tokens per epoch
+    unstake_cooldown: 432000     # ~3 days unstaking cooldown
+    activation_delay: 8640       # ~1 hour activation delay
+
+  # Genesis validators (for initial network bootstrap)
+  genesis_validators:
+    - pubkey: "validator1_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 5              # 5% commission
+
+    - pubkey: "validator2_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 10             # 10% commission
+
+    - pubkey: "validator3_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 8              # 8% commission
+
+    - pubkey: "validator4_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 7              # 7% commission
+
+    - pubkey: "validator5_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 12             # 12% commission
+
+    - pubkey: "validator6_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 6              # 6% commission
+
+    - pubkey: "validator7_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 9              # 9% commission
+
+    - pubkey: "validator8_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 11             # 11% commission
+
+    - pubkey: "validator9_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 4              # 4% commission
+
+    - pubkey: "validator10_public_key_here"
+      stake_amount: "10000000"   # 10 million tokens
+      commission: 13             # 13% commission
+
+  # Legacy leader schedule (will be replaced by stake-based scheduling)
+  leader_schedule:
+    - start_slot: 0
+      end_slot: 99
+      leader: "validator1_public_key_here"
+    - start_slot: 100
+      end_slot: 199
+      leader: "validator2_public_key_here"
+    - start_slot: 200
+      end_slot: 299
+      leader: "validator3_public_key_here"

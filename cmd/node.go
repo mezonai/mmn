@@ -107,8 +107,14 @@ func runNode() {
 		logx.Warn("Failed to get current directory: %v", err)
 	}
 
+	// Create node-specific directory to avoid database conflicts
+	nodeSpecificDir := fmt.Sprintf("%s_%s", leveldbBlockDir, grpcAddr[1:]) // Remove ':' from port
+	if nodeSpecificDir == leveldbBlockDir+"_" {
+		nodeSpecificDir = leveldbBlockDir + "_default"
+	}
+	
 	// Create absolute path for storage
-	absLeveldbBlockDir := filepath.Join(currentDir, leveldbBlockDir)
+	absLeveldbBlockDir := filepath.Join(currentDir, nodeSpecificDir)
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(absLeveldbBlockDir, 0755); err != nil {

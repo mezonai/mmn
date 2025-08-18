@@ -10,6 +10,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/ethereum/c-kzg-4844/v2 v2.1.1
 	github.com/google/gofuzz v1.2.0
+	github.com/gorilla/mux v1.8.1
 	github.com/holiman/uint256 v1.3.2
 	github.com/jedisct1/go-minisign v0.0.0-20241212093149-d2f9f49435c7
 	github.com/lib/pq v1.10.9
@@ -28,7 +29,6 @@ require (
 	golang.org/x/tools v0.35.0
 	google.golang.org/grpc v1.74.2
 	google.golang.org/protobuf v1.36.6
-	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -53,7 +53,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
-	github.com/tecbot/gorocksdb v0.0.0-20191217155057-f0fad39f321c // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.36.0 // indirect
