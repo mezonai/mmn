@@ -15,7 +15,6 @@ type Store interface {
 	HasCompleteBlock(slot uint64) bool
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
 	GetLatestSlot() uint64
-	GetHighestSlot() uint64
 	AddBlockPending(b *block.Block) error
 	MarkFinalized(slot uint64) error
 	Seed() [32]byte

@@ -216,20 +216,3 @@ func (s *GenericBlockStore) Seed() [32]byte {
 func (s *GenericBlockStore) Close() error {
 	return s.provider.Close()
 }
-
-func (s *GenericBlockStore) GetHighestSlot() uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	highestSlot := s.latestFinalized
-
-	for slot := s.latestFinalized + 1; slot < s.latestFinalized+1000; slot++ {
-		if s.HasCompleteBlock(slot) {
-			highestSlot = slot
-		} else {
-			break
-		}
-	}
-
-	return highestSlot
-}
