@@ -46,6 +46,7 @@ func NewNetWork(
 			return ddht, err
 		}),
 	)
+
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create libp2p host: %w", err)
@@ -71,18 +72,18 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:         h,
-		pubsub:       ps,
-		selfPubKey:   selfPubKey,
-		selfPrivKey:  selfPrivKey,
-		peers:        make(map[peer.ID]*PeerInfo),
-		blockStreams: make(map[peer.ID]network.Stream),
-		voteStreams:  make(map[peer.ID]network.Stream),
-		txStreams:    make(map[peer.ID]network.Stream),
-		blockStore:   blockStore,
-		maxPeers:     int(MaxPeers),
-		ctx:          ctx,
-		cancel:       cancel,
+		host:               h,
+		pubsub:             ps,
+		selfPubKey:         selfPubKey,
+		selfPrivKey:        selfPrivKey,
+		peers:              make(map[peer.ID]*PeerInfo),
+		syncStreams:        make(map[peer.ID]network.Stream),
+		blockStore:         blockStore,
+		maxPeers:           int(MaxPeers),
+		activeSyncRequests: make(map[string]*SyncRequestInfo),
+		syncRequests:       make(map[string]*SyncRequestTracker),
+		ctx:                ctx,
+		cancel:             cancel,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -103,6 +104,9 @@ func NewNetWork(
 
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
+	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
+	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
+
 	ln.SetupPubSubTopics(ctx)
 
 	bootstrapConnected := false
@@ -114,7 +118,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		// Use DNS resolution for bootstrap addresses
 		infos, err := discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", bootstrapPeer, err.Error())
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address: %s, error: %v", bootstrapPeer, err)
 			continue
 		}
 
@@ -133,7 +137,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		bootstrapConnected = true
 
 		go ln.RequestNodeInfo(bootstrapPeer, &info)
-		// go ln.RequestBlockSync(ln.blockStore.LatestSlot() + 1)
 
 		break
 	}

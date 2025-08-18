@@ -118,6 +118,13 @@ func (s *GenericBlockStore) HasCompleteBlock(slot uint64) bool {
 	return exists
 }
 
+// GetLatestSlot returns the latest finalized slot
+func (s *GenericBlockStore) GetLatestSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestFinalized
+}
+
 // LastEntryInfoAtSlot returns the slot boundary information for the given slot
 func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 	blk := s.Block(slot)
@@ -208,4 +215,21 @@ func (s *GenericBlockStore) Seed() [32]byte {
 // Close closes the underlying database provider
 func (s *GenericBlockStore) Close() error {
 	return s.provider.Close()
+}
+
+func (s *GenericBlockStore) GetHighestSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	highestSlot := s.latestFinalized
+
+	for slot := s.latestFinalized + 1; slot < s.latestFinalized+1000; slot++ {
+		if s.HasCompleteBlock(slot) {
+			highestSlot = slot
+		} else {
+			break
+		}
+	}
+
+	return highestSlot
 }

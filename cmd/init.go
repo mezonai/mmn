@@ -163,6 +163,22 @@ func initializeNode() {
 		return
 	}
 
+	// Copy genesis.yml to data directory
+	genesisDestPath := filepath.Join(initDataDir, "genesis.yml")
+	genesisData, err := os.ReadFile(initGenesisPath)
+	if err != nil {
+		logx.Error("INIT", "Failed to read genesis configuration file:", err.Error())
+		return
+	}
+
+	err = os.WriteFile(genesisDestPath, genesisData, 0644)
+	if err != nil {
+		logx.Error("INIT", "Failed to copy genesis configuration to data directory:", err.Error())
+		return
+	}
+
+	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
+
 	// Initialize blockstore
 	blockstoreDir := filepath.Join(initDataDir, "blockstore")
 	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
