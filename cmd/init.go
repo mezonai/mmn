@@ -16,12 +16,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const ZERO_ADDRESS = "0000000000000000000000000000000000000000000000000000000000000000"
+
 var (
 	// Init command specific variables
 	initGenesisPath string
 	initDataDir     string
 	initDatabase    string
 	initPrivKeyPath string
+	faucetAddresses []string
 )
 
 var initCmd = &cobra.Command{
@@ -46,6 +49,12 @@ func init() {
 	initCmd.Flags().StringVar(&initDataDir, "data-dir", ".", "Directory to save node data")
 	initCmd.Flags().StringVar(&initDatabase, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	initCmd.Flags().StringVar(&initPrivKeyPath, "privkey-path", "", "Path to existing private key file (optional)")
+	initCmd.Flags().StringArrayVar(
+		&faucetAddresses,
+		"faucet-addresses",
+		[]string{},
+		"List of faucet addresses to fund initial accounts",
+	)
 }
 
 // initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data
@@ -194,7 +203,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(cfg.Faucet.Address)
+	ld := ledger.NewLedger(ZERO_ADDRESS)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -235,12 +244,6 @@ func initializeNode() {
 
 // initializeBlockchainWithGenesis initializes blockchain with genesis block using AssembleBlock
 func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.Block, error) {
-	// Check if faucet account already exists (node restart scenario)
-	if ld.AccountExists(cfg.Faucet.Address) {
-		logx.Info("GENESIS", fmt.Sprintf("Faucet account %s already exists, skipping genesis initialization", cfg.Faucet.Address))
-		// Return nil for existing state
-		return nil, nil
-	}
 
 	// Create genesis PoH entry with faucet transaction
 	// For genesis, we create a simple entry with the faucet initialization
@@ -251,17 +254,20 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	genesisBlock := block.AssembleBlock(
 		0,                         // slot 0 for genesis
 		genesisHash,               // previous hash is zero for genesis
-		cfg.Faucet.Address,        // use faucet address as leader for genesis
+		ZERO_ADDRESS,              // use faucet address as leader for genesis
 		[]poh.Entry{genesisEntry}, // genesis entry
 	)
 
+	if len(faucetAddresses) > 0 {
+		cfg.Faucet.Addresses = faucetAddresses
+	}
 	// Process genesis faucet account creation
-	err := ld.CreateAccountFromGenesis(cfg.Faucet.Address, cfg.Faucet.Amount)
+	err := ld.CreateAccountsFromGenesis(cfg.Faucet.Addresses, cfg.Faucet.Amount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create genesis faucet account: %w", err)
 	}
 
-	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with faucet account %s (balance: %d)", cfg.Faucet.Address, cfg.Faucet.Amount))
+	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with faucet accounts %s (balance: %d)", cfg.Faucet.Addresses, cfg.Faucet.Amount))
 	logx.Info("GENESIS", fmt.Sprintf("Genesis block hash: %x", genesisBlock.Hash))
 
 	return genesisBlock, nil
