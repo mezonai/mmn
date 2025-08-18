@@ -57,10 +57,8 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 		return nil, nil, err
 	}
 
-	if cfg.Bootstrap {
-		if err := ddht.Bootstrap(ctx); err != nil {
-			return nil, nil, err
-		}
+	if err := ddht.Bootstrap(ctx); err != nil {
+		return nil, nil, err
 	}
 
 	h.SetStreamHandler(NodeInfoProtocol, func(s network.Stream) {

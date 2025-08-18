@@ -42,7 +42,7 @@ type Libp2pNetwork struct {
 	onShredReceived        func(*types.Shred) error
 	onBlockReceived        func(*block.Block) error
 	onVoteReceived         func(*consensus.Vote) error
-	onTxReceived           func(*types.Transaction) error
+	onTransactionReceived  func(*types.Transaction) error
 	onSyncResponseReceived func([]*block.Block) error
 	onLatestSlotReceived   func(uint64, string) error
 
@@ -130,6 +130,14 @@ type SyncRequestTracker struct {
 	StartTime    time.Time
 	AllPeers     map[peer.ID]network.Stream
 	mu           sync.RWMutex
+}
+
+type Callbacks struct {
+	OnBlockReceived        func(*block.Block) error
+	OnVoteReceived         func(*consensus.Vote) error
+	OnTransactionReceived  func(*types.Transaction) error
+	OnLatestSlotReceived   func(uint64, string) error
+	OnSyncResponseReceived func([]*block.Block) error
 }
 
 // Shred-related message types

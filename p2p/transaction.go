@@ -10,7 +10,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-func (ln *Libp2pNetwork) HandleTxTopic(ctx context.Context, sub *pubsub.Subscription) {
+func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub.Subscription) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -37,8 +37,8 @@ func (ln *Libp2pNetwork) HandleTxTopic(ctx context.Context, sub *pubsub.Subscrip
 				continue
 			}
 
-			if tx != nil && ln.onTxReceived != nil {
-				ln.onTxReceived(tx)
+			if tx != nil && ln.onTransactionReceived != nil {
+				ln.onTransactionReceived(tx)
 			}
 		}
 	}
