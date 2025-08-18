@@ -176,7 +176,7 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(libP2pClient.GetPeersConnected() + 1)
+	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
 

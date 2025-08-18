@@ -133,7 +133,7 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 	var fromSlot uint64 = 0
 
-	localLatestSlot := ln.blockStore.GetHighestSlot()
+	localLatestSlot := ln.blockStore.GetLatestSlot()
 	if localLatestSlot > 0 {
 		fromSlot = localLatestSlot + BatchSize
 		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)

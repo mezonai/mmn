@@ -38,14 +38,6 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 	return ""
 }
 
-func (ln *Libp2pNetwork) c(msg BlockMessage) *block.Block {
-	return &block.Block{
-		Slot:      msg.Slot,
-		LeaderID:  msg.LeaderID,
-		Timestamp: uint64(msg.Timestamp.Second()),
-	}
-}
-
 func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
 	return &consensus.Vote{
 		Slot:      msg.Slot,
