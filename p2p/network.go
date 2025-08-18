@@ -7,6 +7,7 @@ import (
 
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/discovery"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 
 	"github.com/libp2p/go-libp2p"
@@ -92,7 +93,9 @@ func NewNetWork(
 		return nil, fmt.Errorf("failed to setup handlers: %w", err)
 	}
 
-	go ln.Discovery(customDiscovery, ctx, h)
+	exception.SafeGoWithPanic("Discovery", func() {
+		ln.Discovery(customDiscovery, ctx, h)
+	})
 
 	logx.Info("NETWORK", fmt.Sprintf("Libp2p network started with ID: %s", h.ID().String()))
 	for _, addr := range h.Addrs() {
@@ -136,7 +139,9 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 		bootstrapConnected = true
 
-		go ln.RequestNodeInfo(bootstrapPeer, &info)
+		exception.SafeGoWithPanic("RequestNodeInfo", func() {
+			ln.RequestNodeInfo(bootstrapPeer, &info)
+		})
 
 		break
 	}
