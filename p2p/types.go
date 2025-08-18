@@ -138,6 +138,7 @@ type Callbacks struct {
 	OnTransactionReceived  func(*types.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.Block) error
+	OnShredReceived        func(*types.Shred) error
 }
 
 // Shred-related message types
