@@ -34,7 +34,7 @@ func fromPBEntry(e *pb.Entry) (poh.Entry, error) {
 func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 	entries := make([]poh.PersistentEntry, len(b.Entries))
 	for i, entry := range b.Entries {
-		txHashes := make([]string, len(b.Entries))
+		txHashes := make([]string, len(entry.Transactions))
 		for i, tx := range entry.Transactions {
 			txHashes[i] = tx.Hash()
 		}
