@@ -126,6 +126,26 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
 				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+					// Handle transaction failures during block processing
+					if eventRouter != nil {
+						block := bs.Block(vote.Slot)
+						if block != nil {
+							// Try to identify which transaction failed and publish failure events
+							// This is a simplified approach - in a real implementation, you'd want
+							// more granular error handling
+							for _, entry := range block.Entries {
+								for _, raw := range entry.Transactions {
+									tx, parseErr := utils.ParseTx(raw)
+									if parseErr != nil {
+										continue
+									}
+									txHash := tx.Hash()
+									event := events.NewTransactionFailed(txHash, fmt.Sprintf("block processing failed: %v", err))
+									eventRouter.PublishTransactionEvent(event)
+								}
+							}
+						}
+					}
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -175,6 +195,26 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
 				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+					// Handle transaction failures during block processing
+					if eventRouter != nil {
+						block := bs.Block(vote.Slot)
+						if block != nil {
+							// Try to identify which transaction failed and publish failure events
+							// This is a simplified approach - in a real implementation, you'd want
+							// more granular error handling
+							for _, entry := range block.Entries {
+								for _, raw := range entry.Transactions {
+									tx, parseErr := utils.ParseTx(raw)
+									if parseErr != nil {
+										continue
+									}
+									txHash := tx.Hash()
+									event := events.NewTransactionFailed(txHash, fmt.Sprintf("block processing failed: %v", err))
+									eventRouter.PublishTransactionEvent(event)
+								}
+							}
+						}
+					}
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -212,7 +252,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			logx.Info("TX", "Processing received transaction from P2P network")
 
 			// Add transaction to mempool
-			mp.AddTx(txData, false)
+			txHash, success := mp.AddTx(txData, false)
+			if !success {
+				logx.Warn("TX", "Failed to add P2P transaction to mempool", txHash)
+			}
 			return nil
 		},
 		OnSyncResponseReceived: func(blocks []*block.Block) error {

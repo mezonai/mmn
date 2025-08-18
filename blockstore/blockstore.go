@@ -240,7 +240,27 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
 
-	for s, blockData := range bs.data {
+	// Iterate through all slots from 0 to latest finalized to search for the transaction
+	latestSlot := bs.latestFinalized
+	for s := uint64(0); s <= latestSlot; s++ {
+		key := slotToBlockKey(s)
+		value, err := bs.provider.Get(key)
+		if err != nil {
+			logx.Error("BLOCKSTORE", "Failed to get block for transaction search", s, "error:", err)
+			continue
+		}
+
+		if value == nil {
+			continue
+		}
+
+		var blockData block.Block
+		if err := json.Unmarshal(value, &blockData); err != nil {
+			logx.Error("BLOCKSTORE", "Failed to unmarshal block for transaction search", s, "error:", err)
+			continue
+		}
+
+		// Search through all entries in the block
 		for _, entry := range blockData.Entries {
 			for _, raw := range entry.Transactions {
 				tx, err := utils.ParseTx(raw)
@@ -248,7 +268,7 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 					continue
 				}
 				if tx.Hash() == clientHashHex {
-					return s, blockData, blockData.Status == block.BlockFinalized, true
+					return s, &blockData, blockData.Status == block.BlockFinalized, true
 				}
 			}
 		}

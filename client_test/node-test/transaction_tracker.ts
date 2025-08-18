@@ -7,6 +7,7 @@ export interface TransactionTrackerOptions {
   maxRetries?: number;
   timeout?: number; // milliseconds
   statusConsumptionDelay?: number; // milliseconds - delay between processing status updates
+  debug?: boolean; // enable debug output
 }
 
 export class TransactionTracker extends EventEmitter {
@@ -14,6 +15,7 @@ export class TransactionTracker extends EventEmitter {
   private trackedTransactions: Map<string, TransactionStatusInfo> = new Map();
   private subscriptions: Map<string, () => void> = new Map();
   private statusConsumptionDelay: number;
+  private debug: boolean;
 
   constructor(options: TransactionTrackerOptions = {}) {
     super();
@@ -21,18 +23,24 @@ export class TransactionTracker extends EventEmitter {
     const {
       serverAddress = '127.0.0.1:9001',
       statusConsumptionDelay = 0, // Default to no delay
+      debug = false, // Default to no debug output
     } = options;
 
     // Initialize gRPC client
-    this.grpcClient = new GrpcClient(serverAddress);
+    this.grpcClient = new GrpcClient(serverAddress, debug);
     this.statusConsumptionDelay = statusConsumptionDelay;
+    this.debug = debug;
   }
 
   /**
    * Track all transactions using subscription to all transaction events
    */
   trackTransactions(): void {
-    console.log('🔍 Starting to track all transactions...');
+    if (this.debug) {
+      console.log('🔍 [DEBUG] Starting to track all transactions...');
+    } else {
+      console.log('🔍 Starting to track all transactions...');
+    }
 
     // Subscribe to all transaction events
     const unsubscribe = this.grpcClient.subscribeTransactionStatus(
@@ -49,11 +57,19 @@ export class TransactionTracker extends EventEmitter {
         await this.handleStatusUpdate(update.tx_hash, update);
       },
       (error: any) => {
-        console.error('Subscription error for all transactions:', error);
+        if (this.debug) {
+          console.error('🔍 [DEBUG] Subscription error for all transactions:', error);
+        } else {
+          console.error('Subscription error for all transactions:', error);
+        }
         this.emit('error', error);
       },
       () => {
-        console.log('Subscription completed for all transactions');
+        if (this.debug) {
+          console.log('🔍 [DEBUG] Subscription completed for all transactions');
+        } else {
+          console.log('Subscription completed for all transactions');
+        }
         this.emit('allTransactionsSubscriptionCompleted');
       }
     );
@@ -68,7 +84,11 @@ export class TransactionTracker extends EventEmitter {
    * Stop tracking all transactions
    */
   stopTracking(): void {
-    console.log('🛑 Stopping tracking of all transactions...');
+    if (this.debug) {
+      console.log('🛑 [DEBUG] Stopping tracking of all transactions...');
+    } else {
+      console.log('🛑 Stopping tracking of all transactions...');
+    }
 
     // Cancel the all-transactions subscription
     const unsubscribe = this.subscriptions.get('*all*');
@@ -118,11 +138,19 @@ export class TransactionTracker extends EventEmitter {
 
     // Add delay to simulate slower status consumption
     if (this.statusConsumptionDelay > 0) {
-      console.log(
-        `⏳ Slow consume: Waiting ${
-          this.statusConsumptionDelay
-        }ms before processing status update for ${txHash.substring(0, 16)}...`
-      );
+      if (this.debug) {
+        console.log(
+          `⏳ [DEBUG] Slow consume: Waiting ${
+            this.statusConsumptionDelay
+          }ms before processing status update for ${txHash.substring(0, 16)}...`
+        );
+      } else {
+        console.log(
+          `⏳ Slow consume: Waiting ${
+            this.statusConsumptionDelay
+          }ms before processing status update for ${txHash.substring(0, 16)}...`
+        );
+      }
       await new Promise((resolve) => setTimeout(resolve, this.statusConsumptionDelay));
     }
 
@@ -140,6 +168,21 @@ export class TransactionTracker extends EventEmitter {
 
     const oldStatus = this.trackedTransactions.get(txHash);
     this.trackedTransactions.set(txHash, newStatus);
+
+    // Debug output for status changes
+    if (this.debug) {
+      console.log(
+        `🔍 [DEBUG] Status update for ${txHash.substring(0, 16)}...: ${oldStatus?.status || 'NEW'} → ${
+          newStatus.status
+        }`
+      );
+      if (newStatus.blockHash) {
+        console.log(`🔍 [DEBUG] Block hash: ${newStatus.blockHash.substring(0, 16)}...`);
+      }
+      if (newStatus.errorMessage) {
+        console.log(`🔍 [DEBUG] Error message: ${newStatus.errorMessage}`);
+      }
+    }
 
     // Emit status change event
     this.emit('statusChanged', txHash, newStatus, oldStatus);
@@ -183,18 +226,32 @@ export class TransactionTracker extends EventEmitter {
     // First check if the transaction already exists and has a terminal status
     const existingStatus = this.trackedTransactions.get(txHash);
     if (existingStatus && this.isTerminalStatus(existingStatus.status) && !skipCachedStatus) {
-      console.log(`✅ Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`);
+      if (this.debug) {
+        console.log(
+          `✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`
+        );
+      } else {
+        console.log(
+          `✅ Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`
+        );
+      }
       return existingStatus;
     }
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.off('statusChanged', statusListener);
+        if (this.debug) {
+          console.log(`⏰ [DEBUG] Timeout waiting for terminal status for ${txHash.substring(0, 16)}...`);
+        }
         reject(new Error(`Timeout waiting for terminal status for ${txHash}`));
       }, timeoutMs);
 
       const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
         if (eventTxHash === txHash && TransactionTracker.isTerminalStatus(newStatus.status)) {
+          if (this.debug) {
+            console.log(`🔍 [DEBUG] Received terminal status for ${txHash.substring(0, 16)}...: ${newStatus.status}`);
+          }
           clearTimeout(timeout);
           this.off('statusChanged', statusListener);
           resolve(newStatus);
@@ -205,6 +262,9 @@ export class TransactionTracker extends EventEmitter {
 
       // Start tracking all transactions if not already tracking
       if (!this.subscriptions.has('*all*')) {
+        if (this.debug) {
+          console.log(`🔍 [DEBUG] Starting transaction tracking for ${txHash.substring(0, 16)}...`);
+        }
         this.trackTransactions();
       }
     });
@@ -232,7 +292,11 @@ export class TransactionTracker extends EventEmitter {
         throw new Error(`Transaction ${txHash.substring(0, 16)}... failed: ${status.errorMessage || 'Unknown error'}`);
       }
 
-      console.log(`✅ Transaction ${txHash.substring(0, 16)}... finalized`);
+      if (this.debug) {
+        console.log(`✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... finalized`);
+      } else {
+        console.log(`✅ Transaction ${txHash.substring(0, 16)}... finalized`);
+      }
       return status;
     } catch (error) {
       throw new Error(`Transaction finalization error: ${error instanceof Error ? error.message : String(error)}`);
@@ -251,13 +315,33 @@ export class TransactionTracker extends EventEmitter {
       const status = await this.waitForTerminalStatus(txHash, timeoutMs, skipCachedStatus);
 
       if (status.status === TransactionStatus.FAILED) {
-        console.log(`✅ Transaction ${txHash}... failed as expected: ${status.errorMessage || 'Unknown error'}`);
+        if (this.debug) {
+          console.log(
+            `✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... failed as expected: ${
+              status.errorMessage || 'Unknown error'
+            }`
+          );
+        } else {
+          console.log(
+            `✅ Transaction ${txHash.substring(0, 16)}... failed as expected: ${status.errorMessage || 'Unknown error'}`
+          );
+        }
         return status;
       }
 
       throw new Error(`Transaction ${txHash}... was expected to fail but reached status: ${status.status}`);
     } catch (error) {
       throw new Error(`Transaction failure check error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Set debug mode
+   */
+  setDebug(debug: boolean): void {
+    this.debug = debug;
+    if (this.grpcClient) {
+      this.grpcClient.setDebug(debug);
     }
   }
 

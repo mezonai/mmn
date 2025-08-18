@@ -1,8 +1,9 @@
 package events
 
 import (
-	"fmt"
 	"sync"
+
+	"github.com/mezonai/mmn/logx"
 )
 
 // EventBus handles subscription and publishing of blockchain events
@@ -26,7 +27,7 @@ func (eb *EventBus) Subscribe() chan BlockchainEvent {
 	ch := make(chan BlockchainEvent, 50) // Buffer for events
 	eb.subscribers = append(eb.subscribers, ch)
 	
-	fmt.Printf("[EventBus] Client subscribed to transaction events (total subscribers: %d)\n", len(eb.subscribers))
+	logx.Info("EVENTBUS", "Client subscribed to transaction events", "total_subscribers", len(eb.subscribers))
 	return ch
 }
 
@@ -41,7 +42,7 @@ func (eb *EventBus) Unsubscribe(ch chan BlockchainEvent) {
 			eb.subscribers = append(eb.subscribers[:i], eb.subscribers[i+1:]...)
 			close(ch)
 			
-			fmt.Printf("[EventBus] Client unsubscribed from events (remaining subscribers: %d)\n", len(eb.subscribers))
+			logx.Info("EVENTBUS", "Client unsubscribed from events", "remaining_subscribers", len(eb.subscribers))
 			break
 		}
 	}
@@ -56,7 +57,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 
 	// Notify subscribers
 	if len(eb.subscribers) > 0 {
-		fmt.Printf("[EventBus] Publishing %s event for tx: %s to %d subscribers\n", event.Type(), txHash, len(eb.subscribers))
+		logx.Info("EVENTBUS", "Publishing event", "event_type", event.Type(), "tx_hash", txHash, "subscribers", len(eb.subscribers))
 		
 		for _, ch := range eb.subscribers {
 			select {
@@ -64,11 +65,11 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Event sent successfully
 			default:
 				// Channel is full, skip this subscriber
-				fmt.Printf("[EventBus] Warning: subscriber channel full for tx: %s\n", txHash)
+				logx.Warn("EVENTBUS", "Subscriber channel full", "tx_hash", txHash)
 			}
 		}
 	} else {
-		fmt.Printf("[EventBus] No subscribers for event: %s (tx: %s)\n", event.Type(), txHash)
+		logx.Info("EVENTBUS", "No subscribers for event", "event_type", event.Type(), "tx_hash", txHash)
 	}
 }
 

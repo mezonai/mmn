@@ -1,16 +1,3 @@
-/**
- * Comprehensive gRPC Blockchain Test Suite
- *
- * Usage:
- *   npm run test                    # Run tests without debug output
- *   npm run test -- --debug         # Run tests with debug output (shows transaction updates)
- *   npm run test -- -d              # Short form for debug mode
- *
- * Debug mode shows:
- *   - Raw transaction status updates from server
- *   - Processed transaction updates
- */
-
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import { GrpcClient } from './grpc_client';
@@ -139,10 +126,15 @@ class TestSuite {
   private grpcClient: GrpcClient;
   private transactionTracker: TransactionTracker;
   private testResults: Map<string, boolean> = new Map();
+  private debug: boolean;
 
   constructor(debug: boolean = false) {
+    this.debug = debug;
     this.grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, debug);
-    this.transactionTracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
+    this.transactionTracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER_ADDRESS,
+      debug: debug,
+    });
   }
 
   private logTest(name: string, success: boolean, details?: string) {
@@ -722,9 +714,18 @@ class TestSuite {
     console.log('🧪 Testing multiple nodes tracking the same transaction...');
 
     // Create multiple transaction trackers (simulating multiple nodes)
-    const node1Tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-    const node2Tracker = new TransactionTracker({ serverAddress: GRPC_SERVER2_ADDRESS });
-    const node3Tracker = new TransactionTracker({ serverAddress: GRPC_SERVER3_ADDRESS });
+    const node1Tracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER_ADDRESS,
+      debug: this.debug,
+    });
+    const node2Tracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER2_ADDRESS,
+      debug: this.debug,
+    });
+    const node3Tracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER3_ADDRESS,
+      debug: this.debug,
+    });
 
     // Track transaction status changes for each node
     const node1Statuses: string[] = [];
@@ -931,7 +932,9 @@ class TestSuite {
   }
 
   setDebug(debug: boolean) {
+    this.debug = debug;
     this.grpcClient.setDebug(debug);
+    this.transactionTracker.setDebug(debug);
   }
 
   close() {
