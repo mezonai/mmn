@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/mezonai/mmn/blockstore"
@@ -227,4 +228,67 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 	}
 
 	return resp, nil
+}
+
+// GetBlockNumber returns current block number 
+func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.GetBlockNumberResponse, error) {
+	currentBlock := uint64(0)
+	
+	if s.blockStore != nil {
+		currentBlock = s.blockStore.GetLatestSlot()
+	}
+	
+	timestamp := uint64(time.Now().Unix())
+	
+	return &pb.GetBlockNumberResponse{
+		BlockNumber: currentBlock,
+		Timestamp:   timestamp,
+	}, nil
+}
+
+
+// GetBlockByNumber retrieves a block by its number
+func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+    var blockNum uint64
+    if in.BlockNumber == "latest" {
+        blockNum = s.blockStore.GetLatestSlot()
+    } else {
+        parsed, err := strconv.ParseUint(in.BlockNumber, 10, 64)
+        if err != nil {
+            return nil, status.Errorf(codes.InvalidArgument, "invalid block number: %s", in.BlockNumber)
+        }
+        blockNum = parsed
+    }
+
+    block := s.blockStore.Block(blockNum)
+    if block == nil {
+        return nil, status.Errorf(codes.NotFound, "block %s not found", in.BlockNumber)
+    }
+
+    pbEntries := make([]*pb.Entry, 0, len(block.Entries))
+    for _, entry := range block.Entries {
+        pbEntry := &pb.Entry{
+            NumHashes: entry.NumHashes,
+            Hash:      entry.Hash[:],
+        }
+        if in.IncludeTransactions {
+            pbEntry.Transactions = append([][]byte{}, entry.Transactions...)
+        }
+        pbEntries = append(pbEntries, pbEntry)
+    }
+
+    pbBlock := &pb.Block{
+        Slot:      block.Slot,
+        PrevHash:  block.PrevHash[:],
+        Entries:   pbEntries,
+        LeaderId:  block.LeaderID,
+        Timestamp: block.Timestamp,
+        Hash:      block.Hash[:],
+        Signature: block.Signature,
+    }
+
+    return &pb.GetBlockByNumberResponse{
+        Block: pbBlock,
+        Found: true,
+    }, nil
 }

@@ -28,7 +28,27 @@ message SubscribeRequest {
   string follower_id = 1;
 }
 
+message EmptyParams {}
+
+message GetBlockByNumberRequest {
+  string block_number = 1;
+  bool include_transactions = 2;
+}
+
+message GetBlockNumberResponse {
+  uint64 block_number = 1;
+  uint64 timestamp = 2;
+}
+
+message GetBlockByNumberResponse {
+  Block block = 1;   
+  bool found = 2;   
+  string error = 3; 
+}
+
 service BlockService {
   rpc Broadcast(Block) returns (BroadcastResponse);
   rpc Subscribe(SubscribeRequest) returns (stream Block);
+  rpc GetBlockNumber(EmptyParams) returns (GetBlockNumberResponse);
+  rpc GetBlockByNumber(GetBlockByNumberRequest) returns (GetBlockByNumberResponse);
 }
