@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
@@ -31,16 +32,16 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) {
 }
 
 // CreateAccountFromGenesis creates an account from genesis block (implements LedgerInterface)
-func (l *Ledger) CreateAccountsFromGenesis(addrs []string, balance uint64) error {
+func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	for _, addr := range addrs {
-		if _, exists := l.state[addr]; exists {
-			return fmt.Errorf("genesis account %s already exists", addr)
+		if _, exists := l.state[addr.Address]; exists {
+			return fmt.Errorf("genesis account %s already exists", addr.Address)
 		}
 
-		l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+		l.state[addr.Address] = &types.Account{Balance: addr.Amount, Nonce: 0}
 	}
 	return nil
 }

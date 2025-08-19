@@ -11,8 +11,8 @@ config:
       leader: "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b" # node 3/key3
   alloc: # support array
     addresses: 
-      - "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
-    amount: 2000000000
+      - address: "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
+        amount: 2000000000
   poh:
     hashes_per_tick: 5
     ticks_per_slot: 8
