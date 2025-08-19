@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "main": "test.ts",
   "scripts": {
-    "test": "ts-node test.ts",
-    "generate-types": "sh ./generate-types.sh"
+    "test": "jest"
   },
   "author": "",
   "license": "ISC",
@@ -25,7 +24,10 @@
     "@protobuf-ts/runtime-rpc": "^2.11.1",
     "@types/elliptic": "^6.4.18",
     "@types/google-protobuf": "^3.15.12",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22.15.24",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }

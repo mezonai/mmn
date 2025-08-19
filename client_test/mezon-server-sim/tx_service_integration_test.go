@@ -145,7 +145,7 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 		faucetSeed,
 		amount,
 		"Seed amount from faucet",
-		domain.TxTypeFaucet,
+		domain.TxTypeTransfer,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to send tokens from faucet: %w", err)
@@ -191,7 +191,7 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", domain.TxTypeFaucet)
+	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", domain.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
 	}

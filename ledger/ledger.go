@@ -125,7 +125,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		return err
 	}
 	if b.Slot%1000 == 0 {
-		_ = l.saveSnapshot("ledger/snapshot.gob")
+		_ = l.SaveSnapshot("ledger/snapshot.gob")
 	}
 	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
 	return nil
@@ -162,21 +162,12 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr 
 		recipient = state[tx.Recipient]
 	}
 
-	if tx.Type == types.TxTypeFaucet {
-		if tx.Sender != faucetAddr {
-			return fmt.Errorf("faucet tx from non-faucet address")
-		}
-		fmt.Printf("[applyTx] Faucet tx: %+v\n", tx)
-		sender.Balance -= tx.Amount
-		recipient.Balance += tx.Amount
-		return nil
-	}
-
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce <= sender.Nonce {
-		return fmt.Errorf("bad nonce: got %d current nonce %d", tx.Nonce, sender.Nonce)
+	// Strict nonce validation to prevent duplicate transactions
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
 	sender.Balance -= tx.Amount
 	recipient.Balance += tx.Amount
@@ -250,7 +241,7 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 	return nil
 }
 
-func (l *Ledger) saveSnapshot(path string) error {
+func (l *Ledger) SaveSnapshot(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -322,17 +313,18 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 }
 
 func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
+	// Validate zero amount transfers
+	if tx.Amount == 0 {
+		return fmt.Errorf("zero amount transfers are not allowed")
+	}
+
+	// Validate sender account existence (except for faucet transactions)
+	if _, exists := lv.loadForRead(tx.Sender); !exists {
+		return fmt.Errorf("sender account does not exist: %s", tx.Sender)
+	}
+
 	sender := lv.loadOrCreate(tx.Sender)
 	recipient := lv.loadOrCreate(tx.Recipient)
-
-	if tx.Type == types.TxTypeFaucet {
-		if tx.Sender != faucetAddr {
-			return fmt.Errorf("faucet tx from non-faucet address")
-		}
-		sender.Balance -= tx.Amount
-		recipient.Balance += tx.Amount
-		return nil
-	}
 
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
