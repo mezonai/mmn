@@ -18,8 +18,8 @@ type LeaderSchedule struct {
 }
 
 type Faucet struct {
-	Address string `yaml:"address"`
-	Amount  uint64 `yaml:"amount"`
+	Addresses []string `yaml:"addresses"`
+	Amount    uint64   `yaml:"amount"`
 }
 
 // GenesisConfig holds the configuration from genesis.yml

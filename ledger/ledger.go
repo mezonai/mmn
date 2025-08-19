@@ -32,16 +32,17 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) {
 }
 
 // CreateAccountFromGenesis creates an account from genesis block (implements LedgerInterface)
-func (l *Ledger) CreateAccountFromGenesis(addr string, balance uint64) error {
+func (l *Ledger) CreateAccountsFromGenesis(addrs []string, balance uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Check if account already exists to prevent re-initialization
-	if _, exists := l.state[addr]; exists {
-		return fmt.Errorf("genesis account %s already exists", addr)
-	}
+	for _, addr := range addrs {
+		if _, exists := l.state[addr]; exists {
+			return fmt.Errorf("genesis account %s already exists", addr)
+		}
 
-	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+		l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+	}
 	return nil
 }
 

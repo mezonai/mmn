@@ -20,7 +20,7 @@ services:
     command: >
       sh -c '
         rm -rf ./node-data/node1 &&
-        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key1.txt" &&
+        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key1.txt" --faucet-addresses "6a4dd9b6efe0fc8f125be331735b0e33239e24f02c84e555ade9ea50bd1369db" &&
         ./mmn node --database leveldb --data-dir "./node-data/node1" --listen-addr ":8001" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
@@ -37,7 +37,7 @@ services:
     command: >
       sh -c '
         rm -rf ./node-data/node2 &&
-        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key2.txt" &&
+        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key2.txt" --faucet-addresses "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248" &&
         ./mmn node --database leveldb --data-dir "./node-data/node2" --listen-addr ":8002" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
@@ -55,7 +55,7 @@ services:
     command: >
       sh -c '
         rm -rf ./node-data/node3 &&
-        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key3.txt" &&
+        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key3.txt" --faucet-addresses "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248" &&
         ./mmn node --database leveldb --data-dir "./node-data/node3" --listen-addr ":8003" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
