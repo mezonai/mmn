@@ -10,7 +10,6 @@ import (
 
 const (
 	TxTypeTransfer = 0
-	TxTypeFaucet   = 1
 )
 
 type Transaction struct {

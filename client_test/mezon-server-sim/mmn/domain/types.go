@@ -39,7 +39,6 @@ func ValidateAddress(addr string) error {
 
 const (
 	TxTypeTransfer = 0
-	TxTypeFaucet   = 1
 )
 
 type Tx struct {
