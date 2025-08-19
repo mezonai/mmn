@@ -38,7 +38,16 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 			}
 
 			if tx != nil && ln.onTransactionReceived != nil {
-				ln.onTransactionReceived(tx)
+				// Process transaction and update peer score based on validity
+				err := ln.onTransactionReceived(tx)
+				if err != nil {
+					// Invalid transaction - penalize peer
+					ln.UpdatePeerScore(msg.ReceivedFrom, "invalid_tx", nil)
+					logx.Warn("NETWORK:TX", "Invalid transaction from peer:", msg.ReceivedFrom.String(), "error:", err)
+				} else {
+					// Valid transaction - reward peer
+					ln.UpdatePeerScore(msg.ReceivedFrom, "valid_tx", nil)
+				}
 			}
 		}
 	}

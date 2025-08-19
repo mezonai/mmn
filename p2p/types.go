@@ -55,6 +55,16 @@ type Libp2pNetwork struct {
 	pendingChallenges  map[peer.ID][]byte // peer.ID -> challenge bytes
 	challengeMu        sync.RWMutex
 
+	// Access control - allowlist and blacklist
+	allowlist        map[peer.ID]bool
+	blacklist        map[peer.ID]bool
+	allowlistEnabled bool
+	blacklistEnabled bool
+	listMu           sync.RWMutex
+
+	// Peer scoring system
+	peerScoringManager *PeerScoringManager
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }

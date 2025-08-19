@@ -87,9 +87,16 @@ func NewNetWork(
 		syncRequests:       make(map[string]*SyncRequestTracker),
 		authenticatedPeers: make(map[peer.ID]*AuthenticatedPeer),
 		pendingChallenges:  make(map[peer.ID][]byte),
+		allowlist:          make(map[peer.ID]bool),
+		blacklist:          make(map[peer.ID]bool),
+		allowlistEnabled:   false,
+		blacklistEnabled:   false,
 		ctx:                ctx,
 		cancel:             cancel,
 	}
+
+	// Initialize peer scoring manager
+	ln.peerScoringManager = NewPeerScoringManager(ln, DefaultPeerScoringConfig())
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
 		cancel()
@@ -193,6 +200,16 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 			peerID := conn.RemotePeer()
 			logx.Info("AUTH:CONNECTION", "New connection from peer: ", peerID.String())
 
+			// Check access control for incoming connections
+			if !ln.IsAllowed(peerID) {
+				logx.Info("AUTH:CONNECTION", "Rejecting connection from peer not allowed by access control:", peerID.String())
+				conn.Close()
+				return
+			}
+
+			// Update peer score for successful connection
+			ln.UpdatePeerScore(peerID, "connection", nil)
+
 			// Automatically authenticate new connections
 			exception.SafeGoWithPanic("Discovery", func() {
 				authCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -203,15 +220,23 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 						logx.Warn("AUTH:CONNECTION", "Peer doesn't support authentication protocol - this is normal for older peers")
 					} else {
 						logx.Error("AUTH:CONNECTION", "Authentication failed: ", err.Error())
+						// Update peer score for auth failure
+						ln.UpdatePeerScore(peerID, "auth_failure", nil)
 					}
 				} else {
 					logx.Info("AUTH:CONNECTION", "Authentication successful for peer: ", peerID.String())
+					// Update peer score for auth success
+					ln.UpdatePeerScore(peerID, "auth_success", nil)
 				}
 			})
 
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
+
+			// Update peer score for disconnection
+			ln.UpdatePeerScore(peerID, "disconnection", nil)
+
 			// Clean up authentication state for disconnected peer
 			ln.authMu.Lock()
 			delete(ln.authenticatedPeers, peerID)
@@ -226,6 +251,11 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 
 // this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {
+	// Stop peer scoring manager
+	if ln.peerScoringManager != nil {
+		ln.peerScoringManager.Stop()
+	}
+
 	ln.cancel()
 	ln.host.Close()
 }

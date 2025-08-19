@@ -240,6 +240,8 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 	// Verify the signature
 	if !ed25519.Verify(pubKeyBytes, dataToVerify, response.Signature) {
 		logx.Error("AUTH", "Invalid signature from ", remotePeer.String())
+		// Update peer score for auth failure
+		ln.UpdatePeerScore(remotePeer, "auth_failure", nil)
 		return
 	}
 
@@ -267,6 +269,9 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 	ln.mu.Unlock()
 
 	logx.Info("AUTH", "Authentication successful with ", remotePeer.String())
+
+	// Update peer score for successful authentication
+	ln.UpdatePeerScore(remotePeer, "auth_success", nil)
 }
 
 // InitiateAuthentication starts the authentication process with a peer

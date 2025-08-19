@@ -45,7 +45,17 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 
 			if blk != nil && ln.onBlockReceived != nil {
 				logx.Info("NETWORK:BLOCK", "Received block from peer:", msg.ReceivedFrom.String(), "slot:", blk.Slot)
-				ln.onBlockReceived(blk)
+
+				// Process block and update peer score based on validity
+				err := ln.onBlockReceived(blk)
+				if err != nil {
+					// Invalid block - penalize peer
+					ln.UpdatePeerScore(msg.ReceivedFrom, "invalid_block", nil)
+					logx.Warn("NETWORK:BLOCK", "Invalid block from peer:", msg.ReceivedFrom.String(), "error:", err)
+				} else {
+					// Valid block - reward peer
+					ln.UpdatePeerScore(msg.ReceivedFrom, "valid_block", nil)
+				}
 			}
 		}
 	}

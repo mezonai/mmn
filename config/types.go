@@ -17,18 +17,31 @@ type LeaderSchedule struct {
 	Leader    string `yaml:"leader"`
 }
 
-type Faucet struct {
+type Alloc struct {
+	Addresses []Address `yaml:"addresses"`
+}
+
+type Address struct {
 	Address string `yaml:"address"`
 	Amount  uint64 `yaml:"amount"`
 }
 
+// AccessControlConfig holds allowlist and blacklist configuration
+type AccessControlConfig struct {
+	AllowlistEnabled bool     `yaml:"allowlist_enabled"`
+	BlacklistEnabled bool     `yaml:"blacklist_enabled"`
+	AllowedPeers     []string `yaml:"allowed_peers"`
+	BlacklistedPeers []string `yaml:"blacklisted_peers"`
+}
+
 // GenesisConfig holds the configuration from genesis.yml
 type GenesisConfig struct {
-	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
-	Faucet         Faucet           `yaml:"faucet"`
-	Poh            PohConfig        `yaml:"poh"`
-	Mempool        MempoolConfig    `yaml:"mempool"`
-	Validator      ValidatorConfig  `yaml:"validator"`
+	LeaderSchedule []LeaderSchedule    `yaml:"leader_schedule"`
+	Alloc          Alloc               `yaml:"alloc"`
+	Poh            PohConfig           `yaml:"poh"`
+	Mempool        MempoolConfig       `yaml:"mempool"`
+	Validator      ValidatorConfig     `yaml:"validator"`
+	AccessControl  AccessControlConfig `yaml:"access_control"`
 }
 
 // ConfigFile is the top-level structure for genesis.yml
