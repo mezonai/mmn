@@ -78,10 +78,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 				continue
 			}
 
-			if req.FromSlot == 0 {
-				continue
-			}
-
 			// Skip requests from self
 			if msg.ReceivedFrom == ln.host.ID() {
 				continue
