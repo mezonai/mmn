@@ -151,7 +151,7 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(pubKey)
+	ld := ledger.NewLedger()
 
 	// Load ledger state from disk (includes alloc account from genesis)
 	if err := ld.LoadLedger(); err != nil {

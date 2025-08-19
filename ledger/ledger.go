@@ -14,13 +14,12 @@ import (
 )
 
 type Ledger struct {
-	state     map[string]*types.Account // address (public key hex) → account
-	allocAddr string
-	mu        sync.RWMutex
+	state map[string]*types.Account // address (public key hex) → account
+	mu    sync.RWMutex
 }
 
-func NewLedger(allocAddr string) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), allocAddr: allocAddr}
+func NewLedger() *Ledger {
+	return &Ledger{state: make(map[string]*types.Account)}
 }
 
 // Initialize initial account
@@ -68,22 +67,11 @@ func (l *Ledger) Balance(addr string) uint64 {
 }
 
 func (l *Ledger) VerifyBlock(b *block.Block) error {
-	l.mu.RLock()
-	base := l.state
-	l.mu.RUnlock()
-
-	view := &LedgerView{
-		base:    base,
-		overlay: make(map[string]*types.SnapshotAccount),
-	}
 	for _, entry := range b.Entries {
 		for _, raw := range entry.Transactions {
 			tx, err := utils.ParseTx(raw)
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
-			if err := view.ApplyTx(tx, l.allocAddr); err != nil {
-				return fmt.Errorf("verify fail: %v", err)
 			}
 		}
 	}
@@ -100,9 +88,6 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			tx, err := utils.ParseTx(raw)
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
-			if err := applyTx(l.state, tx, l.allocAddr); err != nil {
-				return fmt.Errorf("apply fail: %v", err)
 			}
 			rec := types.TxRecord{
 				Slot:      b.Slot,
@@ -147,32 +132,6 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.state[addr]
-}
-
-// Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr string) error {
-	sender, ok := state[tx.Sender]
-	if !ok {
-		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
-		sender = state[tx.Sender]
-	}
-	recipient, ok := state[tx.Recipient]
-	if !ok {
-		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
-		recipient = state[tx.Recipient]
-	}
-
-	if sender.Balance < tx.Amount {
-		return fmt.Errorf("insufficient balance")
-	}
-	// Strict nonce validation to prevent duplicate transactions
-	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
-	}
-	sender.Balance -= tx.Amount
-	recipient.Balance += tx.Amount
-	sender.Nonce = tx.Nonce
-	return nil
 }
 
 func addHistory(acc *types.Account, rec types.TxRecord) {
@@ -264,24 +223,6 @@ func (l *Ledger) LoadLedger() error {
 		_ = gob.NewDecoder(s).Decode(&l.state)
 		s.Close()
 	}
-
-	// 2. replay WAL
-	if w, err := os.Open("ledger/wal.log"); err == nil {
-		dec := json.NewDecoder(w)
-		var rec types.TxRecord
-		for dec.Decode(&rec) == nil {
-			_ = applyTx(l.state, &types.Transaction{
-				Type:      rec.Type,
-				Sender:    rec.Sender,
-				Recipient: rec.Recipient,
-				Amount:    rec.Amount,
-				Timestamp: rec.Timestamp,
-				TextData:  rec.TextData,
-				Nonce:     rec.Nonce,
-			}, l.allocAddr)
-		}
-		w.Close()
-	}
 	return nil
 }
 
@@ -289,54 +230,6 @@ func (l *Ledger) LoadLedger() error {
 type LedgerView struct {
 	base    map[string]*types.Account
 	overlay map[string]*types.SnapshotAccount
-}
-
-func (lv *LedgerView) loadForRead(addr string) (*types.SnapshotAccount, bool) {
-	if acc, ok := lv.overlay[addr]; ok {
-		return acc, true
-	}
-	if base, ok := lv.base[addr]; ok {
-		cp := types.SnapshotAccount{Balance: base.Balance, Nonce: base.Nonce}
-		lv.overlay[addr] = &cp
-		return &cp, true
-	}
-	return nil, false
-}
-
-func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
-	if acc, ok := lv.loadForRead(addr); ok {
-		return acc
-	}
-	cp := types.SnapshotAccount{Balance: 0, Nonce: 0}
-	lv.overlay[addr] = &cp
-	return &cp
-}
-
-func (lv *LedgerView) ApplyTx(tx *types.Transaction, allocAddr string) error {
-	// Validate zero amount transfers
-	if tx.Amount == 0 {
-		return fmt.Errorf("zero amount transfers are not allowed")
-	}
-
-	// Validate sender account existence (except for alloc transactions)
-	if _, exists := lv.loadForRead(tx.Sender); !exists {
-		return fmt.Errorf("sender account does not exist: %s", tx.Sender)
-	}
-
-	sender := lv.loadOrCreate(tx.Sender)
-	recipient := lv.loadOrCreate(tx.Recipient)
-
-	if sender.Balance < tx.Amount {
-		return fmt.Errorf("insufficient balance")
-	}
-	if tx.Nonce <= sender.Nonce {
-		return fmt.Errorf("bad nonce: got %d current nonce %d", tx.Nonce, sender.Nonce)
-	}
-
-	sender.Balance -= tx.Amount
-	recipient.Balance += tx.Amount
-	sender.Nonce = tx.Nonce
-	return nil
 }
 
 type Session struct {
@@ -370,11 +263,6 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 		if err != nil || !tx.Verify() {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
-			continue
-		}
-		if err := s.view.ApplyTx(tx, s.ledger.allocAddr); err != nil {
-			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
-			errs = append(errs, err)
 			continue
 		}
 		valid = append(valid, r)
