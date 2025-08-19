@@ -17,6 +17,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
@@ -187,7 +188,7 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(libP2pClient.GetPeersConnected() + 1)
+	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
 
@@ -200,13 +201,13 @@ func runNode() {
 	// Start services
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp)
 
-	go func() {
+	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
 		log.Println("Shutting down node...")
 		// for now just shutdown p2p network
 		libP2pClient.Close()
 		cancel()
-	}()
+	})
 
 	//  block until cancel
 	<-ctx.Done()

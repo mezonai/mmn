@@ -118,6 +118,13 @@ func (s *GenericBlockStore) HasCompleteBlock(slot uint64) bool {
 	return exists
 }
 
+// GetLatestSlot returns the latest finalized slot
+func (s *GenericBlockStore) GetLatestSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestFinalized
+}
+
 // LastEntryInfoAtSlot returns the slot boundary information for the given slot
 func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 	blk := s.Block(slot)

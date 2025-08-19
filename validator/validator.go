@@ -9,6 +9,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
@@ -45,6 +46,7 @@ type Validator struct {
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
+	pendingValidTxs   [][]byte
 	stopCh            chan struct{}
 }
 
@@ -89,6 +91,7 @@ func NewValidator(
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
+		pendingValidTxs:           make([][]byte, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -131,6 +134,7 @@ waitLoop:
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
 	v.lastSession = v.ledger.NewSession()
+	v.pendingValidTxs = make([][]byte, 0, v.BatchSize)
 }
 
 func (v *Validator) onLeaderSlotEnd() {
@@ -238,11 +242,39 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
+func (v *Validator) peekPendingValidTxs(size int) [][]byte {
+	if len(v.pendingValidTxs) == 0 {
+		return nil
+	}
+	if len(v.pendingValidTxs) < size {
+		size = len(v.pendingValidTxs)
+	}
+
+	result := make([][]byte, size)
+	copy(result, v.pendingValidTxs[:size])
+
+	return result
+}
+
+func (v *Validator) dropPendingValidTxs(size int) {
+	if size >= len(v.pendingValidTxs) {
+		v.pendingValidTxs = v.pendingValidTxs[:0]
+		return
+	}
+
+	copy(v.pendingValidTxs, v.pendingValidTxs[size:])
+	v.pendingValidTxs = v.pendingValidTxs[:len(v.pendingValidTxs)-size]
+}
+
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
-	go v.leaderBatchLoop()
-	go v.roleMonitorLoop()
+	exception.SafeGoWithPanic("leaderBatchLoop", func() {
+		v.leaderBatchLoop()
+	})
+	exception.SafeGoWithPanic("roleMonitorLoop", func() {
+		v.roleMonitorLoop()
+	})
 }
 
 func (v *Validator) leaderBatchLoop() {
@@ -260,26 +292,31 @@ func (v *Validator) leaderBatchLoop() {
 
 			fmt.Println("[LEADER] Pulling batch")
 			batch := v.Mempool.PullBatch(v.BatchSize)
-			if len(batch) == 0 {
+			if len(batch) == 0 && len(v.pendingValidTxs) == 0 {
 				fmt.Println("[LEADER] No batch")
 				continue
 			}
 
-			previousSession := v.session.CopyWithOverlayClone()
 			fmt.Println("[LEADER] Filtering batch")
 			valids, errs := v.session.FilterValid(batch)
 			if len(errs) > 0 {
 				fmt.Println("[LEADER] Invalid transactions:", errs)
 			}
+			v.pendingValidTxs = append(v.pendingValidTxs, valids...)
 
-			fmt.Println("[LEADER] Recording batch")
-			entry, err := v.Recorder.RecordTxs(valids)
-			if err != nil {
-				fmt.Println("[LEADER] Record error:", err)
-				v.session = previousSession
+			recordTxs := v.peekPendingValidTxs(v.BatchSize)
+			if recordTxs == nil {
+				fmt.Println("[LEADER] No valid transactions")
 				continue
 			}
-			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(valids), slot, entry.Hash[:6])
+			fmt.Println("[LEADER] Recording batch")
+			entry, err := v.Recorder.RecordTxs(recordTxs)
+			if err != nil {
+				fmt.Println("[LEADER] Record error:", err)
+				continue
+			}
+			v.dropPendingValidTxs(len(recordTxs))
+			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(recordTxs), slot, entry.Hash[:6])
 		}
 	}
 }

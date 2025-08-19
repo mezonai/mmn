@@ -2,7 +2,10 @@ package p2p
 
 import (
 	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -35,14 +38,6 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 	return ""
 }
 
-func (ln *Libp2pNetwork) c(msg BlockMessage) *block.Block {
-	return &block.Block{
-		Slot:      msg.Slot,
-		LeaderID:  msg.LeaderID,
-		Timestamp: uint64(msg.Timestamp.Second()),
-	}
-}
-
 func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
 	return &consensus.Vote{
 		Slot:      msg.Slot,
@@ -65,4 +60,30 @@ func AddrStrings(addrs []ma.Multiaddr) []string {
 		strAddrs = append(strAddrs, addr.String())
 	}
 	return strAddrs
+}
+
+// GenerateSyncRequestID generates a unique ID for sync requests
+func GenerateSyncRequestID() string {
+	// Generate 8 random bytes
+	randomBytes := make([]byte, 8)
+	rand.Read(randomBytes)
+
+	// Combine timestamp and random bytes
+	timestamp := time.Now().UnixNano()
+	return fmt.Sprintf("%d-%s", timestamp, hex.EncodeToString(randomBytes))
+}
+
+// CleanupExpiredRequests removes expired sync requests (older than 5 minutes)
+func (ln *Libp2pNetwork) CleanupExpiredRequests() {
+	ln.syncTrackerMu.Lock()
+	defer ln.syncTrackerMu.Unlock()
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+
+	for requestID, tracker := range ln.syncRequests {
+		if tracker.StartTime.Before(cutoff) {
+			tracker.CloseRequest()
+			delete(ln.syncRequests, requestID)
+		}
+	}
 }

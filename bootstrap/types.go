@@ -23,10 +23,6 @@ type BootstrapNode struct {
 	mu    sync.RWMutex
 }
 
-type mdnsNotifee struct {
-	host host.Host
-}
-
 type Config struct {
 	PrivateKey crypto.PrivKey
 	Bootstrap  bool
