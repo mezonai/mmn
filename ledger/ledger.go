@@ -347,15 +347,6 @@ func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddrs []string) error
 	return nil
 }
 
-func isFaucetAddr(sender string, faucetAddrs []string) bool {
-	for _, addr := range faucetAddrs {
-		if sender == addr {
-			return true
-		}
-	}
-	return false
-}
-
 type Session struct {
 	ledger *Ledger
 	view   *LedgerView
@@ -397,4 +388,13 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 		valid = append(valid, r)
 	}
 	return valid, errs
+}
+
+func isFaucetAddr(sender string, faucetAddrs []string) bool {
+	for _, addr := range faucetAddrs {
+		if sender == addr {
+			return true
+		}
+	}
+	return false
 }
