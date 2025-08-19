@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
@@ -272,8 +273,12 @@ func (v *Validator) dropPendingValidTxs(size int) {
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
-	go v.leaderBatchLoop()
-	go v.roleMonitorLoop()
+	exception.SafeGoWithPanic("leaderBatchLoop", func() {
+		v.leaderBatchLoop()
+	})
+	exception.SafeGoWithPanic("roleMonitorLoop", func() {
+		v.roleMonitorLoop()
+	})
 }
 
 func (v *Validator) leaderBatchLoop() {

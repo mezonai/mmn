@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/exception"
 )
 
 var LOW_POWER_MODE = ^uint64(0) // max uint64
@@ -129,7 +131,9 @@ func (p *Poh) RecordTick() *PohEntry {
 }
 
 func (p *Poh) Run() {
-	go p.AutoHash()
+	exception.SafeGoWithPanic("AutoHash", func() {
+		p.AutoHash()
+	})
 }
 
 func (p *Poh) AutoHash() {

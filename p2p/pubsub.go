@@ -12,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
@@ -119,8 +120,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Error("VOTE", "Failed to add vote: ", err)
 				return err
 			}
-
-			logx.Info("committed   ------- ", committed, "needApply ------", needApply)
 
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
@@ -339,31 +338,42 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
-			go ln.HandleBlockTopic(ctx, sub)
+			exception.SafeGoWithPanic("HandleBlockTopic", func() {
+				ln.HandleBlockTopic(ctx, sub)
+			})
 		}
 	}
 
 	if ln.topicVotes, err = ln.pubsub.Join(TopicVotes); err == nil {
 		if sub, err := ln.topicVotes.Subscribe(); err == nil {
-			go ln.HandleVoteTopic(ctx, sub)
+			exception.SafeGoWithPanic("HandleVoteTopic", func() {
+				ln.HandleVoteTopic(ctx, sub)
+			})
 		}
 	}
 
 	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
 		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			go ln.HandleTransactionTopic(ctx, sub)
+			exception.SafeGoWithPanic("HandleTransactionTopic", func() {
+				ln.HandleTransactionTopic(ctx, sub)
+			})
 		}
 	}
 
 	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
 		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
-			go ln.handleBlockSyncRequestTopic(ctx, sub)
+			exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
+				ln.handleBlockSyncRequestTopic(ctx, sub)
+			})
+
 		}
 	}
 
 	if ln.topicLatestSlot, err = ln.pubsub.Join(LatestSlotTopic); err == nil {
 		if sub, err := ln.topicLatestSlot.Subscribe(); err == nil {
-			go ln.HandleLatestSlotTopic(ctx, sub)
+			exception.SafeGoWithPanic("handleBlockSyncResponseTopic", func() {
+				ln.HandleLatestSlotTopic(ctx, sub)
+			})
 		}
 	}
 }
