@@ -35,6 +35,12 @@ func (ln *Libp2pNetwork) IsAllowed(peerID peer.ID) bool {
 
 	// Check allowlist
 	if ln.allowlistEnabled {
+		// If allowlist is empty, allow all peers (bootstrap mode)
+		if len(ln.allowlist) == 0 {
+			logx.Info("ACCESS CONTROL", "Allowlist is empty - allowing peer for bootstrap:", peerID.String())
+			return true
+		}
+
 		allowed := ln.allowlist[peerID]
 		if !allowed {
 			logx.Info("ACCESS CONTROL", "Peer not in allowlist:", peerID.String())
@@ -220,4 +226,30 @@ func (ln *Libp2pNetwork) GetPeerStats(peerID peer.ID) *PeerScore {
 		return ln.peerScoringManager.GetPeerStats(peerID)
 	}
 	return nil
+}
+
+// AutoAddToAllowlistIfEmpty automatically adds authenticated peers to allowlist if it's empty
+func (ln *Libp2pNetwork) AutoAddToAllowlistIfEmpty(peerID peer.ID) {
+	ln.listMu.Lock()
+	defer ln.listMu.Unlock()
+	
+	// Only auto-add if allowlist is enabled and currently empty
+	if ln.allowlistEnabled && len(ln.allowlist) == 0 {
+		ln.allowlist[peerID] = true
+		logx.Info("ACCESS CONTROL", "Auto-added first authenticated peer to allowlist:", peerID.String())
+	}
+}
+
+// AutoAddToAllowlistIfBootstrap automatically adds peers to allowlist during bootstrap phase
+func (ln *Libp2pNetwork) AutoAddToAllowlistIfBootstrap(peerID peer.ID) {
+	ln.listMu.Lock()
+	defer ln.listMu.Unlock()
+	
+	// Auto-add if allowlist is enabled but has very few peers (bootstrap phase)
+	if ln.allowlistEnabled && len(ln.allowlist) < 3 {
+		if !ln.allowlist[peerID] {
+			ln.allowlist[peerID] = true
+			logx.Info("ACCESS CONTROL", "Auto-added peer to allowlist during bootstrap:", peerID.String())
+		}
+	}
 }

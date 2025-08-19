@@ -26,10 +26,5 @@ config:
   access_control:
     allowlist_enabled: true
     blacklist_enabled: true
-    allowed_peers:
-      - "12D3KooWBhvxp6fvyHBzd2ZVjRo7TGEc5ZirCAbjbwVfvkJfuXYa"
-      - "12D3KooWQYV9dGMFoRzNStwpXztXaBUjtPqi6aU76ZVwHW5JdFnJ"
-      - "12D3KooWMvyvFD6UG35qcvz9PsQdR9TAMHEwmWeHBuMoiodNvkJn"
-    blacklisted_peers:
-      - "12D3KooWBadPeer1111111111111111111111111111111111"
-      - "12D3KooWBadPeer2222222222222222222222222222222222"
+    allowed_peers: []
+    blacklisted_peers: []

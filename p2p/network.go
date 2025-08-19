@@ -227,6 +227,8 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 					logx.Info("AUTH:CONNECTION", "Authentication successful for peer: ", peerID.String())
 					// Update peer score for auth success
 					ln.UpdatePeerScore(peerID, "auth_success", nil)
+					// Auto-add to allowlist if in bootstrap mode
+					ln.AutoAddToAllowlistIfBootstrap(peerID)
 				}
 			})
 

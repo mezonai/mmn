@@ -175,8 +175,8 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 		score.Score = 100
 	}
 
-	logx.Info("PEER_SCORING", "Updated score for peer %s: %.2f (event: %s)",
-		peerID.String()[:12], score.Score, eventType)
+	logx.Info("PEER_SCORING", "Updated score for peer", peerID.String()[:12]+"...",
+		"score:", score.Score, "event:", eventType)
 }
 
 // AutoManageAccessControl automatically manages allowlist/blacklist based on scores

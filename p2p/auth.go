@@ -272,10 +272,26 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 
 	// Update peer score for successful authentication
 	ln.UpdatePeerScore(remotePeer, "auth_success", nil)
+
+	// Auto-add to allowlist if in bootstrap mode
+	ln.AutoAddToAllowlistIfBootstrap(remotePeer)
 }
 
 // InitiateAuthentication starts the authentication process with a peer
 func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer.ID) error {
+	// Avoid duplicate attempts: skip if already authenticated
+	if ln.IsPeerAuthenticated(peerID) {
+		return nil
+	}
+	// Skip if we already have a pending challenge to this peer
+	ln.challengeMu.RLock()
+	_, pending := ln.pendingChallenges[peerID]
+	ln.challengeMu.RUnlock()
+	if pending {
+		logx.Debug("AUTH", "Authentication already pending for ", peerID.String())
+		return nil
+	}
+
 	logx.Info("AUTH", "Initiating authentication with peer: ", peerID.String())
 
 	// Create a random challenge
@@ -309,7 +325,8 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 	// Encode as base64 for transmission
 	pubKeyStr := base64.StdEncoding.EncodeToString(pubKeyBytes)
 
-	logx.Info("AUTH", "Host public key length: ", len(pubKeyBytes), ", encoded: ", pubKeyStr)
+	// Reduce verbosity to avoid log spam
+	logx.Debug("AUTH", "Host public key length:", len(pubKeyBytes))
 
 	// Create challenge message (Ethereum-style)
 	authChallenge := AuthChallenge{
