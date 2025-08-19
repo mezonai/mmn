@@ -12,8 +12,8 @@ import (
 func CreateGenesisBlock(cfg *config.GenesisConfig) *Block {
 	// Create genesis transaction pool with faucet transaction
 	txPool := &TransactionPool{}
-	
-	// Create faucet genesis transaction using types.Transaction
+
+	// Create faucet genesis transaction using transaction.Transaction
 	faucetTx := &Transaction{
 		Sender:    "GENESIS", // Special sender for genesis
 		Recipient: cfg.Faucet.Address,
@@ -22,9 +22,9 @@ func CreateGenesisBlock(cfg *config.GenesisConfig) *Block {
 		Nonce:     0,
 		Signature: "GENESIS_SIGNATURE", // Special signature for genesis
 	}
-	
+
 	txPool.AddTransaction(faucetTx)
-	
+
 	// Create genesis block
 	genesisBlock := &Block{
 		Index:            0,
@@ -41,21 +41,21 @@ func CreateGenesisBlock(cfg *config.GenesisConfig) *Block {
 		Nonce:            0,
 		Category:         "genesis",
 	}
-	
+
 	// Calculate genesis block hash
 	genesisBlock.Hash = CalculateHash(genesisBlock)
-	
+
 	return genesisBlock
 }
 
 // NewBlockchainWithGenesis creates a new blockchain with genesis block
 func NewBlockchainWithGenesis(cfg *config.GenesisConfig) *Blockchain {
 	genesisBlock := CreateGenesisBlock(cfg)
-	
+
 	blockchain := &Blockchain{
 		Blocks: []*Block{genesisBlock},
 	}
-	
+
 	return blockchain
 }
 
@@ -90,11 +90,11 @@ func ValidateGenesisBlock(block *Block, cfg *config.GenesisConfig) error {
 	if !IsGenesisBlock(block) {
 		return fmt.Errorf("not a genesis block")
 	}
-	
+
 	if len(block.Transactions) == 0 {
 		return fmt.Errorf("genesis block must contain at least one transaction")
 	}
-	
+
 	// Validate faucet transaction exists
 	faucetTxFound := false
 	for _, tx := range block.Transactions {
@@ -106,10 +106,10 @@ func ValidateGenesisBlock(block *Block, cfg *config.GenesisConfig) error {
 			break
 		}
 	}
-	
+
 	if !faucetTxFound {
 		return fmt.Errorf("genesis block missing faucet transaction")
 	}
-	
+
 	return nil
 }

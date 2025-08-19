@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/interfaces"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 type Mempool struct {
@@ -28,7 +28,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster) *Mempool {
 	}
 }
 
-func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
+func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, bool) {
 	// Generate hash first (read-only operation)
 	txBytes := tx.Bytes()
 	txHash := hex.EncodeToString(txBytes)

@@ -9,7 +9,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/multiformats/go-multiaddr"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -36,7 +36,7 @@ type Libp2pNetwork struct {
 
 	onBlockReceived        func(*block.Block) error
 	onVoteReceived         func(*consensus.Vote) error
-	onTransactionReceived  func(*types.Transaction) error
+	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func([]*block.Block) error
 	onLatestSlotReceived   func(uint64, string) error
 
@@ -129,7 +129,7 @@ type SyncRequestTracker struct {
 type Callbacks struct {
 	OnBlockReceived        func(*block.Block) error
 	OnVoteReceived         func(*consensus.Vote) error
-	OnTransactionReceived  func(*types.Transaction) error
+	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.Block) error
 }

@@ -9,12 +9,12 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 // MockBroadcaster implements interfaces.Broadcaster for testing
 type MockBroadcaster struct {
-	broadcastedTxs []*types.Transaction
+	broadcastedTxs []*transaction.Transaction
 }
 
 func (mb *MockBroadcaster) BroadcastBlock(ctx context.Context, blk *block.Block) error {
@@ -25,12 +25,12 @@ func (mb *MockBroadcaster) BroadcastVote(ctx context.Context, vt *consensus.Vote
 	return nil
 }
 
-func (mb *MockBroadcaster) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
+func (mb *MockBroadcaster) TxBroadcast(ctx context.Context, tx *transaction.Transaction) error {
 	mb.broadcastedTxs = append(mb.broadcastedTxs, tx)
 	return nil
 }
 
-func (mb *MockBroadcaster) GetBroadcastedTxs() []*types.Transaction {
+func (mb *MockBroadcaster) GetBroadcastedTxs() []*transaction.Transaction {
 	return mb.broadcastedTxs
 }
 
@@ -39,8 +39,8 @@ func (mb *MockBroadcaster) Reset() {
 }
 
 // Helper function to create a test transaction
-func createTestTx(txType int32, sender, recipient string, amount uint64, nonce uint64) *types.Transaction {
-	return &types.Transaction{
+func createTestTx(txType int32, sender, recipient string, amount uint64, nonce uint64) *transaction.Transaction {
+	return &transaction.Transaction{
 		Type:      txType,
 		Sender:    sender,
 		Recipient: recipient,

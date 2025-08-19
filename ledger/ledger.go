@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
@@ -149,7 +150,7 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 }
 
 // Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr string) error {
+func applyTx(state map[string]*types.Account, tx *transaction.Transaction, faucetAddr string) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
@@ -161,7 +162,7 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr 
 		recipient = state[tx.Recipient]
 	}
 
-	if tx.Type == types.TxTypeFaucet {
+	if tx.Type == transaction.TxTypeFaucet {
 		if tx.Sender != faucetAddr {
 			return fmt.Errorf("faucet tx from non-faucet address")
 		}
@@ -278,7 +279,7 @@ func (l *Ledger) LoadLedger() error {
 		dec := json.NewDecoder(w)
 		var rec types.TxRecord
 		for dec.Decode(&rec) == nil {
-			_ = applyTx(l.state, &types.Transaction{
+			_ = applyTx(l.state, &transaction.Transaction{
 				Type:      rec.Type,
 				Sender:    rec.Sender,
 				Recipient: rec.Recipient,
@@ -320,11 +321,11 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
+func (lv *LedgerView) ApplyTx(tx *transaction.Transaction, faucetAddr string) error {
 	sender := lv.loadOrCreate(tx.Sender)
 	recipient := lv.loadOrCreate(tx.Recipient)
 
-	if tx.Type == types.TxTypeFaucet {
+	if tx.Type == transaction.TxTypeFaucet {
 		if tx.Sender != faucetAddr {
 			return fmt.Errorf("faucet tx from non-faucet address")
 		}

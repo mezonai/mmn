@@ -8,7 +8,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
 	pb "github.com/mezonai/mmn/proto"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"google.golang.org/grpc"
@@ -80,7 +80,7 @@ func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) erro
 	return nil
 }
 
-func (c *GRPCClient) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
+func (c *GRPCClient) TxBroadcast(ctx context.Context, tx *transaction.Transaction) error {
 	pbTx := utils.ToProtoSignedTx(tx)
 	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
