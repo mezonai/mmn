@@ -328,8 +328,9 @@ func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce <= sender.Nonce {
-		return fmt.Errorf("bad nonce: got %d current nonce %d", tx.Nonce, sender.Nonce)
+	// Strict nonce validation to prevent duplicate transactions (Ethereum standard)
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
 
 	sender.Balance -= tx.Amount
