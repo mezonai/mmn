@@ -113,10 +113,6 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 }
 
 func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) error {
-	if fromSlot == 0 {
-		return nil
-	}
-
 	toSlot := fromSlot + BatchSize - 1
 
 	requestID := GenerateSyncRequestID()
