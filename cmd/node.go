@@ -95,7 +95,7 @@ func runNode() {
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, privateKeyPath)
 	genesisPath := filepath.Join(dataDir, genesisPath)
-	
+
 	// Extract port number from grpcAddr (format ":9001" -> "9001")
 	port := grpcAddr[1:] // Remove ':' prefix
 	if port == "" {
@@ -210,13 +210,13 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	// DYNAMIC COLLECTOR: Calculate threshold based on genesis validators
+	// DYNAMIC COLLECTOR: Start with single-node consensus, expand as validators join
 	totalValidators := len(cfg.GenesisValidators)
 	if totalValidators == 0 {
-		log.Printf("WARN: No genesis validators found, using default collector with 3 validators")
-		totalValidators = 3 // Fallback for backward compatibility
+		log.Printf("INFO: No genesis validators, starting with single-node consensus")
+		totalValidators = 1 // Start with single-node consensus
 	}
-	log.Printf("INFO: Initializing collector for %d validators", totalValidators)
+	log.Printf("INFO: Initializing collector for %d validators (threshold: %d)", totalValidators, (totalValidators*2+2)/3)
 	collector := consensus.NewCollector(totalValidators) // DYNAMIC!
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
@@ -225,8 +225,12 @@ func runNode() {
 	var stakeManager *staking.StakeManager
 	var dynamicSchedule *poh.LeaderSchedule
 
-	if cfg.Staking.Enabled && len(cfg.GenesisValidators) > 0 {
-		log.Printf("INFO: Initializing StakeManager with %d genesis validators", len(cfg.GenesisValidators))
+	// DEBUG: Check staking configuration
+	log.Printf("DEBUG: cfg.Staking.Enabled = %v", cfg.Staking.Enabled)
+	log.Printf("DEBUG: len(cfg.GenesisValidators) = %d", len(cfg.GenesisValidators))
+
+	if cfg.Staking.Enabled {
+		log.Printf("INFO: Initializing StakeManager with dynamic validator registration")
 
 		stakeManager, err = initializeStakeManager(cfg, recorder, ld, mp, bs, libP2pClient, collector, genesisPath)
 		if err != nil {
@@ -357,7 +361,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, genesisPath string) (*mempo
 	return mp, nil
 }
 
-// initializeStakeManager initializes the stake manager with genesis validators
+// initializeStakeManager initializes the stake manager with dynamic validators
 func initializeStakeManager(
 	cfg *config.GenesisConfig,
 	pohRecorder *poh.PohRecorder,
@@ -386,24 +390,39 @@ func initializeStakeManager(
 		collector,
 	)
 
-	// Register genesis validators with their stake amounts
-	log.Printf("Registering %d genesis validators...", len(cfg.GenesisValidators))
+	// AUTO-REGISTER this node as a validator with default stake
+	defaultStakeAmount := new(big.Int).SetUint64(10000000) // 10M tokens default
+	currentNodePubkey := p2pNetwork.GetSelfPublicKey()
 
-	for i, gv := range cfg.GenesisValidators {
-		// Parse stake amount
-		stakeAmount, ok := new(big.Int).SetString(gv.StakeAmount, 10)
-		if !ok {
-			return nil, fmt.Errorf("invalid stake amount for validator %d: %s", i, gv.StakeAmount)
+	log.Printf("Auto-registering current node as validator...")
+	err = stakeManager.RegisterGenesisValidator(currentNodePubkey, defaultStakeAmount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to auto-register node as validator %s: %w", currentNodePubkey, err)
+	}
+
+	log.Printf("Auto-registered node %s as validator with stake %s (no commission)",
+		currentNodePubkey, defaultStakeAmount.String())
+
+	// Also register any hardcode genesis validators if they exist (backward compatibility)
+	if len(cfg.GenesisValidators) > 0 {
+		log.Printf("Additionally registering %d configured genesis validators...", len(cfg.GenesisValidators))
+
+		for i, gv := range cfg.GenesisValidators {
+			// Parse stake amount
+			stakeAmount, ok := new(big.Int).SetString(gv.StakeAmount, 10)
+			if !ok {
+				return nil, fmt.Errorf("invalid stake amount for validator %d: %s", i, gv.StakeAmount)
+			}
+
+			// Register genesis validator (activates immediately)
+			err := stakeManager.RegisterGenesisValidator(gv.Pubkey, stakeAmount)
+			if err != nil {
+				return nil, fmt.Errorf("failed to register genesis validator %s: %w", gv.Pubkey, err)
+			}
+
+			log.Printf("Registered validator %s with stake %s (no commission)",
+				gv.Pubkey, gv.StakeAmount)
 		}
-
-		// Register genesis validator (activates immediately)
-		err := stakeManager.RegisterGenesisValidator(gv.Pubkey, stakeAmount)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register genesis validator %s: %w", gv.Pubkey, err)
-		}
-
-		log.Printf("Registered validator %s with stake %s (no commission)",
-			gv.Pubkey, gv.StakeAmount)
 	}
 
 	return stakeManager, nil

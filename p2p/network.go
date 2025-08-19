@@ -168,6 +168,11 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	return nil
 }
 
+// GetSelfPublicKey returns the current node's public key
+func (ln *Libp2pNetwork) GetSelfPublicKey() string {
+	return ln.selfPubKey
+}
+
 // this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {
 	ln.cancel()

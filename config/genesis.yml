@@ -1,24 +1,40 @@
 config:
-  leader_schedule:
-    - start_slot: 0
-      end_slot: 100
-      leader: "6a4dd9b6efe0fc8f125be331735b0e33239e24f02c84e555ade9ea50bd1369db" # node 1/key1
-    - start_slot: 101
-      end_slot: 200
-      leader: "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248" # node 2/key2
-    - start_slot: 201
-      end_slot: 3000000000
-      leader: "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b" # node 3/key3
-  faucet: # support array
+  # Dynamic PoS - no hardcode leader schedule
+  leader_schedule: []
+  
+  # Faucet configuration
+  faucet:
     address: "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
-    amount: 2000000000
+    amount: 1000000000000  # 1 trillion tokens for testing
+
+  # Proof of History configuration
   poh:
-    hashes_per_tick: 5
-    ticks_per_slot: 8
-    tick_interval_ms: 200
+    hashes_per_tick: 2          # VERY FAST for testing
+    ticks_per_slot: 4           # Reduced slot size  
+    tick_interval_ms: 400  # 400ms slots
+
+  # Mempool configuration
   mempool:
-    max_txs: 100000
+    max_txs: 10000
+
+  # Validator configuration
   validator:
-    batch_size: 750
-    leader_timeout: 50
-    leader_timeout_loop_interval: 5
+    batch_size: 100
+    leader_timeout: 5000
+    leader_timeout_loop_interval: 1000
+
+  # Staking configuration
+  staking:
+    enabled: true
+    slots_per_epoch: 8640        # ~1 hour epochs at 400ms slots
+    min_stake_amount: "1000000"  # 1 million tokens minimum stake
+    max_validators: 1000         # Maximum number of validators
+    epoch_reward_amount: "100000000"  # 100 million tokens per epoch
+    unstake_cooldown: 432000     # ~3 days unstaking cooldown
+    activation_delay: 8640       # ~1 hour activation delay
+
+  # Dynamic validator configuration - nodes auto-register when they have balance
+  genesis_validators: []  # Empty - validators will register themselves dynamically
+
+  # NOTE: leader_schedule is now REMOVED - using dynamic PoS-based scheduling  
+  # Leader schedule is automatically generated based on active node validators

@@ -1,7 +1,10 @@
 config:
+  # Dynamic PoS - no hardcode leader schedule
+  leader_schedule: []
+  
   # Faucet configuration
   faucet:
-    address: "faucet_public_key_here"
+    address: "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
     amount: 1000000000000  # 1 trillion tokens for testing
 
   # Proof of History configuration
@@ -30,37 +33,9 @@ config:
     unstake_cooldown: 432000     # ~3 days unstaking cooldown
     activation_delay: 8640       # ~1 hour activation delay
 
-  # Genesis validators (for initial network bootstrap)
-  genesis_validators:
-    - pubkey: "validator1_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
+  # Dynamic validator configuration (auto-detect from active nodes)
+  # No hardcode genesis validators - validators will register themselves
+  # when nodes start up and join the network
 
-    - pubkey: "validator2_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator3_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator4_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator5_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator6_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator7_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator8_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator9_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-    - pubkey: "validator10_public_key_here"
-      stake_amount: "10000000"   # 10 million tokens
-
-  # NOTE: leader_schedule is now REMOVED - using dynamic PoS-based scheduling
-  # Leader schedule is automatically generated based on genesis_validators stake amounts
+  # NOTE: leader_schedule is now REMOVED - using dynamic PoS-based scheduling  
+  # Leader schedule is automatically generated based on active node validators

@@ -13,13 +13,14 @@ type Collector struct {
 }
 
 func NewCollector(n int) *Collector {
-	f := n / 3
-	q := 2 * f
-	fmt.Printf("[collector] total=%d threshold=%d\n", n, q)
+	// Use proper BFT threshold: (2f+1) where f is max Byzantine faults
+	// For practical single-node consensus, threshold should be 1
+	threshold := (n*2 + 2) / 3 // Same as cmd/node.go calculation
+	fmt.Printf("[collector] total=%d threshold=%d\n", n, threshold)
 	return &Collector{
 		votes:     make(map[uint64]map[string]*Vote),
 		total:     n,
-		threshold: q,
+		threshold: threshold,
 	}
 }
 

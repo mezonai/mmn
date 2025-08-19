@@ -47,7 +47,7 @@ type GenesisConfig struct {
 	Mempool           MempoolConfig      `yaml:"mempool"`
 	Validator         ValidatorConfig    `yaml:"validator"`
 	Staking           StakingConfig      `yaml:"staking"`
-	GenesisValidators []GenesisValidator `yaml:"genesis_validators"`
+	GenesisValidators []GenesisValidator `yaml:"genesis_validators,omitempty"` // Optional - dynamic validators
 }
 
 // ConfigFile is the top-level structure for genesis.yml

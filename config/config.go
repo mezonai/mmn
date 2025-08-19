@@ -31,7 +31,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Faucet)
+	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v, Staking.Enabled=%v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Faucet, cfgFile.Config.Staking.Enabled)
 	return &cfgFile.Config, nil
 }
 
