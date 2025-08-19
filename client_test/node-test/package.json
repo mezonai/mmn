@@ -4,6 +4,7 @@
   "main": "test.ts",
   "scripts": {
     "test": "ts-node test.ts",
+    "test:debug": "ts-node test.ts --debug",
     "generate-types": "sh ./generate-types.sh"
   },
   "author": "",

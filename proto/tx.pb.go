@@ -25,31 +25,25 @@ const (
 type TransactionStatus int32
 
 const (
-	TransactionStatus_UNKNOWN   TransactionStatus = 0
-	TransactionStatus_PENDING   TransactionStatus = 1 // Transaction is in mempool
-	TransactionStatus_CONFIRMED TransactionStatus = 2 // Transaction is included in a block
-	TransactionStatus_FINALIZED TransactionStatus = 3 // Transaction is finalized (block has enough votes)
-	TransactionStatus_FAILED    TransactionStatus = 4 // Transaction failed validation
-	TransactionStatus_EXPIRED   TransactionStatus = 5 // Transaction expired (timeout)
+	TransactionStatus_PENDING   TransactionStatus = 0 // Transaction is in mempool
+	TransactionStatus_CONFIRMED TransactionStatus = 1 // Transaction is included in a block
+	TransactionStatus_FINALIZED TransactionStatus = 2 // Transaction is finalized (block has enough votes)
+	TransactionStatus_FAILED    TransactionStatus = 3 // Transaction failed validation
 )
 
 // Enum value maps for TransactionStatus.
 var (
 	TransactionStatus_name = map[int32]string{
-		0: "UNKNOWN",
-		1: "PENDING",
-		2: "CONFIRMED",
-		3: "FINALIZED",
-		4: "FAILED",
-		5: "EXPIRED",
+		0: "PENDING",
+		1: "CONFIRMED",
+		2: "FINALIZED",
+		3: "FAILED",
 	}
 	TransactionStatus_value = map[string]int32{
-		"UNKNOWN":   0,
-		"PENDING":   1,
-		"CONFIRMED": 2,
-		"FINALIZED": 3,
-		"FAILED":    4,
-		"EXPIRED":   5,
+		"PENDING":   0,
+		"CONFIRMED": 1,
+		"FINALIZED": 2,
+		"FAILED":    3,
 	}
 )
 
@@ -381,8 +375,8 @@ func (x *GetTransactionStatusRequest) GetTxHash() string {
 	return ""
 }
 
-// Response with transaction status
-type GetTransactionStatusResponse struct {
+// Unified transaction status message used for both unary and streaming responses
+type TransactionStatusInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	Status        TransactionStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=mmn.TransactionStatus" json:"status,omitempty"`
@@ -395,20 +389,20 @@ type GetTransactionStatusResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetTransactionStatusResponse) Reset() {
-	*x = GetTransactionStatusResponse{}
+func (x *TransactionStatusInfo) Reset() {
+	*x = TransactionStatusInfo{}
 	mi := &file_tx_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetTransactionStatusResponse) String() string {
+func (x *TransactionStatusInfo) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetTransactionStatusResponse) ProtoMessage() {}
+func (*TransactionStatusInfo) ProtoMessage() {}
 
-func (x *GetTransactionStatusResponse) ProtoReflect() protoreflect.Message {
+func (x *TransactionStatusInfo) ProtoReflect() protoreflect.Message {
 	mi := &file_tx_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -420,54 +414,54 @@ func (x *GetTransactionStatusResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetTransactionStatusResponse.ProtoReflect.Descriptor instead.
-func (*GetTransactionStatusResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use TransactionStatusInfo.ProtoReflect.Descriptor instead.
+func (*TransactionStatusInfo) Descriptor() ([]byte, []int) {
 	return file_tx_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *GetTransactionStatusResponse) GetTxHash() string {
+func (x *TransactionStatusInfo) GetTxHash() string {
 	if x != nil {
 		return x.TxHash
 	}
 	return ""
 }
 
-func (x *GetTransactionStatusResponse) GetStatus() TransactionStatus {
+func (x *TransactionStatusInfo) GetStatus() TransactionStatus {
 	if x != nil {
 		return x.Status
 	}
-	return TransactionStatus_UNKNOWN
+	return TransactionStatus_PENDING
 }
 
-func (x *GetTransactionStatusResponse) GetBlockSlot() uint64 {
+func (x *TransactionStatusInfo) GetBlockSlot() uint64 {
 	if x != nil {
 		return x.BlockSlot
 	}
 	return 0
 }
 
-func (x *GetTransactionStatusResponse) GetBlockHash() string {
+func (x *TransactionStatusInfo) GetBlockHash() string {
 	if x != nil {
 		return x.BlockHash
 	}
 	return ""
 }
 
-func (x *GetTransactionStatusResponse) GetConfirmations() uint64 {
+func (x *TransactionStatusInfo) GetConfirmations() uint64 {
 	if x != nil {
 		return x.Confirmations
 	}
 	return 0
 }
 
-func (x *GetTransactionStatusResponse) GetErrorMessage() string {
+func (x *TransactionStatusInfo) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
 	}
 	return ""
 }
 
-func (x *GetTransactionStatusResponse) GetTimestamp() uint64 {
+func (x *TransactionStatusInfo) GetTimestamp() uint64 {
 	if x != nil {
 		return x.Timestamp
 	}
@@ -511,99 +505,6 @@ func (*SubscribeTransactionStatusRequest) Descriptor() ([]byte, []int) {
 	return file_tx_proto_rawDescGZIP(), []int{6}
 }
 
-// Stream of transaction status updates
-type TransactionStatusUpdate struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	Status        TransactionStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=mmn.TransactionStatus" json:"status,omitempty"`
-	BlockSlot     uint64                 `protobuf:"varint,3,opt,name=block_slot,json=blockSlot,proto3" json:"block_slot,omitempty"`
-	BlockHash     string                 `protobuf:"bytes,4,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
-	Confirmations uint64                 `protobuf:"varint,5,opt,name=confirmations,proto3" json:"confirmations,omitempty"`
-	ErrorMessage  string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	Timestamp     uint64                 `protobuf:"varint,7,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *TransactionStatusUpdate) Reset() {
-	*x = TransactionStatusUpdate{}
-	mi := &file_tx_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *TransactionStatusUpdate) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*TransactionStatusUpdate) ProtoMessage() {}
-
-func (x *TransactionStatusUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use TransactionStatusUpdate.ProtoReflect.Descriptor instead.
-func (*TransactionStatusUpdate) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *TransactionStatusUpdate) GetTxHash() string {
-	if x != nil {
-		return x.TxHash
-	}
-	return ""
-}
-
-func (x *TransactionStatusUpdate) GetStatus() TransactionStatus {
-	if x != nil {
-		return x.Status
-	}
-	return TransactionStatus_UNKNOWN
-}
-
-func (x *TransactionStatusUpdate) GetBlockSlot() uint64 {
-	if x != nil {
-		return x.BlockSlot
-	}
-	return 0
-}
-
-func (x *TransactionStatusUpdate) GetBlockHash() string {
-	if x != nil {
-		return x.BlockHash
-	}
-	return ""
-}
-
-func (x *TransactionStatusUpdate) GetConfirmations() uint64 {
-	if x != nil {
-		return x.Confirmations
-	}
-	return 0
-}
-
-func (x *TransactionStatusUpdate) GetErrorMessage() string {
-	if x != nil {
-		return x.ErrorMessage
-	}
-	return ""
-}
-
-func (x *TransactionStatusUpdate) GetTimestamp() uint64 {
-	if x != nil {
-		return x.Timestamp
-	}
-	return 0
-}
-
 var File_tx_proto protoreflect.FileDescriptor
 
 const file_tx_proto_rawDesc = "" +
@@ -630,8 +531,8 @@ const file_tx_proto_rawDesc = "" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\"6\n" +
 	"\x1bGetTransactionStatusRequest\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x8e\x02\n" +
-	"\x1cGetTransactionStatusResponse\x12\x17\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x87\x02\n" +
+	"\x15TransactionStatusInfo\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12.\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1d\n" +
 	"\n" +
@@ -641,30 +542,18 @@ const file_tx_proto_rawDesc = "" +
 	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
 	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
 	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"#\n" +
-	"!SubscribeTransactionStatusRequest\"\x89\x02\n" +
-	"\x17TransactionStatusUpdate\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12.\n" +
-	"\x06status\x18\x02 \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1d\n" +
-	"\n" +
-	"block_slot\x18\x03 \x01(\x04R\tblockSlot\x12\x1d\n" +
-	"\n" +
-	"block_hash\x18\x04 \x01(\tR\tblockHash\x12$\n" +
-	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
-	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
-	"\ttimestamp\x18\a \x01(\x04R\ttimestamp*d\n" +
+	"!SubscribeTransactionStatusRequest*J\n" +
 	"\x11TransactionStatus\x12\v\n" +
-	"\aUNKNOWN\x10\x00\x12\v\n" +
-	"\aPENDING\x10\x01\x12\r\n" +
-	"\tCONFIRMED\x10\x02\x12\r\n" +
-	"\tFINALIZED\x10\x03\x12\n" +
+	"\aPENDING\x10\x00\x12\r\n" +
+	"\tCONFIRMED\x10\x01\x12\r\n" +
+	"\tFINALIZED\x10\x02\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x04\x12\v\n" +
-	"\aEXPIRED\x10\x052\xaf\x02\n" +
+	"\x06FAILED\x10\x032\xa6\x02\n" +
 	"\tTxService\x120\n" +
 	"\vTxBroadcast\x12\x10.mmn.SignedTxMsg\x1a\x0f.mmn.TxResponse\x12-\n" +
-	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12[\n" +
-	"\x14GetTransactionStatus\x12 .mmn.GetTransactionStatusRequest\x1a!.mmn.GetTransactionStatusResponse\x12d\n" +
-	"\x1aSubscribeTransactionStatus\x12&.mmn.SubscribeTransactionStatusRequest\x1a\x1c.mmn.TransactionStatusUpdate0\x01B\x11Z\x0fmmn/proto;protob\x06proto3"
+	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12T\n" +
+	"\x14GetTransactionStatus\x12 .mmn.GetTransactionStatusRequest\x1a\x1a.mmn.TransactionStatusInfo\x12b\n" +
+	"\x1aSubscribeTransactionStatus\x12&.mmn.SubscribeTransactionStatusRequest\x1a\x1a.mmn.TransactionStatusInfo0\x01B\x11Z\x0fmmn/proto;protob\x06proto3"
 
 var (
 	file_tx_proto_rawDescOnce sync.Once
@@ -679,7 +568,7 @@ func file_tx_proto_rawDescGZIP() []byte {
 }
 
 var file_tx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_tx_proto_goTypes = []any{
 	(TransactionStatus)(0),                    // 0: mmn.TransactionStatus
 	(*TxMsg)(nil),                             // 1: mmn.TxMsg
@@ -687,27 +576,25 @@ var file_tx_proto_goTypes = []any{
 	(*TxResponse)(nil),                        // 3: mmn.TxResponse
 	(*AddTxResponse)(nil),                     // 4: mmn.AddTxResponse
 	(*GetTransactionStatusRequest)(nil),       // 5: mmn.GetTransactionStatusRequest
-	(*GetTransactionStatusResponse)(nil),      // 6: mmn.GetTransactionStatusResponse
+	(*TransactionStatusInfo)(nil),             // 6: mmn.TransactionStatusInfo
 	(*SubscribeTransactionStatusRequest)(nil), // 7: mmn.SubscribeTransactionStatusRequest
-	(*TransactionStatusUpdate)(nil),           // 8: mmn.TransactionStatusUpdate
 }
 var file_tx_proto_depIdxs = []int32{
 	1, // 0: mmn.SignedTxMsg.tx_msg:type_name -> mmn.TxMsg
-	0, // 1: mmn.GetTransactionStatusResponse.status:type_name -> mmn.TransactionStatus
-	0, // 2: mmn.TransactionStatusUpdate.status:type_name -> mmn.TransactionStatus
-	2, // 3: mmn.TxService.TxBroadcast:input_type -> mmn.SignedTxMsg
-	2, // 4: mmn.TxService.AddTx:input_type -> mmn.SignedTxMsg
-	5, // 5: mmn.TxService.GetTransactionStatus:input_type -> mmn.GetTransactionStatusRequest
-	7, // 6: mmn.TxService.SubscribeTransactionStatus:input_type -> mmn.SubscribeTransactionStatusRequest
-	3, // 7: mmn.TxService.TxBroadcast:output_type -> mmn.TxResponse
-	4, // 8: mmn.TxService.AddTx:output_type -> mmn.AddTxResponse
-	6, // 9: mmn.TxService.GetTransactionStatus:output_type -> mmn.GetTransactionStatusResponse
-	8, // 10: mmn.TxService.SubscribeTransactionStatus:output_type -> mmn.TransactionStatusUpdate
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 1: mmn.TransactionStatusInfo.status:type_name -> mmn.TransactionStatus
+	2, // 2: mmn.TxService.TxBroadcast:input_type -> mmn.SignedTxMsg
+	2, // 3: mmn.TxService.AddTx:input_type -> mmn.SignedTxMsg
+	5, // 4: mmn.TxService.GetTransactionStatus:input_type -> mmn.GetTransactionStatusRequest
+	7, // 5: mmn.TxService.SubscribeTransactionStatus:input_type -> mmn.SubscribeTransactionStatusRequest
+	3, // 6: mmn.TxService.TxBroadcast:output_type -> mmn.TxResponse
+	4, // 7: mmn.TxService.AddTx:output_type -> mmn.AddTxResponse
+	6, // 8: mmn.TxService.GetTransactionStatus:output_type -> mmn.TransactionStatusInfo
+	6, // 9: mmn.TxService.SubscribeTransactionStatus:output_type -> mmn.TransactionStatusInfo
+	6, // [6:10] is the sub-list for method output_type
+	2, // [2:6] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_tx_proto_init() }
@@ -721,7 +608,7 @@ func file_tx_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tx_proto_rawDesc), len(file_tx_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -39,6 +39,11 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	if _, exists := mp.txsBuf[txHash]; exists {
 		mp.mu.RUnlock()
 		fmt.Println("Dropping duplicate tx", txHash)
+		// Publish duplicate transaction failure event
+		if mp.eventRouter != nil {
+			event := events.NewTransactionFailed(txHash, "duplicate transaction")
+			mp.eventRouter.PublishTransactionEvent(event)
+		}
 		return "", false // drop if duplicate
 	}
 
@@ -46,6 +51,11 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	if len(mp.txsBuf) >= mp.max {
 		mp.mu.RUnlock()
 		fmt.Println("Dropping full mempool")
+		// Publish mempool full failure event
+		if mp.eventRouter != nil {
+			event := events.NewTransactionFailed(txHash, "mempool full")
+			mp.eventRouter.PublishTransactionEvent(event)
+		}
 		return "", false // drop if full
 	}
 	mp.mu.RUnlock()
@@ -57,11 +67,21 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, bool) {
 	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.txsBuf[txHash]; exists {
 		fmt.Println("Dropping duplicate tx (double-check)", txHash)
+		// Publish duplicate transaction failure event
+		if mp.eventRouter != nil {
+			event := events.NewTransactionFailed(txHash, "duplicate transaction")
+			mp.eventRouter.PublishTransactionEvent(event)
+		}
 		return "", false
 	}
 
 	if len(mp.txsBuf) >= mp.max {
 		fmt.Println("Dropping full mempool (double-check)")
+		// Publish mempool full failure event
+		if mp.eventRouter != nil {
+			event := events.NewTransactionFailed(txHash, "mempool full")
+			mp.eventRouter.PublishTransactionEvent(event)
+		}
 		return "", false
 	}
 

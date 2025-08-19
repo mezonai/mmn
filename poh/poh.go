@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/exception"
 )
 
 var LOW_POWER_MODE = ^uint64(0) // max uint64
@@ -129,7 +131,9 @@ func (p *Poh) RecordTick() *PohEntry {
 }
 
 func (p *Poh) Run() {
-	go p.AutoHash()
+	exception.SafeGoWithPanic("AutoHash", func() {
+		p.AutoHash()
+	})
 }
 
 func (p *Poh) AutoHash() {
@@ -142,7 +146,7 @@ func (p *Poh) AutoHash() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
-			fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
+			// fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
 			if p.RemainingHashes > 1 {
 				p.hashOnce(p.Hash[:])
 			}

@@ -99,11 +99,11 @@ export interface GetTransactionStatusRequest {
     txHash: string;
 }
 /**
- * Response with transaction status
+ * Unified transaction status message used for both unary and streaming responses
  *
- * @generated from protobuf message mmn.GetTransactionStatusResponse
+ * @generated from protobuf message mmn.TransactionStatusInfo
  */
-export interface GetTransactionStatusResponse {
+export interface TransactionStatusInfo {
     /**
      * @generated from protobuf field: string tx_hash = 1
      */
@@ -143,80 +143,35 @@ export interface GetTransactionStatusResponse {
 export interface SubscribeTransactionStatusRequest {
 }
 /**
- * Stream of transaction status updates
- *
- * @generated from protobuf message mmn.TransactionStatusUpdate
- */
-export interface TransactionStatusUpdate {
-    /**
-     * @generated from protobuf field: string tx_hash = 1
-     */
-    txHash: string;
-    /**
-     * @generated from protobuf field: mmn.TransactionStatus status = 2
-     */
-    status: TransactionStatus;
-    /**
-     * @generated from protobuf field: uint64 block_slot = 3
-     */
-    blockSlot: bigint;
-    /**
-     * @generated from protobuf field: string block_hash = 4
-     */
-    blockHash: string;
-    /**
-     * @generated from protobuf field: uint64 confirmations = 5
-     */
-    confirmations: bigint;
-    /**
-     * @generated from protobuf field: string error_message = 6
-     */
-    errorMessage: string;
-    /**
-     * @generated from protobuf field: uint64 timestamp = 7
-     */
-    timestamp: bigint;
-}
-/**
  * Transaction status enum
  *
  * @generated from protobuf enum mmn.TransactionStatus
  */
 export enum TransactionStatus {
     /**
-     * @generated from protobuf enum value: UNKNOWN = 0;
-     */
-    UNKNOWN = 0,
-    /**
      * Transaction is in mempool
      *
-     * @generated from protobuf enum value: PENDING = 1;
+     * @generated from protobuf enum value: PENDING = 0;
      */
-    PENDING = 1,
+    PENDING = 0,
     /**
      * Transaction is included in a block
      *
-     * @generated from protobuf enum value: CONFIRMED = 2;
+     * @generated from protobuf enum value: CONFIRMED = 1;
      */
-    CONFIRMED = 2,
+    CONFIRMED = 1,
     /**
      * Transaction is finalized (block has enough votes)
      *
-     * @generated from protobuf enum value: FINALIZED = 3;
+     * @generated from protobuf enum value: FINALIZED = 2;
      */
-    FINALIZED = 3,
+    FINALIZED = 2,
     /**
      * Transaction failed validation
      *
-     * @generated from protobuf enum value: FAILED = 4;
+     * @generated from protobuf enum value: FAILED = 3;
      */
-    FAILED = 4,
-    /**
-     * Transaction expired (timeout)
-     *
-     * @generated from protobuf enum value: EXPIRED = 5;
-     */
-    EXPIRED = 5
+    FAILED = 3
 }
 // @generated message type with reflection information, may provide speed optimized methods
 class TxMsg$Type extends MessageType<TxMsg> {
@@ -533,9 +488,9 @@ class GetTransactionStatusRequest$Type extends MessageType<GetTransactionStatusR
  */
 export const GetTransactionStatusRequest = new GetTransactionStatusRequest$Type();
 // @generated message type with reflection information, may provide speed optimized methods
-class GetTransactionStatusResponse$Type extends MessageType<GetTransactionStatusResponse> {
+class TransactionStatusInfo$Type extends MessageType<TransactionStatusInfo> {
     constructor() {
-        super("mmn.GetTransactionStatusResponse", [
+        super("mmn.TransactionStatusInfo", [
             { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "status", kind: "enum", T: () => ["mmn.TransactionStatus", TransactionStatus] },
             { no: 3, name: "block_slot", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
@@ -545,7 +500,7 @@ class GetTransactionStatusResponse$Type extends MessageType<GetTransactionStatus
             { no: 7, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
         ]);
     }
-    create(value?: PartialMessage<GetTransactionStatusResponse>): GetTransactionStatusResponse {
+    create(value?: PartialMessage<TransactionStatusInfo>): TransactionStatusInfo {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.txHash = "";
         message.status = 0;
@@ -555,10 +510,10 @@ class GetTransactionStatusResponse$Type extends MessageType<GetTransactionStatus
         message.errorMessage = "";
         message.timestamp = 0n;
         if (value !== undefined)
-            reflectionMergePartial<GetTransactionStatusResponse>(this, message, value);
+            reflectionMergePartial<TransactionStatusInfo>(this, message, value);
         return message;
     }
-    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetTransactionStatusResponse): GetTransactionStatusResponse {
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: TransactionStatusInfo): TransactionStatusInfo {
         let message = target ?? this.create(), end = reader.pos + length;
         while (reader.pos < end) {
             let [fieldNo, wireType] = reader.tag();
@@ -595,7 +550,7 @@ class GetTransactionStatusResponse$Type extends MessageType<GetTransactionStatus
         }
         return message;
     }
-    internalBinaryWrite(message: GetTransactionStatusResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+    internalBinaryWrite(message: TransactionStatusInfo, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
         /* string tx_hash = 1; */
         if (message.txHash !== "")
             writer.tag(1, WireType.LengthDelimited).string(message.txHash);
@@ -624,9 +579,9 @@ class GetTransactionStatusResponse$Type extends MessageType<GetTransactionStatus
     }
 }
 /**
- * @generated MessageType for protobuf message mmn.GetTransactionStatusResponse
+ * @generated MessageType for protobuf message mmn.TransactionStatusInfo
  */
-export const GetTransactionStatusResponse = new GetTransactionStatusResponse$Type();
+export const TransactionStatusInfo = new TransactionStatusInfo$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransactionStatusRequest> {
     constructor() {
@@ -665,107 +620,12 @@ class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransa
  * @generated MessageType for protobuf message mmn.SubscribeTransactionStatusRequest
  */
 export const SubscribeTransactionStatusRequest = new SubscribeTransactionStatusRequest$Type();
-// @generated message type with reflection information, may provide speed optimized methods
-class TransactionStatusUpdate$Type extends MessageType<TransactionStatusUpdate> {
-    constructor() {
-        super("mmn.TransactionStatusUpdate", [
-            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 2, name: "status", kind: "enum", T: () => ["mmn.TransactionStatus", TransactionStatus] },
-            { no: 3, name: "block_slot", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
-            { no: 4, name: "block_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 5, name: "confirmations", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
-            { no: 6, name: "error_message", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 7, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
-        ]);
-    }
-    create(value?: PartialMessage<TransactionStatusUpdate>): TransactionStatusUpdate {
-        const message = globalThis.Object.create((this.messagePrototype!));
-        message.txHash = "";
-        message.status = 0;
-        message.blockSlot = 0n;
-        message.blockHash = "";
-        message.confirmations = 0n;
-        message.errorMessage = "";
-        message.timestamp = 0n;
-        if (value !== undefined)
-            reflectionMergePartial<TransactionStatusUpdate>(this, message, value);
-        return message;
-    }
-    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: TransactionStatusUpdate): TransactionStatusUpdate {
-        let message = target ?? this.create(), end = reader.pos + length;
-        while (reader.pos < end) {
-            let [fieldNo, wireType] = reader.tag();
-            switch (fieldNo) {
-                case /* string tx_hash */ 1:
-                    message.txHash = reader.string();
-                    break;
-                case /* mmn.TransactionStatus status */ 2:
-                    message.status = reader.int32();
-                    break;
-                case /* uint64 block_slot */ 3:
-                    message.blockSlot = reader.uint64().toBigInt();
-                    break;
-                case /* string block_hash */ 4:
-                    message.blockHash = reader.string();
-                    break;
-                case /* uint64 confirmations */ 5:
-                    message.confirmations = reader.uint64().toBigInt();
-                    break;
-                case /* string error_message */ 6:
-                    message.errorMessage = reader.string();
-                    break;
-                case /* uint64 timestamp */ 7:
-                    message.timestamp = reader.uint64().toBigInt();
-                    break;
-                default:
-                    let u = options.readUnknownField;
-                    if (u === "throw")
-                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
-                    let d = reader.skip(wireType);
-                    if (u !== false)
-                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
-            }
-        }
-        return message;
-    }
-    internalBinaryWrite(message: TransactionStatusUpdate, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
-        /* string tx_hash = 1; */
-        if (message.txHash !== "")
-            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
-        /* mmn.TransactionStatus status = 2; */
-        if (message.status !== 0)
-            writer.tag(2, WireType.Varint).int32(message.status);
-        /* uint64 block_slot = 3; */
-        if (message.blockSlot !== 0n)
-            writer.tag(3, WireType.Varint).uint64(message.blockSlot);
-        /* string block_hash = 4; */
-        if (message.blockHash !== "")
-            writer.tag(4, WireType.LengthDelimited).string(message.blockHash);
-        /* uint64 confirmations = 5; */
-        if (message.confirmations !== 0n)
-            writer.tag(5, WireType.Varint).uint64(message.confirmations);
-        /* string error_message = 6; */
-        if (message.errorMessage !== "")
-            writer.tag(6, WireType.LengthDelimited).string(message.errorMessage);
-        /* uint64 timestamp = 7; */
-        if (message.timestamp !== 0n)
-            writer.tag(7, WireType.Varint).uint64(message.timestamp);
-        let u = options.writeUnknownFields;
-        if (u !== false)
-            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
-        return writer;
-    }
-}
-/**
- * @generated MessageType for protobuf message mmn.TransactionStatusUpdate
- */
-export const TransactionStatusUpdate = new TransactionStatusUpdate$Type();
 /**
  * @generated ServiceType for protobuf service mmn.TxService
  */
 export const TxService = new ServiceType("mmn.TxService", [
     { name: "TxBroadcast", options: {}, I: SignedTxMsg, O: TxResponse },
     { name: "AddTx", options: {}, I: SignedTxMsg, O: AddTxResponse },
-    { name: "GetTransactionStatus", options: {}, I: GetTransactionStatusRequest, O: GetTransactionStatusResponse },
-    { name: "SubscribeTransactionStatus", serverStreaming: true, options: {}, I: SubscribeTransactionStatusRequest, O: TransactionStatusUpdate }
+    { name: "GetTransactionStatus", options: {}, I: GetTransactionStatusRequest, O: TransactionStatusInfo },
+    { name: "SubscribeTransactionStatus", serverStreaming: true, options: {}, I: SubscribeTransactionStatusRequest, O: TransactionStatusInfo }
 ]);

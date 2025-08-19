@@ -1,12 +1,7 @@
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import { GrpcClient } from './grpc_client';
-import {
-  TransactionTracker,
-  TransactionStatus,
-  TransactionStatusUtils,
-  TransactionStatusInfo,
-} from './transaction_tracker';
+import { TransactionTracker } from './transaction_tracker';
 
 // Fixed Ed25519 keypair for faucet (hardcoded for genesis config)
 const faucetPrivateKeyHex =
@@ -17,16 +12,6 @@ const faucetKeyPair = nacl.sign.keyPair.fromSeed(faucetSeed);
 const faucetPublicKeyHex = Buffer.from(faucetKeyPair.publicKey).toString('hex');
 const faucetPrivateKey = crypto.createPrivateKey({
   key: faucetPrivateKeyDer,
-  format: 'der',
-  type: 'pkcs8',
-});
-
-// Generate test account
-const recipientSeed = crypto.randomBytes(32);
-const recipientKeyPair = nacl.sign.keyPair.fromSeed(recipientSeed);
-const recipientPublicKeyHex = Buffer.from(recipientKeyPair.publicKey).toString('hex');
-const recipientPrivateKey = crypto.createPrivateKey({
-  key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), recipientSeed]),
   format: 'der',
   type: 'pkcs8',
 });
@@ -50,17 +35,8 @@ function generateTestAccounts(count: number) {
 }
 
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
-
-// Nonce management for each account
-const accountNonces = new Map<string, number>();
-
-// Get next nonce for an account (starts with 1)
-function getNextNonce(accountAddress: string): number {
-  const currentNonce = accountNonces.get(accountAddress) || 0;
-  const nextNonce = currentNonce + 1;
-  accountNonces.set(accountAddress, nextNonce);
-  return nextNonce;
-}
+const GRPC_SERVER2_ADDRESS = '127.0.0.1:9002';
+const GRPC_SERVER3_ADDRESS = '127.0.0.1:9003';
 
 interface Tx {
   type: number;
@@ -118,6 +94,17 @@ function verifyTx(tx: Tx, publicKeyHex: string): boolean {
   return crypto.verify(null, serializedData, publicKey, signature);
 }
 
+// Helper function to get next nonce for an account (current nonce + 1)
+async function getNextNonce(grpcClient: GrpcClient, address: string): Promise<number> {
+  try {
+    const accountInfo = await grpcClient.getAccount(address);
+    return parseInt(accountInfo.nonce) + 1;
+  } catch (error) {
+    // If account doesn't exist, return 0 as starting nonce
+    return 0;
+  }
+}
+
 // gRPC methods
 async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
   const txMsg = {
@@ -135,383 +122,798 @@ async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
 const FaucetTxType = 1;
 const TransferTxType = 0;
 
-// Helper function to wait for transaction finalization
-async function waitForTransactionFinalization(txHash: string, timeoutMs: number = 60000): Promise<void> {
-  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-  
-  try {
-    console.log(`  ⏳ Waiting for transaction ${txHash.substring(0, 16)}... to be finalized...`);
-    console.log(`  📋 Full transaction hash: ${txHash}`);
-    
-    // First check current status
-    const currentStatus = await tracker.getCurrentStatus(txHash);
-    console.log(`  📊 Current status:`, JSON.stringify(currentStatus, null, 2));
-    
-    await tracker.waitForFinalization(txHash, timeoutMs);
-    console.log(`  ✅ Transaction ${txHash.substring(0, 16)}... finalized successfully`);
-  } finally {
-    tracker.close();
-  }
-}
-
-// Helper function to wait for multiple transactions to be finalized
-async function waitForMultipleTransactionsFinalization(txHashes: string[], timeoutMs: number = 120000): Promise<void> {
-  console.log(`  ⏳ Waiting for ${txHashes.length} transactions to be finalized...`);
-  
-  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-  
-  try {
-    const promises = txHashes.map(txHash => 
-      tracker.waitForFinalization(txHash, timeoutMs)
-    );
-    
-    await Promise.all(promises);
-    console.log(`  ✅ All ${txHashes.length} transactions finalized successfully`);
-  } finally {
-    tracker.close();
-  }
-}
-
-// ============================================================================
-// TEST SUITE 1: BASIC TRANSACTION TESTS
-// ============================================================================
-
-async function runBasicTransactionTests() {
-  console.log('=== BASIC TRANSACTION TESTS ===\n');
-
-  const grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
-
-  try {
-    // Test 1: Basic faucet transaction
-    console.log('1. Testing basic faucet transaction...');
-    const faucetNonce1 = getNextNonce(faucetPublicKeyHex);
-    console.log(`  📝 Using nonce ${faucetNonce1} for faucet transaction`);
-    const tx1 = buildTx(faucetPublicKeyHex, recipientPublicKeyHex, 100, 'Test faucet tx', faucetNonce1, FaucetTxType);
-    tx1.signature = signTx(tx1, faucetPrivateKey);
-    
-    if (!verifyTx(tx1, faucetPublicKeyHex)) {
-      throw new Error('Transaction signature verification failed');
-    }
-    
-    const response1 = await sendTxViaGrpc(grpcClient, tx1);
-    console.log(`📤 Faucet transaction response:`, JSON.stringify(response1, null, 2));
-    if (!response1.ok) {
-      throw new Error(`Failed to send faucet transaction: ${response1.error}`);
-    }
-    console.log(`✅ Faucet transaction sent successfully. Hash: ${response1.tx_hash?.substring(0, 16)}...`);
-    
-    // Wait for faucet transaction to be finalized
-    if (response1.tx_hash) {
-      await waitForTransactionFinalization(response1.tx_hash);
-    }
-
-    // Test 2: Transfer transaction
-    console.log('\n2. Testing transfer transaction...');
-    const recipientNonce1 = getNextNonce(recipientPublicKeyHex);
-    console.log(`  📝 Using nonce ${recipientNonce1} for recipient transfer transaction`);
-    const tx2 = buildTx(recipientPublicKeyHex, faucetPublicKeyHex, 50, 'Test transfer tx', recipientNonce1, TransferTxType);
-    tx2.signature = signTx(tx2, recipientPrivateKey);
-    
-    if (!verifyTx(tx2, recipientPublicKeyHex)) {
-      throw new Error('Transfer transaction signature verification failed');
-    }
-    
-    const response2 = await sendTxViaGrpc(grpcClient, tx2);
-    console.log(`📤 Transfer transaction response:`, JSON.stringify(response2, null, 2));
-    if (!response2.ok) {
-      throw new Error(`Failed to send transfer transaction: ${response2.error}`);
-    }
-    console.log(`✅ Transfer transaction sent successfully. Hash: ${response2.tx_hash?.substring(0, 16)}...`);
-    
-    // Wait for transfer transaction to be finalized
-    if (response2.tx_hash) {
-      await waitForTransactionFinalization(response2.tx_hash);
-    }
-
-    // Test 3: Multiple accounts
-    console.log('\n3. Testing multiple accounts...');
-    const accounts = generateTestAccounts(3);
-    const promises = accounts.map(async (account, index) => {
-      const faucetNonce = getNextNonce(faucetPublicKeyHex);
-      const tx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 10, `Multi-account test ${index}`, faucetNonce, FaucetTxType);
-      tx.signature = signTx(tx, faucetPrivateKey);
-      return await sendTxViaGrpc(grpcClient, tx);
-    });
-
-    const results = await Promise.all(promises);
-    console.log(`📤 Multi-account transaction responses:`, JSON.stringify(results, null, 2));
-    const successCount = results.filter(r => r.ok).length;
-    console.log(`✅ ${successCount}/${accounts.length} multi-account transactions sent successfully`);
-    
-    // Wait for all multi-account transactions to be finalized
-    const successfulTxHashes = results
-      .filter(r => r.ok && r.tx_hash)
-      .map(r => r.tx_hash!);
-    
-    if (successfulTxHashes.length > 0) {
-      console.log('  ⏳ Waiting for multi-account transactions to be finalized...');
-      await waitForMultipleTransactionsFinalization(successfulTxHashes);
-    }
-
-    // Test 4: Account balance check
-    console.log('\n4. Testing account balance retrieval...');
-    const accountResponse = await grpcClient.getAccount(recipientPublicKeyHex);
-    console.log(`✅ Account balance retrieved: ${accountResponse.balance} for ${recipientPublicKeyHex.substring(0, 16)}...`);
-
-    console.log('\n✅ All basic transaction tests passed!\n');
-
-  } catch (error) {
-    console.error('❌ Basic transaction tests failed:', error);
-    throw error;
-  } finally {
-    grpcClient.close();
-  }
-}
-
-// ============================================================================
-// TEST SUITE 2: TRANSACTION STATUS TRACKING TESTS
-// ============================================================================
-
-async function runTransactionStatusTests() {
-  console.log('=== TRANSACTION STATUS TRACKING TESTS ===\n');
-  console.log('This test validates the event-driven transaction status system.\n');
-
-  const grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
-  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-
-  try {
-    // Event tracking arrays
-    const statusUpdates: TransactionStatusInfo[] = [];
-    const allStatusUpdates: TransactionStatusInfo[] = [];
-
-    // Set up event listeners
-    tracker.on('statusChanged', (txHash: string, newStatus: TransactionStatusInfo, oldStatus?: TransactionStatusInfo) => {
-      statusUpdates.push(newStatus);
-      console.log(`📈 Status Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[newStatus.status]}`);
-    });
-
-    tracker.on('transactionFinalized', (txHash: string, statusInfo: TransactionStatusInfo) => {
-      allStatusUpdates.push(statusInfo);
-      console.log(`🌐 All-Tx Update: ${txHash.substring(0, 16)}... -> ${TransactionStatus[statusInfo.status]}`);
-    });
-
-    tracker.on('error', () => {
-      console.error('❌ Tracker error occurred');
-    });
-
-    // Start tracking all transactions
-    console.log('🚀 Starting all-transactions tracking...');
-    tracker.trackTransactions();
-
-    // Send test transactions
-    console.log('\n📤 Sending test transactions...');
-    const transactions: string[] = [];
-
-    for (let i = 0; i < 3; i++) {
-      const faucetNonce = getNextNonce(faucetPublicKeyHex);
-      const tx = buildTx(
-        faucetPublicKeyHex,
-        recipientPublicKeyHex,
-        20 + i * 10,
-        `Status test transaction ${i + 1}`,
-        faucetNonce,
-        FaucetTxType
-      );
-      tx.signature = signTx(tx, faucetPrivateKey);
-
-      const response = await sendTxViaGrpc(grpcClient, tx);
-      console.log(`  📤 Status test transaction ${i + 1} response:`, JSON.stringify(response, null, 2));
-      if (response.ok && response.tx_hash) {
-        transactions.push(response.tx_hash);
-        console.log(`  📤 Sent transaction ${i + 1}: ${response.tx_hash.substring(0, 16)}...`);
-      }
-    }
-
-    // Wait for all transactions to be finalized
-    console.log('\n⏳ Waiting for all transactions to be finalized...');
-    if (transactions.length > 0) {
-      await waitForMultipleTransactionsFinalization(transactions);
-    }
-
-    // Stop tracking
-    console.log('\n🛑 Stopping transaction tracking...');
-    tracker.stopTracking();
-
-    // Print results
-    console.log('\n📊 Test Results:');
-    console.log(`  Total specific updates: ${statusUpdates.length}`);
-    console.log(`  Total all-transactions updates: ${allStatusUpdates.length}`);
-    console.log(`  Transactions sent: ${transactions.length}`);
-
-    if (allStatusUpdates.length > 0) {
-      console.log('\n  📈 Status progression:');
-      allStatusUpdates.forEach((update, index) => {
-        console.log(`    ${index + 1}. ${update.txHash.substring(0, 16)}... -> ${TransactionStatus[update.status]}`);
-      });
-    }
-
-    console.log('\n✅ Transaction status tracking tests completed!\n');
-
-  } catch (error) {
-    console.error('❌ Transaction status tests failed:', error);
-    throw error;
-  } finally {
-    tracker.close();
-    grpcClient.close();
-  }
-}
-
-// ============================================================================
-// TEST SUITE 3: EVENT-BASED STATUS TESTS
-// ============================================================================
-
-class EventBasedStatusTest {
+class TestSuite {
   private grpcClient: GrpcClient;
-  private tracker: TransactionTracker;
-  private testResults: Map<string, any> = new Map();
+  private transactionTracker: TransactionTracker;
+  private testResults: Map<string, boolean> = new Map();
+  private debug: boolean;
 
-  constructor() {
-    this.grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
-    this.tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
+  constructor(debug: boolean = false) {
+    this.debug = debug;
+    this.grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, debug);
+    this.transactionTracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER_ADDRESS,
+      debug: debug,
+    });
   }
 
-  private logTest(name: string, success: boolean, details?: any) {
-    this.testResults.set(name, { success, details });
+  private logTest(name: string, success: boolean, details?: string) {
+    this.testResults.set(name, success);
     const status = success ? '✓ PASS' : '✗ FAIL';
-    console.log(`${status} ${name}${details ? ` - ${JSON.stringify(details)}` : ''}`);
+    console.log(`${status} ${name}${details ? ` - ${details}` : ''}`);
   }
 
-  private async runTest(name: string, testFn: () => Promise<any>) {
+  private async runTest(name: string, testFn: () => Promise<void>) {
     try {
-      const result = await testFn();
-      this.logTest(name, true, result);
-      return result;
+      await testFn();
+      this.logTest(name, true);
     } catch (error) {
       this.logTest(name, false, error instanceof Error ? error.message : String(error));
-      throw error;
     }
   }
 
   async runAllTests() {
-    console.log('=== EVENT-BASED TRANSACTION STATUS TEST SUITE ===\n');
+    console.log('=== COMPREHENSIVE gRPC-ONLY BLOCKCHAIN TEST SUITE ===\n');
 
-    // Test 1: All transactions subscription (no specific tx hash)
-    await this.runTest('All Transactions Subscription', () => this.testAllTransactionsSubscription());
+    // Basic Functionality Tests
+    await this.runTest('Basic Faucet Transaction', () => this.testBasicFaucetTransaction());
+    await this.runTest('Basic Transfer Transaction', () => this.testBasicTransferTransaction());
+    await this.runTest('Account Balance Verification', () => this.testAccountBalanceVerification());
+    await this.runTest('Transaction History', () => this.testTransactionHistory());
+
+    // Edge Cases
+    await this.runTest('Self Transfer Transaction', () => this.testSelfTransferTransaction());
+    await this.runTest('Duplicate Transaction', () => this.testDuplicateTransaction());
+
+    // Error Handling
+    await this.runTest('Non-existent Account Query', () => this.testNonExistentAccountQuery());
+    await this.runTest('Invalid Transaction (Insufficient Balance)', () =>
+      this.testInvalidTransactionInsufficientBalance()
+    );
+
+    // Multi-Account Tests
+    await this.runTest('Multi-Account Transfer Chain', () => this.testMultiAccountTransferChain());
+
+    // Filtering and Pagination
+    await this.runTest('Transaction History Filtering', () => this.testTransactionHistoryFiltering());
+    await this.runTest('Transaction History Pagination', () => this.testTransactionHistoryPagination());
+
+    // Multi-Node Tests
+    await this.runTest('Multiple Nodes Track Transaction', () => this.testMultipleNodesTrackTransaction());
 
     this.printTestSummary();
   }
 
-  private async testAllTransactionsSubscription() {
-    console.log('  🔍 Testing subscription to all transaction events (no specific tx hash)...');
-    
-    // Send multiple transactions to test the all-transactions subscription
-    const transactions: string[] = [];
-    const numTransactions = 3;
-    
-    for (let i = 0; i < numTransactions; i++) {
-      const faucetNonce = getNextNonce(faucetPublicKeyHex);
-      const tx = buildTx(
+  // Method to run a single test with debug output
+  async runSingleTest(testName: string, testFn: () => Promise<void>, enableDebug: boolean = false) {
+    if (enableDebug) {
+      this.setDebug(true);
+      console.log(`🔍 Running test "${testName}" with debug output...\n`);
+    }
+
+    await this.runTest(testName, testFn);
+
+    if (enableDebug) {
+      this.setDebug(false);
+    }
+  }
+
+  private async testBasicFaucetTransaction() {
+    const account = generateTestAccount();
+
+    // Get next nonce for faucet account
+    const nextNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const tx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 100, 'Basic faucet test', nextNonce, FaucetTxType);
+    tx.signature = signTx(tx, faucetPrivateKey);
+
+    const response = await sendTxViaGrpc(this.grpcClient, tx);
+    if (!response.ok) throw new Error('Faucet transaction failed');
+
+    // Wait for transaction to be finalized using transaction tracker
+    if (response.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response.tx_hash);
+    } else {
+      throw new Error('Transaction hash not returned from server');
+    }
+  }
+
+  private async testBasicTransferTransaction() {
+    const sender = generateTestAccount();
+    const recipient = generateTestAccount();
+
+    // First fund the sender
+    const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx = buildTx(faucetPublicKeyHex, sender.publicKeyHex, 200, 'Fund sender', faucetNonce, FaucetTxType);
+    faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+    const faucetResponse = await sendTxViaGrpc(this.grpcClient, faucetTx);
+    if (!faucetResponse.ok) throw new Error('Faucet transaction failed');
+
+    // Wait for faucet transaction to be finalized
+    if (faucetResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(faucetResponse.tx_hash);
+    }
+
+    // Then transfer
+    const senderNonce = await getNextNonce(this.grpcClient, sender.publicKeyHex);
+    const transferTx = buildTx(
+      sender.publicKeyHex,
+      recipient.publicKeyHex,
+      50,
+      'Basic transfer',
+      senderNonce,
+      TransferTxType
+    );
+    transferTx.signature = signTx(transferTx, sender.privateKey);
+
+    const response = await sendTxViaGrpc(this.grpcClient, transferTx);
+    if (!response.ok) throw new Error('Transfer transaction failed');
+
+    // Wait for transfer transaction to be finalized
+    if (response.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response.tx_hash);
+    } else {
+      throw new Error('Transaction hash not returned from server');
+    }
+  }
+
+  private async testAccountBalanceVerification() {
+    const account = generateTestAccount();
+
+    // Fund account
+    const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx = buildTx(
+      faucetPublicKeyHex,
+      account.publicKeyHex,
+      300,
+      'Fund for balance test',
+      faucetNonce,
+      FaucetTxType
+    );
+    faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+    const response = await sendTxViaGrpc(this.grpcClient, faucetTx);
+    if (!response.ok) throw new Error('Faucet transaction failed');
+
+    // Wait for transaction to be finalized using transaction tracker
+    if (response.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response.tx_hash);
+    } else {
+      throw new Error('Transaction hash not returned from server');
+    }
+
+    // Verify balance via gRPC
+    const accountInfo = await this.grpcClient.getAccount(account.publicKeyHex);
+    if (parseInt(accountInfo.balance) !== 300) throw new Error(`Expected balance 300, got ${accountInfo.balance}`);
+  }
+
+  private async testTransactionHistory() {
+    const account = generateTestAccount();
+
+    // Create multiple transactions
+    const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx = buildTx(
+      faucetPublicKeyHex,
+      account.publicKeyHex,
+      500,
+      'Fund for history test',
+      faucetNonce,
+      FaucetTxType
+    );
+    faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+    const faucetResponse = await sendTxViaGrpc(this.grpcClient, faucetTx);
+    if (!faucetResponse.ok) throw new Error('Faucet transaction failed');
+
+    // Wait for faucet transaction to be finalized
+    if (faucetResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(faucetResponse.tx_hash);
+    }
+
+    const accountNonce = await getNextNonce(this.grpcClient, account.publicKeyHex);
+    const transferTx = buildTx(
+      account.publicKeyHex,
+      generateTestAccount().publicKeyHex,
+      100,
+      'History test transfer',
+      accountNonce,
+      TransferTxType
+    );
+    transferTx.signature = signTx(transferTx, account.privateKey);
+    const transferResponse = await sendTxViaGrpc(this.grpcClient, transferTx);
+    if (!transferResponse.ok) throw new Error('Transfer transaction failed');
+
+    // Wait for transfer transaction to be finalized
+    if (transferResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(transferResponse.tx_hash);
+    }
+
+    // Check history via gRPC
+    const history = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 0);
+    if (history.total < 2) throw new Error('Transaction history incomplete');
+  }
+
+  private async testSelfTransferTransaction() {
+    const account = generateTestAccount();
+
+    // Fund account
+    const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx = buildTx(
+      faucetPublicKeyHex,
+      account.publicKeyHex,
+      100,
+      'Fund for self transfer',
+      faucetNonce,
+      FaucetTxType
+    );
+    faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+    const faucetResponse = await sendTxViaGrpc(this.grpcClient, faucetTx);
+    if (!faucetResponse.ok) throw new Error('Faucet transaction failed');
+
+    // Wait for faucet transaction to be finalized
+    if (faucetResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(faucetResponse.tx_hash);
+    }
+
+    // Self transfer
+    const accountNonce = await getNextNonce(this.grpcClient, account.publicKeyHex);
+    const selfTx = buildTx(
+      account.publicKeyHex,
+      account.publicKeyHex,
+      50,
+      'Self transfer',
+      accountNonce,
+      TransferTxType
+    );
+    selfTx.signature = signTx(selfTx, account.privateKey);
+
+    const response = await sendTxViaGrpc(this.grpcClient, selfTx);
+    if (!response.ok) throw new Error('Self transfer should be valid');
+
+    // Wait for self transfer transaction to be finalized
+    if (response.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response.tx_hash);
+    } else {
+      throw new Error('Transaction hash not returned from server');
+    }
+  }
+
+  private async testDuplicateTransaction() {
+    const sender = generateTestAccount();
+    const recipient = generateTestAccount();
+
+    // Fund sender
+    const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx = buildTx(
+      faucetPublicKeyHex,
+      sender.publicKeyHex,
+      100,
+      'Fund for duplicate test',
+      faucetNonce,
+      FaucetTxType
+    );
+    faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+    const faucetResponse = await sendTxViaGrpc(this.grpcClient, faucetTx);
+    if (!faucetResponse.ok) throw new Error('Faucet transaction failed');
+
+    console.log('Waiting for faucet transaction to be finalized');
+
+    // Wait for faucet transaction to be finalized
+    if (faucetResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(faucetResponse.tx_hash);
+    }
+
+    // Create transaction
+    const senderNonce = await getNextNonce(this.grpcClient, sender.publicKeyHex);
+    const tx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 10, 'Duplicate test', senderNonce, TransferTxType);
+    tx.signature = signTx(tx, sender.privateKey);
+
+    // Send first time
+    const response1 = await sendTxViaGrpc(this.grpcClient, tx);
+    if (!response1.ok) throw new Error('First transaction should succeed');
+
+    console.log('Waiting for first transaction to be finalized');
+
+    // Wait for first transaction to be finalized
+    if (response1.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response1.tx_hash);
+    }
+
+    // Send duplicate
+    const response2 = await sendTxViaGrpc(this.grpcClient, tx);
+    if (!response2.ok) {
+      console.log('✅ Duplicate transaction correctly rejected by server');
+      return;
+    }
+
+    console.log('Waiting for second transaction to be failed');
+
+    // If the server accepted the duplicate, wait for it to fail during processing
+    if (response2.tx_hash) {
+      await this.transactionTracker.waitForTransactionFailure(response2.tx_hash, undefined, true);
+    } else {
+      throw new Error('Duplicate transaction was accepted but no transaction hash returned');
+    }
+  }
+
+  private async testNonExistentAccountQuery() {
+    const nonExistentAddress = '0000000000000000000000000000000000000000000000000000000000000000';
+
+    try {
+      await this.grpcClient.getAccount(nonExistentAddress);
+      throw new Error('Non-existent account query should have failed');
+    } catch (error) {
+      // Expected to fail
+    }
+  }
+
+  private async testInvalidTransactionInsufficientBalance() {
+    const sender = generateTestAccount();
+    const recipient = generateTestAccount();
+
+    // Create a transaction with insufficient balance (no funding)
+    const senderNonce = await getNextNonce(this.grpcClient, sender.publicKeyHex);
+    const tx = buildTx(
+      sender.publicKeyHex,
+      recipient.publicKeyHex,
+      100,
+      'Insufficient balance test',
+      senderNonce,
+      TransferTxType
+    );
+    tx.signature = signTx(tx, sender.privateKey);
+
+    const response = await sendTxViaGrpc(this.grpcClient, tx);
+    if (!response.ok) {
+      console.log('✅ Invalid transaction correctly rejected by server');
+      return;
+    }
+
+    // If the server accepted the transaction, wait for it to fail during processing
+    if (response.tx_hash) {
+      await this.transactionTracker.waitForTransactionFailure(response.tx_hash);
+    } else {
+      throw new Error('Invalid transaction was accepted but no transaction hash returned');
+    }
+  }
+
+  private async testMultiAccountTransferChain() {
+    // Create a chain of transfers: A -> B -> C -> D
+    const accounts = generateTestAccounts(4);
+
+    // Fund all accounts first to ensure they exist
+    console.log('Funding all accounts for chain transfer test...');
+    for (let i = 0; i < accounts.length; i++) {
+      const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+      const faucetTx = buildTx(
         faucetPublicKeyHex,
-        recipientPublicKeyHex,
-        50 + i * 10,
-        `All-transactions test ${i + 1}`,
+        accounts[i].publicKeyHex,
+        100,
+        `Fund account ${i}`,
         faucetNonce,
         FaucetTxType
       );
-      tx.signature = signTx(tx, faucetPrivateKey);
+      faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+      const response = await sendTxViaGrpc(this.grpcClient, faucetTx);
+      if (!response.ok) throw new Error(`Faucet transaction for account ${i} failed`);
 
-      const response = await sendTxViaGrpc(this.grpcClient, tx);
-      console.log(`  📤 Event-based test transaction ${i + 1} response:`, JSON.stringify(response, null, 2));
-      if (response.ok && response.tx_hash) {
-        transactions.push(response.tx_hash);
-        console.log(`  📤 Sent transaction ${i + 1}: ${response.tx_hash.substring(0, 16)}...`);
+      // Wait for each faucet transaction to be finalized
+      if (response.tx_hash) {
+        await this.transactionTracker.waitForTransactionFinalization(response.tx_hash);
       }
     }
 
-    // Subscribe to all transaction events (no specific tx hash)
-    const allUpdates: Map<string, any[]> = new Map();
-    const allTransactionsPromise = new Promise<any>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('All transactions subscription timeout'));
-      }, 30000);
+    // Fund first account with additional amount for transfers
+    const additionalFaucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const additionalFundTx = buildTx(
+      faucetPublicKeyHex,
+      accounts[0].publicKeyHex,
+      900,
+      'Additional fund for chain',
+      additionalFaucetNonce,
+      FaucetTxType
+    );
+    additionalFundTx.signature = signTx(additionalFundTx, faucetPrivateKey);
+    const additionalResponse = await sendTxViaGrpc(this.grpcClient, additionalFundTx);
+    if (!additionalResponse.ok) throw new Error('Additional funding transaction failed');
 
-      const unsubscribe = this.grpcClient.subscribeTransactionStatus(
-        async (update: {
-          tx_hash: string;
-          status: string;
-          block_slot?: string;
-          block_hash?: string;
-          confirmations?: string;
-          error_message?: string;
-          timestamp?: string;
-        }) => {
-          // Track updates for each transaction
-          if (!allUpdates.has(update.tx_hash)) {
-            allUpdates.set(update.tx_hash, []);
-          }
-          allUpdates.get(update.tx_hash)!.push(update);
-          
-          console.log(`  📡 All-transactions update: ${update.tx_hash.substring(0, 16)}... -> ${update.status}`);
-          
-          // Check if we've received updates for all our test transactions
-          const allTransactionsHaveUpdates = transactions.every(txHash => 
-            allUpdates.has(txHash) && allUpdates.get(txHash)!.length > 0
-          );
-          
-          // Check if all transactions have reached terminal status
-          const allTransactionsCompleted = transactions.every(txHash => {
-            const updates = allUpdates.get(txHash);
-            if (!updates || updates.length === 0) return false;
-            const lastUpdate = updates[updates.length - 1];
-            return lastUpdate.status === 'FINALIZED' || lastUpdate.status === 'FAILED' || lastUpdate.status === 'EXPIRED';
-          });
-          
-          if (allTransactionsHaveUpdates && allTransactionsCompleted) {
-            clearTimeout(timeout);
-            unsubscribe();
-            
-            // All transactions have already been finalized through the subscription
-            console.log('  ✅ All transactions finalized through subscription');
-            
-            resolve({
-              totalTransactions: transactions.length,
-              totalUpdates: Array.from(allUpdates.values()).reduce((sum, updates) => sum + updates.length, 0),
-              updatesPerTransaction: Array.from(allUpdates.entries()).map(([txHash, updates]) => ({
-                txHash: txHash.substring(0, 16) + '...',
-                updateCount: updates.length,
-                finalStatus: updates[updates.length - 1]?.status || 'UNKNOWN'
-              })),
-              subscriptionType: 'All Transactions (no specific tx hash)'
-            });
-          }
-        },
-        (error: any) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-        () => {
-          clearTimeout(timeout);
-          resolve({
-            totalTransactions: transactions.length,
-            totalUpdates: Array.from(allUpdates.values()).reduce((sum, updates) => sum + updates.length, 0),
-            updatesPerTransaction: Array.from(allUpdates.entries()).map(([txHash, updates]) => ({
-              txHash: txHash.substring(0, 16) + '...',
-              updateCount: updates.length,
-              finalStatus: updates[updates.length - 1]?.status || 'UNKNOWN'
-            })),
-            subscriptionType: 'All Transactions (no specific tx hash)'
-          });
-        }
+    // Wait for additional funding transaction to be finalized
+    if (additionalResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(additionalResponse.tx_hash);
+    }
+
+    console.log('All funding transactions finalized, proceeding with chain transfers...');
+
+    // Chain transfers
+    for (let i = 0; i < accounts.length - 1; i++) {
+      const accountNonce = await getNextNonce(this.grpcClient, accounts[i].publicKeyHex);
+      const tx = buildTx(
+        accounts[i].publicKeyHex,
+        accounts[i + 1].publicKeyHex,
+        200,
+        `Chain transfer ${i}`,
+        accountNonce,
+        TransferTxType
       );
+      tx.signature = signTx(tx, accounts[i].privateKey);
+
+      const response = await sendTxViaGrpc(this.grpcClient, tx);
+      if (!response.ok) throw new Error(`Chain transfer ${i} failed`);
+
+      // Wait for each chain transfer to be finalized
+      if (response.tx_hash) {
+        await this.transactionTracker.waitForTransactionFinalization(response.tx_hash);
+      }
+    }
+
+    console.log('All chain transfers finalized, verifying balances...');
+
+    // Verify balances after chain transfers
+    // Expected balances:
+    // Account 0: 100 (initial) + 900 (additional) - 200 (sent) = 800
+    // Account 1: 100 (initial) + 200 (received) - 200 (sent) = 100
+    // Account 2: 100 (initial) + 200 (received) - 200 (sent) = 100
+    // Account 3: 100 (initial) + 200 (received) = 300
+
+    const expectedBalances = [800, 100, 100, 300];
+
+    for (let i = 0; i < accounts.length; i++) {
+      const accountInfo = await this.grpcClient.getAccount(accounts[i].publicKeyHex);
+      const expectedBalance = expectedBalances[i];
+
+      console.log(`Account ${i} balance: ${accountInfo.balance}, expected: ${expectedBalance}`);
+
+      if (parseInt(accountInfo.balance) !== expectedBalance) {
+        throw new Error(
+          `Account ${i} balance verification failed: expected ${expectedBalance}, got ${accountInfo.balance}`
+        );
+      }
+    }
+
+    console.log('✅ All account balances verified correctly after chain transfers');
+  }
+
+  private async testTransactionHistoryFiltering() {
+    const account = generateTestAccount();
+    const recipient = generateTestAccount();
+
+    // Fund both accounts
+    const faucetNonce1 = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx1 = buildTx(
+      faucetPublicKeyHex,
+      account.publicKeyHex,
+      1000,
+      'Fund for filtering',
+      faucetNonce1,
+      FaucetTxType
+    );
+    faucetTx1.signature = signTx(faucetTx1, faucetPrivateKey);
+    const response1 = await sendTxViaGrpc(this.grpcClient, faucetTx1);
+    if (!response1.ok) throw new Error('First faucet transaction failed');
+
+    const faucetNonce2 = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx2 = buildTx(
+      faucetPublicKeyHex,
+      recipient.publicKeyHex,
+      100,
+      'Fund recipient',
+      faucetNonce2,
+      FaucetTxType
+    );
+    faucetTx2.signature = signTx(faucetTx2, faucetPrivateKey);
+    const response2 = await sendTxViaGrpc(this.grpcClient, faucetTx2);
+    if (!response2.ok) throw new Error('Second faucet transaction failed');
+
+    // Wait for funding transactions to be finalized
+    if (response1.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response1.tx_hash);
+    }
+    if (response2.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response2.tx_hash);
+    }
+
+    const accountNonce = await getNextNonce(this.grpcClient, account.publicKeyHex);
+    const transferTx = buildTx(
+      account.publicKeyHex,
+      recipient.publicKeyHex,
+      200,
+      'Filtering transfer',
+      accountNonce,
+      TransferTxType
+    );
+    transferTx.signature = signTx(transferTx, account.privateKey);
+    const transferResponse = await sendTxViaGrpc(this.grpcClient, transferTx);
+    if (!transferResponse.ok) throw new Error('Transfer transaction failed');
+
+    // Wait for transfer transaction to be finalized
+    if (transferResponse.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(transferResponse.tx_hash);
+    }
+
+    // Test different filters
+    const allTxs = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 0);
+    const sentTxs = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 1);
+    const receivedTxs = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 2);
+
+    console.log(`Filter results - All: ${allTxs.total}, Sent: ${sentTxs.total}, Received: ${receivedTxs.total}`);
+
+    if (allTxs.total < sentTxs.total + receivedTxs.total) {
+      throw new Error("Filter totals don't add up correctly");
+    }
+  }
+
+  private async testTransactionHistoryPagination() {
+    const account = generateTestAccount();
+    const recipient = generateTestAccount();
+
+    // Fund both accounts
+    const faucetNonce1 = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx1 = buildTx(
+      faucetPublicKeyHex,
+      account.publicKeyHex,
+      1000,
+      'Fund for pagination',
+      faucetNonce1,
+      FaucetTxType
+    );
+    faucetTx1.signature = signTx(faucetTx1, faucetPrivateKey);
+    const response1 = await sendTxViaGrpc(this.grpcClient, faucetTx1);
+    if (!response1.ok) throw new Error('First faucet transaction failed');
+
+    const faucetNonce2 = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx2 = buildTx(
+      faucetPublicKeyHex,
+      recipient.publicKeyHex,
+      100,
+      'Fund recipient',
+      faucetNonce2,
+      FaucetTxType
+    );
+    faucetTx2.signature = signTx(faucetTx2, faucetPrivateKey);
+    const response2 = await sendTxViaGrpc(this.grpcClient, faucetTx2);
+    if (!response2.ok) throw new Error('Second faucet transaction failed');
+
+    // Wait for funding transactions to be finalized
+    if (response1.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response1.tx_hash);
+    }
+    if (response2.tx_hash) {
+      await this.transactionTracker.waitForTransactionFinalization(response2.tx_hash);
+    }
+
+    // Create multiple transactions
+    for (let i = 0; i < 5; i++) {
+      const accountNonce = await getNextNonce(this.grpcClient, account.publicKeyHex);
+      const tx = buildTx(
+        account.publicKeyHex,
+        recipient.publicKeyHex,
+        10,
+        `Pagination tx ${i}`,
+        accountNonce,
+        TransferTxType
+      );
+      tx.signature = signTx(tx, account.privateKey);
+      const txResponse = await sendTxViaGrpc(this.grpcClient, tx);
+      if (!txResponse.ok) throw new Error(`Pagination transaction ${i} failed`);
+
+      // Wait for each transaction to be finalized
+      if (txResponse.tx_hash) {
+        await this.transactionTracker.waitForTransactionFinalization(txResponse.tx_hash);
+      }
+    }
+
+    // Test pagination
+    const page1 = await this.grpcClient.getTxHistory(account.publicKeyHex, 3, 0, 0);
+    const page2 = await this.grpcClient.getTxHistory(account.publicKeyHex, 3, 3, 0);
+
+    console.log(`Pagination results - Page 1: ${page1.txs.length}, Page 2: ${page2.txs.length}`);
+
+    if (page1.txs.length + page2.txs.length > 6) {
+      throw new Error('Pagination returned too many transactions');
+    }
+  }
+
+  private async testMultipleNodesTrackTransaction() {
+    console.log('🧪 Testing multiple nodes tracking the same transaction...');
+
+    // Create multiple transaction trackers (simulating multiple nodes)
+    const node1Tracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER_ADDRESS,
+      debug: this.debug,
+    });
+    const node2Tracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER2_ADDRESS,
+      debug: this.debug,
+    });
+    const node3Tracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER3_ADDRESS,
+      debug: this.debug,
     });
 
-    return await allTransactionsPromise;
+    // Track transaction status changes for each node
+    const node1Statuses: string[] = [];
+    const node2Statuses: string[] = [];
+    const node3Statuses: string[] = [];
+
+    // Set up event listeners for each node
+    node1Tracker.on('statusChanged', (txHash: string, status: any) => {
+      node1Statuses.push(status.status);
+      console.log(`Node 1: Transaction ${txHash.substring(0, 16)}... status: ${status.status}`);
+    });
+
+    node2Tracker.on('statusChanged', (txHash: string, status: any) => {
+      node2Statuses.push(status.status);
+      console.log(`Node 2: Transaction ${txHash.substring(0, 16)}... status: ${status.status}`);
+    });
+
+    node3Tracker.on('statusChanged', (txHash: string, status: any) => {
+      node3Statuses.push(status.status);
+      console.log(`Node 3: Transaction ${txHash.substring(0, 16)}... status: ${status.status}`);
+    });
+
+    // Start tracking on all nodes
+    node1Tracker.trackTransactions();
+    node2Tracker.trackTransactions();
+    node3Tracker.trackTransactions();
+
+    // Create a test transaction
+    const account = generateTestAccount();
+    const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+    const faucetTx = buildTx(
+      faucetPublicKeyHex,
+      account.publicKeyHex,
+      500,
+      'Multi-node test',
+      faucetNonce,
+      FaucetTxType
+    );
+    faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+
+    console.log('📤 Sending transaction for multi-node tracking...');
+    const response = await sendTxViaGrpc(this.grpcClient, faucetTx);
+    if (!response.ok) throw new Error('Faucet transaction failed');
+
+    if (!response.tx_hash) {
+      throw new Error('Transaction hash not returned from server');
+    }
+
+    console.log(`🔍 All nodes are now tracking transaction: ${response.tx_hash.substring(0, 16)}...`);
+
+    // Wait for all nodes to receive the transaction finalization
+    const finalizationPromises = [
+      node1Tracker.waitForTransactionFinalization(response.tx_hash),
+      node2Tracker.waitForTransactionFinalization(response.tx_hash),
+      node3Tracker.waitForTransactionFinalization(response.tx_hash),
+    ];
+
+    try {
+      const [node1Result, node2Result, node3Result] = await Promise.all(finalizationPromises);
+
+      console.log('✅ All nodes received transaction finalization:');
+      console.log(`  Node 1: ${node1Result.status}`);
+      console.log(`  Node 2: ${node2Result.status}`);
+      console.log(`  Node 3: ${node3Result.status}`);
+
+      // Verify all nodes received the same final status
+      if (node1Result.status !== node2Result.status || node2Result.status !== node3Result.status) {
+        throw new Error('Nodes received different final statuses');
+      }
+
+      // Verify all nodes received the same transaction hash
+      if (node1Result.txHash !== node2Result.txHash || node2Result.txHash !== node3Result.txHash) {
+        throw new Error('Nodes received different transaction hashes');
+      }
+
+      // Verify all nodes received the same block information
+      if (node1Result.blockHash !== node2Result.blockHash || node2Result.blockHash !== node3Result.blockHash) {
+        throw new Error('Nodes received different block hashes');
+      }
+
+      console.log('✅ All nodes received consistent transaction information');
+
+      // Test concurrent transaction tracking
+      console.log('🧪 Testing concurrent transaction tracking...');
+
+      const concurrentAccounts = generateTestAccounts(3);
+      const concurrentTxs: string[] = [];
+
+      // Send multiple concurrent transactions
+      for (let i = 0; i < 3; i++) {
+        const faucetNonce = await getNextNonce(this.grpcClient, faucetPublicKeyHex);
+        const tx = buildTx(
+          faucetPublicKeyHex,
+          concurrentAccounts[i].publicKeyHex,
+          100,
+          `Concurrent tx ${i}`,
+          faucetNonce,
+          FaucetTxType
+        );
+        tx.signature = signTx(tx, faucetPrivateKey);
+
+        const txResponse = await sendTxViaGrpc(this.grpcClient, tx);
+        if (!txResponse.ok) throw new Error(`Concurrent transaction ${i} failed`);
+        if (txResponse.tx_hash) {
+          concurrentTxs.push(txResponse.tx_hash);
+        }
+      }
+
+      // Wait for all concurrent transactions to be finalized on all nodes
+      // Create a more readable structure: track results per node
+      const nodeResults = {
+        node1: [] as any[],
+        node2: [] as any[],
+        node3: [] as any[],
+      };
+
+      // Wait for each transaction on each node
+      for (const txHash of concurrentTxs) {
+        const [node1Result, node2Result, node3Result] = await Promise.all([
+          node1Tracker.waitForTransactionFinalization(txHash),
+          node2Tracker.waitForTransactionFinalization(txHash),
+          node3Tracker.waitForTransactionFinalization(txHash),
+        ]);
+
+        nodeResults.node1.push(node1Result);
+        nodeResults.node2.push(node2Result);
+        nodeResults.node3.push(node3Result);
+      }
+
+      // Verify all nodes received all transactions
+      const node1TxHashes = new Set(nodeResults.node1.map((r) => r.txHash));
+      const node2TxHashes = new Set(nodeResults.node2.map((r) => r.txHash));
+      const node3TxHashes = new Set(nodeResults.node3.map((r) => r.txHash));
+
+      if (node1TxHashes.size !== 3 || node2TxHashes.size !== 3 || node3TxHashes.size !== 3) {
+        throw new Error('Not all nodes received all concurrent transactions');
+      }
+
+      console.log('✅ All nodes successfully tracked all concurrent transactions');
+
+      // Test transaction status consistency across nodes
+      console.log('🧪 Testing transaction status consistency...');
+
+      for (const txHash of concurrentTxs) {
+        // Get status from each node for this transaction
+        const node1Status = node1Tracker.getTrackedTransactionStatus(txHash);
+        const node2Status = node2Tracker.getTrackedTransactionStatus(txHash);
+        const node3Status = node3Tracker.getTrackedTransactionStatus(txHash);
+
+        // Verify all nodes have status for this transaction
+        if (!node1Status || !node2Status || !node3Status) {
+          throw new Error(`Some nodes missing status for transaction ${txHash.substring(0, 16)}...`);
+        }
+
+        // Verify all nodes have the same status
+        const allStatuses = [node1Status.status, node2Status.status, node3Status.status];
+        const uniqueStatuses = new Set(allStatuses);
+        if (uniqueStatuses.size !== 1) {
+          throw new Error(
+            `Status inconsistency for transaction ${txHash.substring(0, 16)}...: ${allStatuses.join(', ')}`
+          );
+        }
+
+        // Verify all nodes have the same block hash
+        const allBlockHashes = [node1Status.blockHash, node2Status.blockHash, node3Status.blockHash];
+        const uniqueBlockHashes = new Set(allBlockHashes);
+        if (uniqueBlockHashes.size !== 1) {
+          throw new Error(
+            `Block hash inconsistency for transaction ${txHash.substring(0, 16)}...: ${allBlockHashes.join(', ')}`
+          );
+        }
+      }
+
+      console.log('✅ All nodes have consistent transaction status information');
+    } catch (error) {
+      throw new Error(`Multi-node tracking test failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // Clean up
+      node1Tracker.close();
+      node2Tracker.close();
+      node3Tracker.close();
+    }
   }
 
   private printTestSummary() {
-    console.log('\n=== EVENT-BASED STATUS TEST SUMMARY ===');
+    console.log('\n=== TEST SUMMARY ===');
     const totalTests = this.testResults.size;
-    const passedTests = Array.from(this.testResults.values()).filter((result) => result.success).length;
+    const passedTests = Array.from(this.testResults.values()).filter((result) => result).length;
     const failedTests = totalTests - passedTests;
 
     console.log(`Total Tests: ${totalTests}`);
@@ -522,283 +924,44 @@ class EventBasedStatusTest {
     if (failedTests > 0) {
       console.log('\nFailed Tests:');
       for (const [testName, result] of this.testResults) {
-        if (!result.success) {
-          console.log(`  - ${testName}: ${result.details}`);
+        if (!result) {
+          console.log(`  - ${testName}`);
         }
       }
     }
+  }
 
-    console.log('\n🎯 Event-Based System Benefits:');
-    console.log('  ✅ Real-time updates without polling');
-    console.log('  ✅ Reduced server load and resource usage');
-    console.log('  ✅ Better scalability for multiple subscribers');
-    console.log('  ✅ Immediate notification of status changes');
-    console.log('  ✅ Automatic cleanup of completed subscriptions');
+  setDebug(debug: boolean) {
+    this.debug = debug;
+    this.grpcClient.setDebug(debug);
+    this.transactionTracker.setDebug(debug);
   }
 
   close() {
-    this.tracker.close();
+    this.transactionTracker.close();
     this.grpcClient.close();
   }
 }
 
-async function runEventBasedStatusTests() {
-  const testSuite = new EventBasedStatusTest();
+async function main() {
+  // Parse command line arguments for debug flag
+  const args = process.argv.slice(2);
+  const debug = args.includes('--debug') || args.includes('-d');
+
+  if (debug) {
+    console.log('🔍 Debug mode enabled - showing detailed transaction updates');
+  }
+
+  const testSuite = new TestSuite(debug);
 
   try {
     await testSuite.runAllTests();
   } catch (error) {
-    console.error('Event-based status test suite failed:', error);
+    console.error('Test suite failed:', error);
   } finally {
     testSuite.close();
-    console.log('\n=== EVENT-BASED STATUS TEST SUITE COMPLETED ===');
+    console.log('\n=== TEST SUITE COMPLETED ===');
   }
 }
 
-// ============================================================================
-// TEST SUITE 4: INVALID TRANSACTION TESTS
-// ============================================================================
-
-async function runInvalidTransactionTests() {
-  console.log('=== INVALID TRANSACTION TESTS ===\n');
-
-  const grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
-  const tracker = new TransactionTracker({ serverAddress: GRPC_SERVER_ADDRESS });
-
-  try {
-    // Start tracking all transactions to catch failure events
-    tracker.trackTransactions();
-
-    // Test 1: Transaction with invalid signature
-    console.log('1. Testing transaction with invalid signature...');
-    const testAccount1 = generateTestAccount();
-    const invalidNonce1 = getNextNonce(testAccount1.publicKeyHex);
-    
-    const invalidTx1 = buildTx(testAccount1.publicKeyHex, recipientPublicKeyHex, 100, 'Invalid signature test', invalidNonce1, TransferTxType);
-    // Use wrong private key to create invalid signature
-    invalidTx1.signature = signTx(invalidTx1, faucetPrivateKey); // Wrong private key
-    
-    const response1 = await sendTxViaGrpc(grpcClient, invalidTx1);
-    console.log(`📤 Invalid signature transaction response:`, JSON.stringify(response1, null, 2));
-    
-    // Wait a bit for the failure event to be processed
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Check if we received a failure event
-    const trackedTxs1 = tracker.getTrackedTransactions();
-    const failedTx1 = Array.from(trackedTxs1.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('sig')
-    );
-    
-    if (failedTx1) {
-      console.log(`✅ Received failure event for invalid signature: ${failedTx1.errorMessage}`);
-    } else {
-      console.log(`⚠️  No failure event received for invalid signature transaction`);
-    }
-
-    // Test 2: Transaction with insufficient balance
-    console.log('\n2. Testing transaction with insufficient balance...');
-    const testAccount2 = generateTestAccount();
-    const insufficientNonce = getNextNonce(testAccount2.publicKeyHex);
-    
-    const insufficientTx = buildTx(testAccount2.publicKeyHex, recipientPublicKeyHex, 1000, 'Insufficient balance test', insufficientNonce, TransferTxType);
-    insufficientTx.signature = signTx(insufficientTx, testAccount2.privateKey);
-    
-    const response2 = await sendTxViaGrpc(grpcClient, insufficientTx);
-    console.log(`📤 Insufficient balance transaction response:`, JSON.stringify(response2, null, 2));
-    
-    // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const trackedTxs2 = tracker.getTrackedTransactions();
-    const failedTx2 = Array.from(trackedTxs2.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('insufficient')
-    );
-    
-    if (failedTx2) {
-      console.log(`✅ Received failure event for insufficient balance: ${failedTx2.errorMessage}`);
-    } else {
-      console.log(`⚠️  No failure event received for insufficient balance transaction`);
-    }
-
-    // Test 3: Transaction with invalid nonce
-    console.log('\n3. Testing transaction with invalid nonce...');
-    const testAccount3 = generateTestAccount();
-    
-    // First send a valid transaction to establish nonce
-    const validNonce = getNextNonce(testAccount3.publicKeyHex);
-    const validTx = buildTx(testAccount3.publicKeyHex, recipientPublicKeyHex, 50, 'Valid tx for nonce test', validNonce, TransferTxType);
-    validTx.signature = signTx(validTx, testAccount3.privateKey);
-    
-    await sendTxViaGrpc(grpcClient, validTx);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Now send transaction with invalid nonce (same as previous)
-    const invalidNonceTx = buildTx(testAccount3.publicKeyHex, recipientPublicKeyHex, 50, 'Invalid nonce test', validNonce, TransferTxType);
-    invalidNonceTx.signature = signTx(invalidNonceTx, testAccount3.privateKey);
-    
-    const response3 = await sendTxViaGrpc(grpcClient, invalidNonceTx);
-    console.log(`📤 Invalid nonce transaction response:`, JSON.stringify(response3, null, 2));
-    
-    // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const trackedTxs3 = tracker.getTrackedTransactions();
-    const failedTx3 = Array.from(trackedTxs3.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('nonce')
-    );
-    
-    if (failedTx3) {
-      console.log(`✅ Received failure event for invalid nonce: ${failedTx3.errorMessage}`);
-    } else {
-      console.log(`⚠️  No failure event received for invalid nonce transaction`);
-    }
-
-    // Test 4: Malformed transaction (invalid JSON)
-    console.log('\n4. Testing malformed transaction...');
-    try {
-      // Try to send malformed data by creating an invalid transaction
-      const testAccount4 = generateTestAccount();
-      const malformedNonce = getNextNonce(testAccount4.publicKeyHex);
-      
-      // Create a transaction with invalid data
-      const malformedTx = buildTx(testAccount4.publicKeyHex, recipientPublicKeyHex, 100, 'Malformed test', malformedNonce, TransferTxType);
-      malformedTx.signature = 'invalid_signature_hex'; // Invalid signature format
-      
-      const response4 = await sendTxViaGrpc(grpcClient, malformedTx);
-      console.log(`📤 Malformed transaction response:`, JSON.stringify(response4, null, 2));
-      
-      if (!response4.ok) {
-        console.log(`✅ Malformed transaction properly rejected: ${response4.error}`);
-      }
-    } catch (error) {
-      console.log(`✅ Malformed transaction properly rejected with error: ${error}`);
-    }
-
-    // Test 5: Faucet transaction from non-faucet address
-    console.log('\n5. Testing faucet transaction from non-faucet address...');
-    const testAccount5 = generateTestAccount();
-    const faucetNonce = getNextNonce(testAccount5.publicKeyHex);
-    
-    const nonFaucetTx = buildTx(testAccount5.publicKeyHex, recipientPublicKeyHex, 100, 'Non-faucet faucet test', faucetNonce, FaucetTxType);
-    nonFaucetTx.signature = signTx(nonFaucetTx, testAccount5.privateKey);
-    
-    const response5 = await sendTxViaGrpc(grpcClient, nonFaucetTx);
-    console.log(`📤 Non-faucet faucet transaction response:`, JSON.stringify(response5, null, 2));
-    
-    // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const trackedTxs5 = tracker.getTrackedTransactions();
-    const failedTx5 = Array.from(trackedTxs5.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('faucet')
-    );
-    
-    if (failedTx5) {
-      console.log(`✅ Received failure event for non-faucet faucet transaction: ${failedTx5.errorMessage}`);
-    } else {
-      console.log(`⚠️  No failure event received for non-faucet faucet transaction`);
-    }
-
-    // Test 6: Zero amount transaction
-    console.log('\n6. Testing zero amount transaction...');
-    const testAccount6 = generateTestAccount();
-    const zeroAmountNonce = getNextNonce(testAccount6.publicKeyHex);
-    
-    const zeroAmountTx = buildTx(testAccount6.publicKeyHex, recipientPublicKeyHex, 0, 'Zero amount test', zeroAmountNonce, TransferTxType);
-    zeroAmountTx.signature = signTx(zeroAmountTx, testAccount6.privateKey);
-    
-    const response6 = await sendTxViaGrpc(grpcClient, zeroAmountTx);
-    console.log(`📤 Zero amount transaction response:`, JSON.stringify(response6, null, 2));
-    
-    // Wait for failure event
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const trackedTxs6 = tracker.getTrackedTransactions();
-    const failedTx6 = Array.from(trackedTxs6.values()).find(tx => 
-      tx.status === TransactionStatus.FAILED && 
-      tx.errorMessage && 
-      tx.errorMessage.includes('amount')
-    );
-    
-    if (failedTx6) {
-      console.log(`✅ Received failure event for zero amount transaction: ${failedTx6.errorMessage}`);
-    } else {
-      console.log(`⚠️  No failure event received for zero amount transaction`);
-    }
-
-    // Print summary of all tracked transactions
-    console.log('\n📊 Summary of tracked transactions:');
-    const allTrackedTxs = tracker.getTrackedTransactions();
-    const failedTxs = Array.from(allTrackedTxs.values()).filter(tx => tx.status === TransactionStatus.FAILED);
-    const successfulTxs = Array.from(allTrackedTxs.values()).filter(tx => tx.status === TransactionStatus.FINALIZED);
-    
-    console.log(`Total tracked transactions: ${allTrackedTxs.size}`);
-    console.log(`Failed transactions: ${failedTxs.length}`);
-    console.log(`Successful transactions: ${successfulTxs.length}`);
-    
-    if (failedTxs.length > 0) {
-      console.log('\nFailed transaction details:');
-      failedTxs.forEach((tx, index) => {
-        console.log(`  ${index + 1}. Hash: ${tx.txHash.substring(0, 16)}...`);
-        console.log(`     Error: ${tx.errorMessage}`);
-        console.log(`     Timestamp: ${new Date(tx.timestamp).toISOString()}`);
-      });
-    }
-
-    console.log('\n✅ Invalid transaction tests completed successfully!');
-
-  } catch (error) {
-    console.error('❌ Invalid transaction tests failed:', error);
-    throw error;
-  } finally {
-    tracker.close();
-    grpcClient.close();
-  }
-}
-
-// ============================================================================
-// MAIN TEST RUNNER
-// ============================================================================
-
-async function main() {
-  console.log('🚀 Starting Comprehensive MMN Test Suite\n');
-  console.log('This test suite includes:');
-  console.log('1. Basic transaction tests (signing, verification, sending)');
-  console.log('2. Transaction status tracking tests (event-based system)');
-  console.log('3. Event-based status subscription tests');
-  console.log('4. Invalid transaction tests (failure scenarios)\n');
-
-  try {
-    // Run all test suites
-    await runBasicTransactionTests();
-    await runTransactionStatusTests();
-    await runEventBasedStatusTests();
-    await runInvalidTransactionTests();
-
-    console.log('🎉 All test suites completed successfully!');
-    console.log('\n📋 Summary:');
-    console.log('✅ Basic transaction functionality working');
-    console.log('✅ Event-based status tracking working');
-    console.log('✅ All-transactions subscription working');
-    console.log('✅ Invalid transaction handling working');
-    console.log('✅ No timeout issues');
-    console.log('✅ Proper cleanup and resource management');
-
-  } catch (error) {
-    console.error('\n❌ Test suite failed:', error);
-    process.exit(1);
-  }
-}
-
-if (require.main === module) {
-  main().catch(console.error);
-}
+main().catch(console.error);
