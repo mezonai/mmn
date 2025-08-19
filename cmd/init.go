@@ -261,7 +261,13 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 		return nil, fmt.Errorf("failed to create genesis faucet account: %w", err)
 	}
 
+	// Save ledger snapshot to persist faucet account
+	if err := ld.SaveSnapshot("ledger/snapshot.gob"); err != nil {
+		return nil, fmt.Errorf("failed to save ledger snapshot: %w", err)
+	}
+
 	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with faucet account %s (balance: %d)", cfg.Faucet.Address, cfg.Faucet.Amount))
+	logx.Info("GENESIS", "Ledger snapshot saved to ledger/snapshot.gob")
 	logx.Info("GENESIS", fmt.Sprintf("Genesis block hash: %x", genesisBlock.Hash))
 
 	return genesisBlock, nil
