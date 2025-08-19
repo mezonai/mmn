@@ -46,7 +46,7 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var privKey ed25519.PrivateKey
 	if len(privBytes) == ed25519.SeedSize {
 		// 32-byte seed, generate full private key
@@ -57,12 +57,23 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	} else {
 		return nil, fmt.Errorf("invalid ed25519 private key length: %d, expected %d (seed) or %d (full key)", len(privBytes), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
-	
+
 	return privKey, nil
 }
 
 // ConvertLeaderSchedule converts []config.LeaderSchedule to *poh.LeaderSchedule
 func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
+	// Handle empty/missing hardcode schedule - use dynamic PoS scheduling
+	if len(entries) == 0 {
+		log.Println("INFO: No hardcode leader schedule found - using dynamic PoS scheduling")
+		// Return empty schedule - will be replaced by StakeManager
+		emptySchedule, _ := poh.NewLeaderSchedule([]poh.LeaderScheduleEntry{})
+		return emptySchedule
+	}
+
+	// Legacy support for existing hardcode schedules
+	log.Printf("WARN: Using legacy hardcode leader schedule with %d entries - consider migrating to PoS", len(entries))
+
 	pohEntries := make([]poh.LeaderScheduleEntry, len(entries))
 	for i, e := range entries {
 		pohEntries[i] = poh.LeaderScheduleEntry{

@@ -21,10 +21,10 @@ type StakeManager struct {
 	mu sync.RWMutex
 
 	// Core components
-	stakePool   *StakePool
-	scheduler   *StakeWeightedScheduler
-	processor   *StakeTransactionProcessor
-	
+	stakePool *StakePool
+	scheduler *StakeWeightedScheduler
+	processor *StakeTransactionProcessor
+
 	// Blockchain integration
 	pohRecorder *poh.PohRecorder
 	ledger      *ledger.Ledger
@@ -38,12 +38,12 @@ type StakeManager struct {
 	minStakeAmount    *big.Int
 	maxValidators     int
 	epochRewardAmount *big.Int
-	
+
 	// State
-	currentEpoch      uint64
-	currentSchedule   *poh.LeaderSchedule
-	epochSeed         []byte
-	
+	currentEpoch    uint64
+	currentSchedule *poh.LeaderSchedule
+	epochSeed       []byte
+
 	// Channels
 	stakeTxChan chan *StakeTransaction
 	stopChan    chan struct{}
@@ -67,7 +67,7 @@ func NewStakeManager(
 	p2pNetwork *p2p.Libp2pNetwork,
 	collector *consensus.Collector,
 ) *StakeManager {
-	
+
 	stakePool := NewStakePool(config.MinStakeAmount, config.MaxValidators, config.SlotsPerEpoch)
 	scheduler := NewStakeWeightedScheduler(stakePool, config.SlotsPerEpoch)
 	processor := NewStakeTransactionProcessor(stakePool)
@@ -118,11 +118,19 @@ func (sm *StakeManager) Stop() {
 }
 
 // RegisterValidator registers a new validator (used during genesis)
-func (sm *StakeManager) RegisterValidator(pubkey string, stakeAmount *big.Int, commission uint8) error {
+func (sm *StakeManager) RegisterValidator(pubkey string, stakeAmount *big.Int) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
-	return sm.stakePool.RegisterValidator(pubkey, stakeAmount, commission)
+
+	return sm.stakePool.RegisterValidator(pubkey, stakeAmount)
+}
+
+// RegisterGenesisValidator registers a genesis validator that activates immediately
+func (sm *StakeManager) RegisterGenesisValidator(pubkey string, stakeAmount *big.Int) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	return sm.stakePool.RegisterGenesisValidator(pubkey, stakeAmount)
 }
 
 // SubmitStakeTransaction submits a staking transaction to the mempool
@@ -161,11 +169,11 @@ func (sm *StakeManager) GetStakeDistribution() map[string]float64 {
 func (sm *StakeManager) IsLeaderForSlot(validatorPubkey string, slot uint64) bool {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	
+
 	if sm.currentSchedule == nil {
 		return false
 	}
-	
+
 	leader, exists := sm.currentSchedule.LeaderAt(slot)
 	return exists && leader == validatorPubkey
 }
@@ -174,7 +182,7 @@ func (sm *StakeManager) IsLeaderForSlot(validatorPubkey string, slot uint64) boo
 func (sm *StakeManager) OnSlotComplete(slot uint64, leader string, success bool) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	// Check if we need to transition to new epoch
 	newEpoch := slot / sm.slotsPerEpoch
 	if newEpoch > sm.currentEpoch {
@@ -189,21 +197,21 @@ func (sm *StakeManager) initializeEpochSchedule(epoch uint64) error {
 	if err != nil {
 		return err
 	}
-	
+
 	sm.currentSchedule = schedule
 	sm.currentEpoch = epoch
 	sm.stakePool.UpdateEpoch(epoch)
-	
+
 	logx.Info("STAKE_MANAGER", fmt.Sprintf("Initialized epoch %d schedule", epoch))
 	return nil
 }
 
 func (sm *StakeManager) transitionToNewEpoch(newEpoch, currentSlot uint64) {
 	logx.Info("STAKE_MANAGER", fmt.Sprintf("Transitioning to epoch %d at slot %d", newEpoch, currentSlot))
-	
+
 	// Distribute rewards for completed epoch
 	sm.distributeEpochRewards(sm.currentEpoch, currentSlot-1)
-	
+
 	// Generate new schedule
 	newSeed := sm.generateEpochSeed(newEpoch)
 	schedule, err := sm.scheduler.GenerateLeaderSchedule(newEpoch, newSeed)
@@ -211,13 +219,13 @@ func (sm *StakeManager) transitionToNewEpoch(newEpoch, currentSlot uint64) {
 		logx.Error("STAKE_MANAGER", "Failed to generate new epoch schedule:", err)
 		return
 	}
-	
+
 	// Update state
 	sm.currentSchedule = schedule
 	sm.currentEpoch = newEpoch
 	sm.epochSeed = newSeed
 	sm.stakePool.UpdateEpoch(newEpoch)
-	
+
 	logx.Info("STAKE_MANAGER", fmt.Sprintf("Epoch %d transition complete", newEpoch))
 }
 
@@ -225,11 +233,11 @@ func (sm *StakeManager) distributeEpochRewards(epoch, finalSlot uint64) {
 	if sm.epochRewardAmount.Sign() <= 0 {
 		return
 	}
-	
+
 	logx.Info("STAKE_MANAGER", fmt.Sprintf("Distributing rewards for epoch %d", epoch))
-	
+
 	rewards := sm.stakePool.DistributeRewards(sm.epochRewardAmount, finalSlot)
-	
+
 	// Apply rewards to ledger
 	for pubkey, amount := range rewards {
 		if amount.Sign() > 0 {
@@ -249,7 +257,7 @@ func (sm *StakeManager) generateEpochSeed(epoch uint64) []byte {
 func (sm *StakeManager) processStakeTransactions(ctx context.Context) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -268,9 +276,9 @@ func (sm *StakeManager) processStakeTransactions(ctx context.Context) {
 func (sm *StakeManager) handleStakeTransaction(tx *StakeTransaction) {
 	// In a real implementation, this would verify the transaction
 	// and add it to the mempool for inclusion in blocks
-	logx.Info("STAKE_MANAGER", fmt.Sprintf("Received %s transaction from %s", 
+	logx.Info("STAKE_MANAGER", fmt.Sprintf("Received %s transaction from %s",
 		tx.Type.String(), tx.DelegatorPubkey))
-	
+
 	// For now, process immediately (in production, this would be in a block)
 	// err := sm.processor.ProcessTransaction(tx, senderPubKey)
 	// if err != nil {
@@ -286,7 +294,7 @@ func (sm *StakeManager) processPendingStakeTransactions() {
 func (sm *StakeManager) epochManager(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second) // Check every 5 seconds
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -297,7 +305,7 @@ func (sm *StakeManager) epochManager(ctx context.Context) {
 			// Monitor epoch transitions
 			currentSlot := sm.getCurrentSlot()
 			expectedEpoch := currentSlot / sm.slotsPerEpoch
-			
+
 			if expectedEpoch > sm.currentEpoch {
 				sm.mu.Lock()
 				if expectedEpoch > sm.currentEpoch {
@@ -321,10 +329,10 @@ func (sm *StakeManager) getCurrentSlot() uint64 {
 func (sm *StakeManager) GetStakePoolStats() map[string]interface{} {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	
+
 	activeValidators := sm.stakePool.GetActiveValidators()
 	totalStake := sm.stakePool.GetTotalStake()
-	
+
 	return map[string]interface{}{
 		"total_validators":  len(sm.stakePool.validators),
 		"active_validators": len(activeValidators),
@@ -340,17 +348,17 @@ func (sm *StakeManager) GetStakePoolStats() map[string]interface{} {
 func (sm *StakeManager) GetEpochInfo() map[string]interface{} {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	
+
 	currentSlot := sm.getCurrentSlot()
 	epochStartSlot := sm.currentEpoch * sm.slotsPerEpoch
-	epochEndSlot := (sm.currentEpoch + 1) * sm.slotsPerEpoch - 1
-	
+	epochEndSlot := (sm.currentEpoch+1)*sm.slotsPerEpoch - 1
+
 	return map[string]interface{}{
-		"current_epoch":      sm.currentEpoch,
-		"current_slot":       currentSlot,
-		"epoch_start_slot":   epochStartSlot,
-		"epoch_end_slot":     epochEndSlot,
-		"slots_remaining":    epochEndSlot - currentSlot,
-		"epoch_progress":     float64(currentSlot-epochStartSlot) / float64(sm.slotsPerEpoch),
+		"current_epoch":    sm.currentEpoch,
+		"current_slot":     currentSlot,
+		"epoch_start_slot": epochStartSlot,
+		"epoch_end_slot":   epochEndSlot,
+		"slots_remaining":  epochEndSlot - currentSlot,
+		"epoch_progress":   float64(currentSlot-epochStartSlot) / float64(sm.slotsPerEpoch),
 	}
 }

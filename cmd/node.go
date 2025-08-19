@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"log"
+	"math/big"
 	"net"
 	"os"
 	"os/signal"
@@ -24,6 +25,7 @@ import (
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/staking"
 	"github.com/mezonai/mmn/validator"
 
 	"github.com/spf13/cobra"
@@ -31,8 +33,8 @@ import (
 
 const (
 	// Storage paths - using absolute paths
-	fileBlockDir    = "./blockstore/blocks"
-	leveldbBlockDir = "blockstore/leveldb"
+	fileBlockDir = "./blockstore/blocks"
+	// leveldbBlockDir = "blockstore/leveldb"
 )
 
 var (
@@ -45,6 +47,8 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+	privateKeyPath  string
+	genesisPath     string
 )
 
 var runCmd = &cobra.Command{
@@ -66,7 +70,8 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-
+	runCmd.Flags().StringVar(&privateKeyPath, "privkey-path", "privkey.yaml", "Path to the private key file")
+	runCmd.Flags().StringVar(&genesisPath, "genesis-path", "genesis.yml", "Path to the genesis configuration file")
 }
 
 // getRandomFreePort returns a random free port
@@ -88,9 +93,15 @@ func runNode() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	// Construct paths from data directory
-	privKeyPath := filepath.Join(dataDir, "privkey.txt")
-	genesisPath := filepath.Join(dataDir, "genesis.yml")
-	blockstoreDir := filepath.Join(dataDir, "blockstore")
+	privKeyPath := filepath.Join(dataDir, privateKeyPath)
+	genesisPath := filepath.Join(dataDir, genesisPath)
+	
+	// Extract port number from grpcAddr (format ":9001" -> "9001")
+	port := grpcAddr[1:] // Remove ':' prefix
+	if port == "" {
+		port = "default"
+	}
+	blockstoreDir := filepath.Join(dataDir, "blockstore", fmt.Sprintf("blocks_%s", port))
 
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
@@ -99,22 +110,21 @@ func runNode() {
 		return
 	}
 
-
 	// Create node-specific directory to avoid database conflicts
-	nodeSpecificDir := fmt.Sprintf("%s_%s", leveldbBlockDir, grpcAddr[1:]) // Remove ':' from port
-	if nodeSpecificDir == leveldbBlockDir+"_" {
-		nodeSpecificDir = leveldbBlockDir + "_default"
-	}
-	
+	// nodeSpecificDir := fmt.Sprintf("%s_%s", leveldbBlockDir, grpcAddr[1:]) // Remove ':' from port
+	// if nodeSpecificDir == leveldbBlockDir+"_" {
+	// 	nodeSpecificDir = leveldbBlockDir + "_default"
+	// }
+	// nodeSpecificDir := fmt.Sprintf("%s_%s", filepath.Join(dataDir, fileBlockDir), grpcAddr[1:])
+
 	// Create absolute path for storage
-	absLeveldbBlockDir := filepath.Join(currentDir, nodeSpecificDir)
+	// absLeveldbBlockDir := filepath.Join(currentDir, nodeSpecificDir)
 
 	// Check if genesis.yml exists in data dir, fallback to config/genesis.yml
 	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
 		logx.Info("NODE", "Genesis file not found in data directory, using default config/genesis.yml")
 		genesisPath = "config/genesis.yml"
 	}
-
 
 	// Create blockstore directory if it doesn't exist
 	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
@@ -165,9 +175,15 @@ func runNode() {
 	ld := ledger.NewLedger(cfg.Faucet.Address)
 
 	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	pohEngine, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
+	}
+
+	// Load PoH config for later use
+	pohCfg, err := config.LoadPohConfig(genesisPath)
+	if err != nil {
+		log.Fatalf("Failed to load PoH config: %v", err)
 	}
 
 	// Load private key
@@ -188,12 +204,52 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
+	// DYNAMIC COLLECTOR: Calculate threshold based on genesis validators
+	totalValidators := len(cfg.GenesisValidators)
+	if totalValidators == 0 {
+		log.Printf("WARN: No genesis validators found, using default collector with 3 validators")
+		totalValidators = 3 // Fallback for backward compatibility
+	}
+	log.Printf("INFO: Initializing collector for %d validators", totalValidators)
+	collector := consensus.NewCollector(totalValidators) // DYNAMIC!
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
 
-	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
+	// INITIALIZE STAKE MANAGER for dynamic PoS scheduling
+	var stakeManager *staking.StakeManager
+	var dynamicSchedule *poh.LeaderSchedule
+
+	if cfg.Staking.Enabled && len(cfg.GenesisValidators) > 0 {
+		log.Printf("INFO: Initializing StakeManager with %d genesis validators", len(cfg.GenesisValidators))
+
+		stakeManager, err = initializeStakeManager(cfg, recorder, ld, mp, bs, libP2pClient, collector, genesisPath)
+		if err != nil {
+			log.Fatalf("Failed to initialize stake manager: %v", err)
+		}
+
+		// START STAKE MANAGER to generate initial leader schedule
+		err = stakeManager.Start(ctx)
+		if err != nil {
+			log.Fatalf("Failed to start stake manager: %v", err)
+		}
+
+		// GET DYNAMIC LEADER SCHEDULE - replaces hardcode!
+		dynamicSchedule = stakeManager.GetCurrentLeaderSchedule()
+		if dynamicSchedule == nil {
+			log.Fatalf("Failed to get dynamic leader schedule from StakeManager")
+		}
+
+		log.Printf("INFO: Using dynamic PoS leader schedule with stake-based allocation")
+
+		// UPDATE PoH RECORDER with dynamic schedule
+		recorder = poh.NewPohRecorder(pohEngine, pohCfg.TicksPerSlot, pubKey, dynamicSchedule)
+	} else {
+		log.Printf("INFO: Staking not enabled or no genesis validators, using legacy leader schedule")
+		dynamicSchedule = nil
+	}
+
+	// Initialize validator (with dynamic or legacy schedule)
+	val, err := initializeValidatorWithSchedule(cfg, nodeConfig, pohService, recorder, dynamicSchedule, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -295,6 +351,58 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, genesisPath string) (*mempo
 	return mp, nil
 }
 
+// initializeStakeManager initializes the stake manager with genesis validators
+func initializeStakeManager(
+	cfg *config.GenesisConfig,
+	pohRecorder *poh.PohRecorder,
+	ledger *ledger.Ledger,
+	mempool *mempool.Mempool,
+	blockStore blockstore.Store,
+	p2pNetwork *p2p.Libp2pNetwork,
+	collector *consensus.Collector,
+	genesisPath string,
+) (*staking.StakeManager, error) {
+
+	// Convert staking config
+	stakingManagerConfig, err := ConvertStakingConfig(&cfg.Staking)
+	if err != nil {
+		return nil, fmt.Errorf("invalid staking config: %w", err)
+	}
+
+	// Create stake manager
+	stakeManager := staking.NewStakeManager(
+		stakingManagerConfig,
+		pohRecorder,
+		ledger,
+		mempool,
+		blockStore,
+		p2pNetwork,
+		collector,
+	)
+
+	// Register genesis validators with their stake amounts
+	log.Printf("Registering %d genesis validators...", len(cfg.GenesisValidators))
+
+	for i, gv := range cfg.GenesisValidators {
+		// Parse stake amount
+		stakeAmount, ok := new(big.Int).SetString(gv.StakeAmount, 10)
+		if !ok {
+			return nil, fmt.Errorf("invalid stake amount for validator %d: %s", i, gv.StakeAmount)
+		}
+
+		// Register genesis validator (activates immediately)
+		err := stakeManager.RegisterGenesisValidator(gv.Pubkey, stakeAmount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to register genesis validator %s: %w", gv.Pubkey, err)
+		}
+
+		log.Printf("Registered validator %s with stake %s (no commission)",
+			gv.Pubkey, gv.StakeAmount)
+	}
+
+	return stakeManager, nil
+}
+
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
@@ -319,6 +427,48 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
+		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
+	)
+	val.Run()
+
+	return val, nil
+}
+
+// initializeValidatorWithSchedule initializes the validator with optional dynamic schedule
+func initializeValidatorWithSchedule(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
+	dynamicSchedule *poh.LeaderSchedule, mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
+	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+
+	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
+	if err != nil {
+		return nil, fmt.Errorf("load validator config: %w", err)
+	}
+
+	// Calculate intervals
+	pohCfg, _ := config.LoadPohConfig(genesisPath)
+	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
+	leaderBatchLoopInterval := tickInterval / 2
+	roleMonitorLoopInterval := tickInterval
+	leaderTimeout := time.Duration(validatorCfg.LeaderTimeout) * time.Millisecond
+	leaderTimeoutLoopInterval := time.Duration(validatorCfg.LeaderTimeoutLoopInterval) * time.Millisecond
+
+	log.Printf("Validator config: batchLoopInterval=%v, monitorLoopInterval=%v",
+		leaderBatchLoopInterval, roleMonitorLoopInterval)
+
+	// Choose schedule: dynamic PoS or legacy hardcode
+	var schedule *poh.LeaderSchedule
+	if dynamicSchedule != nil {
+		schedule = dynamicSchedule
+		log.Printf("INFO: Validator using dynamic PoS leader schedule")
+	} else {
+		schedule = config.ConvertLeaderSchedule(cfg.LeaderSchedule)
+		log.Printf("INFO: Validator using legacy hardcode leader schedule")
+	}
+
+	val := validator.NewValidator(
+		nodeConfig.PubKey, privKey, recorder, pohService,
+		schedule, mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
 	)

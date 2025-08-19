@@ -17,7 +17,6 @@ type StakeTransaction struct {
 	ValidatorPubkey string      `json:"validator_pubkey"`
 	DelegatorPubkey string      `json:"delegator_pubkey"`
 	Amount          *big.Int    `json:"amount"`
-	Commission      uint8       `json:"commission,omitempty"`
 	Signature       []byte      `json:"signature"`
 	Timestamp       time.Time   `json:"timestamp"`
 	Nonce           uint64      `json:"nonce"`
@@ -30,7 +29,6 @@ const (
 	StakeTxTypeRegisterValidator StakeTxType = iota
 	StakeTxTypeDelegate
 	StakeTxTypeUndelegate
-	StakeTxTypeUpdateCommission
 	StakeTxTypeDeactivateValidator
 )
 
@@ -43,8 +41,6 @@ func (t StakeTxType) String() string {
 		return "delegate"
 	case StakeTxTypeUndelegate:
 		return "undelegate"
-	case StakeTxTypeUpdateCommission:
-		return "update_commission"
 	case StakeTxTypeDeactivateValidator:
 		return "deactivate_validator"
 	default:
@@ -67,13 +63,12 @@ func NewStakeTransactionProcessor(stakePool *StakePool) *StakeTransactionProcess
 }
 
 // CreateRegisterValidatorTx creates a transaction to register a new validator
-func CreateRegisterValidatorTx(validatorPubkey string, stakeAmount *big.Int, commission uint8, privKey ed25519.PrivateKey, nonce uint64) (*StakeTransaction, error) {
+func CreateRegisterValidatorTx(validatorPubkey string, stakeAmount *big.Int, privKey ed25519.PrivateKey, nonce uint64) (*StakeTransaction, error) {
 	tx := &StakeTransaction{
 		Type:            StakeTxTypeRegisterValidator,
 		ValidatorPubkey: validatorPubkey,
 		DelegatorPubkey: validatorPubkey, // Self-delegation
 		Amount:          stakeAmount,
-		Commission:      commission,
 		Timestamp:       time.Now(),
 		Nonce:           nonce,
 	}
@@ -149,8 +144,6 @@ func (stp *StakeTransactionProcessor) ProcessTransaction(tx *StakeTransaction, s
 		err = stp.processDelegate(tx)
 	case StakeTxTypeUndelegate:
 		err = stp.processUndelegate(tx)
-	case StakeTxTypeUpdateCommission:
-		err = stp.processUpdateCommission(tx)
 	case StakeTxTypeDeactivateValidator:
 		err = stp.processDeactivateValidator(tx)
 	default:
@@ -164,7 +157,7 @@ func (stp *StakeTransactionProcessor) ProcessTransaction(tx *StakeTransaction, s
 	// Update nonce
 	stp.nonces[tx.DelegatorPubkey]++
 
-	logx.Info("STAKING", fmt.Sprintf("Processed %s transaction for %s", 
+	logx.Info("STAKING", fmt.Sprintf("Processed %s transaction for %s",
 		tx.Type.String(), tx.DelegatorPubkey))
 
 	return nil
@@ -173,7 +166,7 @@ func (stp *StakeTransactionProcessor) ProcessTransaction(tx *StakeTransaction, s
 // Process specific transaction types
 
 func (stp *StakeTransactionProcessor) processRegisterValidator(tx *StakeTransaction) error {
-	return stp.stakePool.RegisterValidator(tx.ValidatorPubkey, tx.Amount, tx.Commission)
+	return stp.stakePool.registerValidator(tx.ValidatorPubkey, tx.Amount, false)
 }
 
 func (stp *StakeTransactionProcessor) processDelegate(tx *StakeTransaction) error {
@@ -182,25 +175,6 @@ func (stp *StakeTransactionProcessor) processDelegate(tx *StakeTransaction) erro
 
 func (stp *StakeTransactionProcessor) processUndelegate(tx *StakeTransaction) error {
 	return stp.stakePool.Undelegate(tx.DelegatorPubkey, tx.ValidatorPubkey, tx.Amount)
-}
-
-func (stp *StakeTransactionProcessor) processUpdateCommission(tx *StakeTransaction) error {
-	// Implementation for updating validator commission
-	validator, exists := stp.stakePool.validators[tx.ValidatorPubkey]
-	if !exists {
-		return errors.New("validator not found")
-	}
-
-	if tx.DelegatorPubkey != tx.ValidatorPubkey {
-		return errors.New("only validator can update commission")
-	}
-
-	if tx.Commission > 100 {
-		return errors.New("commission cannot exceed 100%")
-	}
-
-	validator.Commission = tx.Commission
-	return nil
 }
 
 func (stp *StakeTransactionProcessor) processDeactivateValidator(tx *StakeTransaction) error {
@@ -232,7 +206,6 @@ func signStakeTransaction(tx *StakeTransaction, privKey ed25519.PrivateKey) ([]b
 		ValidatorPubkey string      `json:"validator_pubkey"`
 		DelegatorPubkey string      `json:"delegator_pubkey"`
 		Amount          string      `json:"amount"`
-		Commission      uint8       `json:"commission,omitempty"`
 		Timestamp       time.Time   `json:"timestamp"`
 		Nonce           uint64      `json:"nonce"`
 	}{
@@ -240,7 +213,6 @@ func signStakeTransaction(tx *StakeTransaction, privKey ed25519.PrivateKey) ([]b
 		ValidatorPubkey: tx.ValidatorPubkey,
 		DelegatorPubkey: tx.DelegatorPubkey,
 		Amount:          tx.Amount.String(),
-		Commission:      tx.Commission,
 		Timestamp:       tx.Timestamp,
 		Nonce:           tx.Nonce,
 	}
@@ -261,7 +233,6 @@ func (stp *StakeTransactionProcessor) verifyStakeTransaction(tx *StakeTransactio
 		ValidatorPubkey string      `json:"validator_pubkey"`
 		DelegatorPubkey string      `json:"delegator_pubkey"`
 		Amount          string      `json:"amount"`
-		Commission      uint8       `json:"commission,omitempty"`
 		Timestamp       time.Time   `json:"timestamp"`
 		Nonce           uint64      `json:"nonce"`
 	}{
@@ -269,7 +240,6 @@ func (stp *StakeTransactionProcessor) verifyStakeTransaction(tx *StakeTransactio
 		ValidatorPubkey: tx.ValidatorPubkey,
 		DelegatorPubkey: tx.DelegatorPubkey,
 		Amount:          tx.Amount.String(),
-		Commission:      tx.Commission,
 		Timestamp:       tx.Timestamp,
 		Nonce:           tx.Nonce,
 	}

@@ -19,6 +19,7 @@ require (
 	github.com/libp2p/go-libp2p-pubsub v0.14.2
 	github.com/linxGnu/grocksdb v1.10.2
 	github.com/multiformats/go-multiaddr v0.16.0
+	github.com/redis/go-redis/v9 v9.12.1
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v1.0.0
@@ -54,8 +55,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/nxadm/tail v1.4.11 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
-	github.com/redis/go-redis/v9 v9.12.1 // indirect
-	github.com/tecbot/gorocksdb v0.0.0-20191217155057-f0fad39f321c // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.36.0 // indirect

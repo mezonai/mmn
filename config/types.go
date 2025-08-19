@@ -26,7 +26,7 @@ type Faucet struct {
 type StakingConfig struct {
 	Enabled           bool   `yaml:"enabled"`
 	SlotsPerEpoch     uint64 `yaml:"slots_per_epoch"`
-	MinStakeAmount    string `yaml:"min_stake_amount"`    // String to handle big numbers
+	MinStakeAmount    string `yaml:"min_stake_amount"` // String to handle big numbers
 	MaxValidators     int    `yaml:"max_validators"`
 	EpochRewardAmount string `yaml:"epoch_reward_amount"` // String to handle big numbers
 	UnstakeCooldown   uint64 `yaml:"unstake_cooldown"`    // slots
@@ -37,12 +37,11 @@ type StakingConfig struct {
 type GenesisValidator struct {
 	Pubkey      string `yaml:"pubkey"`
 	StakeAmount string `yaml:"stake_amount"` // String to handle big numbers
-	Commission  uint8  `yaml:"commission"`   // 0-100%
 }
 
 // GenesisConfig holds the configuration from genesis.yml
 type GenesisConfig struct {
-	LeaderSchedule    []LeaderSchedule   `yaml:"leader_schedule"`
+	LeaderSchedule    []LeaderSchedule   `yaml:"leader_schedule,omitempty"` // Optional - legacy support
 	Faucet            Faucet             `yaml:"faucet"`
 	Poh               PohConfig          `yaml:"poh"`
 	Mempool           MempoolConfig      `yaml:"mempool"`
