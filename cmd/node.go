@@ -151,7 +151,7 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(pubKey)
+	ld := ledger.NewLedger(cfg.Faucet.Addresses)
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)

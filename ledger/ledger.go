@@ -14,13 +14,13 @@ import (
 )
 
 type Ledger struct {
-	state      map[string]*types.Account // address (public key hex) → account
-	faucetAddr string
-	mu         sync.RWMutex
+	state       map[string]*types.Account // address (public key hex) → account
+	faucetAddrs []string
+	mu          sync.RWMutex
 }
 
-func NewLedger(faucetAddr string) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), faucetAddr: faucetAddr}
+func NewLedger(faucetAddrs []string) *Ledger {
+	return &Ledger{state: make(map[string]*types.Account), faucetAddrs: faucetAddrs}
 }
 
 // Initialize initial account
@@ -82,7 +82,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
-			if err := view.ApplyTx(tx, l.faucetAddr); err != nil {
+			if err := view.ApplyTx(tx, l.faucetAddrs); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
 		}
@@ -101,7 +101,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
-			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
+			if err := applyTx(l.state, tx, l.faucetAddrs); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			rec := types.TxRecord{
@@ -150,7 +150,7 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 }
 
 // Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr string) error {
+func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddrs []string) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
@@ -163,7 +163,7 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr 
 	}
 
 	if tx.Type == types.TxTypeFaucet {
-		if tx.Sender != faucetAddr {
+		if isFaucetAddr(tx.Sender, faucetAddrs) {
 			return fmt.Errorf("faucet tx from non-faucet address")
 		}
 		fmt.Printf("[applyTx] Faucet tx: %+v\n", tx)
@@ -287,7 +287,7 @@ func (l *Ledger) LoadLedger() error {
 				Timestamp: rec.Timestamp,
 				TextData:  rec.TextData,
 				Nonce:     rec.Nonce,
-			}, l.faucetAddr)
+			}, l.faucetAddrs)
 		}
 		w.Close()
 	}
@@ -321,13 +321,13 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
+func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddrs []string) error {
 	sender := lv.loadOrCreate(tx.Sender)
 	recipient := lv.loadOrCreate(tx.Recipient)
 
 	if tx.Type == types.TxTypeFaucet {
-		if tx.Sender != faucetAddr {
-			return fmt.Errorf("faucet tx from non-faucet address")
+		if isFaucetAddr(tx.Sender, faucetAddrs) {
+			return fmt.Errorf("faucet tx from non-faucet addresses")
 		}
 		sender.Balance -= tx.Amount
 		recipient.Balance += tx.Amount
@@ -345,6 +345,15 @@ func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
 	recipient.Balance += tx.Amount
 	sender.Nonce = tx.Nonce
 	return nil
+}
+
+func isFaucetAddr(sender string, faucetAddrs []string) bool {
+	for _, addr := range faucetAddrs {
+		if sender == addr {
+			return true
+		}
+	}
+	return false
 }
 
 type Session struct {
@@ -380,7 +389,7 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
-		if err := s.view.ApplyTx(tx, s.ledger.faucetAddr); err != nil {
+		if err := s.view.ApplyTx(tx, s.ledger.faucetAddrs); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, err)
 			continue

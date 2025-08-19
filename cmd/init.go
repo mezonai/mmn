@@ -203,7 +203,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ZERO_ADDRESS)
+	ld := ledger.NewLedger([]string{ZERO_ADDRESS})
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -214,6 +214,12 @@ func initializeNode() {
 
 	// Persist genesis block to database
 	if genesisBlock != nil {
+
+		if err := ld.VerifyBlock(genesisBlock); err != nil {
+			logx.Error("INIT", "Genesis block verify failed :", err.Error())
+
+			return
+		}
 		err = bs.AddBlockPending(genesisBlock)
 		if err != nil {
 			logx.Error("INIT", "Failed to persist genesis block to database:", err.Error())
