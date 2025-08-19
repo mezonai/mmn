@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -22,21 +23,26 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 	remotePeer := s.Conn().RemotePeer()
 	logx.Info("AUTH", "Handling authentication request from peer: ", remotePeer.String())
 
-	// Read the authentication message
-	buf := make([]byte, 2048)
-	n, err := s.Read(buf)
+	// Enforce max message size (2048 bytes)
+	limited := &io.LimitedReader{R: s, N: 2048}
+	data, err := io.ReadAll(limited)
 	if err != nil {
-		logx.Error("AUTH", "Failed to read auth message : ", err.Error())
+		logx.Error("AUTH", "Failed to read auth message: ", err.Error())
+		return
+	}
+
+	// If reader hit the limit, reject (means payload ≥ 2048)
+	if limited.N <= 0 {
+		logx.Error("AUTH", "Auth message too large from ", remotePeer.String())
 		return
 	}
 
 	var authMsg map[string]interface{}
-	if err := json.Unmarshal(buf[:n], &authMsg); err != nil {
-		logx.Error("AUTH", "Failed to unmarshal auth message from : ", err.Error())
+	if err := json.Unmarshal(data, &authMsg); err != nil {
+		logx.Error("AUTH", "Failed to unmarshal auth message: ", err.Error())
 		return
 	}
 
-	// Check message type
 	msgType, ok := authMsg["type"].(string)
 	if !ok {
 		logx.Error("AUTH", "Invalid message type from ", remotePeer.String())
