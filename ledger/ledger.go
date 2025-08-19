@@ -14,13 +14,13 @@ import (
 )
 
 type Ledger struct {
-	state      map[string]*types.Account // address (public key hex) → account
-	faucetAddr string
-	mu         sync.RWMutex
+	state     map[string]*types.Account // address (public key hex) → account
+	allocAddr string
+	mu        sync.RWMutex
 }
 
-func NewLedger(faucetAddr string) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), faucetAddr: faucetAddr}
+func NewLedger(allocAddr string) *Ledger {
+	return &Ledger{state: make(map[string]*types.Account), allocAddr: allocAddr}
 }
 
 // Initialize initial account
@@ -82,7 +82,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
-			if err := view.ApplyTx(tx, l.faucetAddr); err != nil {
+			if err := view.ApplyTx(tx, l.allocAddr); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
 		}
@@ -101,7 +101,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err != nil || !tx.Verify() {
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
-			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
+			if err := applyTx(l.state, tx, l.allocAddr); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			rec := types.TxRecord{
@@ -278,7 +278,7 @@ func (l *Ledger) LoadLedger() error {
 				Timestamp: rec.Timestamp,
 				TextData:  rec.TextData,
 				Nonce:     rec.Nonce,
-			}, l.faucetAddr)
+			}, l.allocAddr)
 		}
 		w.Close()
 	}
@@ -312,13 +312,13 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
+func (lv *LedgerView) ApplyTx(tx *types.Transaction, allocAddr string) error {
 	// Validate zero amount transfers
 	if tx.Amount == 0 {
 		return fmt.Errorf("zero amount transfers are not allowed")
 	}
 
-	// Validate sender account existence (except for faucet transactions)
+	// Validate sender account existence (except for alloc transactions)
 	if _, exists := lv.loadForRead(tx.Sender); !exists {
 		return fmt.Errorf("sender account does not exist: %s", tx.Sender)
 	}
@@ -372,7 +372,7 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
-		if err := s.view.ApplyTx(tx, s.ledger.faucetAddr); err != nil {
+		if err := s.view.ApplyTx(tx, s.ledger.allocAddr); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, err)
 			continue

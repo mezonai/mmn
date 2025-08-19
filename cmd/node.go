@@ -153,7 +153,7 @@ func runNode() {
 
 	ld := ledger.NewLedger(pubKey)
 
-	// Load ledger state from disk (includes faucet account from genesis)
+	// Load ledger state from disk (includes alloc account from genesis)
 	if err := ld.LoadLedger(); err != nil {
 		log.Fatalf("Failed to load ledger state: %v", err)
 	}

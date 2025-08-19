@@ -17,7 +17,7 @@ type LeaderSchedule struct {
 	Leader    string `yaml:"leader"`
 }
 
-type Faucet struct {
+type Alloc struct {
 	Addresses []string `yaml:"addresses"`
 	Amount    uint64   `yaml:"amount"`
 }
@@ -25,7 +25,7 @@ type Faucet struct {
 // GenesisConfig holds the configuration from genesis.yml
 type GenesisConfig struct {
 	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
-	Faucet         Faucet           `yaml:"faucet"`
+	Alloc          Alloc            `yaml:"alloc"`
 	Poh            PohConfig        `yaml:"poh"`
 	Mempool        MempoolConfig    `yaml:"mempool"`
 	Validator      ValidatorConfig  `yaml:"validator"`

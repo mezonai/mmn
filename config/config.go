@@ -31,7 +31,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Faucet)
+	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Alloc)
 	return &cfgFile.Config, nil
 }
 
@@ -46,7 +46,7 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var privKey ed25519.PrivateKey
 	if len(privBytes) == ed25519.SeedSize {
 		// 32-byte seed, generate full private key
@@ -57,7 +57,7 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	} else {
 		return nil, fmt.Errorf("invalid ed25519 private key length: %d, expected %d (seed) or %d (full key)", len(privBytes), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
-	
+
 	return privKey, nil
 }
 
