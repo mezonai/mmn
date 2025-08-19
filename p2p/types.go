@@ -49,16 +49,24 @@ type Libp2pNetwork struct {
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
 
+	// Authentication tracking
+	authenticatedPeers map[peer.ID]*AuthenticatedPeer
+	authMu             sync.RWMutex
+	pendingChallenges  map[peer.ID][]byte // peer.ID -> challenge bytes
+	challengeMu        sync.RWMutex
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 type PeerInfo struct {
-	ID        peer.ID   `json:"id"`
-	PublicKey string    ` json:"public_key"`
-	Version   string    `json:"version"`
-	LastSeen  time.Time `json:"last_seen"`
-	IsActive  bool      `json:"is_active"`
+	ID              peer.ID   `json:"id"`
+	PublicKey       string    `json:"public_key"`
+	Version         string    `json:"version"`
+	LastSeen        time.Time `json:"last_seen"`
+	IsActive        bool      `json:"is_active"`
+	IsAuthenticated bool      `json:"is_authenticated"`
+	AuthTimestamp   time.Time `json:"auth_timestamp"`
 }
 
 type BlockMessage struct {
@@ -132,4 +140,44 @@ type Callbacks struct {
 	OnTransactionReceived  func(*types.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.Block) error
+}
+
+type AuthChallenge struct {
+	Version   string `json:"version"`
+	Challenge []byte `json:"challenge"`
+	PeerID    string `json:"peer_id"`
+	PublicKey string `json:"public_key"`
+	Timestamp int64  `json:"timestamp"`
+	Nonce     uint64 `json:"nonce"`
+	ChainID   string `json:"chain_id"`
+}
+
+type AuthResponse struct {
+	Version   string `json:"version"`
+	Challenge []byte `json:"challenge"`
+	Signature []byte `json:"signature"`
+	PeerID    string `json:"peer_id"`
+	PublicKey string `json:"public_key"`
+	Timestamp int64  `json:"timestamp"`
+	Nonce     uint64 `json:"nonce"`
+	ChainID   string `json:"chain_id"`
+}
+
+type AuthResult struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message,omitempty"`
+	Timestamp int64  `json:"timestamp"`
+	PeerID    string `json:"peer_id,omitempty"`
+}
+
+const (
+	AuthVersion    = "1.0.0"
+	DefaultChainID = "mmn-mainnet"
+)
+
+type AuthenticatedPeer struct {
+	PeerID        peer.ID
+	PublicKey     ed25519.PublicKey
+	AuthTimestamp time.Time
+	IsValid       bool
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/discovery"
@@ -83,6 +85,8 @@ func NewNetWork(
 		maxPeers:           int(MaxPeers),
 		activeSyncRequests: make(map[string]*SyncRequestInfo),
 		syncRequests:       make(map[string]*SyncRequestTracker),
+		authenticatedPeers: make(map[peer.ID]*AuthenticatedPeer),
+		pendingChallenges:  make(map[peer.ID][]byte),
 		ctx:                ctx,
 		cancel:             cancel,
 	}
@@ -106,11 +110,14 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
+	ln.host.SetStreamHandler(AuthProtocol, ln.handleAuthStream)
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
-	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
-	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
+
+	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.AuthMiddleware(ln.handleBlockSyncRequestStream))
+	ln.host.SetStreamHandler(LatestSlotProtocol, ln.AuthMiddleware(ln.handleLatestSlotStream))
 
 	ln.SetupPubSubTopics(ctx)
+	ln.setupConnectionAuthentication(ctx)
 
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
@@ -166,6 +173,55 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
 	return nil
+}
+
+// isProtocolNotSupportedError checks if the error is due to protocol not being supported
+func isProtocolNotSupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errorStr := err.Error()
+	return strings.Contains(errorStr, "protocols not supported") ||
+		strings.Contains(errorStr, "protocol not supported") ||
+		strings.Contains(errorStr, "negotiate protocol")
+}
+
+// setupConnectionAuthentication sets up automatic authentication for new connections
+func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
+	ln.host.Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(n network.Network, conn network.Conn) {
+			peerID := conn.RemotePeer()
+			logx.Info("AUTH:CONNECTION", "New connection from peer: ", peerID.String())
+
+			// Automatically authenticate new connections
+			exception.SafeGoWithPanic("Discovery", func() {
+				authCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+
+				if err := ln.InitiateAuthentication(authCtx, peerID); err != nil {
+					if isProtocolNotSupportedError(err) {
+						logx.Warn("AUTH:CONNECTION", "Peer doesn't support authentication protocol - this is normal for older peers")
+					} else {
+						logx.Error("AUTH:CONNECTION", "Authentication failed: ", err.Error())
+					}
+				} else {
+					logx.Info("AUTH:CONNECTION", "Authentication successful for peer: ", peerID.String())
+				}
+			})
+
+		},
+		DisconnectedF: func(n network.Network, conn network.Conn) {
+			peerID := conn.RemotePeer()
+			// Clean up authentication state for disconnected peer
+			ln.authMu.Lock()
+			delete(ln.authenticatedPeers, peerID)
+			ln.authMu.Unlock()
+
+			ln.challengeMu.Lock()
+			delete(ln.pendingChallenges, peerID)
+			ln.challengeMu.Unlock()
+		},
+	})
 }
 
 // this func will call if node shutdown for now just cancle when error

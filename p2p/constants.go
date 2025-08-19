@@ -4,6 +4,7 @@ const (
 	NodeInfoProtocol       = "/node-info"
 	RequestBlockSyncStream = "/sync-block-request"
 	LatestSlotProtocol     = "/latest-slot-request"
+	AuthProtocol           = "/auth/handshake/1.0.0"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
@@ -12,6 +13,9 @@ const (
 	BlockSyncResponseTopic = "block-sync/response"
 	LatestSlotTopic        = "latest-slot/request"
 	AdvertiseName          = "mmn"
+
+	AuthChallengeSize = 32
+	AuthTimeout       = 30
 )
 
 var (

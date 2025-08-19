@@ -370,6 +370,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 		select {
 		case <-ticker.C:
 			ln.CleanupExpiredRequests()
+			ln.CleanupExpiredAuthentications()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
@@ -394,6 +395,6 @@ func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
 	}
 
 	if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: ", err)
 	}
 }

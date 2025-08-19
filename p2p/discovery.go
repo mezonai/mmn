@@ -51,6 +51,15 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 					logx.Error("DISCOVERY", "Failed to connect to discovered peer:", err)
 				} else {
 					logx.Info("DISCOVERY", "Connected to discovered peer:", p.ID.String())
+					
+					// Attempt authentication with the new peer
+					go func(peerID peer.ID) {
+						if err := ln.InitiateAuthentication(ctx, peerID); err != nil {
+							logx.Error("DISCOVERY", "Authentication failed with peer %s: %v", peerID.String(), err)
+						} else {
+							logx.Info("DISCOVERY", "Authentication successful with peer: %s", peerID.String())
+						}
+					}(p.ID)
 				}
 			}
 
