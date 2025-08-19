@@ -386,14 +386,8 @@ func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
 	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
 	}
-
-	var fromSlot uint64 = 0
-	localLatestSlot := bs.GetLatestSlot()
-	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + 1
-	}
-
-	if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
+	// sync from 0
+	if err := ln.RequestBlockSync(ctx, 0); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
 	}
 }

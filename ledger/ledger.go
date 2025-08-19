@@ -10,23 +10,19 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
 
 type Ledger struct {
-	state      map[string]*types.Account // address (public key hex) → account
-	faucetAddr string
-	mu         sync.RWMutex
-	txStore    blockstore.TxStore
+	state   map[string]*types.Account // address (public key hex) → account
+	mu      sync.RWMutex
+	txStore blockstore.TxStore
 }
 
-func NewLedger(faucetAddr string, txStore blockstore.TxStore) *Ledger {
-	return &Ledger{
-		state:      make(map[string]*types.Account),
-		faucetAddr: faucetAddr,
-		txStore:    txStore,
-	}
+func NewLedger(txStore blockstore.TxStore) *Ledger {
+	return &Ledger{state: make(map[string]*types.Account), txStore: txStore}
 }
 
 // Initialize initial account
@@ -38,16 +34,17 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) {
 }
 
 // CreateAccountFromGenesis creates an account from genesis block (implements LedgerInterface)
-func (l *Ledger) CreateAccountFromGenesis(addr string, balance uint64) error {
+func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Check if account already exists to prevent re-initialization
-	if _, exists := l.state[addr]; exists {
-		return fmt.Errorf("genesis account %s already exists", addr)
-	}
+	for _, addr := range addrs {
+		if _, exists := l.state[addr.Address]; exists {
+			return fmt.Errorf("genesis account %s already exists", addr.Address)
+		}
 
-	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+		l.state[addr.Address] = &types.Account{Balance: addr.Amount, Nonce: 0}
+	}
 	return nil
 }
 
@@ -83,7 +80,7 @@ func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 	}
 	for _, entry := range b.Entries {
 		for _, tx := range entry.Transactions {
-			if err := view.ApplyTx(tx, l.faucetAddr); err != nil {
+			if err := view.ApplyTx(tx); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
 		}
@@ -103,7 +100,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 
 		for _, tx := range txs {
-			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
+			if err := applyTx(l.state, tx); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			fmt.Printf("Applied tx %s\n", tx.Hash())
@@ -143,7 +140,7 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 }
 
 // Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr string) error {
+func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
@@ -287,7 +284,7 @@ func (l *Ledger) LoadLedger() error {
 				Timestamp: rec.Timestamp,
 				TextData:  rec.TextData,
 				Nonce:     rec.Nonce,
-			}, l.faucetAddr)
+			})
 		}
 		w.Close()
 	}
@@ -321,13 +318,13 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
+func (lv *LedgerView) ApplyTx(tx *types.Transaction) error {
 	// Validate zero amount transfers
 	if tx.Amount == 0 {
 		return fmt.Errorf("zero amount transfers are not allowed")
 	}
 
-	// Validate sender account existence (except for faucet transactions)
+	// Validate sender account existence
 	if _, exists := lv.loadForRead(tx.Sender); !exists {
 		return fmt.Errorf("sender account does not exist: %s", tx.Sender)
 	}
@@ -381,7 +378,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*types.Transaction, []error) {
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
-		if err := s.view.ApplyTx(tx, s.ledger.faucetAddr); err != nil {
+		if err := s.view.ApplyTx(tx); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, err)
 			continue

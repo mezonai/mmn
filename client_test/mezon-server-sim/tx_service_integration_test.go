@@ -394,7 +394,7 @@ func TestGetTxByHash_Integration(t *testing.T) {
 
 	// Send a transaction to get a valid hash
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeFaucet)
+	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("Failed to create test transaction: %v", err)
 	}
