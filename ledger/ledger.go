@@ -91,7 +91,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 	return nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block) error {
+func (l *Ledger) ApplyBlock(b *block.Block, eventRouter *events.EventRouter) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
@@ -100,9 +100,21 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		for _, raw := range entry.Transactions {
 			tx, err := utils.ParseTx(raw)
 			if err != nil || !tx.Verify() {
+				// Publish specific transaction failure event
+				if eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction parse/signature failed: %v", err))
+					eventRouter.PublishTransactionEvent(event)
+				}
 				return fmt.Errorf("tx parse/sig fail: %v", err)
 			}
 			if err := applyTx(l.state, tx); err != nil {
+				// Publish specific transaction failure event
+				if eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
+					eventRouter.PublishTransactionEvent(event)
+				}
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			rec := types.TxRecord{
@@ -123,7 +135,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	}
 
 	if err := l.appendWAL(b); err != nil {
-		return err
+		// Publish WAL failure event
+		if eventRouter != nil {
+			event := events.NewTransactionFailed("", fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+			eventRouter.PublishTransactionEvent(event)
+		}
+		return fmt.Errorf("WAL write failed for block %d: %w", b.Slot, err)
 	}
 	if b.Slot%1000 == 0 {
 		_ = l.SaveSnapshot("ledger/snapshot.gob")

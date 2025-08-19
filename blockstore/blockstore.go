@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/utils"
 )
@@ -141,7 +142,7 @@ func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool
 }
 
 // AddBlockPending adds a pending block to the store
-func (s *GenericBlockStore) AddBlockPending(b *block.Block) error {
+func (s *GenericBlockStore) AddBlockPending(b *block.Block, eventRouter *events.EventRouter) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
@@ -172,26 +173,46 @@ func (s *GenericBlockStore) AddBlockPending(b *block.Block) error {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
 
+	// Publish transaction inclusion events if event router is provided
+	if eventRouter != nil {
+		blockHashHex := b.HashString()
+		
+		// Publish TransactionIncludedInBlock events for each transaction in the block
+		for _, entry := range b.Entries {
+			for _, raw := range entry.Transactions {
+				tx, err := utils.ParseTx(raw)
+				if err != nil {
+					logx.Warn("BLOCKSTORE", "Failed to parse transaction for inclusion event", "slot", b.Slot, "error", err)
+					continue
+				}
+				event := events.NewTransactionIncludedInBlock(tx.Hash(), b.Slot, blockHashHex)
+				eventRouter.PublishTransactionEvent(event)
+			}
+		}
+	}
+
 	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
 
 	return nil
 }
 
 // MarkFinalized marks a block as finalized and updates metadata
-func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Check if block exists
-	key := slotToBlockKey(slot)
-	exists, err := s.provider.Has(key)
-	if err != nil {
-		return fmt.Errorf("failed to check block existence: %w", err)
-	}
-
-	if !exists {
+func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.EventRouter) error {
+	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
 	}
+	
+	// Get block data only if event router is provided
+	var blk *block.Block
+	if eventRouter != nil {
+		blk = s.Block(slot)
+		if blk == nil {
+			return fmt.Errorf("failed to get block data for slot %d", slot)
+		}
+	}
+	
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Update latest finalized
 	s.latestFinalized = slot
@@ -203,6 +224,23 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 	if err := s.provider.Put(metaKey, metaValue); err != nil {
 		return fmt.Errorf("failed to update latest finalized: %w", err)
+	}
+
+	// Publish transaction finalization events if event router is provided
+	if eventRouter != nil && blk != nil {
+		blockHashHex := blk.HashString()
+
+		for _, entry := range blk.Entries {
+			for _, raw := range entry.Transactions {
+				tx, err := utils.ParseTx(raw)
+				if err != nil {
+					logx.Warn("BLOCKSTORE", "Failed to parse transaction for finalization event", "slot", slot, "error", err)
+					continue
+				}
+				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
+				eventRouter.PublishTransactionEvent(event)
+			}
+		}
 	}
 
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)

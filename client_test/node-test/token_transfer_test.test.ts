@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import { GrpcClient } from './grpc_client';
+import { TransactionTracker } from './transaction_tracker';
 
 // Faucet keypair from genesis configuration
 const faucetPrivateKeyHex =
@@ -36,9 +37,20 @@ function generateTestAccount() {
   };
 }
 
-// Helper function to wait for transaction processing
-async function waitForTransaction(ms: number = 2000): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// Helper function to wait for transaction processing using TransactionTracker
+async function waitForTransactionFinalization(txHash: string, transactionTracker: TransactionTracker): Promise<void> {
+  await transactionTracker.waitForTransactionFinalization(txHash);
+}
+
+// Helper function to get next nonce for an account (current nonce + 1)
+async function getNextNonce(grpcClient: GrpcClient, address: string): Promise<number> {
+  try {
+    const accountInfo = await grpcClient.getAccount(address);
+    return parseInt(accountInfo.nonce) + 1;
+  } catch (error) {
+    // If account doesn't exist, return 0 as starting nonce
+    return 0;
+  }
 }
 
 // Helper function to get account balance with retry logic
@@ -49,13 +61,15 @@ async function getAccountBalance(grpcClient: GrpcClient, address: string, retrie
       return parseInt(account.balance);
     } catch (error) {
       if (i === retries - 1) throw error;
-      await waitForTransaction(1000);
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   return 0;
 }
 
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
+const GRPC_SERVER2_ADDRESS = '127.0.0.1:9002';
+const GRPC_SERVER3_ADDRESS = '127.0.0.1:9003';
 const TxTypeTransfer = 0;
 
 interface Tx {
@@ -129,18 +143,20 @@ async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
 }
 
 // Enhanced funding function with balance verification
-async function fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, nonce: number) {
+async function fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number) {
+  const nonce = await getNextNonce(grpcClient, faucetPublicKeyHex);
   const fundTx = buildTx(faucetPublicKeyHex, recipientAddress, amount, 'Funding account', nonce, TxTypeTransfer);
   fundTx.signature = signTx(fundTx, faucetPrivateKey);
   
   const response = await sendTxViaGrpc(grpcClient, fundTx);
   
   // If successful, wait and verify the balance was updated
-  if (response.ok) {
-    await waitForTransaction(2000);
+  if (response.ok && response.tx_hash) {
     try {
+      // Wait for transaction to be finalized (this would need to be passed from the caller)
+      // For now, we'll just log the transaction hash and current balance
       const balance = await getAccountBalance(grpcClient, recipientAddress);
-      console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);
+      console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}, tx_hash: ${response.tx_hash}`);
     } catch (error) {
       console.warn('Could not verify balance after funding:', error);
     }
@@ -203,12 +219,19 @@ async function verifyTransactionHistory(
 
 describe('Token Transfer Tests', () => {
   let grpcClient: GrpcClient;
+  let transactionTracker: TransactionTracker;
   
   beforeAll(() => {
     grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
+    transactionTracker = new TransactionTracker({
+      serverAddress: GRPC_SERVER_ADDRESS,
+      debug: process.env.DEBUG === 'true',
+    });
+    transactionTracker.trackTransactions();
   });
   
   afterAll(() => {
+    transactionTracker.close();
     grpcClient.close();
   });
   
@@ -222,17 +245,14 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
       
-      // Check faucet account nonce first
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      console.log('Faucet account state:', { address: faucetAccount.address, balance: faucetAccount.balance, nonce: faucetAccount.nonce });
-      
-      // Fund sender account with correct nonce
-      const nextNonce = parseInt(faucetAccount.nonce) + 1;
-      console.log('Using nonce:', nextNonce);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, nextNonce);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Verify sender balance before transfer
       const senderBalanceBefore = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -245,7 +265,10 @@ describe('Token Transfer Tests', () => {
       const transferResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(transferResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for transfer transaction to be finalized
+      if (transferResponse.tx_hash) {
+        await waitForTransactionFinalization(transferResponse.tx_hash, transactionTracker);
+      }
       
       // Verify balances after transfer
       const senderBalanceAfter = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -282,12 +305,14 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Perform transfer with text data
       const customMessage = 'Transfer with custom message - blockchain test';
@@ -297,7 +322,10 @@ describe('Token Transfer Tests', () => {
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for transfer transaction to be finalized
+      if (response.tx_hash) {
+        await waitForTransactionFinalization(response.tx_hash, transactionTracker);
+      }
       
       // Verify balances
       const senderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -311,12 +339,14 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 500, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 500);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Transfer full balance
       const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 500, 'Full balance transfer', 1, TxTypeTransfer);
@@ -325,7 +355,10 @@ describe('Token Transfer Tests', () => {
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for transfer transaction to be finalized
+      if (response.tx_hash) {
+        await waitForTransactionFinalization(response.tx_hash, transactionTracker);
+      }
       
       // Verify sender has zero balance and recipient has full amount
       const senderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -340,12 +373,14 @@ describe('Token Transfer Tests', () => {
       const account2 = generateTestAccount();
       const account3 = generateTestAccount();
       
-      // Check faucet account nonce and fund first account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, account1.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund first account
+      const fundResponse = await fundAccount(grpcClient, account1.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Transfer from account1 to account2
       const transfer1 = buildTx(account1.publicKeyHex, account2.publicKeyHex, 300, 'Chain transfer 1', 1, TxTypeTransfer);
@@ -354,7 +389,10 @@ describe('Token Transfer Tests', () => {
       const response1 = await sendTxViaGrpc(grpcClient, transfer1);
       expect(response1.ok).toBe(true);
       
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for first transfer to be finalized
+      if (response1.tx_hash) {
+        await waitForTransactionFinalization(response1.tx_hash, transactionTracker);
+      }
       
       // Transfer from account2 to account3
       const transfer2 = buildTx(account2.publicKeyHex, account3.publicKeyHex, 100, 'Chain transfer 2', 1, TxTypeTransfer);
@@ -362,6 +400,11 @@ describe('Token Transfer Tests', () => {
       
       const response2 = await sendTxViaGrpc(grpcClient, transfer2);
       expect(response2.ok).toBe(true);
+      
+      // Wait for second transfer to be finalized
+      if (response2.tx_hash) {
+        await waitForTransactionFinalization(response2.tx_hash, transactionTracker);
+      }
     });
   });
 
@@ -370,12 +413,14 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account with small amount
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 50, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account with small amount
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 50);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Verify sender has the expected balance before attempting transfer
       const senderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -402,12 +447,14 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
       const wrongSigner = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Create transaction but sign with wrong private key
       const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 100, 'Invalid signature test', 1, TxTypeTransfer);
@@ -429,12 +476,14 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Try to transfer zero amount
       const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 0, 'Zero amount test', 1, TxTypeTransfer);
@@ -468,12 +517,14 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Create and send first transaction
       const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 100, 'Duplicate test', 1, TxTypeTransfer);
@@ -482,7 +533,10 @@ describe('Token Transfer Tests', () => {
       const firstResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(firstResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for first transaction to be finalized
+      if (firstResponse.tx_hash) {
+        await waitForTransactionFinalization(firstResponse.tx_hash, transactionTracker);
+      }
       
       // Verify first transaction succeeded
       const senderBalanceAfterFirst = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -512,12 +566,14 @@ describe('Token Transfer Tests', () => {
       const recipient2 = generateTestAccount();
       const recipient3 = generateTestAccount();
       
-      // Check faucet account nonce and fund sender account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Perform multiple sequential transfers with correct nonces
       const transfers = [
@@ -538,7 +594,10 @@ describe('Token Transfer Tests', () => {
         }
         expect(response.ok).toBe(true);
         
-        await waitForTransaction(1500);
+        // Wait for each transfer to be finalized
+        if (response.tx_hash) {
+          await waitForTransactionFinalization(response.tx_hash, transactionTracker);
+        }
       }
       
       // Verify final balances
@@ -572,12 +631,14 @@ describe('Token Transfer Tests', () => {
     test('Transfer to Self', async () => {
       const account = generateTestAccount();
       
-      // Check faucet account nonce and fund account
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, account.publicKeyHex, 1000, parseInt(faucetAccount.nonce) + 1);
+      // Fund account
+      const fundResponse = await fundAccount(grpcClient, account.publicKeyHex, 1000);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Verify initial balance
       const initialBalance = await getAccountBalance(grpcClient, account.publicKeyHex);
@@ -590,7 +651,10 @@ describe('Token Transfer Tests', () => {
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for self transfer to be finalized
+      if (response.tx_hash) {
+        await waitForTransactionFinalization(response.tx_hash, transactionTracker);
+      }
       
       // Balance should remain the same (self transfer)
       const finalBalance = await getAccountBalance(grpcClient, account.publicKeyHex);
@@ -616,12 +680,14 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
       const largeAmount = 999999;
       
-      // Check faucet account nonce and fund sender account with large amount
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, largeAmount, parseInt(faucetAccount.nonce) + 1);
+      // Fund sender account with large amount
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, largeAmount);
       expect(fundResponse.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for funding transaction to be finalized
+      if (fundResponse.tx_hash) {
+        await waitForTransactionFinalization(fundResponse.tx_hash, transactionTracker);
+      }
       
       // Verify sender has the large amount
       const senderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -635,14 +701,101 @@ describe('Token Transfer Tests', () => {
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       
-      await waitForTransaction(2000);
+      // Wait for transfer transaction to be finalized
+      if (response.tx_hash) {
+        await waitForTransactionFinalization(response.tx_hash, transactionTracker);
+      }
       
       // Verify balances after large transfer
       const senderBalanceAfter = await getAccountBalance(grpcClient, sender.publicKeyHex);
       const recipientBalanceAfter = await getAccountBalance(grpcClient, recipient.publicKeyHex);
       
-      expect(senderBalanceAfter).toBe(largeAmount - transferAmount);
-      expect(recipientBalanceAfter).toBe(transferAmount);
-    });
-  });
-});
+             expect(senderBalanceAfter).toBe(largeAmount - transferAmount);
+       expect(recipientBalanceAfter).toBe(transferAmount);
+     });
+
+     test('Multiple Nodes Track Transaction Status', async () => {
+       // Create multiple transaction trackers (simulating multiple nodes)
+       const node1Tracker = new TransactionTracker({
+         serverAddress: GRPC_SERVER_ADDRESS,
+         debug: process.env.DEBUG === 'true',
+       });
+       const node2Tracker = new TransactionTracker({
+         serverAddress: GRPC_SERVER2_ADDRESS,
+         debug: process.env.DEBUG === 'true',
+       });
+       const node3Tracker = new TransactionTracker({
+         serverAddress: GRPC_SERVER3_ADDRESS,
+         debug: process.env.DEBUG === 'true',
+       });
+
+       try {
+         // Start tracking on all nodes
+         node1Tracker.trackTransactions();
+         node2Tracker.trackTransactions();
+         node3Tracker.trackTransactions();
+
+         // Create a test transaction
+         const account = generateTestAccount();
+         const faucetNonce = await getNextNonce(grpcClient, faucetPublicKeyHex);
+         const faucetTx = buildTx(
+           faucetPublicKeyHex,
+           account.publicKeyHex,
+           500,
+           'Multi-node test',
+           faucetNonce,
+           TxTypeTransfer
+         );
+         faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
+
+         const response = await sendTxViaGrpc(grpcClient, faucetTx);
+         expect(response.ok).toBe(true);
+
+         if (!response.tx_hash) {
+           throw new Error('Transaction hash not returned from server');
+         }
+
+         // Wait for all nodes to receive the transaction finalization
+         const finalizationPromises = [
+           node1Tracker.waitForTransactionFinalization(response.tx_hash),
+           node2Tracker.waitForTransactionFinalization(response.tx_hash),
+           node3Tracker.waitForTransactionFinalization(response.tx_hash),
+         ];
+
+         const [node1Result, node2Result, node3Result] = await Promise.all(finalizationPromises);
+
+         // Verify all nodes received the same final status
+         expect(node1Result.status).toBe(node2Result.status);
+         expect(node2Result.status).toBe(node3Result.status);
+
+         // Verify all nodes received the same transaction hash
+         expect(node1Result.txHash).toBe(node2Result.txHash);
+         expect(node2Result.txHash).toBe(node3Result.txHash);
+
+         // Verify all nodes received the same block information
+         expect(node1Result.blockHash).toBe(node2Result.blockHash);
+         expect(node2Result.blockHash).toBe(node3Result.blockHash);
+
+         // Verify the transaction was actually finalized
+         expect(node1Result.status).toBe(2); // TransactionStatus.FINALIZED = 2
+         expect(node2Result.status).toBe(2); // TransactionStatus.FINALIZED = 2
+         expect(node3Result.status).toBe(2); // TransactionStatus.FINALIZED = 2
+
+         // Verify the account balance was updated correctly
+         const accountBalance = await getAccountBalance(grpcClient, account.publicKeyHex);
+         expect(accountBalance).toBe(500);
+
+         console.log('Multi-node transaction tracking test completed successfully');
+         console.log(`All nodes received transaction ${response.tx_hash} with status: ${node1Result.status} (FINALIZED)`);
+         console.log(`Block hash: ${node1Result.blockHash}`);
+         console.log(`Final account balance: ${accountBalance}`);
+
+       } finally {
+         // Clean up
+         node1Tracker.close();
+         node2Tracker.close();
+         node3Tracker.close();
+       }
+     });
+   });
+ });

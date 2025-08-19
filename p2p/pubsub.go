@@ -17,7 +17,6 @@ import (
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/utils"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -87,25 +86,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
-			if err := bs.AddBlockPending(blk); err != nil {
+			if err := bs.AddBlockPending(blk, eventRouter); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
-			}
-
-			// Publish events for transactions included in this block
-			if eventRouter != nil {
-				blockHashHex := blk.HashString()
-				for _, entry := range blk.Entries {
-					for _, raw := range entry.Transactions {
-						tx, err := utils.ParseTx(raw)
-						if err != nil {
-							continue
-						}
-						txHash := tx.Hash()
-						event := events.NewTransactionIncludedInBlock(txHash, blk.Slot, blockHashHex)
-						eventRouter.PublishTransactionEvent(event)
-					}
-				}
 			}
 
 			vote := &consensus.Vote{
@@ -123,55 +106,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
-				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
-					// Handle transaction failures during block processing
-					if eventRouter != nil {
-						block := bs.Block(vote.Slot)
-						if block != nil {
-							// Try to identify which transaction failed and publish failure events
-							// This is a simplified approach - in a real implementation, you'd want
-							// more granular error handling
-							for _, entry := range block.Entries {
-								for _, raw := range entry.Transactions {
-									tx, parseErr := utils.ParseTx(raw)
-									if parseErr != nil {
-										continue
-									}
-									txHash := tx.Hash()
-									event := events.NewTransactionFailed(txHash, fmt.Sprintf("block processing failed: %v", err))
-									eventRouter.PublishTransactionEvent(event)
-								}
-							}
-						}
-					}
+				// Apply block to ledger (failure events are handled within ApplyBlock)
+				if err := ld.ApplyBlock(bs.Block(vote.Slot), eventRouter); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
-				// Mark block as finalized
-				if err := bs.MarkFinalized(vote.Slot); err != nil {
+				// Mark block as finalized and publish transaction finalization events
+				if err := bs.MarkFinalized(vote.Slot, eventRouter); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
-				}
-
-				// Publish transaction finalization events for each transaction in the block
-				if eventRouter != nil {
-					block := bs.Block(vote.Slot)
-					if block != nil {
-						blockHashHex := block.HashString()
-
-						// Publish TransactionFinalized events for each transaction
-						// This ensures specific transaction subscribers get notified of finalization
-						for _, entry := range block.Entries {
-							for _, raw := range entry.Transactions {
-								tx, err := utils.ParseTx(raw)
-								if err != nil {
-									continue
-								}
-								event := events.NewTransactionFinalized(tx.Hash(), vote.Slot, blockHashHex)
-								eventRouter.PublishTransactionEvent(event)
-							}
-						}
-					}
 				}
 
 				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
@@ -192,54 +134,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
-				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
-					// Handle transaction failures during block processing
-					if eventRouter != nil {
-						block := bs.Block(vote.Slot)
-						if block != nil {
-							// Try to identify which transaction failed and publish failure events
-							// This is a simplified approach - in a real implementation, you'd want
-							// more granular error handling
-							for _, entry := range block.Entries {
-								for _, raw := range entry.Transactions {
-									tx, parseErr := utils.ParseTx(raw)
-									if parseErr != nil {
-										continue
-									}
-									txHash := tx.Hash()
-									event := events.NewTransactionFailed(txHash, fmt.Sprintf("block processing failed: %v", err))
-									eventRouter.PublishTransactionEvent(event)
-								}
-							}
-						}
-					}
+				// Apply block to ledger (failure events are handled within ApplyBlock)
+				if err := ld.ApplyBlock(bs.Block(vote.Slot), eventRouter); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
-				// Mark block as finalized
-				if err := bs.MarkFinalized(vote.Slot); err != nil {
+				// Mark block as finalized and publish transaction finalization events
+				if err := bs.MarkFinalized(vote.Slot, eventRouter); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
-				}
-
-				if eventRouter != nil {
-					block := bs.Block(vote.Slot)
-					if block != nil {
-						blockHashHex := block.HashString()
-
-						// Publish TransactionFinalized events for each transaction
-						// This ensures specific transaction subscribers get notified of finalization
-						for _, entry := range block.Entries {
-							for _, raw := range entry.Transactions {
-								tx, err := utils.ParseTx(raw)
-								if err != nil {
-									continue
-								}
-								event := events.NewTransactionFinalized(tx.Hash(), vote.Slot, blockHashHex)
-								eventRouter.PublishTransactionEvent(event)
-							}
-						}
-					}
 				}
 
 				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
@@ -282,26 +184,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
-				// Add to block store
-				if err := bs.AddBlockPending(blk); err != nil {
+				// Add to block store and publish transaction inclusion events
+				if err := bs.AddBlockPending(blk, eventRouter); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
 					continue
-				}
-
-				// Publish events for transactions included in this block
-				if eventRouter != nil {
-					blockHashHex := blk.HashString()
-					for _, entry := range blk.Entries {
-						for _, raw := range entry.Transactions {
-							tx, err := utils.ParseTx(raw)
-							if err != nil {
-								continue
-							}
-							txHash := tx.Hash()
-							event := events.NewTransactionIncludedInBlock(txHash, blk.Slot, blockHashHex)
-							eventRouter.PublishTransactionEvent(event)
-						}
-					}
 				}
 
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))

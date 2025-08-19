@@ -207,14 +207,14 @@ func initializeNode() {
 
 	// Persist genesis block to database
 	if genesisBlock != nil {
-		err = bs.AddBlockPending(genesisBlock)
+		err = bs.AddBlockPending(genesisBlock, nil)
 		if err != nil {
 			logx.Error("INIT", "Failed to persist genesis block to database:", err.Error())
 			return
 		}
 
 		// Mark genesis block as finalized
-		err = bs.MarkFinalized(genesisBlock.Slot)
+		err = bs.MarkFinalized(genesisBlock.Slot, nil)
 		if err != nil {
 			logx.Error("INIT", "Failed to mark genesis block as finalized:", err.Error())
 			return

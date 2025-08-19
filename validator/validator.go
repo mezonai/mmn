@@ -199,7 +199,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
 
 		// Persist then broadcast
-		v.blockStore.AddBlockPending(blk)
+		v.blockStore.AddBlockPending(blk, v.eventRouter)
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			fmt.Println("Failed to broadcast block:", err)
 		}
@@ -216,10 +216,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			fmt.Printf("[LEADER] Add vote error: %v\n", err)
 		} else if committed && needApply {
 			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
-			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot)); err != nil {
+			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot), v.eventRouter); err != nil {
 				fmt.Printf("[LEADER] Apply block error: %v\n", err)
 			}
-			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
+			if err := v.blockStore.MarkFinalized(vote.Slot, v.eventRouter); err != nil {
 				fmt.Printf("[LEADER] Mark block as finalized error: %v\n", err)
 			}
 			fmt.Printf("[LEADER] slot %d finalized!\n", vote.Slot)
