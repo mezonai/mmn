@@ -12,7 +12,7 @@ func TestEventBus(t *testing.T) {
 	eventBus := NewEventBus()
 
 	// Test subscription to all events
-	eventChan := eventBus.Subscribe()
+	subscriberID, eventChan := eventBus.Subscribe()
 
 	// Verify subscription count
 	if count := eventBus.GetTotalSubscriptions(); count != 1 {
@@ -50,7 +50,9 @@ func TestEventBus(t *testing.T) {
 	}
 
 	// Test unsubscribe
-	eventBus.Unsubscribe(eventChan)
+	if !eventBus.Unsubscribe(subscriberID) {
+		t.Error("Failed to unsubscribe")
+	}
 
 	// Verify subscription count is 0
 	if count := eventBus.GetTotalSubscriptions(); count != 0 {
@@ -108,8 +110,8 @@ func TestMultipleSubscribers(t *testing.T) {
 	eventBus := NewEventBus()
 
 	// Subscribe multiple clients to all events
-	eventChan1 := eventBus.Subscribe()
-	eventChan2 := eventBus.Subscribe()
+	subscriberID1, eventChan1 := eventBus.Subscribe()
+	subscriberID2, eventChan2 := eventBus.Subscribe()
 
 	// Verify subscription count
 	if count := eventBus.GetTotalSubscriptions(); count != 2 {
@@ -151,8 +153,12 @@ func TestMultipleSubscribers(t *testing.T) {
 	}
 
 	// Clean up
-	eventBus.Unsubscribe(eventChan1)
-	eventBus.Unsubscribe(eventChan2)
+	if !eventBus.Unsubscribe(subscriberID1) {
+		t.Error("Failed to unsubscribe subscriber 1")
+	}
+	if !eventBus.Unsubscribe(subscriberID2) {
+		t.Error("Failed to unsubscribe subscriber 2")
+	}
 
 	// Verify subscription count is 0
 	if count := eventBus.GetTotalSubscriptions(); count != 0 {
@@ -194,8 +200,8 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 	eventRouter := NewEventRouter(eventBus)
 	
 	// Subscribe to events
-	eventChan := eventRouter.Subscribe()
-	defer eventRouter.Unsubscribe(eventChan)
+	subscriberID, eventChan := eventRouter.Subscribe()
+	defer eventRouter.Unsubscribe(subscriberID)
 	
 	// Create and publish a failed transaction event
 	txHash := "failed-tx-hash"
@@ -334,8 +340,8 @@ func TestTransactionFinalized(t *testing.T) {
 
 func TestEventBusConcurrentPublishing(t *testing.T) {
 	eventBus := NewEventBus()
-	eventChan := eventBus.Subscribe()
-	defer eventBus.Unsubscribe(eventChan)
+	subscriberID, eventChan := eventBus.Subscribe()
+	defer eventBus.Unsubscribe(subscriberID)
 	
 	// Publish multiple events concurrently
 	numEvents := 10

@@ -1,51 +1,75 @@
 package events
 
 import (
+	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mezonai/mmn/logx"
 )
 
+// SubscriberID represents a unique identifier for a subscriber
+type SubscriberID uint64
+
+// Subscriber represents a subscriber with its channel and metadata
+type Subscriber struct {
+	ID      SubscriberID
+	Channel chan BlockchainEvent
+}
+
 // EventBus handles subscription and publishing of blockchain events
 type EventBus struct {
-	subscribers []chan BlockchainEvent
+	subscribers map[SubscriberID]*Subscriber
 	mu          sync.RWMutex
+	nextID      uint64 // Atomic counter for generating unique IDs
 }
 
 // NewEventBus creates a new EventBus instance
 func NewEventBus() *EventBus {
 	return &EventBus{
-		subscribers: make([]chan BlockchainEvent, 0),
+		subscribers: make(map[SubscriberID]*Subscriber),
+		nextID:      0,
 	}
 }
 
-// Subscribe subscribes to all transaction events
-func (eb *EventBus) Subscribe() chan BlockchainEvent {
+// Subscribe subscribes to all transaction events and returns a subscriber ID
+func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
+
+	// Generate unique subscriber ID
+	id := SubscriberID(atomic.AddUint64(&eb.nextID, 1))
 
 	ch := make(chan BlockchainEvent, 50) // Buffer for events
-	eb.subscribers = append(eb.subscribers, ch)
-	
-	logx.Info("EVENTBUS", "Client subscribed to transaction events", "total_subscribers", len(eb.subscribers))
-	return ch
+	subscriber := &Subscriber{
+		ID:      id,
+		Channel: ch,
+	}
+
+	eb.subscribers[id] = subscriber
+
+	logx.Info("EVENTBUS", fmt.Sprintf("Client subscribed to transaction events | subscriber_id=%d | total_subscribers=%d", id, len(eb.subscribers)))
+
+	return id, ch
 }
 
-// Unsubscribe removes a subscription
-func (eb *EventBus) Unsubscribe(ch chan BlockchainEvent) {
+// Unsubscribe removes a subscription by ID
+func (eb *EventBus) Unsubscribe(id SubscriberID) bool {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
-	for i, subscriber := range eb.subscribers {
-		if subscriber == ch {
-			// Remove the subscription
-			eb.subscribers = append(eb.subscribers[:i], eb.subscribers[i+1:]...)
-			close(ch)
-			
-			logx.Info("EVENTBUS", "Client unsubscribed from events", "remaining_subscribers", len(eb.subscribers))
-			break
-		}
+	subscriber, exists := eb.subscribers[id]
+	if !exists {
+		logx.Warn("EVENTBUS", fmt.Sprintf("Attempted to unsubscribe non-existent subscriber | subscriber_id=%d", id))
+		return false
 	}
+
+	// Remove the subscription
+	delete(eb.subscribers, id)
+	close(subscriber.Channel)
+
+	logx.Info("EVENTBUS", fmt.Sprintf("Client unsubscribed from events | subscriber_id=%d | remaining_subscribers=%d", id, len(eb.subscribers)))
+	return true
 }
 
 // Publish publishes an event to all subscribers
@@ -57,19 +81,19 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 
 	// Notify subscribers
 	if len(eb.subscribers) > 0 {
-		logx.Info("EVENTBUS", "Publishing event", "event_type", event.Type(), "tx_hash", txHash, "subscribers", len(eb.subscribers))
-		
-		for _, ch := range eb.subscribers {
+		logx.Info("EVENTBUS", fmt.Sprintf("Publishing event | event_type=%s | tx_hash=%s | subscribers=%d", event.Type(), txHash, len(eb.subscribers)))
+
+		for id, subscriber := range eb.subscribers {
 			select {
-			case ch <- event:
+			case subscriber.Channel <- event:
 				// Event sent successfully
 			default:
 				// Channel is full, skip this subscriber
-				logx.Warn("EVENTBUS", "Subscriber channel full", "tx_hash", txHash)
+				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%d | tx_hash=%s", id, txHash))
 			}
 		}
 	} else {
-		logx.Info("EVENTBUS", "No subscribers for event", "event_type", event.Type(), "tx_hash", txHash)
+		logx.Info("EVENTBUS", fmt.Sprintf("No subscribers for event | event_type=%s | tx_hash=%s", event.Type(), txHash))
 	}
 }
 
@@ -77,6 +101,27 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 func (eb *EventBus) GetTotalSubscriptions() int {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
-	
+
 	return len(eb.subscribers)
+}
+
+// GetSubscriberIDs returns a slice of all active subscriber IDs
+func (eb *EventBus) GetSubscriberIDs() []SubscriberID {
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+
+	ids := make([]SubscriberID, 0, len(eb.subscribers))
+	for id := range eb.subscribers {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// HasSubscriber checks if a subscriber with the given ID exists
+func (eb *EventBus) HasSubscriber(id SubscriberID) bool {
+	eb.mu.RLock()
+	defer eb.mu.RUnlock()
+
+	_, exists := eb.subscribers[id]
+	return exists
 }

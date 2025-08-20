@@ -225,8 +225,8 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 // SubscribeTransactionStatus streams transaction status updates using event-based system
 func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusInfo]) error {
 	// Subscribe to all blockchain events
-	eventChan := s.eventRouter.Subscribe()
-	defer s.eventRouter.Unsubscribe(eventChan)
+	subscriberID, eventChan := s.eventRouter.Subscribe()
+	defer s.eventRouter.Unsubscribe(subscriberID)
 
 	// Wait for events indefinitely (client keeps connection open)
 	for {
