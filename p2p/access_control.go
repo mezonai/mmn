@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mezonai/mmn/logx"
 )
@@ -40,19 +41,16 @@ func (ln *Libp2pNetwork) IsAllowed(peerID peer.ID) bool {
 	return true
 }
 
-func (ln *Libp2pNetwork) IsBlacklisted(peerID peer.ID) bool {
-	ln.listMu.RLock()
-	defer ln.listMu.RUnlock()
-
-	return ln.blacklistEnabled && ln.blacklist[peerID]
-}
-
 func (ln *Libp2pNetwork) AddToAllowlist(peerID peer.ID) {
 	ln.listMu.Lock()
 	defer ln.listMu.Unlock()
 
 	if ln.allowlist == nil {
 		ln.allowlist = make(map[peer.ID]bool)
+	}
+
+	if ln.allowlist[peerID] {
+		return
 	}
 
 	ln.allowlist[peerID] = true
@@ -69,7 +67,7 @@ func (ln *Libp2pNetwork) AddToBlacklist(peerID peer.ID) {
 
 	logx.Info("ACCESS CONTROL", "Added peer to blacklist:", peerID.String())
 
-	if ln.host != nil && ln.host.Network().Connectedness(peerID) == 1 {
+	if ln.host != nil && ln.host.Network().Connectedness(peerID) == network.Connected {
 		err := ln.host.Network().ClosePeer(peerID)
 		if err != nil {
 			logx.Error("ACCESS CONTROL", "Failed to disconnect blacklisted peer:", err)

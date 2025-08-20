@@ -466,19 +466,6 @@ func (ln *Libp2pNetwork) IsPeerAuthenticated(peerID peer.ID) bool {
 	return false
 }
 
-func (ln *Libp2pNetwork) GetAuthenticatedPeers() []peer.ID {
-	ln.authMu.RLock()
-	defer ln.authMu.RUnlock()
-
-	var peers []peer.ID
-	for peerID, authPeer := range ln.authenticatedPeers {
-		if authPeer.IsValid {
-			peers = append(peers, peerID)
-		}
-	}
-	return peers
-}
-
 func (ln *Libp2pNetwork) CleanupExpiredAuthentications() {
 	ln.authMu.Lock()
 	defer ln.authMu.Unlock()
