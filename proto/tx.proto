@@ -29,7 +29,25 @@ message AddTxResponse {
   string error   = 3;
 }
 
+message GetTxByHashRequest {
+  string tx_hash = 1;
+}
+
+message TxInfo {
+  string sender = 1;
+  string recipient = 2;
+  uint64 amount = 3;
+  uint64 timestamp = 4;
+  string text_data = 5;
+}
+
+message GetTxByHashResponse {
+  string error = 1;
+  TxInfo tx = 2;
+}
+
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
   rpc AddTx (SignedTxMsg) returns (AddTxResponse);
+  rpc GetTxByHash (GetTxByHashRequest) returns (GetTxByHashResponse);
 }

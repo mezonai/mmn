@@ -15,7 +15,7 @@ type Account struct {
 	Address string
 	Balance uint64
 	Nonce   uint64
-	History []TxRecord
+	History []string // tx hashes
 }
 
 type SnapshotAccount struct {

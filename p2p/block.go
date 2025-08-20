@@ -37,7 +37,7 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 				continue
 			}
 
-			var blk *block.Block
+			var blk *block.BroadcastedBlock
 			if err := json.Unmarshal(msg.Data, &blk); err != nil {
 				logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)
 				continue
@@ -146,7 +146,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 	totalBlocks := 0
 
 	for {
-		var blocks []*block.Block
+		var blocks []*block.BroadcastedBlock
 		if err := decoder.Decode(&blocks); err != nil {
 			if errors.Is(err, io.EOF) {
 				break

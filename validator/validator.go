@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/types"
 	"time"
 
 	"github.com/mezonai/mmn/block"
@@ -46,7 +47,7 @@ type Validator struct {
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
-	pendingValidTxs   [][]byte
+	pendingValidTxs   []*types.Transaction
 	stopCh            chan struct{}
 }
 
@@ -91,7 +92,7 @@ func NewValidator(
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
-		pendingValidTxs:           make([][]byte, 0, batchSize),
+		pendingValidTxs:           make([]*types.Transaction, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -134,7 +135,7 @@ waitLoop:
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
 	v.lastSession = v.ledger.NewSession()
-	v.pendingValidTxs = make([][]byte, 0, v.BatchSize)
+	v.pendingValidTxs = make([]*types.Transaction, 0, v.BatchSize)
 }
 
 func (v *Validator) onLeaderSlotEnd() {
@@ -242,7 +243,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
-func (v *Validator) peekPendingValidTxs(size int) [][]byte {
+func (v *Validator) peekPendingValidTxs(size int) []*types.Transaction {
 	if len(v.pendingValidTxs) == 0 {
 		return nil
 	}
@@ -250,7 +251,7 @@ func (v *Validator) peekPendingValidTxs(size int) [][]byte {
 		size = len(v.pendingValidTxs)
 	}
 
-	result := make([][]byte, size)
+	result := make([]*types.Transaction, size)
 	copy(result, v.pendingValidTxs[:size])
 
 	return result
