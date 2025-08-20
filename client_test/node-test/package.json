@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "test.ts",
   "scripts": {
-    "test": "jest --runInBand"
+    "test": "jest"
   },
   "author": "",
   "license": "ISC",
