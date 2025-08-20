@@ -154,3 +154,10 @@ func (p *Poh) AutoHash() {
 		}
 	}
 }
+
+// GetRemainingHashes returns the number of remaining hashes before a tick is required
+func (p *Poh) GetRemainingHashes() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.RemainingHashes
+}

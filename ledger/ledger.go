@@ -326,6 +326,9 @@ func (lv *LedgerView) ApplyTx(tx *types.Transaction) error {
 	sender := lv.loadOrCreate(tx.Sender)
 	recipient := lv.loadOrCreate(tx.Recipient)
 
+	fmt.Printf("[DEBUG] Sender %s: current nonce=%d, tx nonce=%d, balance=%d\n",
+		tx.Sender[:16], sender.Nonce, tx.Nonce, sender.Balance)
+
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}

@@ -66,6 +66,19 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 }
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
+	// Setup network event notifications to update collector dynamically
+	// Only count actual validator nodes, not bootstrap nodes
+	ln.host.Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(n network.Network, c network.Conn) {
+			// Don't update collector immediately - let it be handled by actual validator joins
+			// This prevents counting bootstrap nodes as validators
+			logx.Info("NETWORK", fmt.Sprintf("Peer connected: %s", c.RemotePeer().String()))
+		},
+		DisconnectedF: func(n network.Network, c network.Conn) {
+			logx.Info("NETWORK", fmt.Sprintf("Peer disconnected: %s", c.RemotePeer().String()))
+		},
+	})
+
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.Block) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {

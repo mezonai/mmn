@@ -83,6 +83,7 @@ func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
 
 	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
+	fmt.Println("Recorded PoH entry:", pohEntry)
 	if pohEntry == nil {
 		return nil, fmt.Errorf("PoH refused to record, tick required")
 	}
@@ -90,6 +91,23 @@ func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
 	entry := NewTxEntry(pohEntry.NumHashes, pohEntry.Hash, txs)
 	r.entries = append(r.entries, entry)
 	return &entry, nil
+}
+
+// EnsureTick ensures PoH has enough remaining hashes for recording transactions
+func (r *PohRecorder) EnsureTick() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// If PoH doesn't have enough remaining hashes, perform a tick
+	if r.poh.GetRemainingHashes() <= 1 {
+		fmt.Println("[POH] Performing tick to reset remaining hashes")
+		pohEntry := r.poh.RecordTick()
+		if pohEntry != nil {
+			r.tickHash[r.tickHeight] = pohEntry.Hash
+			r.tickHeight++
+			fmt.Printf("[POH] Tick completed: tickHeight=%d\n", r.tickHeight)
+		}
+	}
 }
 
 func (r *PohRecorder) Tick() *Entry {
@@ -105,7 +123,7 @@ func (r *PohRecorder) Tick() *Entry {
 	r.tickHash[r.tickHeight] = pohEntry.Hash
 
 	r.tickHeight++
-	fmt.Printf("PohRecorder.Tick() incremented: tickHeight=%d, currentSlot=%d\n", r.tickHeight, r.tickHeight/r.ticksPerSlot)
+	// fmt.Printf("PohRecorder.Tick() incremented: tickHeight=%d, currentSlot=%d\n", r.tickHeight, r.tickHeight/r.ticksPerSlot)
 	return &entry
 }
 

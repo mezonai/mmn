@@ -290,10 +290,10 @@ func (v *Validator) leaderBatchLoop() {
 				continue
 			}
 
-			fmt.Println("[LEADER] Pulling batch")
+			// fmt.Println("[LEADER] Pulling batch")
 			batch := v.Mempool.PullBatch(v.BatchSize)
 			if len(batch) == 0 && len(v.pendingValidTxs) == 0 {
-				fmt.Println("[LEADER] No batch")
+				// fmt.Println("[LEADER] No batch")
 				continue
 			}
 
@@ -309,6 +309,11 @@ func (v *Validator) leaderBatchLoop() {
 				fmt.Println("[LEADER] No valid transactions")
 				continue
 			}
+
+			// Ensure PoH has enough remaining hashes for recording
+			fmt.Println("[LEADER] Ensuring PoH tick before recording")
+			v.Recorder.EnsureTick()
+
 			fmt.Println("[LEADER] Recording batch")
 			entry, err := v.Recorder.RecordTxs(recordTxs)
 			if err != nil {
@@ -344,4 +349,9 @@ func (v *Validator) roleMonitorLoop() {
 			}
 		}
 	}
+}
+
+// GetCurrentSlot returns the current slot for external monitoring and cleanup
+func (v *Validator) GetCurrentSlot() uint64 {
+	return v.lastSlot
 }

@@ -8,6 +8,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/blockstore"
 )
 
 // StakeState represents the state of a validator's stake
@@ -37,6 +39,9 @@ type StakePool struct {
 	validators map[string]*ValidatorInfo `json:"validators"`
 	totalStake *big.Int                  `json:"total_stake"`
 
+	// Dependencies
+	blockStore blockstore.Store `json:"-"` // Don't serialize this
+
 	// Configuration
 	minStakeAmount  *big.Int `json:"min_stake_amount"`
 	maxValidators   int      `json:"max_validators"`
@@ -49,10 +54,11 @@ type StakePool struct {
 }
 
 // NewStakePool creates a new stake pool
-func NewStakePool(minStakeAmount *big.Int, maxValidators int, slotsPerEpoch uint64) *StakePool {
+func NewStakePool(minStakeAmount *big.Int, maxValidators int, slotsPerEpoch uint64, blockStore blockstore.Store) *StakePool {
 	return &StakePool{
 		validators:      make(map[string]*ValidatorInfo),
 		totalStake:      big.NewInt(0),
+		blockStore:      blockStore,
 		minStakeAmount:  minStakeAmount,
 		maxValidators:   maxValidators,
 		unstakeCooldown: 432000, // ~3 days at 400ms slots
@@ -329,8 +335,11 @@ func (sp *StakePool) GetTotalStake() *big.Int {
 // Private helper methods
 
 func (sp *StakePool) getCurrentSlot() uint64 {
-	// This should be implemented to return current blockchain slot
-	// For now, return a placeholder
+	// Get current slot from blockstore instead of timestamp calculation
+	if sp.blockStore != nil {
+		return sp.blockStore.GetLatestSlot()
+	}
+	// Fallback to timestamp-based calculation if blockstore not available
 	return uint64(time.Now().Unix() / 400) // Assuming 400ms slots
 }
 

@@ -178,6 +178,30 @@ func runNode() {
 	if err := ld.LoadLedger(); err != nil {
 		log.Fatalf("Failed to load ledger state: %v", err)
 	}
+
+	// Check if genesis accounts exist, if not create them
+	genesisAccountExists := false
+	for _, addr := range cfg.Alloc.Addresses {
+		if ld.AccountExists(addr.Address) {
+			genesisAccountExists = true
+			break
+		}
+	}
+
+	if !genesisAccountExists && len(cfg.Alloc.Addresses) > 0 {
+		logx.Info("LEDGER", "Genesis accounts not found, creating them from genesis config")
+		err := ld.CreateAccountsFromGenesis(cfg.Alloc.Addresses)
+		if err != nil {
+			log.Fatalf("Failed to create genesis accounts: %v", err)
+		}
+
+		// Save ledger snapshot to persist genesis accounts
+		if err := ld.SaveSnapshot("ledger/snapshot.gob"); err != nil {
+			log.Fatalf("Failed to save ledger snapshot: %v", err)
+		}
+		logx.Info("LEDGER", "Genesis accounts created and snapshot saved")
+	}
+
 	logx.Info("LEDGER", "Loaded ledger state from disk")
 
 	// Initialize PoH components
@@ -210,14 +234,18 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	// DYNAMIC COLLECTOR: Start with single-node consensus, expand as validators join
-	totalValidators := len(cfg.GenesisValidators)
-	if totalValidators == 0 {
-		log.Printf("INFO: No genesis validators, starting with single-node consensus")
-		totalValidators = 1 // Start with single-node consensus
+	// DYNAMIC COLLECTOR: Start with minimal configuration, let it auto-adapt
+	// The collector will automatically discover and adjust to actual validator count
+	initialValidators := 1 // Start with self only
+
+	// Consider genesis validators for minimum setup
+	genesisValidators := len(cfg.GenesisValidators)
+	if genesisValidators > initialValidators {
+		initialValidators = genesisValidators
 	}
-	log.Printf("INFO: Initializing collector for %d validators (threshold: %d)", totalValidators, (totalValidators*2+2)/3)
-	collector := consensus.NewCollector(totalValidators) // DYNAMIC!
+
+	log.Printf("INFO: Initializing collector for %d initial validators (will auto-adapt based on actual voting)", initialValidators)
+	collector := consensus.NewCollector(initialValidators) // DYNAMIC with auto-adaptation!
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
 
@@ -265,6 +293,22 @@ func runNode() {
 
 	// Start services
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp)
+
+	// Start periodic collector cleanup to prevent memory leaks
+	exception.SafeGoWithPanic("Collector cleanup", func() {
+		ticker := time.NewTicker(30 * time.Second) // cleanup every 30s
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				currentSlot := val.GetCurrentSlot()         // You may need to expose this method
+				collector.CleanupOldVotes(currentSlot, 100) // keep last 100 slots
+			case <-ctx.Done():
+				return
+			}
+		}
+	})
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -319,11 +363,11 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 	hashesPerTick := pohCfg.HashesPerTick
 	ticksPerSlot := pohCfg.TicksPerSlot
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
-	pohAutoHashInterval := tickInterval / 5
+	pohAutoHashInterval := pohCfg.PohAutoHashInterval
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
-	pohEngine := poh.NewPoh(seed, &hashesPerTick, pohAutoHashInterval)
+	pohEngine := poh.NewPoh(seed, &hashesPerTick, time.Duration(pohAutoHashInterval))
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)

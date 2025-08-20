@@ -68,7 +68,7 @@ func NewStakeManager(
 	collector *consensus.Collector,
 ) *StakeManager {
 
-	stakePool := NewStakePool(config.MinStakeAmount, config.MaxValidators, config.SlotsPerEpoch)
+	stakePool := NewStakePool(config.MinStakeAmount, config.MaxValidators, config.SlotsPerEpoch, blockStore)
 	scheduler := NewStakeWeightedScheduler(stakePool, config.SlotsPerEpoch)
 	processor := NewStakeTransactionProcessor(stakePool)
 
