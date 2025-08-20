@@ -4,23 +4,25 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/blockstore"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
 
 type Ledger struct {
-	state      map[string]*types.Account // address (public key hex) → account
-	faucetAddr string
-	mu         sync.RWMutex
+	state   map[string]*types.Account // address (public key hex) → account
+	mu      sync.RWMutex
+	txStore blockstore.TxStore
 }
 
-func NewLedger(faucetAddr string) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), faucetAddr: faucetAddr}
+func NewLedger(txStore blockstore.TxStore) *Ledger {
+	return &Ledger{state: make(map[string]*types.Account), txStore: txStore}
 }
 
 // Initialize initial account
@@ -32,16 +34,17 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) {
 }
 
 // CreateAccountFromGenesis creates an account from genesis block (implements LedgerInterface)
-func (l *Ledger) CreateAccountFromGenesis(addr string, balance uint64) error {
+func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Check if account already exists to prevent re-initialization
-	if _, exists := l.state[addr]; exists {
-		return fmt.Errorf("genesis account %s already exists", addr)
-	}
+	for _, addr := range addrs {
+		if _, exists := l.state[addr.Address]; exists {
+			return fmt.Errorf("genesis account %s already exists", addr.Address)
+		}
 
-	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+		l.state[addr.Address] = &types.Account{Balance: addr.Amount, Nonce: 0}
+	}
 	return nil
 }
 
@@ -66,7 +69,7 @@ func (l *Ledger) Balance(addr string) uint64 {
 	return acc.Balance
 }
 
-func (l *Ledger) VerifyBlock(b *block.Block) error {
+func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 	l.mu.RLock()
 	base := l.state
 	l.mu.RUnlock()
@@ -76,12 +79,8 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 		overlay: make(map[string]*types.SnapshotAccount),
 	}
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil || !tx.Verify() {
-				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
-			if err := view.ApplyTx(tx, l.faucetAddr); err != nil {
+		for _, tx := range entry.Transactions {
+			if err := view.ApplyTx(tx); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
 		}
@@ -95,27 +94,19 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
 
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil || !tx.Verify() {
-				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
-			if err := applyTx(l.state, tx, l.faucetAddr); err != nil {
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
+			if err := applyTx(l.state, tx); err != nil {
 				return fmt.Errorf("apply fail: %v", err)
 			}
-			rec := types.TxRecord{
-				Slot:      b.Slot,
-				Amount:    tx.Amount,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Timestamp: tx.Timestamp,
-				TextData:  tx.TextData,
-				Type:      tx.Type,
-				Nonce:     tx.Nonce,
-			}
-			addHistory(l.state[tx.Sender], rec)
+			fmt.Printf("Applied tx %s\n", tx.Hash())
+			addHistory(l.state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
-				addHistory(l.state[tx.Recipient], rec)
+				addHistory(l.state[tx.Recipient], tx)
 			}
 		}
 	}
@@ -124,7 +115,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		return err
 	}
 	if b.Slot%1000 == 0 {
-		_ = l.saveSnapshot("ledger/snapshot.gob")
+		_ = l.SaveSnapshot("ledger/snapshot.gob")
 	}
 	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
 	return nil
@@ -149,33 +140,24 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 }
 
 // Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr string) error {
+func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
-		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
+		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
 		sender = state[tx.Sender]
 	}
 	recipient, ok := state[tx.Recipient]
 	if !ok {
-		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
+		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0}
 		recipient = state[tx.Recipient]
-	}
-
-	if tx.Type == types.TxTypeFaucet {
-		if tx.Sender != faucetAddr {
-			return fmt.Errorf("faucet tx from non-faucet address")
-		}
-		fmt.Printf("[applyTx] Faucet tx: %+v\n", tx)
-		sender.Balance -= tx.Amount
-		recipient.Balance += tx.Amount
-		return nil
 	}
 
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
 	}
-	if tx.Nonce <= sender.Nonce {
-		return fmt.Errorf("bad nonce: got %d current nonce %d", tx.Nonce, sender.Nonce)
+	// Strict nonce validation to prevent duplicate transactions
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
 	sender.Balance -= tx.Amount
 	recipient.Balance += tx.Amount
@@ -183,24 +165,36 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction, faucetAddr 
 	return nil
 }
 
-func addHistory(acc *types.Account, rec types.TxRecord) {
-	acc.History = append(acc.History, rec)
+func addHistory(acc *types.Account, tx *types.Transaction) {
+	acc.History = append(acc.History, tx.Hash())
+}
+
+func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
+	tx, err := l.txStore.GetByHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
 }
 
 // TODO: need to optimize this by using BadgerDB
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []types.TxRecord) {
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*types.Transaction) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	txs := make([]types.TxRecord, 0)
+	txs := make([]*types.Transaction, 0)
 	acc, ok := l.state[addr]
 	if !ok {
 		return 0, txs
 	}
 
 	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]types.TxRecord, 0)
-	for _, tx := range acc.History {
+	filteredHistory := make([]*types.Transaction, 0)
+	transactions, err := l.txStore.GetBatch(acc.History)
+	if err != nil {
+		return 0, txs
+	}
+	for _, tx := range transactions {
 		if filter == 0 {
 			filteredHistory = append(filteredHistory, tx)
 		} else if filter == 1 && tx.Sender == addr {
@@ -232,8 +226,12 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 
 	enc := json.NewEncoder(f)
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, _ := utils.ParseTx(raw)
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
 			_ = enc.Encode(types.TxRecord{
 				Slot:      b.Slot,
 				Amount:    tx.Amount,
@@ -249,7 +247,7 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 	return nil
 }
 
-func (l *Ledger) saveSnapshot(path string) error {
+func (l *Ledger) SaveSnapshot(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -286,7 +284,7 @@ func (l *Ledger) LoadLedger() error {
 				Timestamp: rec.Timestamp,
 				TextData:  rec.TextData,
 				Nonce:     rec.Nonce,
-			}, l.faucetAddr)
+			})
 		}
 		w.Close()
 	}
@@ -320,18 +318,19 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *types.Transaction, faucetAddr string) error {
+func (lv *LedgerView) ApplyTx(tx *types.Transaction) error {
+	// Validate zero amount transfers
+	if tx.Amount == 0 {
+		return fmt.Errorf("zero amount transfers are not allowed")
+	}
+
+	// Validate sender account existence
+	if _, exists := lv.loadForRead(tx.Sender); !exists {
+		return fmt.Errorf("sender account does not exist: %s", tx.Sender)
+	}
+
 	sender := lv.loadOrCreate(tx.Sender)
 	recipient := lv.loadOrCreate(tx.Recipient)
-
-	if tx.Type == types.TxTypeFaucet {
-		if tx.Sender != faucetAddr {
-			return fmt.Errorf("faucet tx from non-faucet address")
-		}
-		sender.Balance -= tx.Amount
-		recipient.Balance += tx.Amount
-		return nil
-	}
 
 	if sender.Balance < tx.Amount {
 		return fmt.Errorf("insufficient balance")
@@ -369,8 +368,8 @@ func (s *Session) CopyWithOverlayClone() *Session {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
-	valid := make([][]byte, 0, len(raws))
+func (s *Session) FilterValid(raws [][]byte) ([]*types.Transaction, []error) {
+	valid := make([]*types.Transaction, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
@@ -379,12 +378,12 @@ func (s *Session) FilterValid(raws [][]byte) ([][]byte, []error) {
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
-		if err := s.view.ApplyTx(tx, s.ledger.faucetAddr); err != nil {
+		if err := s.view.ApplyTx(tx); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			errs = append(errs, err)
 			continue
 		}
-		valid = append(valid, r)
+		valid = append(valid, tx)
 	}
 	return valid, errs
 }

@@ -1,10 +1,19 @@
 package poh
 
+import "github.com/mezonai/mmn/types"
+
 type Entry struct {
-	NumHashes    uint64   `json:"num_hashes"`
-	Hash         [32]byte `json:"hash"`
-	Transactions [][]byte `json:"transactions"` // serialized txs
-	Tick         bool     `json:"tick"`
+	NumHashes    uint64               `json:"num_hashes"`
+	Hash         [32]byte             `json:"hash"`
+	Transactions []*types.Transaction `json:"transactions"` // serialized txs
+	Tick         bool                 `json:"tick"`
+}
+
+type PersistentEntry struct {
+	NumHashes uint64   `json:"num_hashes"`
+	Hash      [32]byte `json:"hash"`
+	TxHashes  []string `json:"tx_hashes"`
+	Tick      bool     `json:"tick"`
 }
 
 // Entry with no transactions (e.g. tick-only)
@@ -18,7 +27,7 @@ func NewTickEntry(numHashes uint64, hash [32]byte) Entry {
 }
 
 // Entry with txs
-func NewTxEntry(numHashes uint64, hash [32]byte, txs [][]byte) Entry {
+func NewTxEntry(numHashes uint64, hash [32]byte, txs []*types.Transaction) Entry {
 	return Entry{
 		NumHashes:    numHashes,
 		Hash:         hash,

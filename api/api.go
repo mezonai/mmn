@@ -68,6 +68,13 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid tx", http.StatusBadRequest)
 		return
 	}
+	
+	// Verify transaction signature
+	if !tx.Verify() {
+		http.Error(w, "Invalid signature", http.StatusBadRequest)
+		return
+	}
+	
 	_, ok := s.Mempool.AddTx(tx, true)
 	if !ok {
 		http.Error(w, "Mempool full", http.StatusServiceUnavailable)
@@ -100,10 +107,10 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 
 	result := struct {
 		Total uint32
-		Txs   []types.TxRecord
+		Txs   []*types.Transaction
 	}{
 		Total: 0,
-		Txs:   make([]types.TxRecord, 0),
+		Txs:   make([]*types.Transaction, 0),
 	}
 	total, txs := s.Ledger.GetTxs(addr, uint32(limit), uint32(offset), uint32(filter))
 	result.Total = total

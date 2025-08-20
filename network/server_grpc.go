@@ -76,8 +76,42 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	fmt.Printf("[gRPC] received tx %+v\n", in.TxMsg)
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
+		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
+
+	// Add validation checks before adding to mempool
+	// 1. Verify signature
+	if !tx.Verify() {
+		fmt.Printf("[gRPC] Signature verification failed for tx: %+v\n", tx)
+		return &pb.AddTxResponse{Ok: false, Error: "invalid signature"}, nil
+	}
+
+	// 2. Check for zero amount
+	if tx.Amount == 0 {
+		fmt.Printf("[gRPC] Zero amount detected: %d\n", tx.Amount)
+		return &pb.AddTxResponse{Ok: false, Error: "zero amount not allowed"}, nil
+	}
+
+	// 3. Check sender account exists (except for faucet transactions)
+	senderAccount := s.ledger.GetAccount(tx.Sender)
+	if senderAccount == nil {
+		fmt.Printf("[gRPC] Sender account %s does not exist\n", tx.Sender)
+		return &pb.AddTxResponse{Ok: false, Error: fmt.Sprintf("sender account %s does not exist", tx.Sender)}, nil
+	}
+
+	// 4. Check nonce is exactly next expected value
+	if tx.Nonce != senderAccount.Nonce+1 {
+		fmt.Printf("[gRPC] Invalid nonce: expected %d, got %d\n", senderAccount.Nonce+1, tx.Nonce)
+		return &pb.AddTxResponse{Ok: false, Error: "invalid nonce"}, nil
+	}
+
+	// 5. Check sufficient balance
+	if senderAccount.Balance < tx.Amount {
+		fmt.Printf("[gRPC] Insufficient balance: balance=%d, amount=%d\n", senderAccount.Balance, tx.Amount)
+		return &pb.AddTxResponse{Ok: false, Error: "insufficient balance"}, nil
+	}
+
 	txHash, ok := s.mempool.AddTx(tx, true)
 	if !ok {
 		return &pb.AddTxResponse{Ok: false, Error: "mempool full"}, nil
@@ -100,6 +134,21 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 		Balance: acc.Balance,
 		Nonce:   acc.Nonce,
 	}, nil
+}
+
+func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
+	tx, err := s.ledger.GetTxByHash(in.TxHash)
+	if err != nil {
+		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
+	}
+	txInfo := &pb.TxInfo{
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    tx.Amount,
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+	}
+	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
 }
 
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {

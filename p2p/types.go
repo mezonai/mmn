@@ -40,10 +40,10 @@ type Libp2pNetwork struct {
 	topicRepairRes *pubsub.Topic
 
 	onShredReceived        func(*types.Shred) error
-	onBlockReceived        func(*block.Block) error
+	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*types.Transaction) error
-	onSyncResponseReceived func([]*block.Block) error
+	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 
 	syncStreams map[peer.ID]network.Stream
@@ -133,11 +133,11 @@ type SyncRequestTracker struct {
 }
 
 type Callbacks struct {
-	OnBlockReceived        func(*block.Block) error
+	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
 	OnTransactionReceived  func(*types.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
-	OnSyncResponseReceived func([]*block.Block) error
+	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
 	OnShredReceived        func(*types.Shred) error
 }
 
