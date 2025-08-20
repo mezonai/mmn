@@ -359,11 +359,11 @@ func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	}
 }
 
-// when no peers connected the blocks will not sync must run after 30s if synced stop sync
+// when no peers connected the blocks will not sync must run after 15s if synced stop sync
 func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
 	// wait network setup
-	time.Sleep(10 * time.Second)
-	ticker := time.NewTicker(30 * time.Second)
+	time.Sleep(5 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -395,7 +395,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 
 func (ln *Libp2pNetwork) startInitialSync() {
 	// wait network setup
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	ctx := context.Background()
 
