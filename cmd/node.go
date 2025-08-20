@@ -178,7 +178,7 @@ func runNode() {
 	}
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, genesisPath)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -280,13 +280,13 @@ func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, genesisPath string) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld)
 	return mp, nil
 }
 

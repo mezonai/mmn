@@ -106,7 +106,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+				block := bs.Block(vote.Slot)
+				if block == nil {
+					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				}
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -134,7 +138,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+				block := bs.Block(vote.Slot)
+				if block == nil {
+					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				}
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -152,7 +160,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			logx.Info("TX", "Processing received transaction from P2P network")
 
 			// Add transaction to mempool
-			mp.AddTx(txData, false)
+			_, err := mp.AddTx(txData, false)
+			if err != nil {
+				fmt.Printf("Failed to add transaction from P2P: %v\n", err)
+			}
 			return nil
 		},
 		OnSyncResponseReceived: func(blocks []*block.Block) error {

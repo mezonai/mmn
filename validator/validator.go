@@ -212,7 +212,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			fmt.Printf("[LEADER] Add vote error: %v\n", err)
 		} else if committed && needApply {
 			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
-			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot)); err != nil {
+			block := v.blockStore.Block(vote.Slot)
+			if block == nil {
+				fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
+			} else if err := v.ledger.ApplyBlock(block); err != nil {
 				fmt.Printf("[LEADER] Apply block error: %v\n", err)
 			}
 			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
