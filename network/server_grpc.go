@@ -5,7 +5,6 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"net"
-	"strconv"
 	"time"
 
 	"github.com/mezonai/mmn/blockstore"
@@ -283,46 +282,39 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 
 // GetBlockByNumber retrieves a block by its number
 func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
-    var blockNum uint64
-    if in.BlockNumber == "latest" {
-        blockNum = s.blockStore.GetLatestSlot()
-    } else {
-        parsed, err := strconv.ParseUint(in.BlockNumber, 10, 64)
-        if err != nil {
-            return nil, status.Errorf(codes.InvalidArgument, "invalid block number: %s", in.BlockNumber)
-        }
-        blockNum = parsed
-    }
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
 
-    block := s.blockStore.Block(blockNum)
-    if block == nil {
-        return nil, status.Errorf(codes.NotFound, "block %s not found", in.BlockNumber)
-    }
+	for _, num := range in.BlockNumbers {
+		block := s.blockStore.Block(num)
+		if block == nil {
+			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+		}
 
-    pbEntries := make([]*pb.Entry, 0, len(block.Entries))
-    for _, entry := range block.Entries {
-        pbEntry := &pb.Entry{
-            NumHashes: entry.NumHashes,
-            Hash:      entry.Hash[:],
-        }
-        if in.IncludeTransactions {
-            pbEntry.Transactions = append([][]byte{}, entry.Transactions...)
-        }
-        pbEntries = append(pbEntries, pbEntry)
-    }
+		entries := make([]*pb.Entry, 0, len(block.Entries))
+		for _, entry := range block.Entries {
+			pbEntry := &pb.Entry{
+				NumHashes:    entry.NumHashes,
+				Hash:         entry.Hash[:],
+				Transactions: entry.Transactions, 
+			}
+			if !in.IncludeTransactions {
+				pbEntry.Transactions = nil
+			}
+			entries = append(entries, pbEntry)
+		}
 
-    pbBlock := &pb.Block{
-        Slot:      block.Slot,
-        PrevHash:  block.PrevHash[:],
-        Entries:   pbEntries,
-        LeaderId:  block.LeaderID,
-        Timestamp: block.Timestamp,
-        Hash:      block.Hash[:],
-        Signature: block.Signature,
-    }
+		pbBlock := &pb.Block{
+			Slot:      block.Slot,
+			PrevHash:  block.PrevHash[:],
+			Entries:   entries,
+			LeaderId:  block.LeaderID,
+			Timestamp: block.Timestamp,
+			Hash:      block.Hash[:],
+			Signature: block.Signature,
+		}
+		blocks = append(blocks, pbBlock)
+	}
 
-    return &pb.GetBlockByNumberResponse{
-        Block: pbBlock,
-        Found: true,
-    }, nil
+	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
 }
+

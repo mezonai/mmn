@@ -307,7 +307,7 @@ func (*EmptyParams) Descriptor() ([]byte, []int) {
 
 type GetBlockByNumberRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	BlockNumber         string                 `protobuf:"bytes,1,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
+	BlockNumbers        []uint64               `protobuf:"varint,1,rep,packed,name=block_numbers,json=blockNumbers,proto3" json:"block_numbers,omitempty"`
 	IncludeTransactions bool                   `protobuf:"varint,2,opt,name=include_transactions,json=includeTransactions,proto3" json:"include_transactions,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -343,11 +343,11 @@ func (*GetBlockByNumberRequest) Descriptor() ([]byte, []int) {
 	return file_proto_block_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *GetBlockByNumberRequest) GetBlockNumber() string {
+func (x *GetBlockByNumberRequest) GetBlockNumbers() []uint64 {
 	if x != nil {
-		return x.BlockNumber
+		return x.BlockNumbers
 	}
-	return ""
+	return nil
 }
 
 func (x *GetBlockByNumberRequest) GetIncludeTransactions() bool {
@@ -411,8 +411,7 @@ func (x *GetBlockNumberResponse) GetTimestamp() uint64 {
 
 type GetBlockByNumberResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Block         *Block                 `protobuf:"bytes,1,opt,name=block,proto3" json:"block,omitempty"`
-	Found         bool                   `protobuf:"varint,2,opt,name=found,proto3" json:"found,omitempty"`
+	Blocks        []*Block               `protobuf:"bytes,1,rep,name=blocks,proto3" json:"blocks,omitempty"`
 	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -448,18 +447,11 @@ func (*GetBlockByNumberResponse) Descriptor() ([]byte, []int) {
 	return file_proto_block_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *GetBlockByNumberResponse) GetBlock() *Block {
+func (x *GetBlockByNumberResponse) GetBlocks() []*Block {
 	if x != nil {
-		return x.Block
+		return x.Blocks
 	}
 	return nil
-}
-
-func (x *GetBlockByNumberResponse) GetFound() bool {
-	if x != nil {
-		return x.Found
-	}
-	return false
 }
 
 func (x *GetBlockByNumberResponse) GetError() string {
@@ -494,17 +486,16 @@ const file_proto_block_proto_rawDesc = "" +
 	"\x10SubscribeRequest\x12\x1f\n" +
 	"\vfollower_id\x18\x01 \x01(\tR\n" +
 	"followerId\"\r\n" +
-	"\vEmptyParams\"o\n" +
-	"\x17GetBlockByNumberRequest\x12!\n" +
-	"\fblock_number\x18\x01 \x01(\tR\vblockNumber\x121\n" +
+	"\vEmptyParams\"q\n" +
+	"\x17GetBlockByNumberRequest\x12#\n" +
+	"\rblock_numbers\x18\x01 \x03(\x04R\fblockNumbers\x121\n" +
 	"\x14include_transactions\x18\x02 \x01(\bR\x13includeTransactions\"Y\n" +
 	"\x16GetBlockNumberResponse\x12!\n" +
 	"\fblock_number\x18\x01 \x01(\x04R\vblockNumber\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x04R\ttimestamp\"h\n" +
-	"\x18GetBlockByNumberResponse\x12 \n" +
-	"\x05block\x18\x01 \x01(\v2\n" +
-	".mmn.BlockR\x05block\x12\x14\n" +
-	"\x05found\x18\x02 \x01(\bR\x05found\x12\x14\n" +
+	"\ttimestamp\x18\x02 \x01(\x04R\ttimestamp\"T\n" +
+	"\x18GetBlockByNumberResponse\x12\"\n" +
+	"\x06blocks\x18\x01 \x03(\v2\n" +
+	".mmn.BlockR\x06blocks\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error2\x83\x02\n" +
 	"\fBlockService\x12/\n" +
 	"\tBroadcast\x12\n" +
@@ -539,7 +530,7 @@ var file_proto_block_proto_goTypes = []any{
 }
 var file_proto_block_proto_depIdxs = []int32{
 	0, // 0: mmn.Block.entries:type_name -> mmn.Entry
-	1, // 1: mmn.GetBlockByNumberResponse.block:type_name -> mmn.Block
+	1, // 1: mmn.GetBlockByNumberResponse.blocks:type_name -> mmn.Block
 	1, // 2: mmn.BlockService.Broadcast:input_type -> mmn.Block
 	3, // 3: mmn.BlockService.Subscribe:input_type -> mmn.SubscribeRequest
 	4, // 4: mmn.BlockService.GetBlockNumber:input_type -> mmn.EmptyParams
