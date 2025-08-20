@@ -19,6 +19,21 @@ const (
 type Block struct {
 	Slot      uint64
 	PrevHash  [32]byte // hash of the last entry in the previous block
+	Entries   []poh.PersistentEntry
+	LeaderID  string
+	Timestamp uint64
+	Hash      [32]byte
+	Signature []byte
+	Status    BlockStatus
+}
+
+func (b *Block) LastEntryHash() [32]byte {
+	return b.Entries[len(b.Entries)-1].Hash
+}
+
+type BroadcastedBlock struct {
+	Slot      uint64
+	PrevHash  [32]byte // hash of the last entry in the previous block
 	Entries   []poh.Entry
 	LeaderID  string
 	Timestamp uint64
@@ -32,8 +47,8 @@ func AssembleBlock(
 	prevHash [32]byte,
 	leaderID string,
 	entries []poh.Entry,
-) *Block {
-	b := &Block{
+) *BroadcastedBlock {
+	b := &BroadcastedBlock{
 		Slot:      slot,
 		PrevHash:  prevHash,
 		Entries:   entries,
@@ -44,7 +59,12 @@ func AssembleBlock(
 	return b
 }
 
-func (b *Block) computeHash() [32]byte {
+func (b *BroadcastedBlock) Sign(privKey ed25519.PrivateKey) {
+	sig := ed25519.Sign(privKey, b.Hash[:])
+	b.Signature = sig
+}
+
+func (b *BroadcastedBlock) computeHash() [32]byte {
 	h := sha256.New()
 	// Slot
 	buf := make([]byte, 8)
@@ -67,19 +87,14 @@ func (b *Block) computeHash() [32]byte {
 	return out
 }
 
-func (b *Block) Sign(privKey ed25519.PrivateKey) {
-	sig := ed25519.Sign(privKey, b.Hash[:])
-	b.Signature = sig
-}
-
-func (b *Block) VerifySignature(pubKey ed25519.PublicKey) bool {
+func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
 	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
 }
 
-func (b *Block) VerifyPoH() error {
+func (b *BroadcastedBlock) VerifyPoH() error {
 	return poh.VerifyEntries(b.PrevHash, b.Entries)
 }
 
-func (b *Block) LastEntryHash() [32]byte {
+func (b *BroadcastedBlock) LastEntryHash() [32]byte {
 	return b.Entries[len(b.Entries)-1].Hash
 }

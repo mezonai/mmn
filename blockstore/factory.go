@@ -55,11 +55,11 @@ func NewStoreFactory() *StoreFactory {
 // Deprecated: Use CreateStoreWithProvider for better abstraction
 func (sf *StoreFactory) CreateStore(config *StoreConfig, seed []byte) (Store, error) {
 	// Redirect to the provider-based implementation for consistency
-	return sf.CreateStoreWithProvider(config, seed)
+	return sf.CreateStoreWithProvider(config, seed, nil)
 }
 
 // CreateStoreWithProvider creates a new blockstore instance using the provider pattern
-func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, seed []byte) (Store, error) {
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, seed []byte, ts TxStore) (Store, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -75,7 +75,7 @@ func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, seed []byte
 	}
 
 	// Create generic blockstore with the provider
-	return NewGenericBlockStore(provider, seed)
+	return NewGenericBlockStore(provider, seed, ts)
 }
 
 // CreateProvider creates a database provider based on the configuration
@@ -108,8 +108,8 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (DatabaseProvider, e
 var globalFactory = NewStoreFactory()
 
 // CreateStore creates a new blockstore instance using the global factory
-func CreateStore(config *StoreConfig, seed []byte) (Store, error) {
-	return globalFactory.CreateStoreWithProvider(config, seed)
+func CreateStore(config *StoreConfig, seed []byte, ts TxStore) (Store, error) {
+	return globalFactory.CreateStoreWithProvider(config, seed, ts)
 }
 
 // NewLevelDBConfig creates a LevelDB store configuration

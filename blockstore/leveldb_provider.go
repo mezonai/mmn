@@ -16,7 +16,7 @@ func NewLevelDBProvider(directory string) (DatabaseProvider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open LevelDB: %w", err)
 	}
-	
+
 	return &LevelDBProvider{db: db}, nil
 }
 

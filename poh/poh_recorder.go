@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sync"
+
+	"github.com/mezonai/mmn/types"
 )
 
 type PohRecorder struct {
@@ -77,10 +79,14 @@ func (r *PohRecorder) ReseedAtTick(seedHash [32]byte, tick uint64) {
 	r.tickHeight = tick
 }
 
-func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
+func (r *PohRecorder) RecordTxs(txs []*types.Transaction) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	txHashes := make([]string, len(txs))
+	for i, tx := range txs {
+		txHashes[i] = tx.Hash()
+	}
 	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	fmt.Println("Recorded PoH entry:", pohEntry)
@@ -150,10 +156,10 @@ func (r *PohRecorder) UpdateLeaderSchedule(schedule *LeaderSchedule) {
 	r.leaderSchedule = schedule
 }
 
-func HashTransactions(txs [][]byte) [32]byte {
+func HashTransactions(txs []*types.Transaction) [32]byte {
 	var all []byte
 	for _, tx := range txs {
-		all = append(all, tx...)
+		all = append(all, tx.Bytes()...)
 	}
 	return sha256.Sum256(all)
 }
