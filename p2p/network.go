@@ -95,8 +95,9 @@ func NewNetWork(
 		cancel:             cancel,
 	}
 
-	// Initialize peer scoring manager
 	ln.peerScoringManager = NewPeerScoringManager(ln, DefaultPeerScoringConfig())
+
+	ln.InitializeAccessControl()
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
 		cancel()
@@ -135,7 +136,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		// Use DNS resolution for bootstrap addresses
 		infos, err := discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Invalid bootstrap address: %s, error: %v", bootstrapPeer, err)
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address: ", bootstrapPeer, " error: ", err)
 			continue
 		}
 
@@ -182,7 +183,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	return nil
 }
 
-// isProtocolNotSupportedError checks if the error is due to protocol not being supported
 func isProtocolNotSupportedError(err error) bool {
 	if err == nil {
 		return false
@@ -193,24 +193,20 @@ func isProtocolNotSupportedError(err error) bool {
 		strings.Contains(errorStr, "negotiate protocol")
 }
 
-// setupConnectionAuthentication sets up automatic authentication for new connections
 func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 	ln.host.Network().Notify(&network.NotifyBundle{
 		ConnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
 			logx.Info("AUTH:CONNECTION", "New connection from peer: ", peerID.String())
 
-			// Check access control for incoming connections
 			if !ln.IsAllowed(peerID) {
 				logx.Info("AUTH:CONNECTION", "Rejecting connection from peer not allowed by access control:", peerID.String())
 				conn.Close()
 				return
 			}
 
-			// Update peer score for successful connection
 			ln.UpdatePeerScore(peerID, "connection", nil)
 
-			// Automatically authenticate new connections
 			exception.SafeGoWithPanic("Discovery", func() {
 				authCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				defer cancel()
@@ -219,15 +215,10 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 					if isProtocolNotSupportedError(err) {
 						logx.Warn("AUTH:CONNECTION", "Peer doesn't support authentication protocol - this is normal for older peers")
 					} else {
-						logx.Error("AUTH:CONNECTION", "Authentication failed: ", err.Error())
-						// Update peer score for auth failure
 						ln.UpdatePeerScore(peerID, "auth_failure", nil)
 					}
 				} else {
-					logx.Info("AUTH:CONNECTION", "Authentication successful for peer: ", peerID.String())
-					// Update peer score for auth success
 					ln.UpdatePeerScore(peerID, "auth_success", nil)
-					// Auto-add to allowlist if in bootstrap mode
 					ln.AutoAddToAllowlistIfBootstrap(peerID)
 				}
 			})
@@ -235,11 +226,8 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
-
-			// Update peer score for disconnection
 			ln.UpdatePeerScore(peerID, "disconnection", nil)
 
-			// Clean up authentication state for disconnected peer
 			ln.authMu.Lock()
 			delete(ln.authenticatedPeers, peerID)
 			ln.authMu.Unlock()
@@ -251,9 +239,7 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 	})
 }
 
-// this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {
-	// Stop peer scoring manager
 	if ln.peerScoringManager != nil {
 		ln.peerScoringManager.Stop()
 	}

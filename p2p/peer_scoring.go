@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -8,7 +9,6 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-// PeerScore represents the scoring system for a peer
 type PeerScore struct {
 	PeerID          peer.ID
 	Score           float64
@@ -25,7 +25,6 @@ type PeerScore struct {
 	LastSeen        time.Time
 }
 
-// PeerScoringConfig defines thresholds for peer scoring
 type PeerScoringConfig struct {
 	MinScoreForAllowlist   float64
 	MaxScoreForBlacklist   float64
@@ -43,27 +42,25 @@ type PeerScoringConfig struct {
 	ScoreUpdateInterval    time.Duration
 }
 
-// DefaultPeerScoringConfig returns default scoring configuration
 func DefaultPeerScoringConfig() *PeerScoringConfig {
 	return &PeerScoringConfig{
-		MinScoreForAllowlist:   50.0,  // Score cần để được allowlist
-		MaxScoreForBlacklist:   10.0,  // Score thấp sẽ bị blacklist
-		ScoreDecayRate:         0.95,  // Score giảm 5% mỗi interval
-		AuthFailurePenalty:     -10.0, // Penalty cho auth failure
-		ValidBlockBonus:        2.0,   // Bonus cho valid block
-		InvalidBlockPenalty:    -5.0,  // Penalty cho invalid block
-		ValidTxBonus:           1.0,   // Bonus cho valid transaction
-		InvalidTxPenalty:       -2.0,  // Penalty cho invalid transaction
-		UptimeBonus:            0.1,   // Bonus cho uptime (per hour)
-		ResponseTimeBonus:      0.5,   // Bonus cho fast response
-		BandwidthPenalty:       -0.1,  // Penalty cho high bandwidth usage
-		AutoAllowlistThreshold: 80.0,  // Tự động add vào allowlist
-		AutoBlacklistThreshold: 5.0,   // Tự động add vào blacklist
-		ScoreUpdateInterval:    5 * time.Minute,
+		MinScoreForAllowlist:   50.0,
+		MaxScoreForBlacklist:   10.0,
+		ScoreDecayRate:         0.95,
+		AuthFailurePenalty:     -10.0,
+		ValidBlockBonus:        2.0,
+		InvalidBlockPenalty:    -5.0,
+		ValidTxBonus:           1.0,
+		InvalidTxPenalty:       -2.0,
+		UptimeBonus:            0.1,
+		ResponseTimeBonus:      0.5,
+		BandwidthPenalty:       -0.1,
+		AutoAllowlistThreshold: 80.0,
+		AutoBlacklistThreshold: 5.0,
+		ScoreUpdateInterval:    1 * time.Minute,
 	}
 }
 
-// PeerScoringManager manages peer scoring and auto allowlist/blacklist
 type PeerScoringManager struct {
 	scores   map[peer.ID]*PeerScore
 	config   *PeerScoringConfig
@@ -72,7 +69,6 @@ type PeerScoringManager struct {
 	stopChan chan struct{}
 }
 
-// NewPeerScoringManager creates a new peer scoring manager
 func NewPeerScoringManager(network *Libp2pNetwork, config *PeerScoringConfig) *PeerScoringManager {
 	if config == nil {
 		config = DefaultPeerScoringConfig()
@@ -85,13 +81,11 @@ func NewPeerScoringManager(network *Libp2pNetwork, config *PeerScoringConfig) *P
 		stopChan: make(chan struct{}),
 	}
 
-	// Start background score management
 	go psm.scoreManagementLoop()
 
 	return psm
 }
 
-// GetPeerScore returns the current score for a peer
 func (psm *PeerScoringManager) GetPeerScore(peerID peer.ID) float64 {
 	psm.mu.RLock()
 	defer psm.mu.RUnlock()
@@ -102,7 +96,6 @@ func (psm *PeerScoringManager) GetPeerScore(peerID peer.ID) float64 {
 	return 0.0
 }
 
-// UpdatePeerScore updates the score for a peer based on an event
 func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string, value interface{}) {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
@@ -111,14 +104,13 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	if !exists {
 		score = &PeerScore{
 			PeerID:      peerID,
-			Score:       50.0, // Default starting score
+			Score:       50.0,
 			LastUpdated: time.Now(),
 			LastSeen:    time.Now(),
 		}
 		psm.scores[peerID] = score
 	}
 
-	// Update score based on event type
 	switch eventType {
 	case "auth_success":
 		score.Score += 5.0
@@ -158,7 +150,7 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	case "bandwidth":
 		if bandwidth, ok := value.(int64); ok {
 			score.BandwidthUsage = bandwidth
-			if bandwidth > 1024*1024 { // > 1MB
+			if bandwidth > 1024*1024 {
 				score.Score += psm.config.BandwidthPenalty
 			}
 		}
@@ -167,7 +159,6 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	score.LastUpdated = time.Now()
 	score.LastSeen = time.Now()
 
-	// Ensure score stays within reasonable bounds
 	if score.Score < 0 {
 		score.Score = 0
 	}
@@ -179,33 +170,27 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 		"score:", score.Score, "event:", eventType)
 }
 
-// AutoManageAccessControl automatically manages allowlist/blacklist based on scores
 func (psm *PeerScoringManager) AutoManageAccessControl() {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
 
 	for peerID, score := range psm.scores {
-		// Auto-allowlist high-scoring peers
 		if score.Score >= psm.config.AutoAllowlistThreshold {
 			if !psm.network.IsAllowed(peerID) {
 				psm.network.AddToAllowlist(peerID)
-				logx.Info("PEER_SCORING", "Auto-allowlisted peer %s (score: %.2f)",
-					peerID.String()[:12], score.Score)
+				logx.Info("PEER_SCORING", "Auto-allowlisted peer "+peerID.String()[:12]+" (score: "+fmt.Sprintf("%.2f", score.Score)+")")
 			}
 		}
 
-		// Auto-blacklist low-scoring peers
 		if score.Score <= psm.config.AutoBlacklistThreshold {
 			if psm.network.IsAllowed(peerID) {
 				psm.network.AddToBlacklist(peerID)
-				logx.Info("PEER_SCORING", "Auto-blacklisted peer %s (score: %.2f)",
-					peerID.String()[:12], score.Score)
+				logx.Info("PEER_SCORING", "Auto-blacklisted peer "+peerID.String()[:12]+" (score: "+fmt.Sprintf("%.2f", score.Score)+")")
 			}
 		}
 	}
 }
 
-// scoreManagementLoop runs background score management
 func (psm *PeerScoringManager) scoreManagementLoop() {
 	ticker := time.NewTicker(psm.config.ScoreUpdateInterval)
 	defer ticker.Stop()
@@ -222,53 +207,45 @@ func (psm *PeerScoringManager) scoreManagementLoop() {
 	}
 }
 
-// decayScores applies score decay over time
 func (psm *PeerScoringManager) decayScores() {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
 
 	for _, score := range psm.scores {
-		// Apply decay rate
 		score.Score *= psm.config.ScoreDecayRate
 
-		// Additional decay for inactive peers
 		if time.Since(score.LastSeen) > 24*time.Hour {
-			score.Score *= 0.9 // Extra 10% decay for inactive peers
+			score.Score *= 0.9
 		}
 
-		// Ensure minimum score
 		if score.Score < 0 {
 			score.Score = 0
 		}
 	}
 }
 
-// cleanupOldScores removes very old and low-scoring peers
 func (psm *PeerScoringManager) cleanupOldScores() {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
 
-	cutoff := time.Now().Add(-7 * 24 * time.Hour) // 1 week ago
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
 	for peerID, score := range psm.scores {
 		if score.LastSeen.Before(cutoff) && score.Score < 10 {
 			delete(psm.scores, peerID)
-			logx.Info("PEER_SCORING", "Cleaned up old peer score: %s", peerID.String()[:12])
+			logx.Info("PEER_SCORING", "Cleaned up old peer score: "+peerID.String()[:12])
 		}
 	}
 }
 
-// GetTopPeers returns the top N peers by score
 func (psm *PeerScoringManager) GetTopPeers(n int) []*PeerScore {
 	psm.mu.RLock()
 	defer psm.mu.RUnlock()
 
-	// Convert to slice for sorting
 	scores := make([]*PeerScore, 0, len(psm.scores))
 	for _, score := range psm.scores {
 		scores = append(scores, score)
 	}
 
-	// Sort by score (descending)
 	for i := 0; i < len(scores)-1; i++ {
 		for j := i + 1; j < len(scores); j++ {
 			if scores[i].Score < scores[j].Score {
@@ -277,14 +254,12 @@ func (psm *PeerScoringManager) GetTopPeers(n int) []*PeerScore {
 		}
 	}
 
-	// Return top N
 	if n > len(scores) {
 		n = len(scores)
 	}
 	return scores[:n]
 }
 
-// GetPeerStats returns detailed statistics for a peer
 func (psm *PeerScoringManager) GetPeerStats(peerID peer.ID) *PeerScore {
 	psm.mu.RLock()
 	defer psm.mu.RUnlock()
@@ -295,7 +270,6 @@ func (psm *PeerScoringManager) GetPeerStats(peerID peer.ID) *PeerScore {
 	return nil
 }
 
-// Stop stops the peer scoring manager
 func (psm *PeerScoringManager) Stop() {
 	close(psm.stopChan)
 }

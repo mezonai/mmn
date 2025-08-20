@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,14 +17,12 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-// handleAuthStream handles incoming authentication requests
 func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 	defer s.Close()
 
 	remotePeer := s.Conn().RemotePeer()
 	logx.Info("AUTH", "Handling authentication request from peer: ", remotePeer.String())
 
-	// Enforce max message size (2048 bytes)
 	limited := &io.LimitedReader{R: s, N: 2048}
 	data, err := io.ReadAll(limited)
 	if err != nil {
@@ -31,9 +30,8 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 		return
 	}
 
-	// If reader hit the limit, reject (means payload ≥ 2048)
+	// If reader hit the limit, reject if payload ≥ 2048
 	if limited.N <= 0 {
-		logx.Error("AUTH", "Auth message too large from ", remotePeer.String())
 		return
 	}
 
@@ -59,9 +57,7 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 	}
 }
 
-// handleAuthChallenge handles incoming authentication challenges
 func (ln *Libp2pNetwork) handleAuthChallenge(s network.Stream, remotePeer peer.ID, msg map[string]interface{}) {
-	// Extract challenge data
 	challengeData, ok := msg["challenge"].(map[string]interface{})
 	if !ok {
 		logx.Error("AUTH", "Invalid challenge format from ", remotePeer.String())
@@ -80,46 +76,36 @@ func (ln *Libp2pNetwork) handleAuthChallenge(s network.Stream, remotePeer peer.I
 		return
 	}
 
-	// Verify protocol version
 	if challenge.Version != AuthVersion {
 		logx.Error("AUTH", "Unsupported auth version from ", remotePeer.String(), ": ", challenge.Version)
 		return
 	}
 
-	// Verify chain ID (optional - can be configurable)
 	if challenge.ChainID != DefaultChainID {
 		logx.Warn("AUTH", "Different chain ID from ", remotePeer.String(), ": expected ", DefaultChainID, ", got ", challenge.ChainID)
-		// Don't return error, just log warning for now
 	}
 
-	// Verify challenge timestamp (prevent replay attacks)
 	now := time.Now().Unix()
 	if abs(now-challenge.Timestamp) > AuthTimeout {
 		logx.Error("AUTH", "Challenge timestamp expired from ", remotePeer.String())
 		return
 	}
 
-	// Create data to sign: challenge + nonce + chain_id (Ethereum-style)
 	dataToSign := append(challenge.Challenge, []byte(fmt.Sprintf("%d", challenge.Nonce))...)
 	dataToSign = append(dataToSign, []byte(challenge.ChainID)...)
 
-	// Sign the data with our private key
 	signature := ed25519.Sign(ln.selfPrivKey, dataToSign)
 
-	// Get the actual public key from the host
 	hostPubKey := ln.host.Peerstore().PubKey(ln.host.ID())
 
-	// Convert to bytes
 	pubKeyBytes, err := hostPubKey.Raw()
 	if err != nil {
 		logx.Error("AUTH", "Failed to get public key bytes: ", err.Error())
 		return
 	}
 
-	// Encode as base64 for transmission
 	pubKeyStr := base64.StdEncoding.EncodeToString(pubKeyBytes)
 
-	// Create response
 	response := AuthResponse{
 		Version:   AuthVersion,
 		Challenge: challenge.Challenge,
@@ -131,7 +117,6 @@ func (ln *Libp2pNetwork) handleAuthChallenge(s network.Stream, remotePeer peer.I
 		ChainID:   challenge.ChainID,
 	}
 
-	// Send response
 	responseMsg := map[string]interface{}{
 		"type":     "response",
 		"response": response,
@@ -150,9 +135,7 @@ func (ln *Libp2pNetwork) handleAuthChallenge(s network.Stream, remotePeer peer.I
 
 }
 
-// handleAuthResponse handles incoming authentication responses
 func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID, msg map[string]interface{}) {
-	// Extract response data
 	responseData, ok := msg["response"].(map[string]interface{})
 	if !ok {
 		logx.Error("AUTH", "Invalid response format from ", remotePeer.String())
@@ -171,14 +154,12 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 		return
 	}
 
-	// Verify response timestamp
 	now := time.Now().Unix()
 	if abs(now-response.Timestamp) > AuthTimeout {
 		logx.Error("AUTH", "Response timestamp expired from ", remotePeer.String())
 		return
 	}
 
-	// Get the original challenge we sent
 	ln.challengeMu.RLock()
 	originalChallenge, exists := ln.pendingChallenges[remotePeer]
 	ln.challengeMu.RUnlock()
@@ -188,16 +169,13 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 		return
 	}
 
-	// Verify the challenge matches
 	if !bytesEqual(originalChallenge, response.Challenge) {
 		logx.Error("AUTH", "Challenge mismatch from ", remotePeer.String())
 		return
 	}
 
-	// Parse the public key - handle both string and base64 encoded formats
 	var pubKeyBytes []byte
 	if len(response.PublicKey) == ed25519.PublicKeySize*2 {
-		// Assume it's hex encoded
 		var err error
 		pubKeyBytes, err = hex.DecodeString(response.PublicKey)
 		if err != nil {
@@ -205,10 +183,8 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 			return
 		}
 	} else if len(response.PublicKey) == ed25519.PublicKeySize {
-		// Assume it's raw bytes
 		pubKeyBytes = []byte(response.PublicKey)
 	} else {
-		// Try base64 decoding
 		var err error
 		pubKeyBytes, err = base64.StdEncoding.DecodeString(response.PublicKey)
 		if err != nil {
@@ -218,34 +194,27 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 	}
 
 	if len(pubKeyBytes) != ed25519.PublicKeySize {
-		logx.Error("AUTH", "Invalid public key size from : ", len(pubKeyBytes))
+		logx.Error("AUTH", "Invalid public key size from: ", len(pubKeyBytes))
 		return
 	}
 
-	// Verify protocol version
 	if response.Version != AuthVersion {
-		logx.Error("AUTH", "Unsupported auth version from ", remotePeer.String(), ": ", response.Version)
+		logx.Error("AUTH", "Unsupported auth version from ", remotePeer.String(), " : ", response.Version)
 		return
 	}
 
-	// Verify chain ID
 	if response.ChainID != DefaultChainID {
 		logx.Warn("AUTH", "Different chain ID from ", remotePeer.String(), ": expected ", DefaultChainID, ", got ", response.ChainID)
 	}
 
-	// Create data that was signed: challenge + nonce + chain_id (Ethereum-style)
 	dataToVerify := append(response.Challenge, []byte(fmt.Sprintf("%d", response.Nonce))...)
 	dataToVerify = append(dataToVerify, []byte(response.ChainID)...)
 
-	// Verify the signature
 	if !ed25519.Verify(pubKeyBytes, dataToVerify, response.Signature) {
-		logx.Error("AUTH", "Invalid signature from ", remotePeer.String())
-		// Update peer score for auth failure
 		ln.UpdatePeerScore(remotePeer, "auth_failure", nil)
 		return
 	}
 
-	// Authentication successful
 	ln.authMu.Lock()
 	ln.authenticatedPeers[remotePeer] = &AuthenticatedPeer{
 		PeerID:        remotePeer,
@@ -270,14 +239,11 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 
 	logx.Info("AUTH", "Authentication successful with ", remotePeer.String())
 
-	// Update peer score for successful authentication
 	ln.UpdatePeerScore(remotePeer, "auth_success", nil)
 
-	// Auto-add to allowlist if in bootstrap mode
 	ln.AutoAddToAllowlistIfBootstrap(remotePeer)
 }
 
-// InitiateAuthentication starts the authentication process with a peer
 func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer.ID) error {
 	// Avoid duplicate attempts: skip if already authenticated
 	if ln.IsPeerAuthenticated(peerID) {
@@ -288,7 +254,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 	_, pending := ln.pendingChallenges[peerID]
 	ln.challengeMu.RUnlock()
 	if pending {
-		logx.Debug("AUTH", "Authentication already pending for ", peerID.String())
 		return nil
 	}
 
@@ -300,35 +265,29 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to generate challenge: %w", err)
 	}
 
-	// Generate a random nonce (Ethereum-style)
 	nonceBytes := make([]byte, 8)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		return fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	nonce := uint64(nonceBytes[0])<<56 | uint64(nonceBytes[1])<<48 | uint64(nonceBytes[2])<<40 | uint64(nonceBytes[3])<<32 |
-		uint64(nonceBytes[4])<<24 | uint64(nonceBytes[5])<<16 | uint64(nonceBytes[6])<<8 | uint64(nonceBytes[7])
 
-	// Store the challenge and nonce
+	nonce := binary.BigEndian.Uint64(nonceBytes)
+
 	ln.challengeMu.Lock()
 	ln.pendingChallenges[peerID] = challenge
 	ln.challengeMu.Unlock()
 
-	// Get the actual public key from the host
 	hostPubKey := ln.host.Peerstore().PubKey(ln.host.ID())
 
-	// Convert to bytes
 	pubKeyBytes, err := hostPubKey.Raw()
 	if err != nil {
 		return fmt.Errorf("failed to get public key bytes: %w", err)
 	}
 
-	// Encode as base64 for transmission
 	pubKeyStr := base64.StdEncoding.EncodeToString(pubKeyBytes)
 
 	// Reduce verbosity to avoid log spam
 	logx.Debug("AUTH", "Host public key length:", len(pubKeyBytes))
 
-	// Create challenge message (Ethereum-style)
 	authChallenge := AuthChallenge{
 		Version:   AuthVersion,
 		Challenge: challenge,
@@ -350,7 +309,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to marshal challenge: %w", err)
 	}
 
-	// Open stream and send challenge
 	stream, err := ln.host.NewStream(ctx, peerID, AuthProtocol)
 	if err != nil {
 		return fmt.Errorf("failed to open auth stream: %w", err)
@@ -361,7 +319,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to send challenge: %w", err)
 	}
 
-	// Wait for response
 	buf := make([]byte, 2048)
 	n, err := stream.Read(buf)
 	if err != nil {
@@ -373,7 +330,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	// Check message type
 	msgType, ok := responseMsg["type"].(string)
 	if !ok {
 		return fmt.Errorf("invalid message type")
@@ -381,7 +337,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 
 	switch msgType {
 	case "response":
-		// Handle the response message
 		responseData, ok := responseMsg["response"].(map[string]interface{})
 		if !ok {
 			return fmt.Errorf("invalid response format")
@@ -397,13 +352,11 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 			return fmt.Errorf("failed to unmarshal response: %w", err)
 		}
 
-		// Verify response timestamp
 		now := time.Now().Unix()
 		if abs(now-response.Timestamp) > AuthTimeout {
 			return fmt.Errorf("response timestamp expired")
 		}
 
-		// Get the original challenge we sent
 		ln.challengeMu.RLock()
 		originalChallenge, exists := ln.pendingChallenges[peerID]
 		ln.challengeMu.RUnlock()
@@ -412,25 +365,20 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 			return fmt.Errorf("no pending challenge found")
 		}
 
-		// Verify the challenge matches
 		if !bytesEqual(originalChallenge, response.Challenge) {
 			return fmt.Errorf("challenge mismatch")
 		}
 
-		// Parse the public key - handle both string and base64 encoded formats
 		var pubKeyBytes []byte
 		if len(response.PublicKey) == ed25519.PublicKeySize*2 {
-			// Assume it's hex encoded
 			var err error
 			pubKeyBytes, err = hex.DecodeString(response.PublicKey)
 			if err != nil {
 				return fmt.Errorf("failed to decode hex public key: %w", err)
 			}
 		} else if len(response.PublicKey) == ed25519.PublicKeySize {
-			// Assume it's raw bytes
 			pubKeyBytes = []byte(response.PublicKey)
 		} else {
-			// Try base64 decoding
 			var err error
 			pubKeyBytes, err = base64.StdEncoding.DecodeString(response.PublicKey)
 			if err != nil {
@@ -442,26 +390,21 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 			return fmt.Errorf("invalid public key size: got %d, expected %d", len(pubKeyBytes), ed25519.PublicKeySize)
 		}
 
-		// Verify protocol version
 		if response.Version != AuthVersion {
 			return fmt.Errorf("unsupported auth version: %s", response.Version)
 		}
 
-		// Verify chain ID
 		if response.ChainID != DefaultChainID {
 			logx.Warn("AUTH", "Different chain ID from peer ", peerID.String(), ": expected ", DefaultChainID, ", got ", response.ChainID)
 		}
 
-		// Create data that was signed: challenge + nonce + chain_id (Ethereum-style)
 		dataToVerify := append(response.Challenge, []byte(fmt.Sprintf("%d", response.Nonce))...)
 		dataToVerify = append(dataToVerify, []byte(response.ChainID)...)
 
-		// Verify the signature
 		if !ed25519.Verify(pubKeyBytes, dataToVerify, response.Signature) {
 			return fmt.Errorf("invalid signature")
 		}
 
-		// Authentication successful
 		ln.authMu.Lock()
 		ln.authenticatedPeers[peerID] = &AuthenticatedPeer{
 			PeerID:        peerID,
@@ -471,12 +414,10 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		}
 		ln.authMu.Unlock()
 
-		// Clean up pending challenge
 		ln.challengeMu.Lock()
 		delete(ln.pendingChallenges, peerID)
 		ln.challengeMu.Unlock()
 
-		// Update peer info
 		ln.mu.Lock()
 		if peerInfo, exists := ln.peers[peerID]; exists {
 			peerInfo.IsAuthenticated = true
@@ -488,7 +429,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return nil
 
 	case "result":
-		// Handle result message (for backward compatibility)
 		resultData, ok := responseMsg["result"].(map[string]interface{})
 		if !ok {
 			return fmt.Errorf("invalid result format")
@@ -516,7 +456,6 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 	}
 }
 
-// IsPeerAuthenticated checks if a peer has been authenticated
 func (ln *Libp2pNetwork) IsPeerAuthenticated(peerID peer.ID) bool {
 	ln.authMu.RLock()
 	defer ln.authMu.RUnlock()
@@ -527,7 +466,6 @@ func (ln *Libp2pNetwork) IsPeerAuthenticated(peerID peer.ID) bool {
 	return false
 }
 
-// GetAuthenticatedPeers returns all authenticated peers
 func (ln *Libp2pNetwork) GetAuthenticatedPeers() []peer.ID {
 	ln.authMu.RLock()
 	defer ln.authMu.RUnlock()
@@ -541,7 +479,6 @@ func (ln *Libp2pNetwork) GetAuthenticatedPeers() []peer.ID {
 	return peers
 }
 
-// CleanupExpiredAuthentications removes expired authentication records
 func (ln *Libp2pNetwork) CleanupExpiredAuthentications() {
 	ln.authMu.Lock()
 	defer ln.authMu.Unlock()
@@ -551,13 +488,34 @@ func (ln *Libp2pNetwork) CleanupExpiredAuthentications() {
 
 	for peerID, authPeer := range ln.authenticatedPeers {
 		if authPeer.AuthTimestamp.Before(expirationTime) {
-			delete(ln.authenticatedPeers, peerID)
-			logx.Info("AUTH", "Removed expired authentication for peer: ", peerID.String())
+			if ln.host != nil && ln.host.Network().Connectedness(peerID) == network.Connected {
+				authPeer.AuthTimestamp = now
+			} else {
+				delete(ln.authenticatedPeers, peerID)
+			}
 		}
 	}
 }
 
-// Helper functions
+func (ln *Libp2pNetwork) RefreshAuthenticationForConnectedPeers() {
+	ln.authMu.Lock()
+	defer ln.authMu.Unlock()
+
+	now := time.Now()
+	refreshed := 0
+
+	for peerID, authPeer := range ln.authenticatedPeers {
+		if ln.host != nil && ln.host.Network().Connectedness(peerID) == network.Connected {
+			authPeer.AuthTimestamp = now
+			refreshed++
+		}
+	}
+
+	if refreshed > 0 {
+		logx.Debug("AUTH", "Refreshed authentication for ", refreshed, " connected peers")
+	}
+}
+
 func abs(x int64) int64 {
 	if x < 0 {
 		return -x

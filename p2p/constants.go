@@ -15,7 +15,7 @@ const (
 	AdvertiseName          = "mmn"
 
 	AuthChallengeSize = 32
-	AuthTimeout       = 30
+	AuthTimeout       = 600 // 10 minutes
 )
 
 var (

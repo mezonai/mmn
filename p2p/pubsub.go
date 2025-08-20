@@ -207,7 +207,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 	})
 
-	go ln.startInitialSync(bs)
+	go ln.startInitialSync()
 
 	go ln.startPeriodicSyncCheck(bs)
 
@@ -363,12 +363,13 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
 }
 
 func (ln *Libp2pNetwork) startCleanupRoutine() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute) // Changed from 1 minute to 5 minutes
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			ln.RefreshAuthenticationForConnectedPeers()
 			ln.CleanupExpiredRequests()
 			ln.CleanupExpiredAuthentications()
 		case <-ln.ctx.Done():
@@ -378,7 +379,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 	}
 }
 
-func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
+func (ln *Libp2pNetwork) startInitialSync() {
 	// wait network setup
 	time.Sleep(2 * time.Second)
 

@@ -182,7 +182,7 @@ type AuthResult struct {
 
 const (
 	AuthVersion    = "1.0.0"
-	DefaultChainID = "mmn-mainnet"
+	DefaultChainID = "mmn"
 )
 
 type AuthenticatedPeer struct {
