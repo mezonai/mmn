@@ -3,42 +3,39 @@ package events
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 
+	"github.com/google/uuid"
 	"github.com/mezonai/mmn/logx"
 )
 
-// SubscriberID represents a unique identifier for a subscriber
-type SubscriberID uint64
+type SubscriberID string
 
-// Subscriber represents a subscriber with its channel and metadata
 type Subscriber struct {
 	ID      SubscriberID
 	Channel chan BlockchainEvent
 }
 
-// EventBus handles subscription and publishing of blockchain events
 type EventBus struct {
 	subscribers map[SubscriberID]*Subscriber
 	mu          sync.RWMutex
-	nextID      uint64 // Atomic counter for generating unique IDs
 }
 
-// NewEventBus creates a new EventBus instance
 func NewEventBus() *EventBus {
 	return &EventBus{
 		subscribers: make(map[SubscriberID]*Subscriber),
-		nextID:      0,
 	}
 }
 
-// Subscribe subscribes to all transaction events and returns a subscriber ID
+func (eb *EventBus) generateUUIDID() SubscriberID {
+	id := uuid.Must(uuid.NewV7())
+	return SubscriberID(id.String())
+}
+
 func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
-	// Generate unique subscriber ID
-	id := SubscriberID(atomic.AddUint64(&eb.nextID, 1))
+	id := eb.generateUUIDID()
 
 	ch := make(chan BlockchainEvent, 50) // Buffer for events
 	subscriber := &Subscriber{
@@ -48,7 +45,7 @@ func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
 
 	eb.subscribers[id] = subscriber
 
-	logx.Info("EVENTBUS", fmt.Sprintf("Client subscribed to transaction events | subscriber_id=%d | total_subscribers=%d", id, len(eb.subscribers)))
+	logx.Info("EVENTBUS", fmt.Sprintf("Client subscribed to transaction events | subscriber_id=%s | total_subscribers=%d", id, len(eb.subscribers)))
 
 	return id, ch
 }
@@ -60,7 +57,7 @@ func (eb *EventBus) Unsubscribe(id SubscriberID) bool {
 
 	subscriber, exists := eb.subscribers[id]
 	if !exists {
-		logx.Warn("EVENTBUS", fmt.Sprintf("Attempted to unsubscribe non-existent subscriber | subscriber_id=%d", id))
+		logx.Warn("EVENTBUS", fmt.Sprintf("Attempted to unsubscribe non-existent subscriber | subscriber_id=%s", id))
 		return false
 	}
 
@@ -68,7 +65,7 @@ func (eb *EventBus) Unsubscribe(id SubscriberID) bool {
 	delete(eb.subscribers, id)
 	close(subscriber.Channel)
 
-	logx.Info("EVENTBUS", fmt.Sprintf("Client unsubscribed from events | subscriber_id=%d | remaining_subscribers=%d", id, len(eb.subscribers)))
+	logx.Info("EVENTBUS", fmt.Sprintf("Client unsubscribed from events | subscriber_id=%s | remaining_subscribers=%d", id, len(eb.subscribers)))
 	return true
 }
 
@@ -89,7 +86,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Event sent successfully
 			default:
 				// Channel is full, skip this subscriber
-				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%d | tx_hash=%s", id, txHash))
+				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", id, txHash))
 			}
 		}
 	} else {
