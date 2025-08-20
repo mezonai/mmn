@@ -4,10 +4,11 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/blockstore"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/mezonai/mmn/blockstore"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -45,6 +46,19 @@ func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 
 		l.state[addr.Address] = &types.Account{Balance: addr.Amount, Nonce: 0}
 	}
+	return nil
+}
+
+// CreateAccountFromGenesis creates a single account from genesis (implements LedgerInterface)
+func (l *Ledger) CreateAccountFromGenesis(addr string, balance uint64) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if _, exists := l.state[addr]; exists {
+		return fmt.Errorf("genesis account %s already exists", addr)
+	}
+
+	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
 	return nil
 }
 
