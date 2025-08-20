@@ -40,6 +40,7 @@ type PeerScoringConfig struct {
 	AutoAllowlistThreshold float64
 	AutoBlacklistThreshold float64
 	ScoreUpdateInterval    time.Duration
+	RateLimitConfig        *RateLimitConfig
 }
 
 func DefaultPeerScoringConfig() *PeerScoringConfig {
@@ -58,15 +59,17 @@ func DefaultPeerScoringConfig() *PeerScoringConfig {
 		AutoAllowlistThreshold: 80.0,
 		AutoBlacklistThreshold: 5.0,
 		ScoreUpdateInterval:    1 * time.Minute,
+		RateLimitConfig:        DefaultRateLimitConfig(),
 	}
 }
 
 type PeerScoringManager struct {
-	scores   map[peer.ID]*PeerScore
-	config   *PeerScoringConfig
-	network  *Libp2pNetwork
-	mu       sync.RWMutex
-	stopChan chan struct{}
+	scores           map[peer.ID]*PeerScore
+	config           *PeerScoringConfig
+	network          *Libp2pNetwork
+	mu               sync.RWMutex
+	stopChan         chan struct{}
+	rateLimitManager *RateLimitManager
 }
 
 func NewPeerScoringManager(network *Libp2pNetwork, config *PeerScoringConfig) *PeerScoringManager {
@@ -75,10 +78,11 @@ func NewPeerScoringManager(network *Libp2pNetwork, config *PeerScoringConfig) *P
 	}
 
 	psm := &PeerScoringManager{
-		scores:   make(map[peer.ID]*PeerScore),
-		config:   config,
-		network:  network,
-		stopChan: make(chan struct{}),
+		scores:           make(map[peer.ID]*PeerScore),
+		config:           config,
+		network:          network,
+		stopChan:         make(chan struct{}),
+		rateLimitManager: NewRateLimitManager(config.RateLimitConfig),
 	}
 
 	go psm.scoreManagementLoop()
@@ -154,6 +158,28 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 				score.Score += psm.config.BandwidthPenalty
 			}
 		}
+	case "rate_limit_violation":
+		if violation, ok := value.(map[string]interface{}); ok {
+			action, _ := violation["action"].(string)
+			switch action {
+			case "auth":
+				score.Score += -5.0
+			case "stream":
+				score.Score += -3.0
+			case "bandwidth":
+				score.Score += -2.0
+			case "message":
+				score.Score += -1.0
+			case "block_sync":
+				score.Score += -4.0
+			case "transaction":
+				score.Score += -2.0
+			case "connection":
+				score.Score += -3.0
+			default:
+				score.Score += -1.0
+			}
+		}
 	}
 
 	score.LastUpdated = time.Now()
@@ -168,6 +194,66 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 
 	logx.Info("PEER_SCORING", "Updated score for peer", peerID.String()[:12]+"...",
 		"score:", score.Score, "event:", eventType)
+}
+
+func (psm *PeerScoringManager) CheckRateLimit(peerID peer.ID, actionType string, value interface{}) bool {
+	if psm.rateLimitManager == nil {
+		return true
+	}
+
+	limiter := psm.rateLimitManager.GetPeerRateLimiter(peerID)
+
+	switch actionType {
+	case "auth":
+		return limiter.CheckAuthRateLimit()
+	case "stream":
+		return limiter.CheckStreamRateLimit()
+	case "bandwidth":
+		if bytes, ok := value.(int64); ok {
+			return limiter.CheckBandwidthRateLimit(bytes)
+		}
+		return true
+	case "message":
+		if size, ok := value.(int); ok {
+			return limiter.CheckMessageRateLimit(size)
+		}
+		return true
+	case "block_sync":
+		return limiter.CheckBlockSyncRateLimit()
+	case "transaction":
+		return limiter.CheckTransactionRateLimit()
+	case "connection":
+		return limiter.CheckConnectionRateLimit()
+	default:
+		return true
+	}
+}
+
+func (psm *PeerScoringManager) RecordRateLimitViolation(peerID peer.ID, actionType string, value interface{}) {
+	psm.UpdatePeerScore(peerID, "rate_limit_violation", map[string]interface{}{
+		"action": actionType,
+		"value":  value,
+	})
+
+	logx.Warn("RATE_LIMIT", "Rate limit violation for peer", peerID.String()[:12]+"...",
+		"action:", actionType, "value:", value)
+}
+
+func (psm *PeerScoringManager) GetRateLimitStatus(peerID peer.ID) map[string]interface{} {
+	if psm.rateLimitManager == nil {
+		return nil
+	}
+
+	limiter := psm.rateLimitManager.GetPeerRateLimiter(peerID)
+	return limiter.GetRateLimitStatus()
+}
+
+func (psm *PeerScoringManager) GetGlobalRateLimitStatus() map[peer.ID]map[string]interface{} {
+	if psm.rateLimitManager == nil {
+		return nil
+	}
+
+	return psm.rateLimitManager.GetGlobalRateLimitStatus()
 }
 
 func (psm *PeerScoringManager) AutoManageAccessControl() {
