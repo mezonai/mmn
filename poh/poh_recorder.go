@@ -96,7 +96,6 @@ func (r *PohRecorder) Tick() *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// fmt.Println("Starting Tick")
 	pohEntry := r.poh.Tick()
 	if pohEntry == nil {
 		return nil
@@ -106,6 +105,7 @@ func (r *PohRecorder) Tick() *Entry {
 	r.tickHash[r.tickHeight] = pohEntry.Hash
 
 	r.tickHeight++
+	fmt.Printf("PohRecorder.Tick() incremented: tickHeight=%d, currentSlot=%d\n", r.tickHeight, r.tickHeight/r.ticksPerSlot)
 	return &entry
 }
 
@@ -121,7 +121,15 @@ func (r *PohRecorder) DrainEntries() []Entry {
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.tickHeight / r.ticksPerSlot
+	slot := r.tickHeight / r.ticksPerSlot
+	return slot
+}
+
+// UpdateLeaderSchedule updates the recorder's leader schedule (for dynamic PoS)
+func (r *PohRecorder) UpdateLeaderSchedule(schedule *LeaderSchedule) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.leaderSchedule = schedule
 }
 
 func HashTransactions(txs [][]byte) [32]byte {

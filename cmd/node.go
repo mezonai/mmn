@@ -70,7 +70,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().StringVar(&privateKeyPath, "privkey-path", "privkey.yaml", "Path to the private key file")
+	runCmd.Flags().StringVar(&privateKeyPath, "privkey-path", "privkey.txt", "Path to the private key file")
 	runCmd.Flags().StringVar(&genesisPath, "genesis-path", "genesis.yml", "Path to the genesis configuration file")
 }
 
@@ -181,13 +181,13 @@ func runNode() {
 	logx.Info("LEDGER", "Loaded ledger state from disk")
 
 	// Initialize PoH components
-	pohEngine, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
 
 	// Load PoH config for later use
-	pohCfg, err := config.LoadPohConfig(genesisPath)
+	_, err = config.LoadPohConfig(genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to load PoH config: %v", err)
 	}
@@ -251,10 +251,9 @@ func runNode() {
 
 		log.Printf("INFO: Using dynamic PoS leader schedule with stake-based allocation")
 
-		// UPDATE PoH RECORDER with dynamic schedule
-		recorder = poh.NewPohRecorder(pohEngine, pohCfg.TicksPerSlot, pubKey, dynamicSchedule)
+		// UPDATE EXISTING PoH RECORDER with dynamic schedule (DON'T CREATE NEW INSTANCE!)
+		recorder.UpdateLeaderSchedule(dynamicSchedule)
 	} else {
-		log.Printf("INFO: Staking not enabled or no genesis validators, using legacy leader schedule")
 		dynamicSchedule = nil
 	}
 
