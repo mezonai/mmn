@@ -1,6 +1,7 @@
 package interfaces
 
 import (
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/types"
 )
 
@@ -12,4 +13,6 @@ type Ledger interface {
 	GetAccount(addr string) *types.Account
 	// Balance returns the balance for the given address
 	Balance(addr string) uint64
+	// CreateAccountsFromGenesis creates an account from genesis block
+	CreateAccountsFromGenesis(addrs []config.Address) error
 }
