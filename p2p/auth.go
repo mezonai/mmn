@@ -25,6 +25,7 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 
 	if ln.peerScoringManager != nil {
 		if !ln.peerScoringManager.CheckRateLimit(remotePeer, "auth", nil) {
+			ln.peerScoringManager.RecordRateLimitViolation(remotePeer, "auth", nil)
 			return
 		}
 	}
@@ -38,6 +39,9 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 
 	// If reader hit the limit, reject if payload ≥ 2048
 	if limited.N <= 0 {
+		if ln.peerScoringManager != nil {
+			ln.peerScoringManager.RecordRateLimitViolation(remotePeer, "bandwidth", int64(2048))
+		}
 		return
 	}
 
@@ -317,6 +321,7 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 
 	if ln.peerScoringManager != nil {
 		if !ln.peerScoringManager.CheckRateLimit(peerID, "stream", nil) {
+			ln.peerScoringManager.RecordRateLimitViolation(peerID, "stream", nil)
 			return fmt.Errorf("rate limited: stream")
 		}
 	}
@@ -328,6 +333,7 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 
 	if ln.peerScoringManager != nil {
 		if !ln.peerScoringManager.CheckRateLimit(peerID, "bandwidth", int64(len(challengeData))) {
+			ln.peerScoringManager.RecordRateLimitViolation(peerID, "bandwidth", int64(len(challengeData)))
 			return fmt.Errorf("rate limited: bandwidth")
 		}
 	}
@@ -480,19 +486,6 @@ func (ln *Libp2pNetwork) IsPeerAuthenticated(peerID peer.ID) bool {
 		return authPeer.IsValid
 	}
 	return false
-}
-
-func (ln *Libp2pNetwork) GetAuthenticatedPeers() []peer.ID {
-	ln.authMu.RLock()
-	defer ln.authMu.RUnlock()
-
-	var peers []peer.ID
-	for peerID, authPeer := range ln.authenticatedPeers {
-		if authPeer.IsValid {
-			peers = append(peers, peerID)
-		}
-	}
-	return peers
 }
 
 func (ln *Libp2pNetwork) CleanupExpiredAuthentications() {

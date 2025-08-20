@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -10,19 +12,21 @@ import (
 )
 
 type PeerScore struct {
-	PeerID          peer.ID
-	Score           float64
-	LastUpdated     time.Time
-	ConnectionCount int
-	AuthFailures    int
-	ValidBlocks     int
-	InvalidBlocks   int
-	ValidTxs        int
-	InvalidTxs      int
-	Uptime          time.Duration
-	ResponseTime    time.Duration
-	BandwidthUsage  int64
-	LastSeen        time.Time
+	PeerID                peer.ID
+	Score                 float64
+	LastUpdated           time.Time
+	ConnectionCount       int
+	AuthFailures          int
+	AuthFailureTimestamps []time.Time
+	ValidBlocks           int
+	InvalidBlocks         int
+	ValidTxs              int
+	InvalidTxs            int
+	Uptime                time.Duration
+	ResponseTime          time.Duration
+	BandwidthUsage        int64
+	LastSeen              time.Time
+	TopicLastMessageAt    map[string]time.Time
 }
 
 type PeerScoringConfig struct {
@@ -41,25 +45,37 @@ type PeerScoringConfig struct {
 	AutoBlacklistThreshold float64
 	ScoreUpdateInterval    time.Duration
 	RateLimitConfig        *RateLimitConfig
+	// advanced scoring knobs
+	TimeInMeshBonusPerMinute     float64
+	FirstDeliveryBonus           float64
+	SpamPenalty                  float64
+	MaxMessagesPerMinutePerTopic int
+	TemporaryBanDuration         time.Duration
 }
 
 func DefaultPeerScoringConfig() *PeerScoringConfig {
 	return &PeerScoringConfig{
-		MinScoreForAllowlist:   50.0,
-		MaxScoreForBlacklist:   10.0,
-		ScoreDecayRate:         0.95,
-		AuthFailurePenalty:     -10.0,
-		ValidBlockBonus:        2.0,
-		InvalidBlockPenalty:    -5.0,
-		ValidTxBonus:           1.0,
-		InvalidTxPenalty:       -2.0,
-		UptimeBonus:            0.1,
-		ResponseTimeBonus:      0.5,
-		BandwidthPenalty:       -0.1,
-		AutoAllowlistThreshold: 80.0,
-		AutoBlacklistThreshold: 5.0,
-		ScoreUpdateInterval:    1 * time.Minute,
-		RateLimitConfig:        DefaultRateLimitConfig(),
+		MinScoreForAllowlist: 50.0,
+		MaxScoreForBlacklist: -20.0,
+		// ~24h half-life per minute tick ≈ 0.9995
+		ScoreDecayRate:               0.9995,
+		AuthFailurePenalty:           -20.0,
+		ValidBlockBonus:              0.5,
+		InvalidBlockPenalty:          -80.0,
+		ValidTxBonus:                 0.1,
+		InvalidTxPenalty:             -3.0,
+		UptimeBonus:                  0.1,
+		ResponseTimeBonus:            0.2,
+		BandwidthPenalty:             -0.5,
+		AutoAllowlistThreshold:       50.0,
+		AutoBlacklistThreshold:       -20.0,
+		ScoreUpdateInterval:          1 * time.Minute,
+		RateLimitConfig:              DefaultRateLimitConfig(),
+		TimeInMeshBonusPerMinute:     0.1,
+		FirstDeliveryBonus:           0.5,
+		SpamPenalty:                  -1.0,
+		MaxMessagesPerMinutePerTopic: 300,
+		TemporaryBanDuration:         30 * time.Minute,
 	}
 }
 
@@ -70,6 +86,8 @@ type PeerScoringManager struct {
 	mu               sync.RWMutex
 	stopChan         chan struct{}
 	rateLimitManager *RateLimitManager
+	firstDeliveries  map[string]map[string]peer.ID
+	messageCounters  map[string]map[peer.ID]*SlidingWindowCounter
 }
 
 func NewPeerScoringManager(network *Libp2pNetwork, config *PeerScoringConfig) *PeerScoringManager {
@@ -83,6 +101,8 @@ func NewPeerScoringManager(network *Libp2pNetwork, config *PeerScoringConfig) *P
 		network:          network,
 		stopChan:         make(chan struct{}),
 		rateLimitManager: NewRateLimitManager(config.RateLimitConfig),
+		firstDeliveries:  make(map[string]map[string]peer.ID),
+		messageCounters:  make(map[string]map[peer.ID]*SlidingWindowCounter),
 	}
 
 	go psm.scoreManagementLoop()
@@ -100,20 +120,26 @@ func (psm *PeerScoringManager) GetPeerScore(peerID peer.ID) float64 {
 	return 0.0
 }
 
+func (psm *PeerScoringManager) ensurePeer(peerID peer.ID) *PeerScore {
+	score, exists := psm.scores[peerID]
+	if !exists {
+		score = &PeerScore{
+			PeerID:             peerID,
+			Score:              0.0,
+			LastUpdated:        time.Now(),
+			LastSeen:           time.Now(),
+			TopicLastMessageAt: make(map[string]time.Time),
+		}
+		psm.scores[peerID] = score
+	}
+	return score
+}
+
 func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string, value interface{}) {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
 
-	score, exists := psm.scores[peerID]
-	if !exists {
-		score = &PeerScore{
-			PeerID:      peerID,
-			Score:       50.0,
-			LastUpdated: time.Now(),
-			LastSeen:    time.Now(),
-		}
-		psm.scores[peerID] = score
-	}
+	score := psm.ensurePeer(peerID)
 
 	switch eventType {
 	case "auth_success":
@@ -122,6 +148,23 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	case "auth_failure":
 		score.Score += psm.config.AuthFailurePenalty
 		score.AuthFailures++
+		score.AuthFailureTimestamps = append(score.AuthFailureTimestamps, time.Now())
+		// Blacklist if 3 auth failures occur within 10 minutes
+		cutoff := time.Now().Add(-10 * time.Minute)
+		recent := 0
+		for i := len(score.AuthFailureTimestamps) - 1; i >= 0; i-- {
+			if score.AuthFailureTimestamps[i].After(cutoff) {
+				recent++
+				if recent >= 3 {
+					if psm.network != nil {
+						psm.network.AddToBlacklistWithExpiry(peerID, psm.config.TemporaryBanDuration)
+					}
+					break
+				}
+			} else {
+				break
+			}
+		}
 	case "valid_block":
 		score.Score += psm.config.ValidBlockBonus
 		score.ValidBlocks++
@@ -147,14 +190,16 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	case "response_time":
 		if responseTime, ok := value.(time.Duration); ok {
 			score.ResponseTime = responseTime
-			if responseTime < 100*time.Millisecond {
+			if responseTime < 500*time.Millisecond {
 				score.Score += psm.config.ResponseTimeBonus
+			} else if responseTime > 2*time.Second {
+				score.Score -= 0.5
 			}
 		}
 	case "bandwidth":
 		if bandwidth, ok := value.(int64); ok {
 			score.BandwidthUsage = bandwidth
-			if bandwidth > 1024*1024 {
+			if bandwidth > 5*1024*1024 {
 				score.Score += psm.config.BandwidthPenalty
 			}
 		}
@@ -169,7 +214,7 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 			case "bandwidth":
 				score.Score += -2.0
 			case "message":
-				score.Score += -1.0
+				score.Score += psm.config.SpamPenalty
 			case "block_sync":
 				score.Score += -4.0
 			case "transaction":
@@ -180,20 +225,58 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 				score.Score += -1.0
 			}
 		}
+	case "score_delta":
+		if delta, ok := value.(float64); ok {
+			score.Score += delta
+		}
 	}
 
 	score.LastUpdated = time.Now()
 	score.LastSeen = time.Now()
 
-	if score.Score < 0 {
-		score.Score = 0
-	}
-	if score.Score > 100 {
-		score.Score = 100
-	}
-
 	logx.Info("PEER_SCORING", "Updated score for peer", peerID.String()[:12]+"...",
 		"score:", score.Score, "event:", eventType)
+}
+
+// OnTopicMessage should be called by validators when a message arrives on a topic
+func (psm *PeerScoringManager) OnTopicMessage(peerID peer.ID, topic string, data []byte) {
+	psm.mu.Lock()
+	defer psm.mu.Unlock()
+
+	score := psm.ensurePeer(peerID)
+	score.TopicLastMessageAt[topic] = time.Now()
+
+	// message rate counter per topic
+	if _, ok := psm.messageCounters[topic]; !ok {
+		psm.messageCounters[topic] = make(map[peer.ID]*SlidingWindowCounter)
+	}
+	counter, ok := psm.messageCounters[topic][peerID]
+	if !ok {
+		counter = NewSlidingWindowCounter(1, time.Minute, psm.config.MaxMessagesPerMinutePerTopic)
+		psm.messageCounters[topic][peerID] = counter
+	}
+	if !counter.Increment() {
+		// spam penalty
+		score.Score += psm.config.SpamPenalty
+		logx.Warn("SPAM", "Peer exceeded per-topic message rate", peerID.String()[:12], "topic:", topic)
+	}
+
+	// first delivery bonus per message ID
+	msgID := computeMessageID(data)
+	fd, ok := psm.firstDeliveries[topic]
+	if !ok {
+		fd = make(map[string]peer.ID)
+		psm.firstDeliveries[topic] = fd
+	}
+	if _, exists := fd[msgID]; !exists {
+		fd[msgID] = peerID
+		score.Score += psm.config.FirstDeliveryBonus
+	}
+}
+
+func computeMessageID(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }
 
 func (psm *PeerScoringManager) CheckRateLimit(peerID peer.ID, actionType string, value interface{}) bool {
@@ -260,10 +343,8 @@ func (psm *PeerScoringManager) AutoManageAccessControl() {
 		}
 
 		if score.Score <= psm.config.AutoBlacklistThreshold {
-			if psm.network.IsAllowed(peerID) {
-				psm.network.AddToBlacklist(peerID)
-				logx.Info("PEER_SCORING", "Auto-blacklisted peer "+peerID.String()[:12]+" (score: "+fmt.Sprintf("%.2f", score.Score)+")")
-			}
+			psm.network.AddToBlacklistWithExpiry(peerID, psm.config.TemporaryBanDuration)
+			logx.Info("PEER_SCORING", "Auto-temp-blacklisted peer "+peerID.String()[:12]+" (score: "+fmt.Sprintf("%.2f", score.Score)+")")
 		}
 	}
 }
@@ -278,6 +359,7 @@ func (psm *PeerScoringManager) scoreManagementLoop() {
 			return
 		case <-ticker.C:
 			psm.decayScores()
+			psm.addTimeInMeshBonuses()
 			psm.AutoManageAccessControl()
 			psm.cleanupOldScores()
 		}
@@ -294,9 +376,20 @@ func (psm *PeerScoringManager) decayScores() {
 		if time.Since(score.LastSeen) > 24*time.Hour {
 			score.Score *= 0.9
 		}
+	}
+}
 
-		if score.Score < 0 {
-			score.Score = 0
+func (psm *PeerScoringManager) addTimeInMeshBonuses() {
+	psm.mu.Lock()
+	defer psm.mu.Unlock()
+
+	now := time.Now()
+	for _, score := range psm.scores {
+		for _, last := range score.TopicLastMessageAt {
+			if now.Sub(last) <= 10*time.Minute {
+				// active in topic recently: add per-minute bonus
+				score.Score += psm.config.TimeInMeshBonusPerMinute
+			}
 		}
 	}
 }

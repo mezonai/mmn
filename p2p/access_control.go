@@ -1,6 +1,9 @@
 package p2p
 
 import (
+	"time"
+
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mezonai/mmn/logx"
 )
@@ -40,19 +43,16 @@ func (ln *Libp2pNetwork) IsAllowed(peerID peer.ID) bool {
 	return true
 }
 
-func (ln *Libp2pNetwork) IsBlacklisted(peerID peer.ID) bool {
-	ln.listMu.RLock()
-	defer ln.listMu.RUnlock()
-
-	return ln.blacklistEnabled && ln.blacklist[peerID]
-}
-
 func (ln *Libp2pNetwork) AddToAllowlist(peerID peer.ID) {
 	ln.listMu.Lock()
 	defer ln.listMu.Unlock()
 
 	if ln.allowlist == nil {
 		ln.allowlist = make(map[peer.ID]bool)
+	}
+
+	if ln.allowlist[peerID] {
+		return
 	}
 
 	ln.allowlist[peerID] = true
@@ -69,7 +69,7 @@ func (ln *Libp2pNetwork) AddToBlacklist(peerID peer.ID) {
 
 	logx.Info("ACCESS CONTROL", "Added peer to blacklist:", peerID.String())
 
-	if ln.host != nil && ln.host.Network().Connectedness(peerID) == 1 {
+	if ln.host != nil && ln.host.Network().Connectedness(peerID) == network.Connected {
 		err := ln.host.Network().ClosePeer(peerID)
 		if err != nil {
 			logx.Error("ACCESS CONTROL", "Failed to disconnect blacklisted peer:", err)
@@ -77,6 +77,21 @@ func (ln *Libp2pNetwork) AddToBlacklist(peerID peer.ID) {
 			logx.Info("ACCESS CONTROL", "Disconnected blacklisted peer:", peerID.String())
 		}
 	}
+}
+
+func (ln *Libp2pNetwork) AddToBlacklistWithExpiry(peerID peer.ID, duration time.Duration) {
+	ln.AddToBlacklist(peerID)
+	if duration <= 0 {
+		return
+	}
+	go func(id peer.ID, d time.Duration) {
+		timer := time.NewTimer(d)
+		<-timer.C
+		ln.listMu.Lock()
+		delete(ln.blacklist, id)
+		ln.listMu.Unlock()
+		logx.Info("ACCESS CONTROL", "Temporary blacklist expired for:", id.String())
+	}(peerID, duration)
 }
 
 func (ln *Libp2pNetwork) EnableAllowlist(enabled bool) {

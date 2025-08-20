@@ -218,6 +218,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
+	// register validators before subscribing
+	_ = ln.registerTopicValidators()
+
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
 			exception.SafeGoWithPanic("HandleBlockTopic", func() {

@@ -89,8 +89,8 @@ func NewNetWork(
 		pendingChallenges:  make(map[peer.ID][]byte),
 		allowlist:          make(map[peer.ID]bool),
 		blacklist:          make(map[peer.ID]bool),
-		allowlistEnabled:   false,
-		blacklistEnabled:   false,
+		allowlistEnabled:   true,
+		blacklistEnabled:   true,
 		ctx:                ctx,
 		cancel:             cancel,
 	}
