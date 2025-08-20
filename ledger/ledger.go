@@ -4,10 +4,11 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/blockstore"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/mezonai/mmn/blockstore"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -33,7 +34,7 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) {
 	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
 }
 
-// CreateAccountFromGenesis creates an account from genesis block (implements LedgerInterface)
+// CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
 func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
