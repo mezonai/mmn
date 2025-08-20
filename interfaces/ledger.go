@@ -12,6 +12,4 @@ type Ledger interface {
 	GetAccount(addr string) *types.Account
 	// Balance returns the balance for the given address
 	Balance(addr string) uint64
-	// CreateAccountFromGenesis creates an account from genesis block
-	CreateAccountFromGenesis(addr string, balance uint64) error
 }

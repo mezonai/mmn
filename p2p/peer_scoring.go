@@ -98,6 +98,12 @@ func (psm *PeerScoringManager) GetPeerScore(peerID peer.ID) float64 {
 	return 0.0
 }
 
+// OnTopicMessage is a no-op placeholder to satisfy validator hooks.
+// It can be extended later to compute time-in-mesh, first-delivery and spam counters.
+func (psm *PeerScoringManager) OnTopicMessage(peerID peer.ID, topic string, data []byte) {
+	// intentionally left blank for now
+}
+
 func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string, value interface{}) {
 	psm.mu.Lock()
 	defer psm.mu.Unlock()
@@ -118,7 +124,10 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 		score.Score += 5.0
 		score.AuthFailures = 0 // Reset auth failures on success
 	case "auth_failure":
-		score.Score += psm.config.AuthFailurePenalty
+		// avoid piling penalties if peer is currently blacklisted (connection will be rejected anyway)
+		if psm.network == nil || !psm.network.IsBlacklisted(peerID) {
+			score.Score += psm.config.AuthFailurePenalty
+		}
 		score.AuthFailures++
 		score.AuthFailureTimestamps = append(score.AuthFailureTimestamps, time.Now())
 		// Blacklist if 3 auth failures occur within 10 minutes
@@ -171,6 +180,28 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 			score.BandwidthUsage = bandwidth
 			if bandwidth > 5*1024*1024 {
 				score.Score += psm.config.BandwidthPenalty
+			}
+		}
+	case "rate_limit_violation":
+		if violation, ok := value.(map[string]interface{}); ok {
+			action, _ := violation["action"].(string)
+			switch action {
+			case "auth":
+				score.Score += -5.0
+			case "stream":
+				score.Score += -3.0
+			case "bandwidth":
+				score.Score += -2.0
+			case "message":
+				score.Score += -1.0
+			case "block_sync":
+				score.Score += -4.0
+			case "transaction":
+				score.Score += -2.0
+			case "connection":
+				score.Score += -3.0
+			default:
+				score.Score += -1.0
 			}
 		}
 	case "score_delta":

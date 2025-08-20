@@ -28,6 +28,9 @@ func (ln *Libp2pNetwork) blocksValidator(ctx context.Context, p peer.ID, msg *pu
 		ln.UpdatePeerScore(p, "invalid_block", nil)
 		return pubsub.ValidationReject
 	}
+	if ln.peerScoringManager != nil {
+		ln.peerScoringManager.OnTopicMessage(p, TopicBlocks, msg.Data)
+	}
 	return pubsub.ValidationAccept
 }
 
@@ -37,6 +40,9 @@ func (ln *Libp2pNetwork) votesValidator(ctx context.Context, p peer.ID, msg *pub
 		ln.UpdatePeerScore(p, "invalid_tx", nil)
 		return pubsub.ValidationReject
 	}
+	if ln.peerScoringManager != nil {
+		ln.peerScoringManager.OnTopicMessage(p, TopicVotes, msg.Data)
+	}
 	return pubsub.ValidationAccept
 }
 
@@ -45,6 +51,9 @@ func (ln *Libp2pNetwork) txsValidator(ctx context.Context, p peer.ID, msg *pubsu
 	if err := json.Unmarshal(msg.Data, &tmp); err != nil {
 		ln.UpdatePeerScore(p, "invalid_tx", nil)
 		return pubsub.ValidationReject
+	}
+	if ln.peerScoringManager != nil {
+		ln.peerScoringManager.OnTopicMessage(p, TopicTxs, msg.Data)
 	}
 	return pubsub.ValidationAccept
 }

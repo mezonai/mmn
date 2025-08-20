@@ -89,7 +89,7 @@ func NewNetWork(
 		pendingChallenges:  make(map[peer.ID][]byte),
 		allowlist:          make(map[peer.ID]bool),
 		blacklist:          make(map[peer.ID]bool),
-		allowlistEnabled:   true,
+		allowlistEnabled:   false,
 		blacklistEnabled:   true,
 		ctx:                ctx,
 		cancel:             cancel,
@@ -226,7 +226,10 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 		},
 		DisconnectedF: func(n network.Network, conn network.Conn) {
 			peerID := conn.RemotePeer()
-			ln.UpdatePeerScore(peerID, "disconnection", nil)
+			// Avoid penalizing disconnections for peers currently not allowed (e.g., blacklisted)
+			if ln.IsAllowed(peerID) {
+				ln.UpdatePeerScore(peerID, "disconnection", nil)
+			}
 
 			ln.authMu.Lock()
 			delete(ln.authenticatedPeers, peerID)
