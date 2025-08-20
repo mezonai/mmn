@@ -118,9 +118,8 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
-	ln.host.SetStreamHandler(AuthProtocol, ln.handleAuthStream)
-	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
-
+	ln.host.SetStreamHandler(NodeInfoProtocol, ln.AuthMiddleware(ln.handleNodeInfoStream))
+	ln.host.SetStreamHandler(AuthProtocol, ln.AuthMiddleware(ln.handleAuthStream))
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.AuthMiddleware(ln.handleBlockSyncRequestStream))
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.AuthMiddleware(ln.handleLatestSlotStream))
 

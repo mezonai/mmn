@@ -213,17 +213,8 @@ func (psm *PeerScoringManager) CheckRateLimit(peerID peer.ID, actionType string,
 			return limiter.CheckBandwidthRateLimit(bytes)
 		}
 		return true
-	case "message":
-		if size, ok := value.(int); ok {
-			return limiter.CheckMessageRateLimit(size)
-		}
-		return true
 	case "block_sync":
 		return limiter.CheckBlockSyncRateLimit()
-	case "transaction":
-		return limiter.CheckTransactionRateLimit()
-	case "connection":
-		return limiter.CheckConnectionRateLimit()
 	default:
 		return true
 	}
