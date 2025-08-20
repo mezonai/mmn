@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/types"
 )
@@ -144,9 +145,11 @@ func (ml *MockLedger) Balance(addr string) uint64 {
 	return ml.balances[addr]
 }
 
-func (ml *MockLedger) CreateAccountFromGenesis(addr string, balance uint64) error {
-	ml.balances[addr] = balance
-	ml.nonces[addr] = 0
+func (ml *MockLedger) CreateAccountsFromGenesis(addresses []config.Address) error {
+	for _, addr := range addresses {
+		ml.balances[addr.Address] = addr.Amount
+		ml.nonces[addr.Address] = 0
+	}
 	return nil
 }
 
@@ -754,14 +757,18 @@ func TestMempool_PullBatchFIFOOrder(t *testing.T) {
 	}
 
 	// The remaining transactions should be tx3 and tx4 in order
-	expectedHash3 := hex.EncodeToString(tx3.Bytes())
-	expectedHash4 := hex.EncodeToString(tx4.Bytes())
+	expectedHash3 := tx3.Hash()
+	expectedHash4 := tx4.Hash()
+
+	t.Logf("Expected tx3 hash: %s", expectedHash3)
+	t.Logf("Expected tx4 hash: %s", expectedHash4)
+	t.Logf("Actual remaining order: %v", remainingOrder)
 
 	if remainingOrder[0] != expectedHash3 {
-		t.Error("First remaining transaction should be tx3")
+		t.Errorf("First remaining transaction should be tx3. Expected: %s, Got: %s", expectedHash3, remainingOrder[0])
 	}
 	if remainingOrder[1] != expectedHash4 {
-		t.Error("Second remaining transaction should be tx4")
+		t.Errorf("Second remaining transaction should be tx4. Expected: %s, Got: %s", expectedHash4, remainingOrder[1])
 	}
 }
 
