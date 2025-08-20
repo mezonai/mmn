@@ -118,8 +118,22 @@ func runNode() {
 		return
 	}
 
+	// Initialize tx store
+	// TODO: avoid duplication with cmd.initializeNode
+	txStoreDir := filepath.Join(initDataDir, "txstore")
+	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	defer ts.Close()
+
 	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend)
+	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend, ts)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -158,7 +172,7 @@ func runNode() {
 	// --- Event Router ---
 	eventRouter := events.NewEventRouter(eventBus)
 
-	ld := ledger.NewLedger()
+	ld := ledger.NewLedger(ts)
 
 	// Load ledger state from disk (includes alloc account from genesis)
 	if err := ld.LoadLedger(); err != nil {
@@ -225,8 +239,19 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	return cfg, nil
 }
 
+// initializeTxStore initializes the tx storage backend
+func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, error) {
+	dbProvider, err := blockstore.CreateDBProvider(blockstore.DBVendor(backend), blockstore.DBOptions{
+		Directory: dataDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to create db provider: %w", err)
+	}
+	return blockstore.NewGenericTxStore(dbProvider)
+}
+
 // initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(pubKey string, dataDir string, backend string) (blockstore.Store, error) {
+func initializeBlockstore(pubKey string, dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
 	seed := []byte(pubKey)
 
 	// Create store configuration with StoreType
@@ -242,7 +267,7 @@ func initializeBlockstore(pubKey string, dataDir string, backend string) (blocks
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, seed)
+	return blockstore.CreateStore(config, seed, ts)
 }
 
 // initializePoH initializes Proof of History components

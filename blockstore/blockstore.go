@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
+
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/utils"
 )
 
 const (
@@ -29,10 +31,11 @@ type GenericBlockStore struct {
 	mu              sync.RWMutex
 	latestFinalized uint64
 	seedHash        [32]byte
+	txStore         TxStore
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider DatabaseProvider, seed []byte) (Store, error) {
+func NewGenericBlockStore(provider DatabaseProvider, seed []byte, ts TxStore) (Store, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
@@ -40,6 +43,7 @@ func NewGenericBlockStore(provider DatabaseProvider, seed []byte) (Store, error)
 	store := &GenericBlockStore{
 		provider: provider,
 		seedHash: sha256.Sum256(seed),
+		txStore:  ts,
 	}
 
 	// Load existing metadata
@@ -142,7 +146,7 @@ func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool
 }
 
 // AddBlockPending adds a pending block to the store
-func (s *GenericBlockStore) AddBlockPending(b *block.Block, eventRouter *events.EventRouter) error {
+func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock, eventRouter *events.EventRouter) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
@@ -162,29 +166,31 @@ func (s *GenericBlockStore) AddBlockPending(b *block.Block, eventRouter *events.
 		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
 
-	// Serialize block
-	value, err := json.Marshal(b)
+	// Store block
+	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
-
-	// Store block
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
+	}
+
+	// Store block tsx
+	txs := make([]*types.Transaction, 0)
+	for _, entry := range b.Entries {
+		txs = append(txs, entry.Transactions...)
+	}
+	if err := s.txStore.StoreBatch(txs); err != nil {
+		return fmt.Errorf("failed to store txs: %w", err)
 	}
 
 	// Publish transaction inclusion events if event router is provided
 	if eventRouter != nil {
 		blockHashHex := b.HashString()
-		
+
 		// Publish TransactionIncludedInBlock events for each transaction in the block
 		for _, entry := range b.Entries {
-			for _, raw := range entry.Transactions {
-				tx, err := utils.ParseTx(raw)
-				if err != nil {
-					logx.Warn("BLOCKSTORE", "Failed to parse transaction for inclusion event", "slot", b.Slot, "error", err)
-					continue
-				}
+			for _, tx := range entry.Transactions {
 				event := events.NewTransactionIncludedInBlock(tx.Hash(), b.Slot, blockHashHex)
 				eventRouter.PublishTransactionEvent(event)
 			}
@@ -201,7 +207,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.Event
 	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
 	}
-	
+
 	// Get block data only if event router is provided
 	var blk *block.Block
 	if eventRouter != nil {
@@ -210,7 +216,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.Event
 			return fmt.Errorf("failed to get block data for slot %d", slot)
 		}
 	}
-	
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -231,12 +237,12 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.Event
 		blockHashHex := blk.HashString()
 
 		for _, entry := range blk.Entries {
-			for _, raw := range entry.Transactions {
-				tx, err := utils.ParseTx(raw)
-				if err != nil {
-					logx.Warn("BLOCKSTORE", "Failed to parse transaction for finalization event", "slot", slot, "error", err)
-					continue
-				}
+			txs, err := s.txStore.GetBatch(entry.TxHashes)
+			if err != nil {
+				logx.Warn("BLOCKSTORE", "Failed to get transactions for finalization event", "slot", slot, "error", err)
+				continue
+			}
+			for _, tx := range txs {
 				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
 				eventRouter.PublishTransactionEvent(event)
 			}
@@ -300,9 +306,10 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 
 		// Search through all entries in the block
 		for _, entry := range blockData.Entries {
-			for _, raw := range entry.Transactions {
-				tx, err := utils.ParseTx(raw)
+			for _, tx := range entry.TxHashes {
+				tx, err := bs.txStore.GetByHash(tx)
 				if err != nil {
+					logx.Warn("BLOCKSTORE", "Failed to get transaction for transaction search", "slot", s, "error", err)
 					continue
 				}
 				if tx.Hash() == clientHashHex {

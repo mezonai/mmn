@@ -68,7 +68,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool, eventRouter *events.EventRouter) {
 	ln.SetCallbacks(Callbacks{
-		OnBlockReceived: func(blk *block.Block) error {
+		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
 				return nil
 			}
@@ -159,7 +159,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			return nil
 		},
-		OnSyncResponseReceived: func(blocks []*block.Block) error {
+		OnSyncResponseReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
 
 			for _, blk := range blocks {
@@ -315,7 +315,7 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 	return nil
 }
 
-func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) error {
+func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
 
 	data, err := json.Marshal(blk)

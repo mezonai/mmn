@@ -17,7 +17,7 @@ type MockBroadcaster struct {
 	broadcastedTxs []*types.Transaction
 }
 
-func (mb *MockBroadcaster) BroadcastBlock(ctx context.Context, blk *block.Block) error {
+func (mb *MockBroadcaster) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	return nil
 }
 

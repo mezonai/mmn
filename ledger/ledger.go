@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/mezonai/mmn/blockstore"
+
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/events"
@@ -16,12 +18,13 @@ import (
 )
 
 type Ledger struct {
-	state map[string]*types.Account // address (public key hex) → account
-	mu    sync.RWMutex
+	state   map[string]*types.Account // address (public key hex) → account
+	mu      sync.RWMutex
+	txStore blockstore.TxStore
 }
 
-func NewLedger() *Ledger {
-	return &Ledger{state: make(map[string]*types.Account)}
+func NewLedger(txStore blockstore.TxStore) *Ledger {
+	return &Ledger{state: make(map[string]*types.Account), txStore: txStore}
 }
 
 // Initialize initial account
@@ -68,7 +71,7 @@ func (l *Ledger) Balance(addr string) uint64 {
 	return acc.Balance
 }
 
-func (l *Ledger) VerifyBlock(b *block.Block) error {
+func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 	l.mu.RLock()
 	base := l.state
 	l.mu.RUnlock()
@@ -78,11 +81,7 @@ func (l *Ledger) VerifyBlock(b *block.Block) error {
 		overlay: make(map[string]*types.SnapshotAccount),
 	}
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil || !tx.Verify() {
-				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
+		for _, tx := range entry.Transactions {
 			if err := view.ApplyTx(tx); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
@@ -97,17 +96,12 @@ func (l *Ledger) ApplyBlock(b *block.Block, eventRouter *events.EventRouter) err
 	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
 
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, err := utils.ParseTx(raw)
-			if err != nil || !tx.Verify() {
-				// Publish specific transaction failure event
-				if eventRouter != nil {
-					txHash := tx.Hash()
-					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction parse/signature failed: %v", err))
-					eventRouter.PublishTransactionEvent(event)
-				}
-				return fmt.Errorf("tx parse/sig fail: %v", err)
-			}
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
 			if err := applyTx(l.state, tx); err != nil {
 				// Publish specific transaction failure event
 				if eventRouter != nil {
@@ -117,19 +111,10 @@ func (l *Ledger) ApplyBlock(b *block.Block, eventRouter *events.EventRouter) err
 				}
 				return fmt.Errorf("apply fail: %v", err)
 			}
-			rec := types.TxRecord{
-				Slot:      b.Slot,
-				Amount:    tx.Amount,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Timestamp: tx.Timestamp,
-				TextData:  tx.TextData,
-				Type:      tx.Type,
-				Nonce:     tx.Nonce,
-			}
-			addHistory(l.state[tx.Sender], rec)
+			fmt.Printf("Applied tx %s\n", tx.Hash())
+			addHistory(l.state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
-				addHistory(l.state[tx.Recipient], rec)
+				addHistory(l.state[tx.Recipient], tx)
 			}
 		}
 	}
@@ -171,12 +156,12 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
-		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
+		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
 		sender = state[tx.Sender]
 	}
 	recipient, ok := state[tx.Recipient]
 	if !ok {
-		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0, History: make([]types.TxRecord, 0)}
+		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0}
 		recipient = state[tx.Recipient]
 	}
 
@@ -193,24 +178,36 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	return nil
 }
 
-func addHistory(acc *types.Account, rec types.TxRecord) {
-	acc.History = append(acc.History, rec)
+func addHistory(acc *types.Account, tx *types.Transaction) {
+	acc.History = append(acc.History, tx.Hash())
+}
+
+func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
+	tx, err := l.txStore.GetByHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	return tx, nil
 }
 
 // TODO: need to optimize this by using BadgerDB
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []types.TxRecord) {
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*types.Transaction) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	txs := make([]types.TxRecord, 0)
+	txs := make([]*types.Transaction, 0)
 	acc, ok := l.state[addr]
 	if !ok {
 		return 0, txs
 	}
 
 	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]types.TxRecord, 0)
-	for _, tx := range acc.History {
+	filteredHistory := make([]*types.Transaction, 0)
+	transactions, err := l.txStore.GetBatch(acc.History)
+	if err != nil {
+		return 0, txs
+	}
+	for _, tx := range transactions {
 		if filter == 0 {
 			filteredHistory = append(filteredHistory, tx)
 		} else if filter == 1 && tx.Sender == addr {
@@ -242,8 +239,12 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 
 	enc := json.NewEncoder(f)
 	for _, entry := range b.Entries {
-		for _, raw := range entry.Transactions {
-			tx, _ := utils.ParseTx(raw)
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
 			_ = enc.Encode(types.TxRecord{
 				Slot:      b.Slot,
 				Amount:    tx.Amount,
@@ -380,8 +381,8 @@ func (s *Session) CopyWithOverlayClone() *Session {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte, router *events.EventRouter) ([][]byte, []error) {
-	valid := make([][]byte, 0, len(raws))
+func (s *Session) FilterValid(raws [][]byte, router *events.EventRouter) ([]*types.Transaction, []error) {
+	valid := make([]*types.Transaction, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
@@ -403,7 +404,7 @@ func (s *Session) FilterValid(raws [][]byte, router *events.EventRouter) ([][]by
 			errs = append(errs, err)
 			continue
 		}
-		valid = append(valid, r)
+		valid = append(valid, tx)
 	}
 	return valid, errs
 }
