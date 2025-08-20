@@ -19,7 +19,7 @@ type RedisProvider struct {
 // convertKeyToHumanReadable converts binary keys to human-readable format for Redis
 func convertKeyToHumanReadable(key []byte) string {
 	keyStr := string(key)
-	
+
 	// Check if this is a blocks key with binary slot number
 	if strings.HasPrefix(keyStr, "blocks:") {
 		// Extract the binary part (last 8 bytes)
@@ -32,7 +32,7 @@ func convertKeyToHumanReadable(key []byte) string {
 			}
 		}
 	}
-	
+
 	// For non-block keys or invalid format, return as string
 	return keyStr
 }

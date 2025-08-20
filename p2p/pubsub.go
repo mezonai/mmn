@@ -67,7 +67,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
 	ln.SetCallbacks(Callbacks{
-		OnBlockReceived: func(blk *block.Block) error {
+		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
 				return nil
 			}
@@ -106,7 +106,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+				block := bs.Block(vote.Slot)
+				if block == nil {
+					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				}
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -134,7 +138,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+				block := bs.Block(vote.Slot)
+				if block == nil {
+					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				}
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -152,10 +160,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			logx.Info("TX", "Processing received transaction from P2P network")
 
 			// Add transaction to mempool
-			mp.AddTx(txData, false)
+			_, err := mp.AddTx(txData, false)
+			if err != nil {
+				fmt.Printf("Failed to add transaction from P2P: %v\n", err)
+			}
 			return nil
 		},
-		OnSyncResponseReceived: func(blocks []*block.Block) error {
+		OnSyncResponseReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
 
 			for _, blk := range blocks {
@@ -314,7 +325,7 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 	return nil
 }
 
-func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Block) error {
+func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
 
 	data, err := json.Marshal(blk)
