@@ -43,6 +43,12 @@ func (ln *Libp2pNetwork) IsAllowed(peerID peer.ID) bool {
 	return true
 }
 
+func (ln *Libp2pNetwork) IsBlacklisted(peerID peer.ID) bool {
+	ln.listMu.RLock()
+	defer ln.listMu.RUnlock()
+	return ln.blacklistEnabled && ln.blacklist[peerID]
+}
+
 func (ln *Libp2pNetwork) AddToAllowlist(peerID peer.ID) {
 	ln.listMu.Lock()
 	defer ln.listMu.Unlock()
@@ -84,13 +90,13 @@ func (ln *Libp2pNetwork) AddToBlacklistWithExpiry(peerID peer.ID, duration time.
 	if duration <= 0 {
 		return
 	}
+
 	go func(id peer.ID, d time.Duration) {
 		timer := time.NewTimer(d)
 		<-timer.C
 		ln.listMu.Lock()
 		delete(ln.blacklist, id)
 		ln.listMu.Unlock()
-		logx.Info("ACCESS CONTROL", "Temporary blacklist expired for:", id.String())
 	}(peerID, duration)
 }
 

@@ -146,7 +146,10 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 		score.Score += 5.0
 		score.AuthFailures = 0 // Reset auth failures on success
 	case "auth_failure":
-		score.Score += psm.config.AuthFailurePenalty
+		// avoid piling penalties if peer is currently blacklisted (connection will be rejected anyway)
+		if psm.network == nil || !psm.network.IsBlacklisted(peerID) {
+			score.Score += psm.config.AuthFailurePenalty
+		}
 		score.AuthFailures++
 		score.AuthFailureTimestamps = append(score.AuthFailureTimestamps, time.Now())
 		// Blacklist if 3 auth failures occur within 10 minutes
@@ -214,7 +217,7 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 			case "bandwidth":
 				score.Score += -2.0
 			case "message":
-				score.Score += psm.config.SpamPenalty
+				score.Score += -1.0
 			case "block_sync":
 				score.Score += -4.0
 			case "transaction":

@@ -5,7 +5,7 @@ package blockstore
 
 import (
 	"fmt"
-	
+
 	"github.com/linxGnu/grocksdb"
 )
 
@@ -20,12 +20,12 @@ type RocksDBProvider struct {
 func NewRocksDBProvider(directory string) (DatabaseProvider, error) {
 	opts := grocksdb.NewDefaultOptions()
 	opts.SetCreateIfMissing(true)
-	
+
 	db, err := grocksdb.OpenDb(opts, directory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open RocksDB: %w", err)
 	}
-	
+
 	return &RocksDBProvider{
 		db: db,
 		ro: grocksdb.NewDefaultReadOptions(),
@@ -40,11 +40,11 @@ func (p *RocksDBProvider) Get(key []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer value.Free()
-	
+
 	if !value.Exists() {
 		return nil, nil // Return nil for not found, consistent with interface
 	}
-	
+
 	// Copy the data since we're freeing the slice
 	data := value.Data()
 	result := make([]byte, len(data))
@@ -68,12 +68,12 @@ func (p *RocksDBProvider) Has(key []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	if value == nil {
 		return false, nil
 	}
 	defer value.Free()
-	
+
 	return true, nil
 }
 

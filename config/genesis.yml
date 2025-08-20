@@ -1,6 +1,6 @@
 config:
   leader_schedule:
-    - start_slot: 0
+    - start_slot: 1
       end_slot: 100
       leader: "6a4dd9b6efe0fc8f125be331735b0e33239e24f02c84e555ade9ea50bd1369db" # node 1/key1
     - start_slot: 101
