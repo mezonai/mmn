@@ -235,7 +235,7 @@ export class TransactionTracker extends EventEmitter {
    */
   async waitForTerminalStatus(
     txHash: string,
-    timeoutMs: number = 30000,
+    timeoutMs: number = 20000,
     skipCachedStatus: boolean = false
   ): Promise<TransactionStatusInfo> {
     // First check if the transaction already exists and has a terminal status

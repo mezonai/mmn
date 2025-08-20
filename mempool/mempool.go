@@ -19,7 +19,7 @@ type Mempool struct {
 	broadcaster interfaces.Broadcaster
 	ledger      interfaces.Ledger            // Add ledger for validation
 	nonceTxMap  map[string]map[uint64]string // sender -> nonce -> txHash for duplicate nonce detection
-	eventRouter *events.EventRouter // Event router for transaction status updates
+	eventRouter *events.EventRouter          // Event router for transaction status updates
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter) *Mempool {
@@ -49,11 +49,6 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 	if _, exists := mp.txsBuf[txHash]; exists {
 		mp.mu.RUnlock()
 		fmt.Println("Dropping duplicate tx", txHash)
-		// Publish duplicate transaction failure event
-		if mp.eventRouter != nil {
-			event := events.NewTransactionFailed(txHash, "duplicate transaction")
-			mp.eventRouter.PublishTransactionEvent(event)
-		}
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
@@ -71,11 +66,6 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 	if len(mp.txsBuf) >= mp.max {
 		mp.mu.RUnlock()
 		fmt.Println("Dropping full mempool")
-		// Publish mempool full failure event
-		if mp.eventRouter != nil {
-			event := events.NewTransactionFailed(txHash, "mempool full")
-			mp.eventRouter.PublishTransactionEvent(event)
-		}
 		return "", fmt.Errorf("mempool full")
 	}
 	mp.mu.RUnlock()
@@ -87,11 +77,6 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.txsBuf[txHash]; exists {
 		fmt.Println("Dropping duplicate tx (double-check)", txHash)
-		// Publish duplicate transaction failure event
-		if mp.eventRouter != nil {
-			event := events.NewTransactionFailed(txHash, "duplicate transaction")
-			mp.eventRouter.PublishTransactionEvent(event)
-		}
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
@@ -106,11 +91,6 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 
 	if len(mp.txsBuf) >= mp.max {
 		fmt.Println("Dropping full mempool (double-check)")
-		// Publish mempool full failure event
-		if mp.eventRouter != nil {
-			event := events.NewTransactionFailed(txHash, "mempool full")
-			mp.eventRouter.PublishTransactionEvent(event)
-		}
 		return "", fmt.Errorf("mempool full")
 	}
 
