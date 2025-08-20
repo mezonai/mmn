@@ -80,6 +80,10 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
 
+	// Generate server-side timestamp for security
+	// Todo: remove from input and update client
+	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
+
 	// Add validation checks before adding to mempool
 	// 1. Verify signature
 	if !tx.Verify() {
@@ -112,9 +116,9 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 		return &pb.AddTxResponse{Ok: false, Error: "insufficient balance"}, nil
 	}
 
-	txHash, ok := s.mempool.AddTx(tx, true)
-	if !ok {
-		return &pb.AddTxResponse{Ok: false, Error: "mempool full"}, nil
+	txHash, err := s.mempool.AddTx(tx, true)
+	if err != nil {
+		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 	}
 	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
 }
@@ -134,6 +138,21 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 		Balance: acc.Balance,
 		Nonce:   acc.Nonce,
 	}, nil
+}
+
+func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
+	tx, err := s.ledger.GetTxByHash(in.TxHash)
+	if err != nil {
+		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
+	}
+	txInfo := &pb.TxInfo{
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    tx.Amount,
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+	}
+	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
 }
 
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {

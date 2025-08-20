@@ -2,6 +2,7 @@ package types
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -43,6 +44,11 @@ func (tx *Transaction) Verify() bool {
 func (tx *Transaction) Bytes() []byte {
 	b, _ := json.Marshal(tx)
 	return b
+}
+
+func (tx *Transaction) Hash() string {
+	sum256 := sha256.Sum256(tx.Bytes())
+	return hex.EncodeToString(sum256[:])
 }
 
 func hexToEd25519(hexstr string) (ed25519.PublicKey, error) {
