@@ -68,16 +68,16 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid tx", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify transaction signature
 	if !tx.Verify() {
 		http.Error(w, "Invalid signature", http.StatusBadRequest)
 		return
 	}
-	
-	_, ok := s.Mempool.AddTx(tx, true)
-	if !ok {
-		http.Error(w, "Mempool full", http.StatusServiceUnavailable)
+
+	_, err = s.Mempool.AddTx(tx, true)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to add transaction to mempool: %v", err), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)

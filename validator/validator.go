@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/block"
@@ -15,7 +16,7 @@ import (
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
-	"github.com/mezonai/mmn/logx"
+
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
@@ -217,6 +218,7 @@ func (v *Validator) broadcastEndOfSlotShreds(slot uint64) error {
 }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
+	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
 	v.leaderStartAtSlot = currentSlot
 	if currentSlot == 0 {
 		return
@@ -234,14 +236,14 @@ waitLoop:
 		select {
 		case <-ticker.C:
 			if v.blockStore.HasCompleteBlock(prevSlot) {
-				fmt.Printf("Found complete block for slot %d\n", prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("Found complete block for slot %d", prevSlot))
 				seed, _ = v.blockStore.LastEntryInfoAtSlot(prevSlot)
 				break waitLoop
 			} else {
-				fmt.Printf("No complete block for slot %d\n", prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
 			}
 		case <-deadline.C:
-			fmt.Printf("Meet at deadline %d\n", prevSlot)
+			logx.Info("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
 			seed = v.fastForwardTicks(prevSlot)
 			break waitLoop
 		case <-v.stopCh:
@@ -257,6 +259,7 @@ waitLoop:
 }
 
 func (v *Validator) onLeaderSlotEnd() {
+	logx.Info("LEADER", "onLeaderSlotEnd")
 	v.leaderStartAtSlot = NoSlot
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	// Reset shred buffer for new slot
@@ -267,7 +270,7 @@ func (v *Validator) onLeaderSlotEnd() {
 }
 
 func (v *Validator) fastForwardTicks(prevSlot uint64) blockstore.SlotBoundary {
-	target := prevSlot*v.TicksPerSlot + v.TicksPerSlot - 1
+	target := prevSlot * v.TicksPerSlot
 	hash, _ := v.Recorder.FastForward(target)
 	return blockstore.SlotBoundary{
 		Slot: prevSlot,
@@ -282,7 +285,7 @@ func (v *Validator) IsLeader(slot uint64) bool {
 }
 
 func (v *Validator) IsFollower(slot uint64) bool {
-	return v.IsLeader(slot)
+	return !v.IsLeader(slot)
 }
 
 // handleEntry buffers entries and broadcasts shreds when threshold is reached
@@ -291,23 +294,37 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 	// When slot advances, handle end of previous slot if we were leader
 	if currentSlot > v.lastSlot && v.IsLeader(v.lastSlot) {
+		for _, entry := range entries {
+			entryBytes, err := v.serializeEntry(entry)
+			if err != nil {
+				fmt.Printf("[LEADER] Failed to serialize entry: %v\n", err)
+				continue
+			}
+
+			v.entryBuffer = append(v.entryBuffer, entryBytes)
+			v.bufferSize += len(entryBytes)
+
+			// Check if we should broadcast shreds now
+			if err := v.tryBroadcastShreds(v.lastSlot); err != nil {
+				fmt.Printf("[LEADER] Failed to broadcast shreds: %v\n", err)
+			}
+		}
+
 		// Broadcast any remaining entries as end-of-slot shreds
 		if err := v.broadcastEndOfSlotShreds(v.lastSlot); err != nil {
 			logx.Error("LEADER", "handleEntry", "Failed to broadcast end-of-slot shreds", err)
 		}
 
-		// Still create traditional block for consensus and storage
-		var hash [32]byte
-		if v.lastSlot == 0 {
-			hash = v.blockStore.Seed()
-		} else {
-			entry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-			hash = entry.Hash
-		}
+		// Buffer entries
+		v.collectedEntries = append(v.collectedEntries, entries...)
+
+		// Retrieve previous block hash from blockStore
+		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
+		prevHash := lastEntry.Hash
 
 		blk := block.AssembleBlock(
 			v.lastSlot,
-			hash,
+			prevHash,
 			v.Pubkey,
 			v.collectedEntries,
 		)
@@ -330,7 +347,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			fmt.Printf("[LEADER] Add vote error: %v\n", err)
 		} else if committed && needApply {
 			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
-			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot)); err != nil {
+			block := v.blockStore.Block(vote.Slot)
+			if block == nil {
+				fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
+			} else if err := v.ledger.ApplyBlock(block); err != nil {
 				fmt.Printf("[LEADER] Apply block error: %v\n", err)
 			}
 			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
@@ -348,10 +368,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 		v.lastSession = v.session.CopyWithOverlayClone()
-	}
-
-	// Buffer entries only if leader of current slot
-	if v.IsLeader(currentSlot) {
+	} else if v.IsLeader(currentSlot) {
+		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)
 		fmt.Printf("Adding %d entries for slot %d\n", len(entries), currentSlot)
 
@@ -404,11 +422,12 @@ func (v *Validator) dropPendingValidTxs(size int) {
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
-	exception.SafeGoWithPanic("leaderBatchLoop", func() {
-		v.leaderBatchLoop()
-	})
 	exception.SafeGoWithPanic("roleMonitorLoop", func() {
 		v.roleMonitorLoop()
+	})
+
+	exception.SafeGoWithPanic("leaderBatchLoop", func() {
+		v.leaderBatchLoop()
 	})
 }
 
