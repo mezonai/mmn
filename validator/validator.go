@@ -190,18 +190,23 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		)
 
 		if err := v.ledger.VerifyBlock(blk); err != nil {
-			fmt.Printf("[LEADER] sanity verify fail: %v\n", err)
+			logx.Error("VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
 			v.session = v.lastSession.CopyWithOverlayClone()
 			return
 		}
 
 		blk.Sign(v.PrivKey)
-		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
+		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
 		// Persist then broadcast
-		v.blockStore.AddBlockPending(blk)
+		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+		if err := v.blockStore.AddBlockPending(blk); err != nil {
+			logx.Error("VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
+			return
+		}
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-			fmt.Println("Failed to broadcast block:", err)
+			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
+			return
 		}
 
 		// Self-vote

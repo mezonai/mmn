@@ -74,6 +74,10 @@ func (p *RocksDBProvider) Has(key []byte) (bool, error) {
 	}
 	defer value.Free()
 
+	if !value.Exists() {
+		return false, nil
+	}
+
 	return true, nil
 }
 
