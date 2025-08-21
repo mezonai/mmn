@@ -4,6 +4,7 @@ const (
 	NodeInfoProtocol       = "/node-info"
 	RequestBlockSyncStream = "/sync-block-request"
 	LatestSlotProtocol     = "/latest-slot-request"
+	CheckpointProtocol     = "/checkpoint-hash"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
@@ -11,6 +12,7 @@ const (
 	BlockSyncRequestTopic  = "block-sync/request"
 	BlockSyncResponseTopic = "block-sync/response"
 	LatestSlotTopic        = "latest-slot/request"
+	CheckpointRequestTopic = "checkpoint/request"
 	AdvertiseName          = "mmn"
 )
 

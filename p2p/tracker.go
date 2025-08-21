@@ -19,8 +19,8 @@ func NewSyncRequestTracker(requestID string, fromSlot, toSlot uint64) *SyncReque
 }
 
 func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	t.AllPeers[peerID] = stream
 
 	if t.IsActive {
@@ -34,8 +34,8 @@ func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream)
 }
 
 func (t *SyncRequestTracker) CloseRequest() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	if t.ActiveStream != nil {
 		t.ActiveStream.Close()
@@ -47,8 +47,8 @@ func (t *SyncRequestTracker) CloseRequest() {
 
 // CloseAllOtherPeers closes all peer streams except the active one
 func (t *SyncRequestTracker) CloseAllOtherPeers() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	for peerID, stream := range t.AllPeers {
 		if peerID != t.ActivePeer && stream != nil {
@@ -61,8 +61,8 @@ func (t *SyncRequestTracker) CloseAllOtherPeers() {
 
 // CloseAllPeers closes all peer streams including the active one
 func (t *SyncRequestTracker) CloseAllPeers() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	// Close active stream
 	if t.ActiveStream != nil {

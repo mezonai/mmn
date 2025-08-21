@@ -157,6 +157,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 		batchCount++
 		totalBlocks += len(blocks)
+		logx.Info("NETWORK:SYNC BLOCK", "Received batch", batchCount, "with", len(blocks), "blocks for request", syncRequest.RequestID)
 
 		hasDuplicate := false
 		for _, blk := range blocks {
@@ -200,6 +201,8 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		delete(ln.syncRequests, syncRequest.RequestID)
 	}
 	ln.syncTrackerMu.Unlock()
+
+	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks)
 }
 
 func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
@@ -213,7 +216,7 @@ func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.St
 		return err
 	}
 
-	logx.Info("NETWORK:SYNC BLOCK", "Successfully wrote batch of", bytesWritten, "bytes")
+	logx.Info("NETWORK:SYNC BLOCK", "Successfully wrote batch of", bytesWritten, "bytes", "numBlocks=", len(batch))
 	return nil
 }
 
@@ -287,6 +290,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to send batch:", err)
 				return
 			}
+			logx.Info("NETWORK:SYNC BLOCK", "Sent batch with", len(batch), "blocks for request", req.RequestID)
 			totalBlocksSent += len(batch)
 			batch = batch[:0]
 		}
@@ -299,8 +303,11 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to send final batch:", err)
 			return
 		}
+		logx.Info("NETWORK:SYNC BLOCK", "Sent final batch with", len(batch), "blocks for request", req.RequestID)
 		totalBlocksSent += len(batch)
 	}
+
+	logx.Info("NETWORK:SYNC BLOCK", "Finished sending blocks for request", req.RequestID, "total blocks sent:", totalBlocksSent)
 
 	if req.ToSlot < localLatestSlot {
 		nextFromSlot := req.ToSlot + 1

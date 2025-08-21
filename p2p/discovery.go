@@ -123,6 +123,35 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 		return err
 	}
 
+	logx.Info("NETWORK:SYNC BLOCK", "Published sync request:", requestID, "from", fromSlot, "to", toSlot)
+
+	return nil
+}
+
+// RequestSingleBlockSync requests exactly one block by slot (used on checkpoint mismatch)
+func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64) error {
+	requestID := GenerateSyncRequestID()
+	tracker := NewSyncRequestTracker(requestID, slot, slot)
+	ln.syncTrackerMu.Lock()
+	ln.syncRequests[requestID] = tracker
+	ln.syncTrackerMu.Unlock()
+
+	req := SyncRequest{
+		RequestID: requestID,
+		FromSlot:  slot,
+		ToSlot:    slot,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	if ln.topicBlockSyncReq == nil {
+		return fmt.Errorf("sync request topic is not initialized")
+	}
+	if err := ln.topicBlockSyncReq.Publish(ctx, data); err != nil {
+		return err
+	}
+	logx.Info("NETWORK:SYNC BLOCK", "Published single-slot sync request:", requestID, "slot", slot)
 	return nil
 }
 

@@ -24,15 +24,15 @@ type Libp2pNetwork struct {
 	selfPubKey  string
 	selfPrivKey ed25519.PrivateKey
 	peers       map[peer.ID]*PeerInfo
-	mu          sync.RWMutex
 
 	blockStore blockstore.Store
 
-	topicBlocks       *pubsub.Topic
-	topicVotes        *pubsub.Topic
-	topicTxs          *pubsub.Topic
-	topicBlockSyncReq *pubsub.Topic
-	topicLatestSlot   *pubsub.Topic
+	topicBlocks            *pubsub.Topic
+	topicVotes             *pubsub.Topic
+	topicTxs               *pubsub.Topic
+	topicBlockSyncReq      *pubsub.Topic
+	topicLatestSlot        *pubsub.Topic
+	topicCheckpointRequest *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
@@ -123,7 +123,7 @@ type SyncRequestTracker struct {
 	IsActive     bool
 	StartTime    time.Time
 	AllPeers     map[peer.ID]network.Stream
-	mu           sync.RWMutex
+	mutex        sync.RWMutex
 }
 
 type Callbacks struct {
@@ -132,4 +132,17 @@ type Callbacks struct {
 	OnTransactionReceived  func(*types.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+}
+
+type CheckpointHashRequest struct {
+	RequesterID string                `json:"requester_id"`
+	Checkpoint  uint64                `json:"checkpoint"`
+	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+}
+
+type CheckpointHashResponse struct {
+	Checkpoint uint64   `json:"checkpoint"`
+	Slot       uint64   `json:"slot"`
+	BlockHash  [32]byte `json:"block_hash"`
+	PeerID     string   `json:"peer_id"`
 }
