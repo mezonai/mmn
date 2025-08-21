@@ -39,7 +39,6 @@ func ValidateAddress(addr string) error {
 
 const (
 	TxTypeTransfer = 0
-	TxTypeFaucet   = 1
 )
 
 type Tx struct {
@@ -113,3 +112,12 @@ const (
 	UNLOCK_ITEM_STATUS_SUCCESS = 1
 	UNLOCK_ITEM_STATUS_FAILED  = 2
 )
+
+// TxInfo represents transaction information returned by GetTxByHash
+type TxInfo struct {
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Amount    uint64 `json:"amount"`
+	Timestamp uint64 `json:"timestamp"`
+	TextData  string `json:"text_data"`
+}

@@ -108,7 +108,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetPrivateKeySeed := faucetPrivateKey.Seed()
-	transferType := TxTypeFaucet
+	transferType := TxTypeTransfer
 	fromAddr := faucetPublicKey
 	toAddr := toAddress
 	amount := uint64(1)

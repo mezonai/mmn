@@ -18,11 +18,11 @@ func (er *EventRouter) PublishTransactionEvent(event BlockchainEvent) {
 }
 
 // Subscribe subscribes to all transaction events
-func (er *EventRouter) Subscribe() chan BlockchainEvent {
+func (er *EventRouter) Subscribe() (SubscriberID, chan BlockchainEvent) {
 	return er.eventBus.Subscribe()
 }
 
-// Unsubscribe removes a subscription
-func (er *EventRouter) Unsubscribe(ch chan BlockchainEvent) {
-	er.eventBus.Unsubscribe(ch)
+// Unsubscribe removes a subscription by ID
+func (er *EventRouter) Unsubscribe(id SubscriberID) bool {
+	return er.eventBus.Unsubscribe(id)
 }

@@ -16,6 +16,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const ZERO_ADDRESS = "0000000000000000000000000000000000000000000000000000000000000000"
+
 var (
 	// Init command specific variables
 	initGenesisPath string
@@ -179,6 +181,19 @@ func initializeNode() {
 
 	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
 
+	// Initialize tx store
+	txStoreDir := filepath.Join(initDataDir, "txstore")
+	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	defer ts.Close()
+
 	// Initialize blockstore
 	blockstoreDir := filepath.Join(initDataDir, "blockstore")
 	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
@@ -186,7 +201,7 @@ func initializeNode() {
 		return
 	}
 
-	bs, err := initializeBlockstore(pubKeyHex, blockstoreDir, initDatabase)
+	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts)
 	if err != nil {
 		logx.Error("INIT", "Failed to initialize blockstore:", err.Error())
 		return
@@ -194,7 +209,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(cfg.Faucet.Address)
+	ld := ledger.NewLedger(ts)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -205,14 +220,14 @@ func initializeNode() {
 
 	// Persist genesis block to database
 	if genesisBlock != nil {
-		err = bs.AddBlockPending(genesisBlock)
+		err = bs.AddBlockPending(genesisBlock, nil)
 		if err != nil {
 			logx.Error("INIT", "Failed to persist genesis block to database:", err.Error())
 			return
 		}
 
 		// Mark genesis block as finalized
-		err = bs.MarkFinalized(genesisBlock.Slot)
+		err = bs.MarkFinalized(genesisBlock.Slot, nil)
 		if err != nil {
 			logx.Error("INIT", "Failed to mark genesis block as finalized:", err.Error())
 			return
@@ -234,16 +249,10 @@ func initializeNode() {
 }
 
 // initializeBlockchainWithGenesis initializes blockchain with genesis block using AssembleBlock
-func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.Block, error) {
-	// Check if faucet account already exists (node restart scenario)
-	if ld.AccountExists(cfg.Faucet.Address) {
-		logx.Info("GENESIS", fmt.Sprintf("Faucet account %s already exists, skipping genesis initialization", cfg.Faucet.Address))
-		// Return nil for existing state
-		return nil, nil
-	}
+func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
 
-	// Create genesis PoH entry with faucet transaction
-	// For genesis, we create a simple entry with the faucet initialization
+	// Create genesis PoH entry with alloc transaction
+	// For genesis, we create a simple entry with the alloc initialization
 	var genesisHash [32]byte                         // Zero hash for genesis
 	genesisEntry := poh.NewTickEntry(1, genesisHash) // Simple tick entry for genesis
 
@@ -251,17 +260,23 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	genesisBlock := block.AssembleBlock(
 		0,                         // slot 0 for genesis
 		genesisHash,               // previous hash is zero for genesis
-		cfg.Faucet.Address,        // use faucet address as leader for genesis
+		ZERO_ADDRESS,              // use alloc address as leader for genesis
 		[]poh.Entry{genesisEntry}, // genesis entry
 	)
 
-	// Process genesis faucet account creation
-	err := ld.CreateAccountFromGenesis(cfg.Faucet.Address, cfg.Faucet.Amount)
+	// Process genesis alloc account creation
+	err := ld.CreateAccountsFromGenesis(cfg.Alloc.Addresses)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create genesis faucet account: %w", err)
+		return nil, fmt.Errorf("failed to create genesis alloc account: %w", err)
 	}
 
-	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with faucet account %s (balance: %d)", cfg.Faucet.Address, cfg.Faucet.Amount))
+	// Save ledger snapshot to persist alloc account
+	if err := ld.SaveSnapshot("ledger/snapshot.gob"); err != nil {
+		return nil, fmt.Errorf("failed to save ledger snapshot: %w", err)
+	}
+
+	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with alloc account %s", cfg.Alloc.Addresses))
+	logx.Info("GENESIS", "Ledger snapshot saved to ledger/snapshot.gob")
 	logx.Info("GENESIS", fmt.Sprintf("Genesis block hash: %x", genesisBlock.Hash))
 
 	return genesisBlock, nil

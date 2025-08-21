@@ -14,38 +14,30 @@ const (
 	ColorBlue   = "\033[34m"
 )
 
-var logger = log.New(os.Stdout, "", log.LstdFlags)
+var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
-func genericLog(color string, level string, category string, content ...interface{}) {
-	var message string
-	if len(content) > 1 {
-		if format, ok := content[0].(string); ok {
-			message = fmt.Sprintf(format, content[1:]...)
-		} else {
-			message = fmt.Sprint(content...)
-		}
-	} else {
-		message = fmt.Sprint(content...)
-	}
-
-	coloredCategory := fmt.Sprintf("%s[%s][%s]%s", color, level, category, ColorReset)
+func Info(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[%s]%s", ColorGreen, category, ColorReset)
 	logger.Printf("%s: %s", coloredCategory, message)
 }
 
-func Info(category string, content ...interface{}) {
-	genericLog(ColorGreen, "INFO", category, content...)
-}
-
 func Error(category string, content ...interface{}) {
-	genericLog(ColorRed, "ERROR", category, content...)
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[ERROR][%s]%s", ColorRed, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
 }
 
 func Warn(category string, content ...interface{}) {
-	genericLog(ColorYellow, "WARN", category, content...)
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[WARN][%s]%s", ColorYellow, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
 }
 
 func Debug(category string, content ...interface{}) {
-	genericLog(ColorBlue, "DEBUG", category, content...)
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[DEBUG][%s]%s", ColorBlue, category, ColorReset)
+	logger.Printf("%s: %s", coloredCategory, message)
 }
 
 // Errorf logs an error message and returns a formatted error

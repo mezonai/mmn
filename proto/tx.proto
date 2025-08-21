@@ -37,6 +37,23 @@ message AddTxResponse {
   string error   = 3;
 }
 
+message GetTxByHashRequest {
+  string tx_hash = 1;
+}
+
+message TxInfo {
+  string sender = 1;
+  string recipient = 2;
+  uint64 amount = 3;
+  uint64 timestamp = 4;
+  string text_data = 5;
+}
+
+message GetTxByHashResponse {
+  string error = 1;
+  TxInfo tx = 2;
+}
+
 // Request to get transaction status
 message GetTransactionStatusRequest {
   string tx_hash = 1;
@@ -61,6 +78,7 @@ message SubscribeTransactionStatusRequest {
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
   rpc AddTx (SignedTxMsg) returns (AddTxResponse);
+  rpc GetTxByHash (GetTxByHashRequest) returns (GetTxByHashResponse);
   
   // Get current status of a transaction
   rpc GetTransactionStatus(GetTransactionStatusRequest) returns (TransactionStatusInfo);

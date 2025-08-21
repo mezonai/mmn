@@ -379,6 +379,10 @@ func (s *TxService) handleFailedTransaction(ctx context.Context, update *mmnpb.T
 
 	return nil
 }
+// GetTxByHash retrieves transaction information by its hash
+func (s *TxService) GetTxByHash(ctx context.Context, txHash string) (domain.TxInfo, error) {
+	return s.bc.GetTxByHash(txHash)
+}
 
 // ListTransactionsByAddress gets transaction history for a specific address
 func (s *TxService) ListTransactionsByAddress(ctx context.Context, addr string, limit, page, filter int) (*domain.TxHistoryResponse, error) {

@@ -118,8 +118,22 @@ func runNode() {
 		return
 	}
 
+	// Initialize tx store
+	// TODO: avoid duplication with cmd.initializeNode
+	txStoreDir := filepath.Join(initDataDir, "txstore")
+	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	defer ts.Close()
+
 	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend)
+	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -158,7 +172,13 @@ func runNode() {
 	// --- Event Router ---
 	eventRouter := events.NewEventRouter(eventBus)
 
-	ld := ledger.NewLedger(cfg.Faucet.Address)
+	ld := ledger.NewLedger(ts)
+
+	// Load ledger state from disk (includes alloc account from genesis)
+	if err := ld.LoadLedger(); err != nil {
+		log.Fatalf("Failed to load ledger state: %v", err)
+	}
+	logx.Info("LEDGER", "Loaded ledger state from disk")
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
@@ -179,14 +199,14 @@ func runNode() {
 	}
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, genesisPath, eventRouter)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
 	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, eventRouter)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, eventRouter)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, eventRouter)
@@ -219,10 +239,19 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	return cfg, nil
 }
 
-// initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(pubKey string, dataDir string, backend string) (blockstore.Store, error) {
-	seed := []byte(pubKey)
+// initializeTxStore initializes the tx storage backend
+func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, error) {
+	dbProvider, err := blockstore.CreateDBProvider(blockstore.DBVendor(backend), blockstore.DBOptions{
+		Directory: dataDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to create db provider: %w", err)
+	}
+	return blockstore.NewGenericTxStore(dbProvider)
+}
 
+// initializeBlockstore initializes the block storage backend using the factory pattern
+func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
 	// Create store configuration with StoreType
 	storeType := blockstore.StoreType(backend)
 	config := &blockstore.StoreConfig{
@@ -236,7 +265,7 @@ func initializeBlockstore(pubKey string, dataDir string, backend string) (blocks
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, seed)
+	return blockstore.CreateStore(config, ts)
 }
 
 // initializePoH initializes Proof of History components
@@ -246,15 +275,15 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
 	}
 
-	seed := []byte(pubKey)
 	hashesPerTick := pohCfg.HashesPerTick
 	ticksPerSlot := pohCfg.TicksPerSlot
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
-	pohAutoHashInterval := tickInterval / 5
+	pohAutoHashInterval := tickInterval / 10
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
-	pohEngine := poh.NewPoh(seed, &hashesPerTick, pohAutoHashInterval)
+	empty_seed := []byte("")
+	pohEngine := poh.NewPoh(empty_seed, &hashesPerTick, pohAutoHashInterval)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
@@ -281,13 +310,13 @@ func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, genesisPath string, eventRouter *events.EventRouter) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, eventRouter *events.EventRouter) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, eventRouter)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter)
 	return mp, nil
 }
 

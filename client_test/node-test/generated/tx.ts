@@ -88,6 +88,53 @@ export interface AddTxResponse {
     error: string;
 }
 /**
+ * @generated from protobuf message mmn.GetTxByHashRequest
+ */
+export interface GetTxByHashRequest {
+    /**
+     * @generated from protobuf field: string tx_hash = 1
+     */
+    txHash: string;
+}
+/**
+ * @generated from protobuf message mmn.TxInfo
+ */
+export interface TxInfo {
+    /**
+     * @generated from protobuf field: string sender = 1
+     */
+    sender: string;
+    /**
+     * @generated from protobuf field: string recipient = 2
+     */
+    recipient: string;
+    /**
+     * @generated from protobuf field: uint64 amount = 3
+     */
+    amount: bigint;
+    /**
+     * @generated from protobuf field: uint64 timestamp = 4
+     */
+    timestamp: bigint;
+    /**
+     * @generated from protobuf field: string text_data = 5
+     */
+    textData: string;
+}
+/**
+ * @generated from protobuf message mmn.GetTxByHashResponse
+ */
+export interface GetTxByHashResponse {
+    /**
+     * @generated from protobuf field: string error = 1
+     */
+    error: string;
+    /**
+     * @generated from protobuf field: mmn.TxInfo tx = 2
+     */
+    tx?: TxInfo;
+}
+/**
  * Request to get transaction status
  *
  * @generated from protobuf message mmn.GetTransactionStatusRequest
@@ -441,6 +488,186 @@ class AddTxResponse$Type extends MessageType<AddTxResponse> {
  */
 export const AddTxResponse = new AddTxResponse$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class GetTxByHashRequest$Type extends MessageType<GetTxByHashRequest> {
+    constructor() {
+        super("mmn.GetTxByHashRequest", [
+            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetTxByHashRequest>): GetTxByHashRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.txHash = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetTxByHashRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetTxByHashRequest): GetTxByHashRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tx_hash */ 1:
+                    message.txHash = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetTxByHashRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tx_hash = 1; */
+        if (message.txHash !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetTxByHashRequest
+ */
+export const GetTxByHashRequest = new GetTxByHashRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class TxInfo$Type extends MessageType<TxInfo> {
+    constructor() {
+        super("mmn.TxInfo", [
+            { no: 1, name: "sender", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "recipient", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "amount", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 4, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 5, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<TxInfo>): TxInfo {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.sender = "";
+        message.recipient = "";
+        message.amount = 0n;
+        message.timestamp = 0n;
+        message.textData = "";
+        if (value !== undefined)
+            reflectionMergePartial<TxInfo>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: TxInfo): TxInfo {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string sender */ 1:
+                    message.sender = reader.string();
+                    break;
+                case /* string recipient */ 2:
+                    message.recipient = reader.string();
+                    break;
+                case /* uint64 amount */ 3:
+                    message.amount = reader.uint64().toBigInt();
+                    break;
+                case /* uint64 timestamp */ 4:
+                    message.timestamp = reader.uint64().toBigInt();
+                    break;
+                case /* string text_data */ 5:
+                    message.textData = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: TxInfo, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string sender = 1; */
+        if (message.sender !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.sender);
+        /* string recipient = 2; */
+        if (message.recipient !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.recipient);
+        /* uint64 amount = 3; */
+        if (message.amount !== 0n)
+            writer.tag(3, WireType.Varint).uint64(message.amount);
+        /* uint64 timestamp = 4; */
+        if (message.timestamp !== 0n)
+            writer.tag(4, WireType.Varint).uint64(message.timestamp);
+        /* string text_data = 5; */
+        if (message.textData !== "")
+            writer.tag(5, WireType.LengthDelimited).string(message.textData);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.TxInfo
+ */
+export const TxInfo = new TxInfo$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
+    constructor() {
+        super("mmn.GetTxByHashResponse", [
+            { no: 1, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "tx", kind: "message", T: () => TxInfo }
+        ]);
+    }
+    create(value?: PartialMessage<GetTxByHashResponse>): GetTxByHashResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.error = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetTxByHashResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetTxByHashResponse): GetTxByHashResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string error */ 1:
+                    message.error = reader.string();
+                    break;
+                case /* mmn.TxInfo tx */ 2:
+                    message.tx = TxInfo.internalBinaryRead(reader, reader.uint32(), options, message.tx);
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetTxByHashResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string error = 1; */
+        if (message.error !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.error);
+        /* mmn.TxInfo tx = 2; */
+        if (message.tx)
+            TxInfo.internalBinaryWrite(message.tx, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetTxByHashResponse
+ */
+export const GetTxByHashResponse = new GetTxByHashResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class GetTransactionStatusRequest$Type extends MessageType<GetTransactionStatusRequest> {
     constructor() {
         super("mmn.GetTransactionStatusRequest", [
@@ -626,6 +853,7 @@ export const SubscribeTransactionStatusRequest = new SubscribeTransactionStatusR
 export const TxService = new ServiceType("mmn.TxService", [
     { name: "TxBroadcast", options: {}, I: SignedTxMsg, O: TxResponse },
     { name: "AddTx", options: {}, I: SignedTxMsg, O: AddTxResponse },
+    { name: "GetTxByHash", options: {}, I: GetTxByHashRequest, O: GetTxByHashResponse },
     { name: "GetTransactionStatus", options: {}, I: GetTransactionStatusRequest, O: TransactionStatusInfo },
     { name: "SubscribeTransactionStatus", serverStreaming: true, options: {}, I: SubscribeTransactionStatusRequest, O: TransactionStatusInfo }
 ]);

@@ -129,3 +129,24 @@ func (c *GRPCClient) SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxSe
 	}
 	return stream, nil
 }
+
+func (c *GRPCClient) GetTxByHash(txHash string) (domain.TxInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Millisecond)
+	defer cancel()
+
+	res, err := c.txCli.GetTxByHash(ctx, &mmnpb.GetTxByHashRequest{TxHash: txHash})
+	if err != nil {
+		return domain.TxInfo{}, err
+	}
+	if res.Error != "" {
+		return domain.TxInfo{}, fmt.Errorf("get-tx-by-hash failed: %s", res.Error)
+	}
+
+	return domain.TxInfo{
+		Sender:    res.Tx.Sender,
+		Recipient: res.Tx.Recipient,
+		Amount:    res.Tx.Amount,
+		Timestamp: res.Tx.Timestamp,
+		TextData:  res.Tx.TextData,
+	}, nil
+}

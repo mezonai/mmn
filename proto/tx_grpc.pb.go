@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	TxService_TxBroadcast_FullMethodName                = "/mmn.TxService/TxBroadcast"
 	TxService_AddTx_FullMethodName                      = "/mmn.TxService/AddTx"
+	TxService_GetTxByHash_FullMethodName                = "/mmn.TxService/GetTxByHash"
 	TxService_GetTransactionStatus_FullMethodName       = "/mmn.TxService/GetTransactionStatus"
 	TxService_SubscribeTransactionStatus_FullMethodName = "/mmn.TxService/SubscribeTransactionStatus"
 )
@@ -31,6 +32,7 @@ const (
 type TxServiceClient interface {
 	TxBroadcast(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*TxResponse, error)
 	AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error)
+	GetTxByHash(ctx context.Context, in *GetTxByHashRequest, opts ...grpc.CallOption) (*GetTxByHashResponse, error)
 	// Get current status of a transaction
 	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*TransactionStatusInfo, error)
 	// Subscribe to status updates for all transactions
@@ -59,6 +61,16 @@ func (c *txServiceClient) AddTx(ctx context.Context, in *SignedTxMsg, opts ...gr
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AddTxResponse)
 	err := c.cc.Invoke(ctx, TxService_AddTx_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *txServiceClient) GetTxByHash(ctx context.Context, in *GetTxByHashRequest, opts ...grpc.CallOption) (*GetTxByHashResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTxByHashResponse)
+	err := c.cc.Invoke(ctx, TxService_GetTxByHash_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +112,7 @@ type TxService_SubscribeTransactionStatusClient = grpc.ServerStreamingClient[Tra
 type TxServiceServer interface {
 	TxBroadcast(context.Context, *SignedTxMsg) (*TxResponse, error)
 	AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error)
+	GetTxByHash(context.Context, *GetTxByHashRequest) (*GetTxByHashResponse, error)
 	// Get current status of a transaction
 	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error)
 	// Subscribe to status updates for all transactions
@@ -119,6 +132,9 @@ func (UnimplementedTxServiceServer) TxBroadcast(context.Context, *SignedTxMsg) (
 }
 func (UnimplementedTxServiceServer) AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddTx not implemented")
+}
+func (UnimplementedTxServiceServer) GetTxByHash(context.Context, *GetTxByHashRequest) (*GetTxByHashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTxByHash not implemented")
 }
 func (UnimplementedTxServiceServer) GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTransactionStatus not implemented")
@@ -183,6 +199,24 @@ func _TxService_AddTx_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TxService_GetTxByHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTxByHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxServiceServer).GetTxByHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TxService_GetTxByHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxServiceServer).GetTxByHash(ctx, req.(*GetTxByHashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TxService_GetTransactionStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTransactionStatusRequest)
 	if err := dec(in); err != nil {
@@ -226,6 +260,10 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddTx",
 			Handler:    _TxService_AddTx_Handler,
+		},
+		{
+			MethodName: "GetTxByHash",
+			Handler:    _TxService_GetTxByHash_Handler,
 		},
 		{
 			MethodName: "GetTransactionStatus",

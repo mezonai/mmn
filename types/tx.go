@@ -2,6 +2,7 @@ package types
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 
 const (
 	TxTypeTransfer = 0
-	TxTypeFaucet   = 1
 )
 
 type Transaction struct {
@@ -47,7 +47,8 @@ func (tx *Transaction) Bytes() []byte {
 }
 
 func (tx *Transaction) Hash() string {
-	return hex.EncodeToString(tx.Bytes())
+	sum256 := sha256.Sum256(tx.Bytes())
+	return hex.EncodeToString(sum256[:])
 }
 
 func hexToEd25519(hexstr string) (ed25519.PublicKey, error) {

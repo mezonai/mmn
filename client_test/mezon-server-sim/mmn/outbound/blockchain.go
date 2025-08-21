@@ -12,4 +12,5 @@ type MainnetClient interface {
 	GetAccount(addr string) (domain.Account, error)
 	GetTxHistory(addr string, limit, offset, filter int) (domain.TxHistoryResponse, error)
 	SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxService_SubscribeTransactionStatusClient, error)
+	GetTxByHash(txHash string) (domain.TxInfo, error)
 }
