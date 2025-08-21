@@ -33,6 +33,8 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
 
+	fmt.Println("Adding account to db", account)
+
 	accountData, err := json.Marshal(account)
 	if err != nil {
 		return fmt.Errorf("failed to marshal account: %w", err)

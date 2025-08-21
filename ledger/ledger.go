@@ -26,8 +26,11 @@ type Ledger struct {
 	accountStore blockstore.AccountStore
 }
 
-func NewLedger(txStore blockstore.TxStore) *Ledger {
-	return &Ledger{txStore: txStore}
+func NewLedger(txStore blockstore.TxStore, accountStore blockstore.AccountStore) *Ledger {
+	return &Ledger{
+		txStore:      txStore,
+		accountStore: accountStore,
+	}
 }
 
 // CreateAccount creates and stores a new account into db, return error if an account with the same addr existed
@@ -52,9 +55,6 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) error {
 
 // CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
 func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	for _, addr := range addrs {
 		err := l.CreateAccount(addr.Address, addr.Amount)
 		if err != nil {

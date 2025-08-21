@@ -181,6 +181,19 @@ func initializeNode() {
 
 	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
 
+	// Initialize account store
+	accountStoreDir := filepath.Join(initDataDir, "accountStore")
+	if err := os.MkdirAll(accountStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create accountStore directory:", err.Error())
+		return
+	}
+	as, err := initializeAccountStore(accountStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create accountStore directory:", err.Error())
+		return
+	}
+	defer as.Close()
+
 	// Initialize tx store
 	txStoreDir := filepath.Join(initDataDir, "txstore")
 	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
@@ -209,7 +222,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts)
+	ld := ledger.NewLedger(ts, as)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)

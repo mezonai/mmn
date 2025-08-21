@@ -81,6 +81,8 @@ func getRandomFreePort() (string, error) {
 }
 
 func runNode() {
+	logx.Info("NODE", "Running node")
+
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -117,9 +119,22 @@ func runNode() {
 		return
 	}
 
+	// Initialize account store
+	accountStoreDir := filepath.Join(dataDir, "accountStore")
+	if err := os.MkdirAll(accountStoreDir, 0755); err != nil {
+		logx.Error("NODE", "Failed to create accountStore directory:", err.Error())
+		return
+	}
+	as, err := initializeAccountStore(accountStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("NODE", "Failed to create accountStore directory:", err.Error())
+		return
+	}
+	defer as.Close()
+
 	// Initialize tx store
 	// TODO: avoid duplication with cmd.initializeNode
-	txStoreDir := filepath.Join(initDataDir, "txstore")
+	txStoreDir := filepath.Join(dataDir, "txstore")
 	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
 		return
@@ -165,7 +180,7 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts)
+	ld := ledger.NewLedger(ts, as)
 
 	// Load ledger state from disk (includes alloc account from genesis)
 	//if err := ld.LoadLedger(); err != nil {
@@ -230,6 +245,17 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 		return nil, fmt.Errorf("load genesis config: %w", err)
 	}
 	return cfg, nil
+}
+
+// initializeAccountStore initializes the tx storage backend
+func initializeAccountStore(dataDir string, backend string) (blockstore.AccountStore, error) {
+	dbProvider, err := blockstore.CreateDBProvider(blockstore.DBVendor(backend), blockstore.DBOptions{
+		Directory: dataDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to create db provider: %w", err)
+	}
+	return blockstore.NewGenericAccountStore(dbProvider)
 }
 
 // initializeTxStore initializes the tx storage backend
