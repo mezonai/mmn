@@ -15,6 +15,7 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/types"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -65,7 +66,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
 	// Setup network event notifications to update collector dynamically
 	// Only count actual validator nodes, not bootstrap nodes
 	ln.host.Network().Notify(&network.NotifyBundle{
@@ -102,6 +103,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
 			}
+
+			// Reset poh to sync poh clock with leader
+			logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+			recorder.Reset(blk.LastEntryHash(), blk.Slot)
 
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,

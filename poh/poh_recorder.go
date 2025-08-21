@@ -36,9 +36,9 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tickHeight = slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.entries = make([]Entry, 0)
+	r.tickHeight = slot * r.ticksPerSlot
 	r.poh.Reset(lastHash)
+	r.entries = make([]Entry, 0) //TODO: need re-calculate entries base on last hash
 }
 
 func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
@@ -65,18 +65,6 @@ func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
 		fmt.Printf("FastForward: %d\n", r.tickHeight)
 	}
 	return lastHash, nil
-}
-
-func (r *PohRecorder) ReseedAtSlot(seedHash [32]byte, slot uint64) {
-	tick := slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.ReseedAtTick(seedHash, tick)
-}
-
-func (r *PohRecorder) ReseedAtTick(seedHash [32]byte, tick uint64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.poh.Reset(seedHash)
-	r.tickHeight = tick
 }
 
 func (r *PohRecorder) RecordTxs(txs []*types.Transaction) (*Entry, error) {

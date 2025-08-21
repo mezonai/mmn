@@ -153,7 +153,7 @@ func runNode() {
 	defer ts.Close()
 
 	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend, ts)
+	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -261,7 +261,7 @@ func runNode() {
 	log.Printf("INFO: Initializing collector for %d initial validators (will auto-adapt based on actual voting)", initialValidators)
 	collector := consensus.NewCollector(initialValidators) // DYNAMIC with auto-adaptation!
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// INITIALIZE STAKE MANAGER for dynamic PoS scheduling
 	var stakeManager *staking.StakeManager
@@ -358,9 +358,7 @@ func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, erro
 }
 
 // initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(pubKey string, dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
-	seed := []byte(pubKey)
-
+func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
 	// Create store configuration with StoreType
 	storeType := blockstore.StoreType(backend)
 	config := &blockstore.StoreConfig{
@@ -374,7 +372,7 @@ func initializeBlockstore(pubKey string, dataDir string, backend string, ts bloc
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, seed, ts)
+	return blockstore.CreateStore(config, ts)
 }
 
 // initializePoH initializes Proof of History components
@@ -384,7 +382,6 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
 	}
 
-	seed := []byte(pubKey)
 	hashesPerTick := pohCfg.HashesPerTick
 	ticksPerSlot := pohCfg.TicksPerSlot
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
@@ -392,6 +389,8 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
+	// Create seed for PoH
+	seed := []byte("default_poh_seed_for_genesis")
 	pohEngine := poh.NewPoh(seed, &hashesPerTick, time.Duration(pohAutoHashInterval))
 	pohEngine.Run()
 

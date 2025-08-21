@@ -3,6 +3,7 @@ package staking
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/types"
 )
 
 const NoSlot = ^uint64(0)
@@ -45,7 +47,7 @@ type StakeValidator struct {
 
 	// PoS integration
 	stakeManager *StakeManager
-	
+
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
@@ -53,10 +55,10 @@ type StakeValidator struct {
 	stopCh            chan struct{}
 
 	// Performance tracking
-	slotsProduced     uint64
-	blocksProduced    uint64
-	slotsMissed       uint64
-	lastPerformance   float64
+	slotsProduced   uint64
+	blocksProduced  uint64
+	slotsMissed     uint64
+	lastPerformance float64
 }
 
 // NewStakeValidator creates a new stake-enabled validator
@@ -122,9 +124,9 @@ func (v *StakeValidator) Stop() {
 // handleEntry processes entries from PoH service
 func (v *StakeValidator) handleEntry(entries []poh.Entry) {
 	v.collectedEntries = append(v.collectedEntries, entries...)
-	
+
 	currentSlot := v.Recorder.CurrentSlot()
-	
+
 	// Use stake manager to check leadership
 	if v.stakeManager.IsLeaderForSlot(v.Pubkey, currentSlot) {
 		if v.leaderStartAtSlot == NoSlot {
@@ -140,14 +142,14 @@ func (v *StakeValidator) handleEntry(entries []poh.Entry) {
 func (v *StakeValidator) onLeaderSlotStart(currentSlot uint64) {
 	v.leaderStartAtSlot = currentSlot
 	logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Starting leader slot %d", currentSlot))
-	
+
 	// Generate stake proof for this slot
 	proof, err := v.stakeManager.stakePool.GenerateStakeProof(v.Pubkey, currentSlot, v.PrivKey)
 	if err != nil {
 		logx.Error("STAKE_VALIDATOR", "Failed to generate stake proof:", err)
 		return
 	}
-	
+
 	logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Generated stake proof for slot %d: %x", currentSlot, proof[:8]))
 }
 
@@ -155,7 +157,7 @@ func (v *StakeValidator) onLeaderSlotStart(currentSlot uint64) {
 func (v *StakeValidator) onLeaderSlotTick(currentSlot uint64) {
 	// Collect transactions from mempool
 	txs := v.Mempool.PullBatch(v.BatchSize)
-	
+
 	// Include staking transactions
 	stakeTxs := v.getStakeTransactionsFromMempool()
 	if len(stakeTxs) > 0 {
@@ -168,15 +170,26 @@ func (v *StakeValidator) onLeaderSlotTick(currentSlot uint64) {
 			}
 		}
 	}
-	
+
 	if len(txs) > 0 {
+		// Convert [][]byte to []*types.Transaction
+		transactions := make([]*types.Transaction, 0, len(txs))
+		for _, txData := range txs {
+			var tx types.Transaction
+			if err := json.Unmarshal(txData, &tx); err == nil {
+				transactions = append(transactions, &tx)
+			}
+		}
+
 		// Record transactions with PoH
-		entry, err := v.Recorder.RecordTxs(txs)
-		if err == nil {
-			v.collectedEntries = append(v.collectedEntries, *entry)
+		if len(transactions) > 0 {
+			entry, err := v.Recorder.RecordTxs(transactions)
+			if err == nil {
+				v.collectedEntries = append(v.collectedEntries, *entry)
+			}
 		}
 	}
-	
+
 	// Check if slot is complete
 	if v.isSlotComplete(currentSlot) {
 		v.finalizeLeaderSlot(currentSlot)
@@ -187,7 +200,7 @@ func (v *StakeValidator) onLeaderSlotTick(currentSlot uint64) {
 func (v *StakeValidator) onFollowerSlot(currentSlot uint64) {
 	// Wait for block from leader and validate
 	// In the current implementation, this is handled by the network layer
-	
+
 	// Track slot completion for performance metrics
 	if currentSlot > v.lastSlot {
 		v.lastSlot = currentSlot
@@ -198,12 +211,12 @@ func (v *StakeValidator) onFollowerSlot(currentSlot uint64) {
 
 // finalizeLeaderSlot completes block production for leader slot
 func (v *StakeValidator) finalizeLeaderSlot(slot uint64) {
-	logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Finalizing leader slot %d with %d entries", 
+	logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Finalizing leader slot %d with %d entries",
 		slot, len(v.collectedEntries)))
-	
+
 	// Create block from collected entries
 	block := v.createBlockFromEntries(slot, v.collectedEntries)
-	
+
 	// Apply block to ledger session
 	session := v.ledger.NewSession()
 	err := v.applyBlockToSession(block, session)
@@ -213,10 +226,10 @@ func (v *StakeValidator) finalizeLeaderSlot(slot uint64) {
 		v.resetLeaderSlot()
 		return
 	}
-	
+
 	// Commit session
 	v.session = session
-	
+
 	// Store block
 	err = v.blockStore.AddBlockPending(block)
 	if err != nil {
@@ -225,24 +238,24 @@ func (v *StakeValidator) finalizeLeaderSlot(slot uint64) {
 		v.resetLeaderSlot()
 		return
 	}
-	
+
 	// Broadcast block to network
 	ctx := context.Background()
 	err = v.netClient.BroadcastBlock(ctx, block)
 	if err != nil {
 		logx.Error("STAKE_VALIDATOR", "Failed to broadcast block:", err)
 	}
-	
+
 	// Update performance metrics
 	v.blocksProduced++
 	v.slotsProduced++
-	
+
 	// Notify stake manager of successful slot completion
 	v.stakeManager.OnSlotComplete(slot, v.Pubkey, true)
-	
+
 	// Reset for next slot
 	v.resetLeaderSlot()
-	
+
 	logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Successfully produced block for slot %d", slot))
 }
 
@@ -251,7 +264,7 @@ func (v *StakeValidator) finalizeLeaderSlot(slot uint64) {
 func (v *StakeValidator) leaderBatchLoop() {
 	ticker := time.NewTicker(v.leaderBatchLoopInterval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-v.stopCh:
@@ -265,7 +278,7 @@ func (v *StakeValidator) leaderBatchLoop() {
 func (v *StakeValidator) roleMonitorLoop() {
 	ticker := time.NewTicker(v.roleMonitorLoopInterval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-v.stopCh:
@@ -279,7 +292,7 @@ func (v *StakeValidator) roleMonitorLoop() {
 func (v *StakeValidator) leaderTimeoutLoop() {
 	ticker := time.NewTicker(v.leaderTimeoutLoopInterval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-v.stopCh:
@@ -293,7 +306,7 @@ func (v *StakeValidator) leaderTimeoutLoop() {
 func (v *StakeValidator) performanceTracker() {
 	ticker := time.NewTicker(30 * time.Second) // Update every 30 seconds
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-v.stopCh:
@@ -314,11 +327,11 @@ func (v *StakeValidator) getStakeTransactionsFromMempool() []*StakeTransaction {
 
 func (v *StakeValidator) isSlotComplete(currentSlot uint64) bool {
 	// Check if we have enough entries or reached slot boundary
-	return len(v.collectedEntries) >= v.BatchSize || 
-		   (v.leaderStartAtSlot != NoSlot && currentSlot > v.leaderStartAtSlot)
+	return len(v.collectedEntries) >= v.BatchSize ||
+		(v.leaderStartAtSlot != NoSlot && currentSlot > v.leaderStartAtSlot)
 }
 
-func (v *StakeValidator) createBlockFromEntries(slot uint64, entries []poh.Entry) *block.Block {
+func (v *StakeValidator) createBlockFromEntries(slot uint64, entries []poh.Entry) *block.BroadcastedBlock {
 	// Use AssembleBlock function to create block properly
 	b := block.AssembleBlock(
 		slot,
@@ -326,20 +339,20 @@ func (v *StakeValidator) createBlockFromEntries(slot uint64, entries []poh.Entry
 		v.Pubkey,
 		entries,
 	)
-	
+
 	// Set status to pending
 	b.Status = block.BlockPending
-	
+
 	return b
 }
 
-func (v *StakeValidator) applyBlockToSession(block *block.Block, session *ledger.Session) error {
+func (v *StakeValidator) applyBlockToSession(block *block.BroadcastedBlock, session *ledger.Session) error {
 	// Apply all transactions in block entries to the session
 	for _, entry := range block.Entries {
 		if !entry.Tick {
-			for _, txData := range entry.Transactions {
+			for _, tx := range entry.Transactions {
 				// Check if it's a stake transaction
-				if stakeTx, err := DeserializeTransaction(txData); err == nil {
+				if stakeTx, err := DeserializeTransaction(tx.Bytes()); err == nil {
 					// Process stake transaction
 					err = v.processStakeTransaction(stakeTx, session)
 					if err != nil {
@@ -391,7 +404,7 @@ func (v *StakeValidator) checkLeaderTimeout() {
 	if v.leaderStartAtSlot == NoSlot {
 		return
 	}
-	
+
 	currentSlot := v.Recorder.CurrentSlot()
 	if currentSlot > v.leaderStartAtSlot {
 		// Leader slot timeout
@@ -405,7 +418,7 @@ func (v *StakeValidator) updatePerformanceMetrics() {
 	totalSlots := v.slotsProduced + v.slotsMissed
 	if totalSlots > 0 {
 		v.lastPerformance = float64(v.slotsProduced) / float64(totalSlots)
-		logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Performance: %.2f%% (%d/%d slots)", 
+		logx.Info("STAKE_VALIDATOR", fmt.Sprintf("Performance: %.2f%% (%d/%d slots)",
 			v.lastPerformance*100, v.slotsProduced, totalSlots))
 	}
 }
@@ -415,11 +428,11 @@ func (v *StakeValidator) updatePerformanceMetrics() {
 // GetPerformanceMetrics returns validator performance metrics
 func (v *StakeValidator) GetPerformanceMetrics() map[string]interface{} {
 	return map[string]interface{}{
-		"slots_produced":    v.slotsProduced,
-		"blocks_produced":   v.blocksProduced,
-		"slots_missed":      v.slotsMissed,
-		"performance_rate":  v.lastPerformance,
-		"is_active":         v.isActiveValidator(),
+		"slots_produced":   v.slotsProduced,
+		"blocks_produced":  v.blocksProduced,
+		"slots_missed":     v.slotsMissed,
+		"performance_rate": v.lastPerformance,
+		"is_active":        v.isActiveValidator(),
 	}
 }
 
