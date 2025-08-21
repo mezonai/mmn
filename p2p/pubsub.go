@@ -13,12 +13,13 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/transaction"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
 	ln.SetCallbacks(Callbacks{
-		OnBlockReceived: func(blk *block.Block) error {
+		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
 				return nil
 			}
@@ -41,6 +42,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
+			// Reset poh to sync poh clock with leader
+			logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+			recorder.Reset(blk.LastEntryHash(), blk.Slot)
+
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,
 				BlockHash: blk.Hash,
@@ -57,7 +62,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+				block := bs.Block(vote.Slot)
+				if block == nil {
+					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				}
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -85,7 +94,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if committed && needApply {
 				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
 				// Apply block to ledger
-				if err := ld.ApplyBlock(bs.Block(vote.Slot)); err != nil {
+				block := bs.Block(vote.Slot)
+				if block == nil {
+					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				}
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
@@ -103,10 +116,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			logx.Info("TX", "Processing received transaction from P2P network")
 
 			// Add transaction to mempool
-			mp.AddTx(txData, false)
+			_, err := mp.AddTx(txData, false)
+			if err != nil {
+				fmt.Printf("Failed to add transaction from P2P: %v\n", err)
+			}
 			return nil
 		},
-		OnSyncResponseReceived: func(blocks []*block.Block) error {
+		OnSyncResponseReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
 
 			for _, blk := range blocks {

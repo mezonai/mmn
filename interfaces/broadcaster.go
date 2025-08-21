@@ -9,7 +9,7 @@ import (
 )
 
 type Broadcaster interface {
-	BroadcastBlock(ctx context.Context, blk *block.Block) error
+	BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error
 	BroadcastVote(ctx context.Context, vt *consensus.Vote) error
 	TxBroadcast(ctx context.Context, tx *transaction.Transaction) error
 }

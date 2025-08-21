@@ -14,7 +14,7 @@ const (
 	ColorBlue   = "\033[34m"
 )
 
-var logger = log.New(os.Stdout, "", log.LstdFlags)
+var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
 func Info(category string, content ...interface{}) {
 	message := fmt.Sprint(content...)

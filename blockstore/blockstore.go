@@ -1,11 +1,13 @@
 package blockstore
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/logx"
@@ -26,18 +28,18 @@ type GenericBlockStore struct {
 	provider        DatabaseProvider
 	mu              sync.RWMutex
 	latestFinalized uint64
-	seedHash        [32]byte
+	txStore         TxStore
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider DatabaseProvider, seed []byte) (Store, error) {
+func NewGenericBlockStore(provider DatabaseProvider, ts TxStore) (Store, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
 
 	store := &GenericBlockStore{
 		provider: provider,
-		seedHash: sha256.Sum256(seed),
+		txStore:  ts,
 	}
 
 	// Load existing metadata
@@ -140,7 +142,7 @@ func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool
 }
 
 // AddBlockPending adds a pending block to the store
-func (s *GenericBlockStore) AddBlockPending(b *block.Block) error {
+func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
@@ -160,15 +162,22 @@ func (s *GenericBlockStore) AddBlockPending(b *block.Block) error {
 		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
 
-	// Serialize block
-	value, err := json.Marshal(b)
+	// Store block
+	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
-
-	// Store block
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
+	}
+
+	// Store block tsx
+	txs := make([]*transaction.Transaction, 0)
+	for _, entry := range b.Entries {
+		txs = append(txs, entry.Transactions...)
+	}
+	if err := s.txStore.StoreBatch(txs); err != nil {
+		return fmt.Errorf("failed to store txs: %w", err)
 	}
 
 	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
@@ -205,11 +214,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
 	return nil
-}
-
-// Seed returns the seed hash
-func (s *GenericBlockStore) Seed() [32]byte {
-	return s.seedHash
 }
 
 // Close closes the underlying database provider

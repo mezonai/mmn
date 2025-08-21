@@ -181,6 +181,19 @@ func initializeNode() {
 
 	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
 
+	// Initialize tx store
+	txStoreDir := filepath.Join(initDataDir, "txstore")
+	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		return
+	}
+	defer ts.Close()
+
 	// Initialize blockstore
 	blockstoreDir := filepath.Join(initDataDir, "blockstore")
 	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
@@ -188,7 +201,7 @@ func initializeNode() {
 		return
 	}
 
-	bs, err := initializeBlockstore(pubKeyHex, blockstoreDir, initDatabase)
+	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts)
 	if err != nil {
 		logx.Error("INIT", "Failed to initialize blockstore:", err.Error())
 		return
@@ -196,7 +209,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger()
+	ld := ledger.NewLedger(ts)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -236,7 +249,7 @@ func initializeNode() {
 }
 
 // initializeBlockchainWithGenesis initializes blockchain with genesis block using AssembleBlock
-func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.Block, error) {
+func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
 
 	// Create genesis PoH entry with alloc transaction
 	// For genesis, we create a simple entry with the alloc initialization

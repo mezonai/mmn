@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sync"
+
+	"github.com/mezonai/mmn/transaction"
 )
 
 type PohRecorder struct {
@@ -34,9 +36,9 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tickHeight = slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.entries = make([]Entry, 0)
+	r.tickHeight = slot * r.ticksPerSlot
 	r.poh.Reset(lastHash)
+	r.entries = make([]Entry, 0) //TODO: need re-calculate entries base on last hash
 }
 
 func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
@@ -65,22 +67,14 @@ func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
 	return lastHash, nil
 }
 
-func (r *PohRecorder) ReseedAtSlot(seedHash [32]byte, slot uint64) {
-	tick := slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.ReseedAtTick(seedHash, tick)
-}
-
-func (r *PohRecorder) ReseedAtTick(seedHash [32]byte, tick uint64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.poh.Reset(seedHash)
-	r.tickHeight = tick
-}
-
-func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
+func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	txHashes := make([]string, len(txs))
+	for i, tx := range txs {
+		txHashes[i] = tx.Hash()
+	}
 	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	if pohEntry == nil {
@@ -121,13 +115,15 @@ func (r *PohRecorder) DrainEntries() []Entry {
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.tickHeight / r.ticksPerSlot
+
+	// +1 to make slot start from 1
+	return r.tickHeight/r.ticksPerSlot + 1
 }
 
-func HashTransactions(txs [][]byte) [32]byte {
+func HashTransactions(txs []*transaction.Transaction) [32]byte {
 	var all []byte
 	for _, tx := range txs {
-		all = append(all, tx...)
+		all = append(all, tx.Bytes()...)
 	}
 	return sha256.Sum256(all)
 }

@@ -29,7 +29,7 @@ func NewGRPCClient(peers []string) *GRPCClient {
 	}
 }
 
-func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.Block) error {
+func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	// TODO: should reuse connection instead of creating a new one for each peer
 	for _, addr := range c.peers {
 		conn, err := grpc.NewClient(addr, c.opts...)
@@ -40,7 +40,12 @@ func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.Block) error
 		client := pb.NewBlockServiceClient(conn)
 		rpcCtx, cancel := context.WithTimeout(ctx, time.Second)
 		fmt.Printf("Broadcasting block %d to %s\n", blk.Slot, addr)
-		resp, err := client.Broadcast(rpcCtx, utils.ToProtoBlock(blk))
+		pbBlk, err := utils.ToProtoBlock(blk)
+		if err != nil {
+			fmt.Printf("[gRPC Client] ToProtoBlock error: %v", err)
+			continue
+		}
+		resp, err := client.Broadcast(rpcCtx, pbBlk)
 		cancel()
 		if err != nil {
 			fmt.Printf("[gRPC Client] Broadcast to %s error: %v", addr, err)
