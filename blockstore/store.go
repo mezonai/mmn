@@ -20,7 +20,6 @@ type Store interface {
 	GetLatestSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock, eventRouter *events.EventRouter) error
 	MarkFinalized(slot uint64, eventRouter *events.EventRouter) error
-	Seed() [32]byte
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 	Close() error
