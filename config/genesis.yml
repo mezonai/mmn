@@ -24,7 +24,7 @@ config:
     leader_timeout: 50
     leader_timeout_loop_interval: 5
   access_control:
-    allowlist_enabled: true
-    blacklist_enabled: true
+    allowlist_enabled: false
+    blacklist_enabled: false
     allowed_peers: []
     blacklisted_peers: []
