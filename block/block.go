@@ -74,9 +74,7 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 	h.Write(b.PrevHash[:])
 	// LeaderID
 	h.Write([]byte(b.LeaderID))
-	// Timestamp (UnixNano)
-	binary.BigEndian.PutUint64(buf, b.Timestamp)
-	h.Write(buf)
+	// Entries
 	for _, e := range b.Entries {
 		binary.BigEndian.PutUint64(buf, e.NumHashes)
 		h.Write(buf)

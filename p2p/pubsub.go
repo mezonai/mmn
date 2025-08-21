@@ -221,6 +221,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			return nil
 		},
+		OnShredReceived: func(shred *types.Shred) error {
+			logx.Info("SHRED", "Received shred from network: slot=", shred.Header.Slot, ",index=", shred.Header.Index)
+			return nil
+		},
 	})
 
 	go ln.startInitialSync(bs)
@@ -274,6 +278,25 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 			})
 		}
 	}
+
+	// Shred topics
+	if ln.topicShreds, err = ln.pubsub.Join(TopicShreds); err == nil {
+		if sub, err := ln.topicShreds.Subscribe(); err == nil {
+			go ln.HandleShredTopic(ctx, sub)
+		}
+	}
+
+	if ln.topicRepairReq, err = ln.pubsub.Join(TopicRepairRequest); err == nil {
+		if sub, err := ln.topicRepairReq.Subscribe(); err == nil {
+			go ln.HandleRepairRequestTopic(ctx, sub)
+		}
+	}
+
+	if ln.topicRepairRes, err = ln.pubsub.Join(TopicRepairResponse); err == nil {
+		if sub, err := ln.topicRepairRes.Subscribe(); err == nil {
+			go ln.HandleRepairResponseTopic(ctx, sub)
+		}
+	}
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
@@ -291,6 +314,9 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	}
 	if cbs.OnSyncResponseReceived != nil {
 		ln.onSyncResponseReceived = cbs.OnSyncResponseReceived
+	}
+	if cbs.OnShredReceived != nil {
+		ln.onShredReceived = cbs.OnShredReceived
 	}
 }
 

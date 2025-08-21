@@ -10,8 +10,14 @@ const (
 	TopicTxs               = "transactions"
 	BlockSyncRequestTopic  = "block-sync/request"
 	BlockSyncResponseTopic = "block-sync/response"
-	LatestSlotTopic        = "latest-slot/request"
-	AdvertiseName          = "mmn"
+
+	// Shred topics for optimized block broadcasting
+	TopicShreds         = "shreds"
+	TopicRepairRequest  = "repair/request"
+	TopicRepairResponse = "repair/response"
+
+	LatestSlotTopic = "latest-slot/request"
+	AdvertiseName   = "mmn"
 )
 
 var (
