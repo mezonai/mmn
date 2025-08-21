@@ -90,7 +90,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 		return
 	}
 
-	missingBatchSize := int(MissingBlocksBatchSize)
+	missingBatchSize := int(BatchSize)
 
 	batchCount := 0
 	for i := 0; i < len(missingSlots); i += missingBatchSize {
@@ -161,7 +161,7 @@ func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs blockstore.Store, slot uint64)
 
 func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs blockstore.Store, slot uint64) {
 	if !ln.shouldCheckAroundSlot(bs, slot) {
-		logx.Debug("NETWORK:SCAN", "Skipping check around slot ", slot, "- not needed")
+		logx.Debug("NETWORK:SCAN", "Skipping check around slot ", slot, " not needed")
 		return
 	}
 

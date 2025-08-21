@@ -122,13 +122,9 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to publish sync request for slot", fromSlot, "error", err)
 		return err
 	}
-
-	logx.Info("NETWORK:SYNC BLOCK", "Published sync request:", requestID, "from", fromSlot, "to", toSlot)
-
 	return nil
 }
 
-// RequestSingleBlockSync requests exactly one block by slot (used on checkpoint mismatch)
 func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64) error {
 	requestID := GenerateSyncRequestID()
 	tracker := NewSyncRequestTracker(requestID, slot, slot)

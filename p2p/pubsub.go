@@ -395,12 +395,9 @@ func (ln *Libp2pNetwork) handleCheckpointStream(s network.Stream) {
 		if err := ln.RequestSingleBlockSync(ctx, resp.Checkpoint); err != nil {
 			logx.Error("NETWORK:CHECKPOINT", "Failed to request single block sync:", err)
 		}
-	} else {
-		logx.Info("NETWORK:CHECKPOINT", "Checkpoint hash matched at", resp.Checkpoint)
 	}
 }
 
-// RequestCheckpointHash broadcasts a checkpoint hash request (e.g., every 10 slots)
 func (ln *Libp2pNetwork) RequestCheckpointHash(ctx context.Context, checkpoint uint64) error {
 	logx.Info("NETWORK:CHECKPOINT", "Broadcasting checkpoint request checkpoint=", checkpoint)
 	req := CheckpointHashRequest{
