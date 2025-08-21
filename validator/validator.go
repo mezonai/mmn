@@ -12,7 +12,6 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
@@ -46,7 +45,6 @@ type Validator struct {
 	session     *ledger.Session
 	lastSession *ledger.Session
 	collector   *consensus.Collector
-	eventRouter *events.EventRouter
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
@@ -73,7 +71,6 @@ func NewValidator(
 	blockStore blockstore.Store,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
-	eventRouter *events.EventRouter,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -98,7 +95,6 @@ func NewValidator(
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
 		pendingValidTxs:           make([]*types.Transaction, 0, batchSize),
-		eventRouter:               eventRouter,
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -203,7 +199,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
 
 		// Persist then broadcast
-		v.blockStore.AddBlockPending(blk, v.eventRouter)
+		v.blockStore.AddBlockPending(blk)
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			fmt.Println("Failed to broadcast block:", err)
 		}
@@ -223,10 +219,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			block := v.blockStore.Block(vote.Slot)
 			if block == nil {
 				fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
-			} else if err := v.ledger.ApplyBlock(block, v.eventRouter); err != nil {
+			} else if err := v.ledger.ApplyBlock(block); err != nil {
 				fmt.Printf("[LEADER] Apply block error: %v\n", err)
 			}
-			if err := v.blockStore.MarkFinalized(vote.Slot, v.eventRouter); err != nil {
+			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
 				fmt.Printf("[LEADER] Mark block as finalized error: %v\n", err)
 			}
 			fmt.Printf("[LEADER] slot %d finalized!\n", vote.Slot)
@@ -308,7 +304,7 @@ func (v *Validator) leaderBatchLoop() {
 			}
 
 			fmt.Println("[LEADER] Filtering batch")
-			valids, errs := v.session.FilterValid(batch, v.eventRouter)
+			valids, errs := v.session.FilterValid(batch)
 			if len(errs) > 0 {
 				fmt.Println("[LEADER] Invalid transactions:", errs)
 			}

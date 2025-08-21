@@ -18,13 +18,18 @@ import (
 )
 
 type Ledger struct {
-	state   map[string]*types.Account // address (public key hex) → account
-	mu      sync.RWMutex
-	txStore blockstore.TxStore
+	state       map[string]*types.Account // address (public key hex) → account
+	mu          sync.RWMutex
+	txStore     blockstore.TxStore
+	eventRouter *events.EventRouter
 }
 
-func NewLedger(txStore blockstore.TxStore) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), txStore: txStore}
+func NewLedger(txStore blockstore.TxStore, eventRouter *events.EventRouter) *Ledger {
+	return &Ledger{
+		state:       make(map[string]*types.Account),
+		txStore:     txStore,
+		eventRouter: eventRouter,
+	}
 }
 
 // Initialize initial account
@@ -90,7 +95,7 @@ func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 	return nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block, eventRouter *events.EventRouter) error {
+func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
@@ -104,10 +109,10 @@ func (l *Ledger) ApplyBlock(b *block.Block, eventRouter *events.EventRouter) err
 		for _, tx := range txs {
 			if err := applyTx(l.state, tx); err != nil {
 				// Publish specific transaction failure event
-				if eventRouter != nil {
+				if l.eventRouter != nil {
 					txHash := tx.Hash()
 					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
-					eventRouter.PublishTransactionEvent(event)
+					l.eventRouter.PublishTransactionEvent(event)
 				}
 				return fmt.Errorf("apply fail: %v", err)
 			}
@@ -121,9 +126,9 @@ func (l *Ledger) ApplyBlock(b *block.Block, eventRouter *events.EventRouter) err
 
 	if err := l.appendWAL(b); err != nil {
 		// Publish WAL failure event
-		if eventRouter != nil {
+		if l.eventRouter != nil {
 			event := events.NewTransactionFailed("", fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
-			eventRouter.PublishTransactionEvent(event)
+			l.eventRouter.PublishTransactionEvent(event)
 		}
 		return fmt.Errorf("WAL write failed for block %d: %w", b.Slot, err)
 	}
@@ -382,25 +387,25 @@ func (s *Session) CopyWithOverlayClone() *Session {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte, router *events.EventRouter) ([]*types.Transaction, []error) {
+func (s *Session) FilterValid(raws [][]byte) ([]*types.Transaction, []error) {
 	valid := make([]*types.Transaction, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
 		if err != nil || !tx.Verify() {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
-			if router != nil {
+			if s.ledger.eventRouter != nil {
 				event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("sig/format: %v", err))
-				router.PublishTransactionEvent(event)
+				s.ledger.eventRouter.PublishTransactionEvent(event)
 			}
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
 		if err := s.view.ApplyTx(tx); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
-			if router != nil {
+			if s.ledger.eventRouter != nil {
 				event := events.NewTransactionFailed(tx.Hash(), err.Error())
-				router.PublishTransactionEvent(event)
+				s.ledger.eventRouter.PublishTransactionEvent(event)
 			}
 			errs = append(errs, err)
 			continue

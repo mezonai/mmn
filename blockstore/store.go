@@ -2,7 +2,6 @@ package blockstore
 
 import (
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/events"
 )
 
 // SlotBoundary represents slot boundary information
@@ -18,8 +17,8 @@ type Store interface {
 	HasCompleteBlock(slot uint64) bool
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
 	GetLatestSlot() uint64
-	AddBlockPending(b *block.BroadcastedBlock, eventRouter *events.EventRouter) error
-	MarkFinalized(slot uint64, eventRouter *events.EventRouter) error
+	AddBlockPending(b *block.BroadcastedBlock) error
+	MarkFinalized(slot uint64) error
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 	Close() error

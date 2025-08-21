@@ -132,13 +132,6 @@ func runNode() {
 	}
 	defer ts.Close()
 
-	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
-	if err != nil {
-		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
-		return
-	}
-
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {
 		p2pPort, err = getRandomFreePort()
@@ -172,7 +165,14 @@ func runNode() {
 	// --- Event Router ---
 	eventRouter := events.NewEventRouter(eventBus)
 
-	ld := ledger.NewLedger(ts)
+	// Initialize blockstore with data directory
+	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts, eventRouter)
+	if err != nil {
+		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
+		return
+	}
+
+	ld := ledger.NewLedger(ts, eventRouter)
 
 	// Load ledger state from disk (includes alloc account from genesis)
 	if err := ld.LoadLedger(); err != nil {
@@ -209,7 +209,7 @@ func runNode() {
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, eventRouter)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, eventRouter)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -251,7 +251,7 @@ func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, erro
 }
 
 // initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
+func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore, eventRouter *events.EventRouter) (blockstore.Store, error) {
 	// Create store configuration with StoreType
 	storeType := blockstore.StoreType(backend)
 	config := &blockstore.StoreConfig{
@@ -265,7 +265,7 @@ func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore)
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, ts)
+	return blockstore.CreateStore(config, ts, eventRouter)
 }
 
 // initializePoH initializes Proof of History components
@@ -323,7 +323,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, eventRouter *events.EventRouter) (*validator.Validator, error) {
+	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -345,7 +345,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector, eventRouter,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
 	)
 	val.Run()
 

@@ -96,7 +96,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(
 				return err
 			}
 
-			if err := bs.AddBlockPending(blk, eventRouter); err != nil {
+			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
 			}
@@ -125,12 +125,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(
 				if block == nil {
 					return fmt.Errorf("block not found for slot %d", vote.Slot)
 				}
-				if err := ld.ApplyBlock(block, eventRouter); err != nil {
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
 				// Mark block as finalized and publish transaction finalization events
-				if err := bs.MarkFinalized(vote.Slot, eventRouter); err != nil {
+				if err := bs.MarkFinalized(vote.Slot); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
 				}
 
@@ -157,12 +157,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(
 				if block == nil {
 					return fmt.Errorf("block not found for slot %d", vote.Slot)
 				}
-				if err := ld.ApplyBlock(block, eventRouter); err != nil {
+				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
 				// Mark block as finalized and publish transaction finalization events
-				if err := bs.MarkFinalized(vote.Slot, eventRouter); err != nil {
+				if err := bs.MarkFinalized(vote.Slot); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
 				}
 
@@ -207,7 +207,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(
 				}
 
 				// Add to block store and publish transaction inclusion events
-				if err := bs.AddBlockPending(blk, eventRouter); err != nil {
+				if err := bs.AddBlockPending(blk); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
 					continue
 				}

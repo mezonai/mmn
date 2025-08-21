@@ -30,17 +30,19 @@ type GenericBlockStore struct {
 	mu              sync.RWMutex
 	latestFinalized uint64
 	txStore         TxStore
+	eventRouter     *events.EventRouter
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider DatabaseProvider, ts TxStore) (Store, error) {
+func NewGenericBlockStore(provider DatabaseProvider, ts TxStore, eventRouter *events.EventRouter) (Store, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
 
 	store := &GenericBlockStore{
-		provider: provider,
-		txStore:  ts,
+		provider:    provider,
+		txStore:     ts,
+		eventRouter: eventRouter,
 	}
 
 	// Load existing metadata
@@ -143,7 +145,7 @@ func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool
 }
 
 // AddBlockPending adds a pending block to the store
-func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock, eventRouter *events.EventRouter) error {
+func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
@@ -182,14 +184,14 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock, eventRout
 	}
 
 	// Publish transaction inclusion events if event router is provided
-	if eventRouter != nil {
+	if s.eventRouter != nil {
 		blockHashHex := b.HashString()
 
 		// Publish TransactionIncludedInBlock events for each transaction in the block
 		for _, entry := range b.Entries {
 			for _, tx := range entry.Transactions {
 				event := events.NewTransactionIncludedInBlock(tx.Hash(), b.Slot, blockHashHex)
-				eventRouter.PublishTransactionEvent(event)
+				s.eventRouter.PublishTransactionEvent(event)
 			}
 		}
 	}
@@ -200,14 +202,14 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock, eventRout
 }
 
 // MarkFinalized marks a block as finalized and updates metadata
-func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.EventRouter) error {
+func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
 	}
 
 	// Get block data only if event router is provided
 	var blk *block.Block
-	if eventRouter != nil {
+	if s.eventRouter != nil {
 		blk = s.Block(slot)
 		if blk == nil {
 			return fmt.Errorf("failed to get block data for slot %d", slot)
@@ -230,7 +232,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.Event
 	}
 
 	// Publish transaction finalization events if event router is provided
-	if eventRouter != nil && blk != nil {
+	if s.eventRouter != nil && blk != nil {
 		blockHashHex := blk.HashString()
 
 		for _, entry := range blk.Entries {
@@ -241,7 +243,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64, eventRouter *events.Event
 			}
 			for _, tx := range txs {
 				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
-				eventRouter.PublishTransactionEvent(event)
+				s.eventRouter.PublishTransactionEvent(event)
 			}
 		}
 	}

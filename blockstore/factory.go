@@ -2,6 +2,8 @@ package blockstore
 
 import (
 	"fmt"
+
+	"github.com/mezonai/mmn/events"
 )
 
 // StoreType represents the type of blockstore implementation
@@ -55,11 +57,11 @@ func NewStoreFactory() *StoreFactory {
 // Deprecated: Use CreateStoreWithProvider for better abstraction
 func (sf *StoreFactory) CreateStore(config *StoreConfig) (Store, error) {
 	// Redirect to the provider-based implementation for consistency
-	return sf.CreateStoreWithProvider(config, nil)
+	return sf.CreateStoreWithProvider(config, nil, nil)
 }
 
 // CreateStoreWithProvider creates a new blockstore instance using the provider pattern
-func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, ts TxStore) (Store, error) {
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, ts TxStore, eventRouter *events.EventRouter) (Store, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -75,7 +77,7 @@ func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, ts TxStore)
 	}
 
 	// Create generic blockstore with the provider
-	return NewGenericBlockStore(provider, ts)
+	return NewGenericBlockStore(provider, ts, eventRouter)
 }
 
 // CreateProvider creates a database provider based on the configuration
@@ -108,8 +110,8 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (DatabaseProvider, e
 var globalFactory = NewStoreFactory()
 
 // CreateStore creates a new blockstore instance using the global factory
-func CreateStore(config *StoreConfig, ts TxStore) (Store, error) {
-	return globalFactory.CreateStoreWithProvider(config, ts)
+func CreateStore(config *StoreConfig, ts TxStore, eventRouter *events.EventRouter) (Store, error) {
+	return globalFactory.CreateStoreWithProvider(config, ts, eventRouter)
 }
 
 // NewLevelDBConfig creates a LevelDB store configuration
