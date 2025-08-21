@@ -127,7 +127,10 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account := s.Ledger.GetAccount(addr)
+	account, err := s.Ledger.GetAccount(addr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get account: %v", err), http.StatusInternalServerError)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(account)
 }

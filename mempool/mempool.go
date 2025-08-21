@@ -135,7 +135,10 @@ func (mp *Mempool) validateTransaction(tx *types.Transaction) error {
 		return fmt.Errorf("ledger not available for validation")
 	}
 
-	senderAccount := mp.ledger.GetAccount(tx.Sender)
+	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
+	if err != nil {
+		return fmt.Errorf("could not get sender account %s", tx.Sender)
+	}
 	if senderAccount == nil {
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}

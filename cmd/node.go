@@ -168,9 +168,9 @@ func runNode() {
 	ld := ledger.NewLedger(ts)
 
 	// Load ledger state from disk (includes alloc account from genesis)
-	if err := ld.LoadLedger(); err != nil {
-		log.Fatalf("Failed to load ledger state: %v", err)
-	}
+	//if err := ld.LoadLedger(); err != nil {
+	//	log.Fatalf("Failed to load ledger state: %v", err)
+	//}
 	logx.Info("LEDGER", "Loaded ledger state from disk")
 
 	// Initialize PoH components

@@ -98,7 +98,11 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	}
 
 	// 3. Check sender account exists (except for faucet transactions)
-	senderAccount := s.ledger.GetAccount(tx.Sender)
+	senderAccount, err := s.ledger.GetAccount(tx.Sender)
+	if err != nil {
+		fmt.Printf("[gRPC] error while retriving account to add tx: %v\n", err)
+		return &pb.AddTxResponse{Ok: false, Error: "failed to get account"}, nil
+	}
 	if senderAccount == nil {
 		fmt.Printf("[gRPC] Sender account %s does not exist\n", tx.Sender)
 		return &pb.AddTxResponse{Ok: false, Error: fmt.Sprintf("sender account %s does not exist", tx.Sender)}, nil
@@ -125,7 +129,10 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
 	addr := in.Address
-	acc := s.ledger.GetAccount(addr)
+	acc, err := s.ledger.GetAccount(addr)
+	if err != nil {
+		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
+	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
 			Address: addr,

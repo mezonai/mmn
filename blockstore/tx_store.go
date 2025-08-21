@@ -9,6 +9,10 @@ import (
 	"github.com/mezonai/mmn/types"
 )
 
+const (
+	genericTxPrefixTrans = "tx:"
+)
+
 // TxStore is interface for transaction store that is responsible for persisting operations of tx
 // TODO: move TxStore to separate txstore package rather than blockstore package
 type TxStore interface {
