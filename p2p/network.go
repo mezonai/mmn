@@ -79,6 +79,7 @@ func NewNetWork(
 		selfPubKey:             selfPubKey,
 		selfPrivKey:            selfPrivKey,
 		peers:                  make(map[peer.ID]*PeerInfo),
+		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
 		syncStreams:            make(map[peer.ID]network.Stream),
 		blockStore:             blockStore,
 		maxPeers:               int(MaxPeers),
@@ -143,6 +144,9 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 
 		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 		bootstrapConnected = true
+
+		// Record bootstrap peer ID for filtering later
+		ln.bootstrapPeerIDs[info.ID] = struct{}{}
 
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
 			ln.RequestNodeInfo(bootstrapPeer, &info)

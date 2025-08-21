@@ -24,6 +24,8 @@ type Libp2pNetwork struct {
 	selfPubKey  string
 	selfPrivKey ed25519.PrivateKey
 	peers       map[peer.ID]*PeerInfo
+	// Track bootstrap peers so we can exclude them from certain requests
+	bootstrapPeerIDs map[peer.ID]struct{}
 
 	blockStore blockstore.Store
 

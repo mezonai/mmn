@@ -58,7 +58,6 @@ func (ln *Libp2pNetwork) scanMissingBlocks(bs blockstore.Store) {
 		}
 
 		missingSlots = append(missingSlots, slot)
-		logx.Debug("NETWORK:SCAN", "Found new missing block at slot", slot)
 
 		// Track missing block
 		ln.trackMissingBlock(slot)
@@ -69,7 +68,11 @@ func (ln *Libp2pNetwork) scanMissingBlocks(bs blockstore.Store) {
 	ln.lastScannedSlot = scanEnd
 	ln.scanMu.Unlock()
 
-	logx.Info("NETWORK:SCAN", "Scan completed: checked", totalChecked, "slots, found", len(missingSlots), "new missing blocks")
+	// Enhanced logging
+	ln.missingBlocksMu.RLock()
+	trackedMissing := len(ln.missingBlocksTracker)
+	ln.missingBlocksMu.RUnlock()
+	logx.Info("NETWORK:SCAN", "Scan completed: checked", totalChecked, " slots, found ", len(missingSlots), " new missing blocks; tracked total:", trackedMissing)
 
 	if len(missingSlots) > 0 {
 		ln.requestMissingBlocks(missingSlots)
@@ -83,15 +86,11 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 		return
 	}
 
-	logx.Info("NETWORK:SCAN", "Starting request for ", len(missingSlots), " missing slots: ", missingSlots)
-
 	if len(ln.host.Network().Peers()) == 0 {
 		return
 	}
 
 	missingBatchSize := int(MissingBlocksBatchSize)
-	expectedBatches := (len(missingSlots) + missingBatchSize - 1) / missingBatchSize
-	logx.Info("NETWORK:SCAN", "Expected number of batches: ", expectedBatches)
 
 	batchCount := 0
 	for i := 0; i < len(missingSlots); i += missingBatchSize {
@@ -105,8 +104,6 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 		fromSlot := batch[0]
 		toSlot := batch[len(batch)-1]
 
-		logx.Info("NETWORK:SCAN", "Processing batch", batchCount, "/", expectedBatches, " : ", len(batch), " slots from ", fromSlot, " to ", toSlot, " batch: ", batch)
-
 		requestID := fmt.Sprintf("missing_blocks_%d_%d", fromSlot, toSlot)
 		req := SyncRequest{
 			RequestID: requestID,
@@ -118,7 +115,15 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 			ln.markSlotAsRequested(slot)
 		}
 
-		compatiblePeers := ln.getCompatiblePeers(RequestBlockSyncStream)
+		// Filter out bootstrap peers
+		allPeers := ln.host.Network().Peers()
+		var compatiblePeers []peer.ID
+		for _, p := range allPeers {
+			if _, isBootstrap := ln.bootstrapPeerIDs[p]; isBootstrap {
+				continue
+			}
+			compatiblePeers = append(compatiblePeers, p)
+		}
 		for _, targetPeer := range compatiblePeers {
 			exception.SafeGoWithPanic("sendSyncRequestToPeer", func() {
 				func(peer peer.ID) {
@@ -130,15 +135,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 		}
 	}
 
-	logx.Info("NETWORK:SCAN", "Completed processing all ", len(missingSlots), " missing slots in ", batchCount, " batches")
-}
-
-// TODO maybe delete if not use
-func (ln *Libp2pNetwork) getCompatiblePeers(protocol string) []peer.ID {
-	var compatiblePeers []peer.ID
-	allPeers := ln.host.Network().Peers()
-	compatiblePeers = append(compatiblePeers, allPeers...)
-	return compatiblePeers
+	logx.Info("NETWORK:SCAN", "Completed processing all ")
 }
 
 func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs blockstore.Store, slot uint64) bool {
@@ -278,7 +275,6 @@ func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs blockstore.Store) {
 
 	// Request retry blocks
 	if len(retrySlots) > 0 {
-		logx.Info("NETWORK:TRACKER", "Retrying", len(retrySlots), "missing blocks")
 		go ln.requestMissingBlocks(retrySlots)
 	}
 }
@@ -299,7 +295,7 @@ func (ln *Libp2pNetwork) trackMissingBlock(slot uint64) {
 			FirstSeen:  time.Now(),
 			LastRetry:  time.Time{},
 			RetryCount: 0,
-			MaxRetries: 5,
+			MaxRetries: 1,
 		}
 	}
 }
@@ -348,22 +344,5 @@ func (ln *Libp2pNetwork) cleanupOldMissingBlocksTracker() {
 
 	for _, slot := range toRemove {
 		delete(ln.missingBlocksTracker, slot)
-	}
-
-	ln.cleanupOldRecentlyRequestedSlots()
-}
-
-func (ln *Libp2pNetwork) cleanupOldRecentlyRequestedSlots() {
-	ln.recentlyRequestedMu.Lock()
-	defer ln.recentlyRequestedMu.Unlock()
-
-	now := time.Now()
-	cutoff := now.Add(-5 * time.Minute) // Remove entries older than 5 minutes
-
-	var toRemove []uint64
-	for slot, requestTime := range ln.recentlyRequestedSlots {
-		if requestTime.Before(cutoff) {
-			toRemove = append(toRemove, slot)
-		}
 	}
 }

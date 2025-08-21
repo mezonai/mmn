@@ -557,5 +557,7 @@ func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
 	}
 
+	// wait for sync all blocks end before start scan
+	time.Sleep(15 * time.Second)
 	ln.scanMissingBlocks(bs)
 }
