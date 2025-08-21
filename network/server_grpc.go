@@ -310,30 +310,47 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		}
 
 		entries := make([]*pb.Entry, 0, len(block.Entries))
+		var allTxHashes []string
+
 		for _, entry := range block.Entries {
-			pbEntry := &pb.Entry{
-				NumHashes:    entry.NumHashes,
-				Hash:         entry.Hash[:],
-				Transactions: entry.Transactions, 
+			entries = append(entries, &pb.Entry{
+				NumHashes: entry.NumHashes,
+				Hash:      entry.Hash[:],
+				TxHashes:  entry.TxHashes,
+			})
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+
+		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
+		for _, txHash := range allTxHashes {
+			tx, err := s.ledger.GetTxByHash(txHash)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
-			if !in.IncludeTransactions {
-				pbEntry.Transactions = nil
-			}
-			entries = append(entries, pbEntry)
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    tx.Amount,
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    pb.TransactionData_CONFIRMED,
+			})
 		}
 
 		pbBlock := &pb.Block{
-			Slot:      block.Slot,
-			PrevHash:  block.PrevHash[:],
-			Entries:   entries,
-			LeaderId:  block.LeaderID,
-			Timestamp: block.Timestamp,
-			Hash:      block.Hash[:],
-			Signature: block.Signature,
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			Entries:         entries,
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
 		}
+
 		blocks = append(blocks, pbBlock)
 	}
 
 	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
 }
-

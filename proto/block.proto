@@ -1,13 +1,30 @@
 syntax = "proto3";
 package mmn;
-
 option go_package = "mmn/proto;proto";
 
 message Entry {
   uint64 num_hashes = 1;
   bytes hash       = 2;
   repeated bytes transactions = 3;
+  repeated string tx_hashes = 4;
 }
+
+message TransactionData {
+  string tx_hash = 1;
+  string sender    = 2; // sender address
+  string recipient = 3; // recipient address
+  uint64 amount    = 4; // amount
+  uint64 nonce     = 5; // nonce
+  uint64 timestamp = 6;
+  enum Status {
+    PENDING   = 0;
+    CONFIRMED = 1;
+    FINALIZED = 2;
+    FAILED    = 3;
+  }
+  Status status = 7;
+}
+
 
 message Block {
   uint64 slot     = 1;
@@ -17,6 +34,7 @@ message Block {
   uint64 timestamp = 5;
   bytes hash = 6;
   bytes signature  = 7;
+  repeated TransactionData transaction_data = 8;
 }
 
 message BroadcastResponse {
@@ -32,7 +50,6 @@ message EmptyParams {}
 
 message GetBlockByNumberRequest {
   repeated uint64 block_numbers = 1;
-  bool include_transactions = 2;
 }
 
 message GetBlockNumberResponse {
