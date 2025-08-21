@@ -15,6 +15,7 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/types"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -66,7 +67,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
@@ -94,6 +95,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if len(ln.host.Network().Peers()) > 0 {
 				go ln.checkForMissingBlocksAround(bs, blk.Slot)
 			}
+			// Reset poh to sync poh clock with leader
+			logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+			recorder.Reset(blk.LastEntryHash(), blk.Slot)
 
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,
