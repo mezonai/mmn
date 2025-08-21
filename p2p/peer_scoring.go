@@ -261,7 +261,20 @@ func (psm *PeerScoringManager) OnTopicMessage(peerID peer.ID, topic string, data
 	if !counter.Increment() {
 		// spam penalty
 		score.Score += psm.config.SpamPenalty
-		logx.Warn("SPAM", "Peer exceeded per-topic message rate", peerID.String()[:12], "topic:", topic)
+
+		count := counter.GetCurrentCount()
+		remote := ""
+		if psm.network != nil && psm.network.host != nil {
+			conns := psm.network.host.Network().ConnsToPeer(peerID)
+			if len(conns) > 0 && conns[0] != nil {
+				if m := conns[0].RemoteMultiaddr(); m != nil {
+					remote = m.String()
+				}
+			}
+		}
+		logx.Warn("SPAM", "peer=",
+			peerID.String(), ", addr=", remote, ", topic=", topic, ", count=", count, ", limit=", psm.config.MaxMessagesPerMinutePerTopic, ", score=", score.Score, ".",
+		)
 	}
 
 	// first delivery bonus per message ID
