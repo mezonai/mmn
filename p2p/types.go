@@ -49,6 +49,15 @@ type Libp2pNetwork struct {
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
 
+	missingBlocksTracker map[uint64]*MissingBlockInfo
+	missingBlocksMu      sync.RWMutex
+
+	lastScannedSlot uint64
+	scanMu          sync.RWMutex
+
+	recentlyRequestedSlots map[uint64]time.Time
+	recentlyRequestedMu    sync.RWMutex
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -145,4 +154,12 @@ type CheckpointHashResponse struct {
 	Slot       uint64   `json:"slot"`
 	BlockHash  [32]byte `json:"block_hash"`
 	PeerID     string   `json:"peer_id"`
+}
+
+type MissingBlockInfo struct {
+	Slot       uint64    `json:"slot"`
+	FirstSeen  time.Time `json:"first_seen"`
+	LastRetry  time.Time `json:"last_retry"`
+	RetryCount int       `json:"retry_count"`
+	MaxRetries int       `json:"max_retries"`
 }

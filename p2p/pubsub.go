@@ -91,6 +91,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
+			if len(ln.host.Network().Peers()) > 0 {
+				go ln.checkForMissingBlocksAround(bs, blk.Slot)
+			}
+
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,
 				BlockHash: blk.Hash,
@@ -198,6 +202,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
+				// Remove from missing blocks tracker if it was there
+				ln.removeFromMissingTracker(blk.Slot)
+
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
 			}
 
@@ -222,6 +229,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	go ln.startInitialSync(bs)
 
 	go ln.startPeriodicSyncCheck(bs)
+
+	// Start continuous gap detection
+	go ln.startContinuousGapDetection(bs)
 
 	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
@@ -506,8 +516,8 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
 			ln.cleanupOldSyncRequests()
 			// probe checkpoint every tick
 			latest := bs.GetLatestSlot()
-			if latest >= 10 {
-				checkpoint := (latest / 10) * 10
+			if latest >= MaxScanRange {
+				checkpoint := (latest / MaxScanRange) * MaxScanRange
 				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
 				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
 			}
@@ -525,6 +535,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 		select {
 		case <-ticker.C:
 			ln.CleanupExpiredRequests()
+			ln.cleanupOldMissingBlocksTracker()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
@@ -545,4 +556,6 @@ func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
 	if err := ln.RequestBlockSync(ctx, 0); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
 	}
+
+	ln.scanMissingBlocks(bs)
 }

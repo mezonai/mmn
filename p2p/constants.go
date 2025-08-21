@@ -17,7 +17,9 @@ const (
 )
 
 var (
-	ConnCount int32  = 0
-	MaxPeers  int32  = 50
-	BatchSize uint64 = 10 // for test only, should be 1000
+	ConnCount              int32  = 0
+	MaxPeers               int32  = 50
+	BatchSize              uint64 = 10 // for test only, should be 1000
+	MaxScanRange           uint64 = 100
+	MissingBlocksBatchSize uint64 = 1000
 )

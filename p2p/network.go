@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"time"
 
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/discovery"
@@ -73,18 +74,21 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:               h,
-		pubsub:             ps,
-		selfPubKey:         selfPubKey,
-		selfPrivKey:        selfPrivKey,
-		peers:              make(map[peer.ID]*PeerInfo),
-		syncStreams:        make(map[peer.ID]network.Stream),
-		blockStore:         blockStore,
-		maxPeers:           int(MaxPeers),
-		activeSyncRequests: make(map[string]*SyncRequestInfo),
-		syncRequests:       make(map[string]*SyncRequestTracker),
-		ctx:                ctx,
-		cancel:             cancel,
+		host:                   h,
+		pubsub:                 ps,
+		selfPubKey:             selfPubKey,
+		selfPrivKey:            selfPrivKey,
+		peers:                  make(map[peer.ID]*PeerInfo),
+		syncStreams:            make(map[peer.ID]network.Stream),
+		blockStore:             blockStore,
+		maxPeers:               int(MaxPeers),
+		activeSyncRequests:     make(map[string]*SyncRequestInfo),
+		syncRequests:           make(map[string]*SyncRequestTracker),
+		missingBlocksTracker:   make(map[uint64]*MissingBlockInfo),
+		lastScannedSlot:        0,
+		recentlyRequestedSlots: make(map[uint64]time.Time),
+		ctx:                    ctx,
+		cancel:                 cancel,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -108,7 +112,7 @@ func NewNetWork(
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
-	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
+	// ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
 	ln.SetupPubSubTopics(ctx)
