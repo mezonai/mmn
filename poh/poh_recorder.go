@@ -133,8 +133,8 @@ func (r *PohRecorder) DrainEntries() []Entry {
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	slot := r.tickHeight / r.ticksPerSlot
-	return slot
+	return r.tickHeight/r.ticksPerSlot + 1
+	// return slot
 }
 
 // UpdateLeaderSchedule updates the recorder's leader schedule (for dynamic PoS)

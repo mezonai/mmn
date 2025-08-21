@@ -34,10 +34,9 @@ type StakeManager struct {
 	collector   *consensus.Collector
 
 	// Configuration
-	slotsPerEpoch     uint64
-	minStakeAmount    *big.Int
-	maxValidators     int
-	epochRewardAmount *big.Int
+	slotsPerEpoch  uint64
+	minStakeAmount *big.Int
+	maxValidators  int
 
 	// State
 	currentEpoch    uint64
@@ -51,10 +50,9 @@ type StakeManager struct {
 
 // StakeManagerConfig holds configuration for the stake manager
 type StakeManagerConfig struct {
-	SlotsPerEpoch     uint64
-	MinStakeAmount    *big.Int
-	MaxValidators     int
-	EpochRewardAmount *big.Int
+	SlotsPerEpoch  uint64
+	MinStakeAmount *big.Int
+	MaxValidators  int
 }
 
 // NewStakeManager creates a new stake manager
@@ -73,22 +71,21 @@ func NewStakeManager(
 	processor := NewStakeTransactionProcessor(stakePool)
 
 	sm := &StakeManager{
-		stakePool:         stakePool,
-		scheduler:         scheduler,
-		processor:         processor,
-		pohRecorder:       pohRecorder,
-		ledger:            ledger,
-		mempool:           mempool,
-		blockStore:        blockStore,
-		p2pNetwork:        p2pNetwork,
-		collector:         collector,
-		slotsPerEpoch:     config.SlotsPerEpoch,
-		minStakeAmount:    config.MinStakeAmount,
-		maxValidators:     config.MaxValidators,
-		epochRewardAmount: config.EpochRewardAmount,
-		stakeTxChan:       make(chan *StakeTransaction, 1000),
-		stopChan:          make(chan struct{}),
-		epochSeed:         []byte("genesis_seed"), // Should be from genesis
+		stakePool:      stakePool,
+		scheduler:      scheduler,
+		processor:      processor,
+		pohRecorder:    pohRecorder,
+		ledger:         ledger,
+		mempool:        mempool,
+		blockStore:     blockStore,
+		p2pNetwork:     p2pNetwork,
+		collector:      collector,
+		slotsPerEpoch:  config.SlotsPerEpoch,
+		minStakeAmount: config.MinStakeAmount,
+		maxValidators:  config.MaxValidators,
+		stakeTxChan:    make(chan *StakeTransaction, 1000),
+		stopChan:       make(chan struct{}),
+		epochSeed:      []byte("genesis_seed"), // Should be from genesis
 	}
 
 	return sm
@@ -160,6 +157,12 @@ func (sm *StakeManager) GetActiveValidators() map[string]*ValidatorInfo {
 	return sm.stakePool.GetActiveValidators()
 }
 
+// GetValidatorCount returns the number of active validators
+func (sm *StakeManager) GetValidatorCount() int {
+	activeValidators := sm.stakePool.GetActiveValidators()
+	return len(activeValidators)
+}
+
 // GetStakeDistribution returns current stake distribution
 func (sm *StakeManager) GetStakeDistribution() map[string]float64 {
 	return sm.stakePool.GetStakeDistribution()
@@ -190,6 +193,11 @@ func (sm *StakeManager) OnSlotComplete(slot uint64, leader string, success bool)
 	}
 }
 
+// GetEpochFromSlot calculates epoch number from slot
+func (sm *StakeManager) GetEpochFromSlot(slot uint64) uint64 {
+	return slot / sm.slotsPerEpoch
+}
+
 // Private methods
 
 func (sm *StakeManager) initializeEpochSchedule(epoch uint64) error {
@@ -209,10 +217,7 @@ func (sm *StakeManager) initializeEpochSchedule(epoch uint64) error {
 func (sm *StakeManager) transitionToNewEpoch(newEpoch, currentSlot uint64) {
 	logx.Info("STAKE_MANAGER", fmt.Sprintf("Transitioning to epoch %d at slot %d", newEpoch, currentSlot))
 
-	// Distribute rewards for completed epoch
-	sm.distributeEpochRewards(sm.currentEpoch, currentSlot-1)
-
-	// Generate new schedule
+	// Generate new schedule (no reward distribution)
 	newSeed := sm.generateEpochSeed(newEpoch)
 	schedule, err := sm.scheduler.GenerateLeaderSchedule(newEpoch, newSeed)
 	if err != nil {
@@ -227,24 +232,6 @@ func (sm *StakeManager) transitionToNewEpoch(newEpoch, currentSlot uint64) {
 	sm.stakePool.UpdateEpoch(newEpoch)
 
 	logx.Info("STAKE_MANAGER", fmt.Sprintf("Epoch %d transition complete", newEpoch))
-}
-
-func (sm *StakeManager) distributeEpochRewards(epoch, finalSlot uint64) {
-	if sm.epochRewardAmount.Sign() <= 0 {
-		return
-	}
-
-	logx.Info("STAKE_MANAGER", fmt.Sprintf("Distributing rewards for epoch %d", epoch))
-
-	rewards := sm.stakePool.DistributeRewards(sm.epochRewardAmount, finalSlot)
-
-	// Apply rewards to ledger
-	for pubkey, amount := range rewards {
-		if amount.Sign() > 0 {
-			// In a real implementation, this would update account balances
-			logx.Info("STAKE_MANAGER", fmt.Sprintf("Rewarded %s: %s tokens", pubkey, amount.String()))
-		}
-	}
 }
 
 func (sm *StakeManager) generateEpochSeed(epoch uint64) []byte {

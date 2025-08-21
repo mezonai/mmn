@@ -12,7 +12,7 @@ import (
 
 // StakeWeightedScheduler creates leader schedules based on stake weights
 type StakeWeightedScheduler struct {
-	stakePool   *StakePool
+	stakePool     *StakePool
 	slotsPerEpoch uint64
 }
 
@@ -27,20 +27,20 @@ func NewStakeWeightedScheduler(stakePool *StakePool, slotsPerEpoch uint64) *Stak
 // GenerateLeaderSchedule generates a leader schedule for an epoch based on stake weights
 func (sws *StakeWeightedScheduler) GenerateLeaderSchedule(epoch uint64, seed []byte) (*poh.LeaderSchedule, error) {
 	activeValidators := sws.stakePool.GetActiveValidators()
-	
+
 	if len(activeValidators) == 0 {
 		return nil, errors.New("no active validators")
 	}
-	
+
 	// Get stake distribution (equal distribution as per requirements)
 	distribution := sws.stakePool.GetStakeDistribution()
-	
+
 	// Generate slot assignments
 	entries, err := sws.generateSlotAssignments(distribution, epoch, seed)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return poh.NewLeaderSchedule(entries)
 }
 
@@ -49,82 +49,139 @@ func (sws *StakeWeightedScheduler) generateSlotAssignments(distribution map[stri
 	if len(distribution) == 0 {
 		return nil, errors.New("no validators in distribution")
 	}
-	
+
 	// Create ordered list of validators for deterministic assignment
 	validators := make([]string, 0, len(distribution))
 	for pubkey := range distribution {
 		validators = append(validators, pubkey)
 	}
 	sort.Strings(validators) // Deterministic ordering
-	
+
 	var entries []poh.LeaderScheduleEntry
 	slotsAssigned := uint64(0)
-	
+
 	// Equal distribution: each validator gets slots_per_epoch / num_validators slots
 	slotsPerValidator := sws.slotsPerEpoch / uint64(len(validators))
 	remainingSlots := sws.slotsPerEpoch % uint64(len(validators))
-	
+
 	epochStartSlot := epoch * sws.slotsPerEpoch
-	
+
 	for i, validator := range validators {
 		slotCount := slotsPerValidator
-		
+
 		// Distribute remaining slots to first few validators
 		if uint64(i) < remainingSlots {
 			slotCount++
 		}
-		
+
 		if slotCount > 0 {
 			startSlot := epochStartSlot + slotsAssigned
 			endSlot := startSlot + slotCount - 1
-			
+
 			entries = append(entries, poh.LeaderScheduleEntry{
 				StartSlot: startSlot,
 				EndSlot:   endSlot,
 				Leader:    validator,
 			})
-			
+
 			slotsAssigned += slotCount
 		}
 	}
-	
+
 	return entries, nil
 }
 
-// GenerateRandomizedSchedule generates a randomized but deterministic schedule
+// GenerateRandomizedSchedule generates a randomized but deterministic schedule weighted by stake
 func (sws *StakeWeightedScheduler) GenerateRandomizedSchedule(epoch uint64, seed []byte) (*poh.LeaderSchedule, error) {
 	activeValidators := sws.stakePool.GetActiveValidators()
-	
+
 	if len(activeValidators) == 0 {
 		return nil, errors.New("no active validators")
 	}
-	
-	// Create validator list
-	validators := make([]string, 0, len(activeValidators))
-	for pubkey := range activeValidators {
-		validators = append(validators, pubkey)
+
+	// Get actual stake weights instead of equal distribution
+	distribution := sws.stakePool.GetStakeDistribution()
+
+	// Generate weighted slot assignments
+	entries, err := sws.generateWeightedSlotAssignments(distribution, epoch, seed)
+	if err != nil {
+		return nil, err
 	}
-	
-	// Shuffle validators deterministically using epoch and seed
-	shuffledValidators := sws.shuffleValidators(validators, epoch, seed)
-	
-	// Assign slots in round-robin fashion
+
+	return poh.NewLeaderSchedule(entries)
+}
+
+// generateWeightedSlotAssignments assigns slots based on stake weights with randomization
+func (sws *StakeWeightedScheduler) generateWeightedSlotAssignments(distribution map[string]float64, epoch uint64, seed []byte) ([]poh.LeaderScheduleEntry, error) {
+	if len(distribution) == 0 {
+		return nil, errors.New("no validators in distribution")
+	}
+
+	// Create deterministic randomness from epoch and seed
+	epochSeed := sha256.Sum256(append(seed, []byte(fmt.Sprintf("epoch_%d", epoch))...))
+
+	// Convert stakes to slot allocations
+	totalStake := big.NewFloat(0)
+	stakeWeights := make(map[string]*big.Float)
+
+	for validator, weight := range distribution {
+		stakeWeight := big.NewFloat(weight)
+		stakeWeights[validator] = stakeWeight
+		totalStake.Add(totalStake, stakeWeight)
+	}
+
+	// Allocate slots proportionally to stake
 	var entries []poh.LeaderScheduleEntry
 	epochStartSlot := epoch * sws.slotsPerEpoch
-	
-	for slot := uint64(0); slot < sws.slotsPerEpoch; slot++ {
-		validatorIndex := slot % uint64(len(shuffledValidators))
-		validator := shuffledValidators[validatorIndex]
-		
-		// Create single-slot entries for maximum randomization
-		entries = append(entries, poh.LeaderScheduleEntry{
-			StartSlot: epochStartSlot + slot,
-			EndSlot:   epochStartSlot + slot,
-			Leader:    validator,
-		})
+	currentSlot := epochStartSlot
+
+	// Generate randomized slot assignments using stake weights
+	for i := uint64(0); i < sws.slotsPerEpoch; i++ {
+		// Use deterministic randomness to select validator
+		slotSeed := sha256.Sum256(append(epochSeed[:], []byte(fmt.Sprintf("slot_%d", i))...))
+
+		// Convert seed to selection probability
+		seedBig := new(big.Int).SetBytes(slotSeed[:])
+		maxInt := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+		probability := new(big.Float).Quo(new(big.Float).SetInt(seedBig), new(big.Float).SetInt(maxInt))
+
+		// Select validator based on cumulative stake weights
+		selectedValidator := ""
+		cumulativeWeight := big.NewFloat(0)
+		threshold := new(big.Float).Mul(probability, totalStake)
+
+		for validator, weight := range stakeWeights {
+			cumulativeWeight.Add(cumulativeWeight, weight)
+			if cumulativeWeight.Cmp(threshold) >= 0 {
+				selectedValidator = validator
+				break
+			}
+		}
+
+		// Fallback to first validator if none selected (shouldn't happen)
+		if selectedValidator == "" {
+			for validator := range stakeWeights {
+				selectedValidator = validator
+				break
+			}
+		}
+
+		// Group consecutive slots for same validator
+		if len(entries) == 0 || entries[len(entries)-1].Leader != selectedValidator {
+			entries = append(entries, poh.LeaderScheduleEntry{
+				StartSlot: currentSlot,
+				EndSlot:   currentSlot,
+				Leader:    selectedValidator,
+			})
+		} else {
+			// Extend the current validator's range
+			entries[len(entries)-1].EndSlot = currentSlot
+		}
+
+		currentSlot++
 	}
-	
-	return poh.NewLeaderSchedule(entries)
+
+	return entries, nil
 }
 
 // shuffleValidators shuffles validators deterministically using epoch and seed
@@ -134,27 +191,27 @@ func (sws *StakeWeightedScheduler) shuffleValidators(validators []string, epoch 
 	for i := 0; i < 8; i++ {
 		epochBytes[i] = byte(epoch >> (i * 8))
 	}
-	
+
 	combinedSeed := append(seed, epochBytes...)
 	hash := sha256.Sum256(combinedSeed)
-	
+
 	// Fisher-Yates shuffle with deterministic random
 	shuffled := make([]string, len(validators))
 	copy(shuffled, validators)
-	
+
 	for i := len(shuffled) - 1; i > 0; i-- {
 		// Generate deterministic random index
 		hashInput := append(hash[:], byte(i))
 		randHash := sha256.Sum256(hashInput)
-		
+
 		// Convert hash to index
 		randBig := new(big.Int).SetBytes(randHash[:])
 		j := new(big.Int).Mod(randBig, big.NewInt(int64(i+1))).Int64()
-		
+
 		// Swap
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	}
-	
+
 	return shuffled
 }
 
@@ -170,25 +227,25 @@ func (sws *StakeWeightedScheduler) ValidateLeaderSchedule(schedule *poh.LeaderSc
 	if err != nil {
 		return fmt.Errorf("failed to generate expected schedule: %w", err)
 	}
-	
+
 	// Compare schedules
 	epochStartSlot := epoch * sws.slotsPerEpoch
 	epochEndSlot := epochStartSlot + sws.slotsPerEpoch - 1
-	
+
 	for slot := epochStartSlot; slot <= epochEndSlot; slot++ {
 		expectedLeader, expectedExists := expectedSchedule.LeaderAt(slot)
 		actualLeader, actualExists := schedule.LeaderAt(slot)
-		
+
 		if expectedExists != actualExists {
 			return fmt.Errorf("leader existence mismatch at slot %d", slot)
 		}
-		
+
 		if expectedExists && expectedLeader != actualLeader {
-			return fmt.Errorf("leader mismatch at slot %d: expected %s, got %s", 
+			return fmt.Errorf("leader mismatch at slot %d: expected %s, got %s",
 				slot, expectedLeader, actualLeader)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -210,34 +267,4 @@ func (sws *StakeWeightedScheduler) GetEpochEndSlot(epoch uint64) uint64 {
 // GetSlotsPerEpoch returns the number of slots per epoch
 func (sws *StakeWeightedScheduler) GetSlotsPerEpoch() uint64 {
 	return sws.slotsPerEpoch
-}
-
-// CalculateStakeRewards calculates rewards for an epoch based on performance
-func (sws *StakeWeightedScheduler) CalculateStakeRewards(epoch uint64, totalRewards *big.Int, performanceMetrics map[string]float64) map[string]*big.Int {
-	rewards := make(map[string]*big.Int)
-	activeValidators := sws.stakePool.GetActiveValidators()
-	
-	if len(activeValidators) == 0 || totalRewards.Sign() <= 0 {
-		return rewards
-	}
-	
-	// Base reward per validator (equal distribution)
-	baseReward := new(big.Int).Div(totalRewards, big.NewInt(int64(len(activeValidators))))
-	
-	for pubkey := range activeValidators {
-		validatorReward := new(big.Int).Set(baseReward)
-		
-		// Apply performance multiplier if available
-		if performance, exists := performanceMetrics[pubkey]; exists {
-			// Performance ranges from 0.0 to 1.0
-			// Multiply reward by performance
-			performanceInt := big.NewInt(int64(performance * 1000)) // Scale to avoid floating point
-			validatorReward.Mul(validatorReward, performanceInt)
-			validatorReward.Div(validatorReward, big.NewInt(1000))
-		}
-		
-		rewards[pubkey] = validatorReward
-	}
-	
-	return rewards
 }

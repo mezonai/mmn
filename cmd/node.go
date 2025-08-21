@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"math/big"
@@ -14,7 +15,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mezonai/mmn/api"
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -26,7 +26,6 @@ import (
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/staking"
-	"github.com/mezonai/mmn/validator"
 
 	"github.com/spf13/cobra"
 )
@@ -49,6 +48,8 @@ var (
 	databaseBackend string
 	privateKeyPath  string
 	genesisPath     string
+	// Test network flag to disable PoH verification
+	disablePohVerification bool
 )
 
 var runCmd = &cobra.Command{
@@ -61,6 +62,7 @@ var runCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(dynamicVoteCmd)
 
 	// Run command flags
 	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
@@ -72,6 +74,7 @@ func init() {
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&privateKeyPath, "privkey-path", "privkey.txt", "Path to the private key file")
 	runCmd.Flags().StringVar(&genesisPath, "genesis-path", "genesis.yml", "Path to the genesis configuration file")
+	runCmd.Flags().BoolVar(&disablePohVerification, "disable-poh-verification", false, "Disable PoH verification for test networks")
 }
 
 // getRandomFreePort returns a random free port
@@ -140,7 +143,8 @@ func runNode() {
 
 	// Initialize tx store
 	// TODO: avoid duplication with cmd.initializeNode
-	txStoreDir := filepath.Join(initDataDir, "txstore")
+	txStoreDir := filepath.Join(dataDir, "txstore")
+	logx.Info("INIT", "Creating txstore directory:", txStoreDir)
 	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
 		return
@@ -218,8 +222,8 @@ func runNode() {
 
 	logx.Info("LEDGER", "Loaded ledger state from disk")
 
-	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	// Initialize PoH components with genesis block hash as seed
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, bs)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
@@ -237,7 +241,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey, disablePohVerification)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -299,11 +303,21 @@ func runNode() {
 		dynamicSchedule = nil
 	}
 
-	// Initialize validator (with dynamic or legacy schedule)
-	val, err := initializeValidatorWithSchedule(cfg, nodeConfig, pohService, recorder, dynamicSchedule, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
+	// Initialize validator with StakeManager
+	val, err := initializeValidatorWithSchedule(cfg, nodeConfig, pohService, recorder, dynamicSchedule, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, stakeManager)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
+
+	// Start Dynamic Voting System with current validators
+	log.Println("🗳️  Initializing Dynamic Voting System...")
+	StartDynamicVotingSystem(val, stakeManager)
+
+	// Start adaptive parameter monitoring
+	AdaptVotingParameters(val, stakeManager)
+
+	// Start validator activity monitoring
+	MonitorValidatorActivity(val)
 
 	// Start services
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp)
@@ -376,7 +390,7 @@ func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore)
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string, bs blockstore.Store) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -389,8 +403,26 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
-	// Create seed for PoH
-	seed := []byte("default_poh_seed_for_genesis")
+	// Get genesis block hash to use as deterministic PoH seed
+	// This ensures all nodes start with the same PoH state
+	log.Printf("DEBUG: Looking for genesis block at slot 0 in blockstore")
+	genesisBlock := bs.Block(0) // Genesis block is at slot 0
+	var seed []byte
+	if genesisBlock != nil {
+		seed = genesisBlock.Hash[:]
+		log.Printf("Using genesis block hash as PoH seed: %x", genesisBlock.Hash)
+	} else {
+		log.Printf("DEBUG: Genesis block at slot 0 not found in blockstore")
+		// Fallback to deterministic seed from genesis configuration
+		genesisString := fmt.Sprintf("genesis_poh_seed_%s_%d_%d_%d",
+			cfg.Alloc.Addresses[0].Address, // Use first genesis address as part of seed
+			pohCfg.HashesPerTick,
+			pohCfg.TicksPerSlot,
+			pohCfg.TickIntervalMs)
+		seed = []byte(genesisString)
+		log.Printf("Genesis block not found, using deterministic seed: %s", genesisString)
+	}
+
 	pohEngine := poh.NewPoh(seed, &hashesPerTick, time.Duration(pohAutoHashInterval))
 	pohEngine.Run()
 
@@ -404,7 +436,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25519.PrivateKey, disablePohVerification bool) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -495,42 +527,10 @@ func initializeStakeManager(
 	return stakeManager, nil
 }
 
-// initializeValidator initializes the validator
-func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
-
-	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
-	if err != nil {
-		return nil, fmt.Errorf("load validator config: %w", err)
-	}
-
-	// Calculate intervals
-	pohCfg, _ := config.LoadPohConfig(genesisPath) // Already loaded in initializePoH
-	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
-	leaderBatchLoopInterval := tickInterval / 2
-	roleMonitorLoopInterval := tickInterval
-	leaderTimeout := time.Duration(validatorCfg.LeaderTimeout) * time.Millisecond
-	leaderTimeoutLoopInterval := time.Duration(validatorCfg.LeaderTimeoutLoopInterval) * time.Millisecond
-
-	log.Printf("Validator config: batchLoopInterval=%v, monitorLoopInterval=%v",
-		leaderBatchLoopInterval, roleMonitorLoopInterval)
-
-	val := validator.NewValidator(
-		nodeConfig.PubKey, privKey, recorder, pohService,
-		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
-		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
-	)
-	val.Run()
-
-	return val, nil
-}
-
 // initializeValidatorWithSchedule initializes the validator with optional dynamic schedule
 func initializeValidatorWithSchedule(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	dynamicSchedule *poh.LeaderSchedule, mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, stakeManager *staking.StakeManager) (*staking.StakeValidator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -548,21 +548,27 @@ func initializeValidatorWithSchedule(cfg *config.GenesisConfig, nodeConfig confi
 	log.Printf("Validator config: batchLoopInterval=%v, monitorLoopInterval=%v",
 		leaderBatchLoopInterval, roleMonitorLoopInterval)
 
-	// Choose schedule: dynamic PoS or legacy hardcode
-	var schedule *poh.LeaderSchedule
-	if dynamicSchedule != nil {
-		schedule = dynamicSchedule
-		log.Printf("INFO: Validator using dynamic PoS leader schedule")
-	} else {
-		schedule = config.ConvertLeaderSchedule(cfg.LeaderSchedule)
-		log.Printf("INFO: Validator using legacy hardcode leader schedule")
-	}
+	// Get validator's public key string
+	pubKeyHex := hex.EncodeToString(privKey.Public().(ed25519.PublicKey))
 
-	val := validator.NewValidator(
-		nodeConfig.PubKey, privKey, recorder, pohService,
-		schedule, mp, pohCfg.TicksPerSlot,
-		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
+	// Create StakeValidator (not legacy Validator)
+	val := staking.NewStakeValidator(
+		pubKeyHex,
+		privKey,
+		recorder,
+		pohService,
+		mp,
+		pohCfg.TicksPerSlot,
+		leaderBatchLoopInterval,
+		roleMonitorLoopInterval,
+		leaderTimeout,
+		leaderTimeoutLoopInterval,
+		validatorCfg.BatchSize,
+		p2pClient,
+		bs,
+		ld,
+		collector,
+		stakeManager,
 	)
 	val.Run()
 
@@ -571,7 +577,7 @@ func initializeValidatorWithSchedule(cfg *config.GenesisConfig, nodeConfig confi
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool) {
+	val *staking.StakeValidator, bs blockstore.Store, mp *mempool.Mempool) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -594,7 +600,10 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start API server on a different port
-	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
-	apiSrv.Start()
+	// Start voting system integration with gRPC
+	log.Println("🗳️  Dynamic Voting System integrated with gRPC server")
+
+	// Note: HTTP API removed in favor of gRPC-only approach
+	log.Println("Node started successfully with gRPC server and Dynamic Voting System")
+	log.Println("💡 Use 'mmn dynamic-vote' commands to interact with voting system")
 }

@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/mezonai/mmn/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// Dynamic voting service
+service DynamicVoteService {
+  // Start a new voting round
+  rpc StartVotingRound(StartVotingRoundRequest) returns (StartVotingRoundResponse);
+  
+  // Cast a vote
+  rpc CastVote(CastVoteRequest) returns (CastVoteResponse);
+  
+  // Get voting round status
+  rpc GetVotingRoundStatus(GetVotingRoundStatusRequest) returns (GetVotingRoundStatusResponse);
+  
+  // Get all active voting rounds
+  rpc GetActiveVotingRounds(GetActiveVotingRoundsRequest) returns (GetActiveVotingRoundsResponse);
+}
+
+// Vote types
+enum VoteType {
+  VOTE_TYPE_BLOCK = 0;
+  VOTE_TYPE_EPOCH = 1;
+  VOTE_TYPE_SLASHING = 2;
+  VOTE_TYPE_GOVERNANCE = 3;
+}
+
+// Voting status
+enum VotingStatus {
+  VOTING_ACTIVE = 0;
+  VOTING_PASSED = 1;
+  VOTING_FAILED = 2;
+  VOTING_EXPIRED = 3;
+}
+
+// Start voting round request
+message StartVotingRoundRequest {
+  string round_id = 1;
+  VoteType vote_type = 2;
+  string target = 3;
+  string required_stake = 4; // big.Int as string
+}
+
+message StartVotingRoundResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Cast vote request
+message CastVoteRequest {
+  string round_id = 1;
+  bool support = 2;
+  bytes signature = 3;
+}
+
+message CastVoteResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Get voting round status request
+message GetVotingRoundStatusRequest {
+  string round_id = 1;
+}
+
+message GetVotingRoundStatusResponse {
+  bool exists = 1;
+  VotingRound round = 2;
+}
+
+// Get active voting rounds request
+message GetActiveVotingRoundsRequest {
+}
+
+message GetActiveVotingRoundsResponse {
+  repeated VotingRound rounds = 1;
+}
+
+// Vote information
+message Vote {
+  string voter_pub_key = 1;
+  VoteType vote_type = 2;
+  string target = 3;
+  bool support = 4;
+  string stake_weight = 5; // big.Int as string
+  google.protobuf.Timestamp timestamp = 6;
+  bytes vote_signature = 7;
+}
+
+// Voting round information
+message VotingRound {
+  string round_id = 1;
+  VoteType vote_type = 2;
+  string target = 3;
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+  repeated Vote votes = 6;
+  string required_stake = 7; // big.Int as string
+  VotingStatus status = 8;
+  
+  // Additional statistics
+  string total_support_stake = 9;
+  string total_oppose_stake = 10;
+  string total_voted_stake = 11;
+  int32 voter_count = 12;
+}

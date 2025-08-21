@@ -8,11 +8,6 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
-	"github.com/mezonai/mmn/poh"
-	"github.com/mezonai/mmn/ledger"
-	"github.com/mezonai/mmn/mempool"
-	"github.com/mezonai/mmn/p2p"
-	"github.com/mezonai/mmn/validator"
 )
 
 // Integration test for the complete staking system
@@ -49,11 +44,11 @@ func TestStakingIntegration_CompleteFlow(t *testing.T) {
 		}
 
 		validators[i] = ValidatorSetup{
-			PubKey:     pubKey,
-			PrivKey:    privKey,
-			PubKeyStr:  string(pubKey),
+			PubKey:      pubKey,
+			PrivKey:     privKey,
+			PubKeyStr:   string(pubKey),
 			StakeAmount: big.NewInt(10000000), // All validators have equal stake
-			Commission: uint32(5),             // 5% commission for all
+			Commission:  uint32(5),            // 5% commission for all
 		}
 
 		// Register validator

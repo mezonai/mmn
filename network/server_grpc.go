@@ -13,8 +13,8 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/staking"
 	"github.com/mezonai/mmn/utils"
-	"github.com/mezonai/mmn/validator"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,14 +33,14 @@ type server struct {
 	voteCollector *consensus.Collector
 	selfID        string
 	privKey       ed25519.PrivateKey
-	validator     *validator.Validator
+	validator     *staking.StakeValidator
 	blockStore    blockstore.Store
 	mempool       *mempool.Mempool
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *staking.StakeValidator, blockStore blockstore.Store, mempool *mempool.Mempool) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -60,6 +60,12 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
+
+	// Register Dynamic Voting Service
+	if validator != nil {
+		dynamicVoteServer := NewDynamicVoteServer(validator)
+		pb.RegisterDynamicVoteServiceServer(grpcSrv, dynamicVoteServer)
+	}
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		fmt.Printf("[gRPC] Failed to listen on %s: %v\n", addr, err)
@@ -280,4 +286,58 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 	}
 
 	return resp, nil
+}
+
+// ========== Dynamic Voting Extensions ==========
+
+// StartBlockVote initiates voting for a block (extending existing functionality)
+func (s *server) StartBlockVote(blockHash string) error {
+	if s.validator == nil {
+		return fmt.Errorf("validator not available")
+	}
+
+	return s.validator.InitiateBlockVote(blockHash)
+}
+
+// CastVoteOnBlock casts a vote on a block
+func (s *server) CastVoteOnBlock(blockHash string, support bool) error {
+	if s.validator == nil {
+		return fmt.Errorf("validator not available")
+	}
+
+	// Find active voting round for this block
+	activeRounds := s.validator.GetActiveVotes()
+	for roundID, round := range activeRounds {
+		if round.VoteType == 0 && round.Target == blockHash { // VoteTypeBlock = 0
+			return s.validator.CastVote(roundID, support)
+		}
+	}
+
+	return fmt.Errorf("no active voting round found for block %s", blockHash)
+}
+
+// GetVotingSummary returns summary of current voting activity
+func (s *server) GetVotingSummary() map[string]interface{} {
+	if s.validator == nil {
+		return map[string]interface{}{"error": "validator not available"}
+	}
+
+	activeRounds := s.validator.GetActiveVotes()
+	summary := make(map[string]interface{})
+	summary["active_voting_rounds"] = len(activeRounds)
+
+	roundSummaries := make([]map[string]interface{}, 0)
+	for _, round := range activeRounds {
+		roundSummary := map[string]interface{}{
+			"round_id": round.RoundID,
+			"type":     round.VoteType,
+			"target":   round.Target,
+			"votes":    len(round.Votes),
+			"status":   round.Status,
+		}
+		roundSummaries = append(roundSummaries, roundSummary)
+	}
+
+	summary["rounds"] = roundSummaries
+	return summary
 }
