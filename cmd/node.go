@@ -125,7 +125,7 @@ func runNode() {
 		logx.Error("NODE", "Failed to create accountStore directory:", err.Error())
 		return
 	}
-	as, err := initializeAccountStore(accountStoreDir, initDatabase)
+	as, err := initializeAccountStore(accountStoreDir, databaseBackend)
 	if err != nil {
 		logx.Error("NODE", "Failed to create accountStore directory:", err.Error())
 		return
@@ -139,7 +139,7 @@ func runNode() {
 		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
 		return
 	}
-	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	ts, err := initializeTxStore(txStoreDir, databaseBackend)
 	if err != nil {
 		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
 		return
