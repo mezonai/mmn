@@ -17,6 +17,7 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
@@ -131,13 +132,6 @@ func runNode() {
 	}
 	defer ts.Close()
 
-	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
-	if err != nil {
-		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
-		return
-	}
-
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {
 		p2pPort, err = getRandomFreePort()
@@ -165,7 +159,20 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts)
+	// --- Event Bus ---
+	eventBus := events.NewEventBus()
+
+	// --- Event Router ---
+	eventRouter := events.NewEventRouter(eventBus)
+
+	// Initialize blockstore with data directory
+	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts, eventRouter)
+	if err != nil {
+		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
+		return
+	}
+
+	ld := ledger.NewLedger(ts, eventRouter)
 
 	// Load ledger state from disk (includes alloc account from genesis)
 	if err := ld.LoadLedger(); err != nil {
@@ -192,7 +199,7 @@ func runNode() {
 	}
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -208,7 +215,7 @@ func runNode() {
 	}
 
 	// Start services
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp)
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -244,7 +251,7 @@ func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, erro
 }
 
 // initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
+func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore, eventRouter *events.EventRouter) (blockstore.Store, error) {
 	// Create store configuration with StoreType
 	storeType := blockstore.StoreType(backend)
 	config := &blockstore.StoreConfig{
@@ -258,7 +265,7 @@ func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore)
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, ts)
+	return blockstore.CreateStore(config, ts, eventRouter)
 }
 
 // initializePoH initializes Proof of History components
@@ -303,13 +310,13 @@ func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, eventRouter *events.EventRouter) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter)
 	return mp, nil
 }
 
@@ -347,7 +354,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool) {
+	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool, eventRouter *events.EventRouter) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -367,6 +374,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		val,
 		bs,
 		mp,
+		eventRouter,
 	)
 	_ = grpcSrv // Keep server running
 

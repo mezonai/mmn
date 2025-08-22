@@ -201,7 +201,7 @@ func initializeNode() {
 		return
 	}
 
-	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts)
+	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts, nil)
 	if err != nil {
 		logx.Error("INIT", "Failed to initialize blockstore:", err.Error())
 		return
@@ -209,7 +209,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts)
+	ld := ledger.NewLedger(ts, nil)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)

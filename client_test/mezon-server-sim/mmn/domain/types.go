@@ -107,6 +107,12 @@ type TxHistoryResponse struct {
 	Txs   []*TxMetaResponse
 }
 
+const (
+	UNLOCK_ITEM_STATUS_PENDING = 0
+	UNLOCK_ITEM_STATUS_SUCCESS = 1
+	UNLOCK_ITEM_STATUS_FAILED  = 2
+)
+
 // TxInfo represents transaction information returned by GetTxByHash
 type TxInfo struct {
 	Sender    string `json:"sender"`

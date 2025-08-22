@@ -9,6 +9,7 @@ import (
 
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
@@ -36,11 +37,12 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    blockstore.Store
 	mempool       *mempool.Mempool
+	eventRouter   *events.EventRouter // Event router for complex event logic
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -52,6 +54,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		blockStore:    blockStore,
 		validator:     validator,
 		mempool:       mempool,
+		eventRouter:   eventRouter,
 	}
 
 	grpcSrv := grpc.NewServer()
@@ -190,6 +193,128 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		Total: total,
 		Txs:   txMetas,
 	}, nil
+}
+
+// GetTransactionStatus returns real-time status by checking mempool and blockstore.
+func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
+	txHash := in.TxHash
+
+	// 1) Check mempool
+	if s.mempool != nil {
+		data, ok := s.mempool.GetTransaction(txHash)
+		if ok {
+			// Parse tx to compute client-hash
+			tx, err := utils.ParseTx(data)
+			if err == nil {
+				if tx.Hash() == txHash {
+					return &pb.TransactionStatusInfo{
+						TxHash:        txHash,
+						Status:        pb.TransactionStatus_PENDING,
+						Confirmations: 0, // No confirmations for mempool transactions
+						Timestamp:     uint64(time.Now().Unix()),
+					}, nil
+				}
+			}
+		}
+	}
+
+	// 2) Search in stored blocks
+	if s.blockStore != nil {
+		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
+		if found {
+			confirmations := s.blockStore.GetConfirmations(slot)
+			status := pb.TransactionStatus_CONFIRMED
+			if confirmations > 1 {
+				status = pb.TransactionStatus_FINALIZED
+			}
+
+			return &pb.TransactionStatusInfo{
+				TxHash:        txHash,
+				Status:        status,
+				BlockSlot:     slot,
+				BlockHash:     blk.HashString(),
+				Confirmations: confirmations,
+				Timestamp:     uint64(time.Now().Unix()),
+			}, nil
+		}
+	}
+
+	// 3) Transaction not found anywhere -> return nil and error
+	return nil, fmt.Errorf("transaction not found: %s", txHash)
+}
+
+// SubscribeTransactionStatus streams transaction status updates using event-based system
+func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusInfo]) error {
+	// Subscribe to all blockchain events
+	subscriberID, eventChan := s.eventRouter.Subscribe()
+	defer s.eventRouter.Unsubscribe(subscriberID)
+
+	// Wait for events indefinitely (client keeps connection open)
+	for {
+		select {
+		case event := <-eventChan:
+			// Convert event to status update for the specific transaction
+			statusUpdate := s.convertEventToStatusUpdate(event, event.TxHash())
+			if statusUpdate != nil {
+				if err := stream.Send(statusUpdate); err != nil {
+					return err
+				}
+			}
+
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
+// convertEventToStatusUpdate converts blockchain events to transaction status updates
+func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash string) *pb.TransactionStatusInfo {
+	switch e := event.(type) {
+	case *events.TransactionAddedToMempool:
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_PENDING,
+			Confirmations: 0, // No confirmations for mempool transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+
+	case *events.TransactionIncludedInBlock:
+		// Transaction included in block = CONFIRMED status
+		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
+
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_CONFIRMED,
+			BlockSlot:     e.BlockSlot(),
+			BlockHash:     e.BlockHash(),
+			Confirmations: confirmations,
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+
+	case *events.TransactionFinalized:
+		// Transaction finalized = FINALIZED status
+		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
+
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_FINALIZED,
+			BlockSlot:     e.BlockSlot(),
+			BlockHash:     e.BlockHash(),
+			Confirmations: confirmations,
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+
+	case *events.TransactionFailed:
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_FAILED,
+			ErrorMessage:  e.ErrorMessage(),
+			Confirmations: 0, // No confirmations for failed transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+	}
+
+	return nil
 }
 
 // Health check methods

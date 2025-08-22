@@ -12,19 +12,25 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
 
 type Ledger struct {
-	state   map[string]*types.Account // address (public key hex) → account
-	mu      sync.RWMutex
-	txStore blockstore.TxStore
+	state       map[string]*types.Account // address (public key hex) → account
+	mu          sync.RWMutex
+	txStore     blockstore.TxStore
+	eventRouter *events.EventRouter
 }
 
-func NewLedger(txStore blockstore.TxStore) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), txStore: txStore}
+func NewLedger(txStore blockstore.TxStore, eventRouter *events.EventRouter) *Ledger {
+	return &Ledger{
+		state:       make(map[string]*types.Account),
+		txStore:     txStore,
+		eventRouter: eventRouter,
+	}
 }
 
 // Initialize initial account
@@ -103,6 +109,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 
 		for _, tx := range txs {
 			if err := applyTx(l.state, tx); err != nil {
+				// Publish specific transaction failure event
+				if l.eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			fmt.Printf("Applied tx %s\n", tx.Hash())
@@ -114,7 +126,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	}
 
 	if err := l.appendWAL(b); err != nil {
-		return err
+		// Publish WAL failure event
+		if l.eventRouter != nil {
+			event := events.NewTransactionFailed("", fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+			l.eventRouter.PublishTransactionEvent(event)
+		}
+		return fmt.Errorf("WAL write failed for block %d: %w", b.Slot, err)
 	}
 	if b.Slot%1000 == 0 {
 		_ = l.SaveSnapshot("ledger/snapshot.gob")
@@ -378,11 +395,19 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 		tx, err := utils.ParseTx(r)
 		if err != nil || !tx.Verify() {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			if s.ledger.eventRouter != nil {
+				event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("sig/format: %v", err))
+				s.ledger.eventRouter.PublishTransactionEvent(event)
+			}
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
 		if err := s.view.ApplyTx(tx); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			if s.ledger.eventRouter != nil {
+				event := events.NewTransactionFailed(tx.Hash(), err.Error())
+				s.ledger.eventRouter.PublishTransactionEvent(event)
+			}
 			errs = append(errs, err)
 			continue
 		}
