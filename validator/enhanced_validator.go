@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
@@ -53,7 +53,7 @@ type EnhancedValidator struct {
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
-	pendingValidTxs   []*types.Transaction
+	pendingValidTxs   []*transaction.Transaction
 	stopCh            chan struct{}
 }
 
@@ -102,7 +102,7 @@ func NewEnhancedValidator(
 		lastSlot:                  blockStore.GetCurrentSlot(),
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
-		pendingValidTxs:           make([]*types.Transaction, 0, batchSize),
+		pendingValidTxs:           make([]*transaction.Transaction, 0, batchSize),
 		epochStartTime:            time.Now(),
 	}
 
@@ -161,7 +161,7 @@ waitLoop:
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
 	v.lastSession = v.ledger.NewSession()
-	v.pendingValidTxs = make([]*types.Transaction, 0, v.BatchSize)
+	v.pendingValidTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 }
 
 func (v *EnhancedValidator) onLeaderSlotEnd() {
@@ -230,7 +230,9 @@ func (v *EnhancedValidator) handleEntry(entries []poh.Entry) {
 
 			if err := v.ledger.VerifyBlock(blk); err != nil {
 				logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
-				v.session = v.lastSession.CopyWithOverlayClone()
+				// Reset session to fresh state based on current ledger state
+				v.session = v.ledger.NewSession()
+				v.lastSession = v.ledger.NewSession()
 				return
 			}
 
@@ -313,7 +315,7 @@ func (v *EnhancedValidator) getRootSlot() uint64 {
 	return 0
 }
 
-func (v *EnhancedValidator) peekPendingValidTxs(size int) []*types.Transaction {
+func (v *EnhancedValidator) peekPendingValidTxs(size int) []*transaction.Transaction {
 	if len(v.pendingValidTxs) == 0 {
 		return nil
 	}
@@ -321,7 +323,7 @@ func (v *EnhancedValidator) peekPendingValidTxs(size int) []*types.Transaction {
 		size = len(v.pendingValidTxs)
 	}
 
-	result := make([]*types.Transaction, size)
+	result := make([]*transaction.Transaction, size)
 	copy(result, v.pendingValidTxs[:size])
 	return result
 }
