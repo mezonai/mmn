@@ -131,6 +131,19 @@ func runNode() {
 	}
 	defer ts.Close()
 
+	// Initialize tx meta store
+	txMetaStoreDir := filepath.Join(initDataDir, "txmetastore")
+	if err := os.MkdirAll(txMetaStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create txmetastore directory:", err.Error())
+		return
+	}
+	tms, err := initializeTxMetaStore(txMetaStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create txmetastore directory:", err.Error())
+		return
+	}
+	defer tms.Close()
+
 	// Initialize blockstore with data directory
 	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
 	if err != nil {
@@ -165,7 +178,7 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts)
+	ld := ledger.NewLedger(ts, tms)
 
 	// Load ledger state from disk (includes alloc account from genesis)
 	if err := ld.LoadLedger(); err != nil {
@@ -241,6 +254,17 @@ func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, erro
 		return nil, fmt.Errorf("unable to create db provider: %w", err)
 	}
 	return blockstore.NewGenericTxStore(dbProvider)
+}
+
+// initializeTxMetaStore initializes the tx metadata storage backend
+func initializeTxMetaStore(dataDir string, backend string) (blockstore.TxMetaStore, error) {
+	dbProvider, err := blockstore.CreateDBProvider(blockstore.DBVendor(backend), blockstore.DBOptions{
+		Directory: dataDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to create db provider: %w", err)
+	}
+	return blockstore.NewGenericTxMetaStore(dbProvider)
 }
 
 // initializeBlockstore initializes the block storage backend using the factory pattern

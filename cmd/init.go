@@ -194,6 +194,19 @@ func initializeNode() {
 	}
 	defer ts.Close()
 
+	// Initialize tx meta store
+	txMetaStoreDir := filepath.Join(initDataDir, "txmetastore")
+	if err := os.MkdirAll(txMetaStoreDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create txmetastore directory:", err.Error())
+		return
+	}
+	tms, err := initializeTxMetaStore(txMetaStoreDir, initDatabase)
+	if err != nil {
+		logx.Error("INIT", "Failed to create txmetastore directory:", err.Error())
+		return
+	}
+	defer tms.Close()
+
 	// Initialize blockstore
 	blockstoreDir := filepath.Join(initDataDir, "blockstore")
 	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
@@ -209,7 +222,7 @@ func initializeNode() {
 	defer bs.Close()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts)
+	ld := ledger.NewLedger(ts, tms)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
