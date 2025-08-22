@@ -1134,7 +1134,7 @@ func TestMempool_RaceConditionHandling(t *testing.T) {
 func TestMempool_StaleTimeout(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test senders
 	_, senderAddr1 := getOrCreateKeyPair("stale_sender1")
@@ -1255,7 +1255,7 @@ func TestMempool_StaleTimeout(t *testing.T) {
 func TestMempool_MaxFutureNonce(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create a test sender
 	_, senderAddr := getOrCreateKeyPair("future_nonce_sender")
@@ -1337,7 +1337,7 @@ func TestMempool_MaxFutureNonce(t *testing.T) {
 func TestMempool_MaxPendingPerSender(t *testing.T) {
 	mockLedger := NewMockLedger()
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(200, mockBroadcaster, mockLedger) // Large mempool for this test
+	mempool := NewMempool(200, mockBroadcaster, mockLedger, nil) // Large mempool for this test
 
 	// Create a test sender
 	_, senderAddr := getOrCreateKeyPair("pending_sender")
@@ -1448,7 +1448,7 @@ func TestMempool_MaxMempoolSize(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
 	// Create mempool with small size for testing
-	mempool := NewMempool(5, broadcaster, ledger)
+	mempool := NewMempool(5, broadcaster, ledger, nil)
 
 	// Fill mempool to capacity
 	for i := 0; i < 5; i++ {
@@ -1512,7 +1512,7 @@ func TestMempool_MaxMempoolSize(t *testing.T) {
 func TestMempool_PeriodicCleanup(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test senders
 	_, senderAddr1 := getOrCreateKeyPair("cleanup_test_sender1")
@@ -1561,7 +1561,7 @@ func TestMempool_PeriodicCleanup(t *testing.T) {
 func TestMempool_TransactionPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("promotion_sender")
@@ -1666,7 +1666,7 @@ func TestMempool_TransactionPromotion(t *testing.T) {
 func TestMempool_ChainPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("chain_sender")
@@ -1721,7 +1721,7 @@ func TestMempool_ChainPromotion(t *testing.T) {
 func TestMempool_MultiSenderPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create two test senders
 	_, senderAddr1 := getOrCreateKeyPair("multi_sender1")
@@ -1801,7 +1801,7 @@ func TestMempool_MultiSenderPromotion(t *testing.T) {
 func TestMempool_BalanceValidation(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender with limited balance
 	_, senderAddr := getOrCreateKeyPair("balance_sender")
@@ -1863,7 +1863,7 @@ func TestMempool_BalanceValidation(t *testing.T) {
 func TestMempool_BalanceValidationWithProcessing(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("processing_sender")
@@ -1924,7 +1924,7 @@ func TestMempool_BalanceValidationWithProcessing(t *testing.T) {
 func TestMempool_BalanceValidationEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Test 1: Zero balance account
 	_, zeroAddr := getOrCreateKeyPair("zero_balance")
@@ -1992,7 +1992,7 @@ func TestMempool_BalanceValidationEdgeCases(t *testing.T) {
 func TestMempool_NonceCaching(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("cache_sender")
@@ -2049,7 +2049,7 @@ func TestMempool_NonceCaching(t *testing.T) {
 func TestMempool_NonceCachingWithTransactions(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("tx_cache_sender")
@@ -2113,7 +2113,7 @@ func TestMempool_NonceCachingWithTransactions(t *testing.T) {
 func TestMempool_NonceCachingEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("edge_cache_sender")
@@ -2156,7 +2156,7 @@ func TestMempool_NonceCachingEdgeCases(t *testing.T) {
 func TestMempool_DuplicateNonceDetection(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("duplicate_sender")
@@ -2207,7 +2207,7 @@ func TestMempool_DuplicateNonceDetection(t *testing.T) {
 func TestMempool_DuplicateNonceAcrossSenders(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create two test senders
 	_, sender1Addr := getOrCreateKeyPair("dup_sender1")
@@ -2261,7 +2261,7 @@ func TestMempool_DuplicateNonceAcrossSenders(t *testing.T) {
 func TestMempool_DuplicateNonceWithPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("promo_dup_sender")
@@ -2313,7 +2313,7 @@ func TestMempool_DuplicateNonceWithPromotion(t *testing.T) {
 func TestMempool_DuplicateNonceEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("edge_dup_sender")
@@ -2389,7 +2389,7 @@ func TestMempool_DuplicateNonceEdgeCases(t *testing.T) {
 func TestMempool_ValidationEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("edge_sender")
@@ -2476,7 +2476,7 @@ func TestMempool_ValidationEdgeCases(t *testing.T) {
 func TestMempool_ValidationMalformedData(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger)
+	mempool := NewMempool(100, broadcaster, ledger, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("malformed_sender")
@@ -2559,7 +2559,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 func TestMempool_ValidationSystemEdgeCases(t *testing.T) {
 	// Test 1: Mempool with nil ledger
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, nil) // nil ledger
+	mempool := NewMempool(100, broadcaster, nil, nil) // nil ledger
 
 	tx := createTestTx(0, "sender", "recipient", 100, 1)
 	_, err := mempool.AddTx(tx, false)
@@ -2572,7 +2572,7 @@ func TestMempool_ValidationSystemEdgeCases(t *testing.T) {
 
 	// Test 2: Concurrent access to validation (basic test)
 	ledger := NewMockLedger()
-	mempool2 := NewMempool(100, broadcaster, ledger)
+	mempool2 := NewMempool(100, broadcaster, ledger, nil)
 
 	_, senderAddr := getOrCreateKeyPair("concurrent_sender")
 	ledger.SetBalance(senderAddr, 10000)
@@ -2608,7 +2608,7 @@ func TestMempool_ValidationSystemEdgeCases(t *testing.T) {
 
 	// Test 3: Memory pressure simulation (add many transactions)
 	ledger2 := NewMockLedger()
-	mempool3 := NewMempool(1000, broadcaster, ledger2)
+	mempool3 := NewMempool(1000, broadcaster, ledger2, nil)
 
 	// Create many senders to avoid nonce conflicts
 	for i := 0; i < 100; i++ {

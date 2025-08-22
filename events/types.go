@@ -3,7 +3,7 @@ package events
 import (
 	"time"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 // EventType is an enum-like string type for blockchain events
@@ -26,11 +26,11 @@ type BlockchainEvent interface {
 // TransactionAddedToMempool event when a transaction is added to mempool
 type TransactionAddedToMempool struct {
 	txHash    string
-	tx        *types.Transaction
+	tx        *transaction.Transaction
 	timestamp time.Time
 }
 
-func NewTransactionAddedToMempool(txHash string, tx *types.Transaction) *TransactionAddedToMempool {
+func NewTransactionAddedToMempool(txHash string, tx *transaction.Transaction) *TransactionAddedToMempool {
 	return &TransactionAddedToMempool{
 		txHash:    txHash,
 		tx:        tx,
@@ -50,7 +50,7 @@ func (e *TransactionAddedToMempool) TxHash() string {
 	return e.txHash
 }
 
-func (e *TransactionAddedToMempool) Transaction() *types.Transaction {
+func (e *TransactionAddedToMempool) Transaction() *transaction.Transaction {
 	return e.tx
 }
 
