@@ -347,9 +347,8 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transactio
 		}
 
 		senderAccount, err := mp.ledger.GetAccount(sender)
-		if err != nil || senderAccount == nil {
-			// TODO: continue or break?
-			logx.Error("MEMPOOL", "findReadyTransactions: Failed to get account for sender %s", sender)
+		if err != nil {
+			logx.Error("MEMPOOL", "findReadyTransactions: failed to get account for sender %s", sender)
 			continue
 		}
 		currentNonce := mp.getCurrentNonce(sender, senderAccount.Nonce)
@@ -393,9 +392,8 @@ func (mp *Mempool) updateAccountNonce(sender string, nonce uint64) {
 func (mp *Mempool) promotePendingTransactions() {
 	for sender, pendingMap := range mp.pendingTxs {
 		senderAccount, err := mp.ledger.GetAccount(sender)
-		if err != nil || senderAccount == nil {
-			// TODO: continue or break?
-			logx.Error("MEMPOOL", "promotePendingTransactions: Failed to get account for sender %s", sender)
+		if err != nil {
+			logx.Error("MEMPOOL", "promotePendingTransactions: failed to get account for sender %s", sender)
 			continue
 		}
 		currentNonce := mp.getCurrentNonce(sender, senderAccount.Nonce)
