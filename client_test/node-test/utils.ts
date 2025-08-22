@@ -64,6 +64,12 @@ export async function getAccountBalance(grpcClient: GrpcClient, address: string)
   return parseInt(account.balance);
 }
 
+// Helper function to get current nonce for an account
+export async function getCurrentNonce(grpcClient: GrpcClient, address: string, tag: string = 'pending'): Promise<number> {
+  const nonceResponse = await grpcClient.getCurrentNonce(address, tag);
+  return parseInt(nonceResponse.nonce);
+}
+
 // Build transaction object
 export function buildTx(
   sender: string,
@@ -135,18 +141,20 @@ export async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
 }
 
 // Fund account with tokens (with retry logic for multi-threaded usage)
-export async function fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, maxRetries: number = 3) {
+export async function 
+
+fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, maxRetries: number = 3) {
   let lastError: any;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Get current faucet account nonce dynamically
-      const faucetAccount = await grpcClient.getAccount(faucetPublicKeyBase58);
-      const currentNonce = parseInt(faucetAccount.nonce) + 1;
-
-      console.log(`Fund transaction attempt ${attempt}: Using nonce ${currentNonce} (faucet account nonce: ${faucetAccount.nonce})`);
+      // Get current faucet account nonce using GetCurrentNonce gRPC method
+      const currentNonceValue = await getCurrentNonce(grpcClient, faucetPublicKeyBase58, 'pending');
+      const nextNonce = currentNonceValue + 1;
       
-      const fundTx = buildTx(faucetPublicKeyBase58, recipientAddress, amount, 'Funding account', currentNonce, TxTypeTransfer);
+      console.log(`Fund transaction attempt ${attempt}: Using nonce ${nextNonce} (current nonce from gRPC: ${currentNonceValue})`);
+      
+      const fundTx = buildTx(faucetPublicKeyBase58, recipientAddress, amount, 'Funding account', nextNonce, TxTypeTransfer);
       fundTx.signature = signTx(fundTx, faucetPrivateKey);
       
       const response = await sendTxViaGrpc(grpcClient, fundTx);
@@ -154,7 +162,7 @@ export async function fundAccount(grpcClient: GrpcClient, recipientAddress: stri
       console.log(`Fund transaction response (attempt ${attempt}):`, response);
       // If successful, wait and verify the balance was updated
       if (response.ok) {
-        await waitForTransaction(2000);
+        await waitForTransaction(800); // ~ 2 slots
         try {
           const balance = await getAccountBalance(grpcClient, recipientAddress);
           console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);
