@@ -42,6 +42,8 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) error {
 	return err
 }
 
+// createAccountWithoutLocking creates account and store in db without locking ledger. This is useful
+// when calling method has already acquired lock for ledger to avoid recursive locking and deadlock
 func (l *Ledger) createAccountWithoutLocking(addr string, balance uint64) (*types.Account, error) {
 	existed, err := l.accountStore.ExistsByAddr(addr)
 	if err != nil {
@@ -66,8 +68,11 @@ func (l *Ledger) createAccountWithoutLocking(addr string, balance uint64) (*type
 
 // CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
 func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	for _, addr := range addrs {
-		err := l.CreateAccount(addr.Address, addr.Amount)
+		_, err := l.createAccountWithoutLocking(addr.Address, addr.Amount)
 		if err != nil {
 			return fmt.Errorf("could not create genesis account %s: %w", addr.Address, err)
 		}
@@ -161,22 +166,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			}
 
 			// commit the update
-			// TODO: not atomic operation, does db support transaction?
-			if err := l.accountStore.Store(sender); err != nil {
-				return err
-			}
-			if err := l.accountStore.Store(recipient); err != nil {
+			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				return err
 			}
 		}
 	}
 
-	//if err := l.appendWAL(b); err != nil {
-	//	return err
-	//}
-	//if b.Slot%1000 == 0 {
-	//	_ = l.SaveSnapshot("ledger/snapshot.gob")
-	//}
 	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
 	return nil
 }
@@ -306,50 +301,6 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 	}
 	return nil
 }
-
-//func (l *Ledger) SaveSnapshot(path string) error {
-//	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-//		return err
-//	}
-//
-//	tmp := path + ".tmp"
-//	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-//	if err != nil {
-//		return err
-//	}
-//	if err := gob.NewEncoder(f).Encode(l.state); err != nil {
-//		return err
-//	}
-//	defer f.Close()
-//	return os.Rename(tmp, path)
-//}
-//
-//func (l *Ledger) LoadLedger() error {
-//	// 1. snapshot
-//	if s, err := os.Open("ledger/snapshot.gob"); err == nil {
-//		_ = gob.NewDecoder(s).Decode(&l.state)
-//		s.Close()
-//	}
-//
-//	// 2. replay WAL
-//	if w, err := os.Open("ledger/wal.log"); err == nil {
-//		dec := json.NewDecoder(w)
-//		var rec types.TxRecord
-//		for dec.Decode(&rec) == nil {
-//			_ = applyTx(l.state, &types.Transaction{
-//				Type:      rec.Type,
-//				Sender:    rec.Sender,
-//				Recipient: rec.Recipient,
-//				Amount:    rec.Amount,
-//				Timestamp: rec.Timestamp,
-//				TextData:  rec.TextData,
-//				Nonce:     rec.Nonce,
-//			})
-//		}
-//		w.Close()
-//	}
-//	return nil
-//}
 
 // LedgerView is a view of the ledger to verify block before applying it to the ledger.
 type LedgerView struct {

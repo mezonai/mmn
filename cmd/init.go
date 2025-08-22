@@ -283,11 +283,6 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 		return nil, fmt.Errorf("failed to create genesis alloc account: %w", err)
 	}
 
-	// Save ledger snapshot to persist alloc account
-	//if err := ld.SaveSnapshot("ledger/snapshot.gob"); err != nil {
-	//	return nil, fmt.Errorf("failed to save ledger snapshot: %w", err)
-	//}
-
 	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with alloc account %s", cfg.Alloc.Addresses))
 	logx.Info("GENESIS", "Ledger snapshot saved to ledger/snapshot.gob")
 	logx.Info("GENESIS", fmt.Sprintf("Genesis block hash: %x", genesisBlock.Hash))

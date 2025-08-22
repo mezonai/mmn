@@ -9,6 +9,7 @@ import (
 
 type AccountStore interface {
 	Store(account *types.Account) error
+	StoreBatch(accounts []*types.Account) error
 	GetByAddr(addr string) (*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
 	Close() error
@@ -33,8 +34,6 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
 
-	fmt.Println("Adding account to db", account)
-
 	accountData, err := json.Marshal(account)
 	if err != nil {
 		return fmt.Errorf("failed to marshal account: %w", err)
@@ -43,6 +42,29 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 	err = as.dbProvider.Put([]byte(account.Address), accountData)
 	if err != nil {
 		return fmt.Errorf("failed to write account to db: %w", err)
+	}
+
+	return nil
+}
+
+func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
+	batch := as.dbProvider.Batch()
+	for _, account := range accounts {
+		addrBytes := []byte(account.Address)
+		accountData, err := json.Marshal(account)
+		if err != nil {
+			return fmt.Errorf("failed to marshal account: %w", err)
+		}
+
+		batch.Put(addrBytes, accountData)
+	}
+
+	err := batch.Write()
+	if err != nil {
+		return fmt.Errorf("failed to write batch of accounts to database: %w", err)
 	}
 
 	return nil
