@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/store"
 	"log"
 	"net"
 	"os"
@@ -13,8 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
@@ -22,7 +23,6 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
-	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/validator"
@@ -82,6 +82,8 @@ func getRandomFreePort() (string, error) {
 }
 
 func runNode() {
+	logx.Info("NODE", "Running node")
+
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -91,7 +93,7 @@ func runNode() {
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, "privkey.txt")
 	genesisPath := filepath.Join(dataDir, "genesis.yml")
-	blockstoreDir := filepath.Join(dataDir, "blockstore")
+	dbStoreDir := filepath.Join(dataDir, "store")
 
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
@@ -107,7 +109,7 @@ func runNode() {
 	}
 
 	// Create blockstore directory if it doesn't exist
-	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
+	if err := os.MkdirAll(dbStoreDir, 0755); err != nil {
 		logx.Error("NODE", "Failed to create blockstore directory:", err.Error())
 		return
 	}
@@ -118,19 +120,21 @@ func runNode() {
 		return
 	}
 
-	// Initialize tx store
-	// TODO: avoid duplication with cmd.initializeNode
-	txStoreDir := filepath.Join(initDataDir, "txstore")
-	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
-		return
-	}
-	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	// --- Event Bus ---
+	eventBus := events.NewEventBus()
+
+	// --- Event Router ---
+	eventRouter := events.NewEventRouter(eventBus)
+
+	// Initialize db store inside directory
+	as, ts, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
 	if err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
 	}
-	defer ts.Close()
+	defer bs.MustClose()
+	defer ts.MustClose()
+	defer as.MustClose()
 
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {
@@ -159,26 +163,7 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	// --- Event Bus ---
-	eventBus := events.NewEventBus()
-
-	// --- Event Router ---
-	eventRouter := events.NewEventRouter(eventBus)
-
-	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts, eventRouter)
-	if err != nil {
-		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
-		return
-	}
-
-	ld := ledger.NewLedger(ts, eventRouter)
-
-	// Load ledger state from disk (includes alloc account from genesis)
-	if err := ld.LoadLedger(); err != nil {
-		log.Fatalf("Failed to load ledger state: %v", err)
-	}
-	logx.Info("LEDGER", "Loaded ledger state from disk")
+	ld := ledger.NewLedger(ts, as, eventRouter)
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
@@ -239,33 +224,28 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	return cfg, nil
 }
 
-// initializeTxStore initializes the tx storage backend
-func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, error) {
-	dbProvider, err := blockstore.CreateDBProvider(blockstore.DBVendor(backend), blockstore.DBOptions{
-		Directory: dataDir,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("unable to create db provider: %w", err)
+// initializeDBStore initializes the block storage backend using the factory pattern
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.BlockStore, error) {
+	// Create data folder if not exist
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create db store directory:", err.Error())
+		return nil, nil, nil, err
 	}
-	return blockstore.NewGenericTxStore(dbProvider)
-}
 
-// initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore, eventRouter *events.EventRouter) (blockstore.Store, error) {
 	// Create store configuration with StoreType
-	storeType := blockstore.StoreType(backend)
-	config := &blockstore.StoreConfig{
+	storeType := store.StoreType(backend)
+	storeCfg := &store.StoreConfig{
 		Type:      storeType,
 		Directory: dataDir,
 	}
 
 	// Validate the configuration (this will check if the backend is supported)
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+	if err := storeCfg.Validate(); err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, ts, eventRouter)
+	return store.CreateStore(storeCfg, eventRouter)
 }
 
 // initializePoH initializes Proof of History components
@@ -296,7 +276,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -322,7 +302,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
 	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
@@ -354,7 +334,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool, eventRouter *events.EventRouter) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)

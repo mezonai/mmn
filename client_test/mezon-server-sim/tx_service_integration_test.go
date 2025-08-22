@@ -139,7 +139,7 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 	faucetSeed := faucetPrivateKey.Seed()
 	txHash, err := service.SendTokenWithoutDatabase(
 		ctx,
-		faucetAccount.Nonce,
+		faucetAccount.Nonce+1,
 		faucetPublicKey,
 		toAddress,
 		faucetSeed,
@@ -450,7 +450,11 @@ func TestGetTxByHash_Integration(t *testing.T) {
 
 	// Send a transaction to get a valid hash
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
+	faucetAccount, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	if err != nil {
+		t.Fatalf("GetAccountByAddress failed: %v", err)
+	}
+	txHash, err := service.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("Failed to create test transaction: %v", err)
 	}

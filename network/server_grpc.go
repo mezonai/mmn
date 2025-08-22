@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/store"
 	"net"
 	"time"
 
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
@@ -35,14 +35,14 @@ type server struct {
 	selfID        string
 	privKey       ed25519.PrivateKey
 	validator     *validator.Validator
-	blockStore    blockstore.Store
+	blockStore    store.BlockStore
 	mempool       *mempool.Mempool
 	eventRouter   *events.EventRouter // Event router for complex event logic
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -96,7 +96,10 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
 	addr := in.Address
-	acc := s.ledger.GetAccount(addr)
+	acc, err := s.ledger.GetAccount(addr)
+	if err != nil {
+		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
+	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
 			Address: addr,
@@ -124,7 +127,17 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 	}
 
 	// Get account from ledger
-	acc := s.ledger.GetAccount(addr)
+	// TODO: verify this segment
+	acc, err := s.ledger.GetAccount(addr)
+	if err != nil {
+		fmt.Printf("[gRPC] Failed to get account for address %s: %v\n", addr, err)
+		return &pb.GetCurrentNonceResponse{
+			Address: addr,
+			Nonce:   0,
+			Tag:     tag,
+			Error:   err.Error(),
+		}, nil
+	}
 	if acc == nil {
 		fmt.Printf("[gRPC] Account not found for address: %s\n", addr)
 		return &pb.GetCurrentNonceResponse{
@@ -424,19 +437,18 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 	return resp, nil
 }
 
-// GetBlockNumber returns current block number 
+// GetBlockNumber returns current block number
 func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.GetBlockNumberResponse, error) {
 	currentBlock := uint64(0)
-	
+
 	if s.blockStore != nil {
 		currentBlock = s.blockStore.GetLatestSlot()
 	}
-	
+
 	return &pb.GetBlockNumberResponse{
 		BlockNumber: currentBlock,
 	}, nil
 }
-
 
 // GetBlockByNumber retrieves a block by its number
 func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {

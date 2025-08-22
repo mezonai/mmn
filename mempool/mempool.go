@@ -3,6 +3,7 @@ package mempool
 import (
 	"context"
 	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"sync"
 	"time"
 
@@ -97,8 +98,12 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	fmt.Println("Adding tx", tx)
 
-	// Determine if transaction is ready or pending
-	currentNonce := mp.getCurrentNonce(tx.Sender, mp.ledger.GetAccount(tx.Sender).Nonce)
+	// Determine if the transaction is ready or pending
+	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
+	if err != nil || senderAccount == nil {
+		return "", fmt.Errorf("failed to get sender account: %w", err)
+	}
+	currentNonce := mp.getCurrentNonce(tx.Sender, senderAccount.Nonce)
 	isReady := tx.Nonce == currentNonce+1
 
 	// Validate balance accounting for existing pending/ready transactions
@@ -163,7 +168,10 @@ func (mp *Mempool) getCurrentNonce(sender string, ledgerNonce uint64) uint64 {
 }
 
 func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
-	senderAccount := mp.ledger.GetAccount(tx.Sender)
+	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
+	if err != nil || senderAccount == nil {
+		return fmt.Errorf("could not get sender accont: %w", err)
+	}
 	availableBalance := senderAccount.Balance
 
 	// Subtract amounts from pending transactions to get true available balance
@@ -204,7 +212,10 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return fmt.Errorf("ledger not available for validation")
 	}
 
-	senderAccount := mp.ledger.GetAccount(tx.Sender)
+	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
+	if err != nil {
+		return fmt.Errorf("could not get sender account %s", tx.Sender)
+	}
 	if senderAccount == nil {
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}
@@ -343,7 +354,12 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transactio
 			break
 		}
 
-		currentNonce := mp.getCurrentNonce(sender, mp.ledger.GetAccount(sender).Nonce)
+		senderAccount, err := mp.ledger.GetAccount(sender)
+		if err != nil {
+			logx.Error("MEMPOOL", "findReadyTransactions: failed to get account for sender %s", sender)
+			continue
+		}
+		currentNonce := mp.getCurrentNonce(sender, senderAccount.Nonce)
 		expectedNonce := currentNonce + 1
 
 		if pendingTx, exists := pendingMap[expectedNonce]; exists {
@@ -383,7 +399,12 @@ func (mp *Mempool) updateAccountNonce(sender string, nonce uint64) {
 // promotePendingTransactions checks if any pending transactions became ready
 func (mp *Mempool) promotePendingTransactions() {
 	for sender, pendingMap := range mp.pendingTxs {
-		currentNonce := mp.getCurrentNonce(sender, mp.ledger.GetAccount(sender).Nonce)
+		senderAccount, err := mp.ledger.GetAccount(sender)
+		if err != nil {
+			logx.Error("MEMPOOL", "promotePendingTransactions: failed to get account for sender %s", sender)
+			continue
+		}
+		currentNonce := mp.getCurrentNonce(sender, senderAccount.Nonce)
 		expectedNonce := currentNonce + 1
 
 		if pendingTx, exists := pendingMap[expectedNonce]; exists {

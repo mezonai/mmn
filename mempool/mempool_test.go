@@ -123,28 +123,28 @@ func (ml *MockLedger) SetNonce(address string, nonce uint64) {
 }
 
 // Implement interfaces.Ledger methods
-func (ml *MockLedger) AccountExists(addr string) bool {
+func (ml *MockLedger) AccountExists(addr string) (bool, error) {
 	_, exists := ml.balances[addr]
-	return exists
+	return exists, nil
 }
 
-func (ml *MockLedger) GetAccount(addr string) *types.Account {
+func (ml *MockLedger) GetAccount(addr string) (*types.Account, error) {
 	ml.mu.RLock()
 	defer ml.mu.RUnlock()
 
 	if _, exists := ml.balances[addr]; !exists {
-		return nil
+		return nil, nil
 	}
 	return &types.Account{
 		Address: addr,
 		Balance: ml.balances[addr],
 		Nonce:   ml.nonces[addr],
 		History: make([]string, 0),
-	}
+	}, nil
 }
 
-func (ml *MockLedger) Balance(addr string) uint64 {
-	return ml.balances[addr]
+func (ml *MockLedger) Balance(addr string) (uint64, error) {
+	return ml.balances[addr], nil
 }
 
 func (ml *MockLedger) CreateAccountsFromGenesis(addresses []config.Address) error {
