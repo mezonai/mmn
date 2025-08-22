@@ -138,6 +138,7 @@ export async function fundAccount(grpcClient: GrpcClient, recipientAddress: stri
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      await waitForTransaction(800); // ~ 2 slots
       // Get current faucet account nonce dynamically
       const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
       const currentNonce = parseInt(faucetAccount.nonce) + 1;
@@ -153,7 +154,7 @@ export async function fundAccount(grpcClient: GrpcClient, recipientAddress: stri
       
       // If successful, wait and verify the balance was updated
       if (response.ok) {
-        await waitForTransaction(2000);
+        await waitForTransaction(800); // ~ 2 slots
         try {
           const balance = await getAccountBalance(grpcClient, recipientAddress);
           console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);
