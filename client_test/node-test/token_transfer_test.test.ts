@@ -434,8 +434,7 @@ describe('Token Transfer Tests', () => {
           console.log(`Transfer ${i + 1} failed:`, response.error);
         }
         expect(response.ok).toBe(true);
-
-        await waitForTransaction(3000);
+        await waitForTransaction(800); // ~ 2 slots
       }
       
       // Verify final balances

@@ -161,7 +161,7 @@ fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, ma
       
       // If successful, wait and verify the balance was updated
       if (response.ok) {
-        await waitForTransaction(2000);
+        await waitForTransaction(800); // ~ 2 slots
         try {
           const balance = await getAccountBalance(grpcClient, recipientAddress);
           console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);

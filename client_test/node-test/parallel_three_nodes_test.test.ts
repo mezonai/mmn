@@ -126,6 +126,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       });
       
       // Fund sender account using node1
+      await waitForTransaction(800); // ~ 2 slots
       const faucetAccount = await nodeClients[0].client.getAccount(faucetPublicKeyHex);
       console.log('Faucet account state:', { 
         address: faucetAccount.address, 
