@@ -2,11 +2,8 @@ package ledger
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/mezonai/mmn/store"
