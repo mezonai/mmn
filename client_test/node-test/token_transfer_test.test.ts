@@ -87,6 +87,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
       
       // Check faucet account nonce first
+      await waitForTransaction(400); // ~ 1 slot
       const faucetAccount = await grpcClient.getAccount(faucetPublicKeyHex);
       console.log('Faucet account state:', { address: faucetAccount.address, balance: faucetAccount.balance, nonce: faucetAccount.nonce });
       
@@ -398,8 +399,7 @@ describe('Token Transfer Tests', () => {
           console.log(`Transfer ${i + 1} failed:`, response.error);
         }
         expect(response.ok).toBe(true);
-
-        await waitForTransaction(3000);
+        await waitForTransaction(800); // ~ 2 slots
       }
       
       // Verify final balances
@@ -1041,6 +1041,7 @@ describe('Token Transfer Tests', () => {
       });
       
       // Test 5: Valid nonce after edge cases (should still work)
+      await waitForTransaction(400); // ~ 1 slot
       const updatedSenderAccount = await grpcClient.getAccount(sender.publicKeyHex);
       const nextValidNonce = parseInt(updatedSenderAccount.nonce) + 1;
       
