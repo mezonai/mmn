@@ -12,7 +12,7 @@ import (
 
 // Constants for zero-fee blockchain optimization
 const (
-	MaxPendingPerSender = 64               // Max future transactions per sender
+	MaxPendingPerSender = 60               // Max future transactions per sender
 	StaleTimeout        = 10 * time.Minute // Remove old pending transactions
 	MaxFutureNonce      = 64               // Max nonce distance from current
 )
