@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/store"
 	"net"
 	"time"
 
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
@@ -34,13 +34,13 @@ type server struct {
 	selfID        string
 	privKey       ed25519.PrivateKey
 	validator     *validator.Validator
-	blockStore    blockstore.Store
+	blockStore    store.BlockStore
 	mempool       *mempool.Mempool
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore blockstore.Store, mempool *mempool.Mempool) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -98,7 +98,11 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	}
 
 	// 3. Check sender account exists (except for faucet transactions)
-	senderAccount := s.ledger.GetAccount(tx.Sender)
+	senderAccount, err := s.ledger.GetAccount(tx.Sender)
+	if err != nil {
+		fmt.Printf("[gRPC] error while retriving account to add tx: %v\n", err)
+		return &pb.AddTxResponse{Ok: false, Error: "failed to get account"}, nil
+	}
 	if senderAccount == nil {
 		fmt.Printf("[gRPC] Sender account %s does not exist\n", tx.Sender)
 		return &pb.AddTxResponse{Ok: false, Error: fmt.Sprintf("sender account %s does not exist", tx.Sender)}, nil
@@ -125,7 +129,10 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
 	addr := in.Address
-	acc := s.ledger.GetAccount(addr)
+	acc, err := s.ledger.GetAccount(addr)
+	if err != nil {
+		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
+	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
 			Address: addr,
@@ -280,4 +287,77 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 	}
 
 	return resp, nil
+}
+
+// GetBlockNumber returns current block number 
+func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.GetBlockNumberResponse, error) {
+	currentBlock := uint64(0)
+	
+	if s.blockStore != nil {
+		currentBlock = s.blockStore.GetLatestSlot()
+	}
+	
+	timestamp := uint64(time.Now().Unix())
+	
+	return &pb.GetBlockNumberResponse{
+		BlockNumber: currentBlock,
+		Timestamp:   timestamp,
+	}, nil
+}
+
+
+// GetBlockByNumber retrieves a block by its number
+func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+
+	for _, num := range in.BlockNumbers {
+		block := s.blockStore.Block(num)
+		if block == nil {
+			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+		}
+
+		entries := make([]*pb.Entry, 0, len(block.Entries))
+		var allTxHashes []string
+
+		for _, entry := range block.Entries {
+			entries = append(entries, &pb.Entry{
+				NumHashes: entry.NumHashes,
+				Hash:      entry.Hash[:],
+				TxHashes:  entry.TxHashes,
+			})
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+
+		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
+		for _, txHash := range allTxHashes {
+			tx, err := s.ledger.GetTxByHash(txHash)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    tx.Amount,
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    pb.TransactionData_CONFIRMED,
+			})
+		}
+
+		pbBlock := &pb.Block{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			Entries:         entries,
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, pbBlock)
+	}
+
+	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
 }

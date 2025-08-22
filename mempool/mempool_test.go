@@ -23,8 +23,8 @@ var testPublicKeyHex string
 
 // Map to store key pairs for different test senders
 var testKeyPairs = make(map[string]struct {
-	PrivateKey ed25519.PrivateKey
-	PublicKey  ed25519.PublicKey
+	PrivateKey   ed25519.PrivateKey
+	PublicKey    ed25519.PublicKey
 	PublicKeyHex string
 })
 var keyPairMutex sync.Mutex
@@ -44,28 +44,28 @@ func init() {
 func getOrCreateKeyPair(sender string) (ed25519.PrivateKey, string) {
 	keyPairMutex.Lock()
 	defer keyPairMutex.Unlock()
-	
+
 	if keyPair, exists := testKeyPairs[sender]; exists {
 		return keyPair.PrivateKey, keyPair.PublicKeyHex
 	}
-	
+
 	// Generate new key pair for this sender
 	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to generate key pair for sender %s: %v", sender, err))
 	}
-	
+
 	pubKeyHex := hex.EncodeToString(pubKey)
 	testKeyPairs[sender] = struct {
-		PrivateKey ed25519.PrivateKey
-		PublicKey  ed25519.PublicKey
+		PrivateKey   ed25519.PrivateKey
+		PublicKey    ed25519.PublicKey
 		PublicKeyHex string
 	}{
-		PrivateKey: privKey,
-		PublicKey:  pubKey,
+		PrivateKey:   privKey,
+		PublicKey:    pubKey,
 		PublicKeyHex: pubKeyHex,
 	}
-	
+
 	return privKey, pubKeyHex
 }
 
@@ -81,11 +81,11 @@ func NewMockLedger() *MockLedger {
 		balances: make(map[string]uint64),
 		nonces:   make(map[string]uint64),
 	}
-	
+
 	// Pre-populate with test account
 	ml.balances[testPublicKeyHex] = 1000000 // Large balance for testing
 	ml.nonces[testPublicKeyHex] = 0
-	
+
 	return ml
 }
 
@@ -121,28 +121,28 @@ func (ml *MockLedger) SetNonce(address string, nonce uint64) {
 }
 
 // Implement interfaces.Ledger methods
-func (ml *MockLedger) AccountExists(addr string) bool {
+func (ml *MockLedger) AccountExists(addr string) (bool, error) {
 	_, exists := ml.balances[addr]
-	return exists
+	return exists, nil
 }
 
-func (ml *MockLedger) GetAccount(addr string) *types.Account {
+func (ml *MockLedger) GetAccount(addr string) (*types.Account, error) {
 	ml.mu.RLock()
 	defer ml.mu.RUnlock()
-	
+
 	if _, exists := ml.balances[addr]; !exists {
-		return nil
+		return nil, nil
 	}
 	return &types.Account{
 		Address: addr,
 		Balance: ml.balances[addr],
 		Nonce:   ml.nonces[addr],
 		History: make([]string, 0),
-	}
+	}, nil
 }
 
-func (ml *MockLedger) Balance(addr string) uint64 {
-	return ml.balances[addr]
+func (ml *MockLedger) Balance(addr string) (uint64, error) {
+	return ml.balances[addr], nil
 }
 
 func (ml *MockLedger) CreateAccountsFromGenesis(addresses []config.Address) error {
@@ -190,11 +190,11 @@ func signTransaction(tx *types.Transaction, privateKey ed25519.PrivateKey) {
 func createTestTx(txType int32, sender, recipient string, amount uint64, nonce uint64) *types.Transaction {
 	// Use current time to ensure uniqueness across test runs
 	uniqueSuffix := time.Now().UnixNano()
-	
+
 	// Determine the actual sender and private key to use
 	var actualSender string
 	var privateKey ed25519.PrivateKey
-	
+
 	if sender == "" {
 		// Use default test key pair
 		actualSender = testPublicKeyHex
@@ -203,18 +203,18 @@ func createTestTx(txType int32, sender, recipient string, amount uint64, nonce u
 		// Get or create key pair for the specified sender
 		privateKey, actualSender = getOrCreateKeyPair(sender)
 	}
-	
+
 	tx := &types.Transaction{
 		Type:      txType,
 		Sender:    actualSender,
 		Recipient: recipient,
 		Amount:    amount,
-		Timestamp: uint64(uniqueSuffix) + nonce, // Make timestamp unique
+		Timestamp: uint64(uniqueSuffix) + nonce,                        // Make timestamp unique
 		TextData:  fmt.Sprintf("test data %d-%d", nonce, uniqueSuffix), // Make text data unique
 		Nonce:     nonce,
 		Signature: "", // Will be set by signTransaction
 	}
-	
+
 	// Sign the transaction with the appropriate private key
 	signTransaction(tx, privateKey)
 	return tx
@@ -251,10 +251,10 @@ func TestNewMempool(t *testing.T) {
 func TestMempool_AddTx_Success(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender1
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	// Set up sender account with sufficient balance and correct nonce
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
@@ -280,10 +280,10 @@ func TestMempool_AddTx_Success(t *testing.T) {
 func TestMempool_AddTx_WithBroadcast(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender1
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mempool := NewMempool(10, mockBroadcaster, mockLedger)
@@ -317,10 +317,10 @@ func TestMempool_AddTx_WithBroadcast(t *testing.T) {
 func TestMempool_AddTx_Duplicate(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender1
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mempool := NewMempool(10, mockBroadcaster, mockLedger)
@@ -355,12 +355,12 @@ func TestMempool_AddTx_Duplicate(t *testing.T) {
 func TestMempool_AddTx_FullMempool(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get public key addresses for the senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
 	_, sender3Addr := getOrCreateKeyPair("sender3")
-	
+
 	// Set up accounts with proper addresses
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
@@ -419,12 +419,12 @@ func TestMempool_PullBatch_Empty(t *testing.T) {
 func TestMempool_PullBatch_Partial(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
 	_, sender3Addr := getOrCreateKeyPair("sender3")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetBalance(sender3Addr, 1000)
@@ -479,12 +479,12 @@ func TestMempool_PullBatch_Partial(t *testing.T) {
 func TestMempool_PullBatch_All(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
 	_, sender3Addr := getOrCreateKeyPair("sender3")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetBalance(sender3Addr, 1000)
@@ -528,11 +528,11 @@ func TestMempool_PullBatch_All(t *testing.T) {
 func TestMempool_Size(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
@@ -591,7 +591,7 @@ func TestMempool_ConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			senderName := fmt.Sprintf("sender%d", id)
 			tx := createTestTx(0, senderName, "recipient", uint64(id+1), 1) // nonce 1 for each sender
-			mempool.AddTx(tx, false) // Ignore error in concurrent test
+			mempool.AddTx(tx, false)                                        // Ignore error in concurrent test
 			done <- true
 		}(i)
 	}
@@ -610,11 +610,11 @@ func TestMempool_ConcurrentAccess(t *testing.T) {
 func TestMempool_DifferentTransactionTypes(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
@@ -649,12 +649,12 @@ func TestMempool_DifferentTransactionTypes(t *testing.T) {
 func TestMempool_FIFOOrder(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
 	_, sender3Addr := getOrCreateKeyPair("sender3")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetBalance(sender3Addr, 1000)
@@ -701,13 +701,13 @@ func TestMempool_FIFOOrder(t *testing.T) {
 func TestMempool_PullBatchFIFOOrder(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
 	_, sender3Addr := getOrCreateKeyPair("sender3")
 	_, sender4Addr := getOrCreateKeyPair("sender4")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetBalance(sender3Addr, 1000)
@@ -775,10 +775,10 @@ func TestMempool_PullBatchFIFOOrder(t *testing.T) {
 func TestMempool_HasTransaction(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mempool := NewMempool(10, mockBroadcaster, mockLedger)
@@ -803,10 +803,10 @@ func TestMempool_HasTransaction(t *testing.T) {
 func TestMempool_GetTransaction(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mempool := NewMempool(10, mockBroadcaster, mockLedger)
@@ -839,11 +839,11 @@ func TestMempool_GetTransaction(t *testing.T) {
 func TestMempool_GetTransactionCount(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key addresses for all senders
 	_, sender1Addr := getOrCreateKeyPair("sender1")
 	_, sender2Addr := getOrCreateKeyPair("sender2")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
@@ -894,14 +894,14 @@ func TestMempool_GetOrderedTransactions(t *testing.T) {
 	}
 	// Simulate nonce update after successful transaction
 	mockLedger.UpdateNonce(testPublicKeyHex, 1)
-	
+
 	hash2, err2 := mempool.AddTx(tx2, false)
 	if err2 != nil {
 		t.Errorf("Failed to add tx2: %v", err2)
 	}
 	// Simulate nonce update after successful transaction
 	mockLedger.UpdateNonce(testPublicKeyHex, 2)
-	
+
 	hash3, err3 := mempool.AddTx(tx3, false)
 	if err3 != nil {
 		t.Errorf("Failed to add tx3: %v", err3)
@@ -937,7 +937,7 @@ func TestMempool_GetOrderedTransactions(t *testing.T) {
 func TestMempool_ConcurrentReadAccess(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Set up accounts for the transactions we'll add
 	senderAddrs := make(map[int]string)
 	for i := 0; i < 5; i++ {
@@ -990,7 +990,7 @@ func TestMempool_ConcurrentReadAccess(t *testing.T) {
 func TestMempool_ConcurrentReadWriteAccess(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Set up multiple accounts for concurrent access
 	senderAddrs := make(map[int]string)
 	for i := 0; i < 10; i++ {
@@ -1044,10 +1044,10 @@ func TestMempool_ConcurrentReadWriteAccess(t *testing.T) {
 func TestMempool_BroadcastWithoutBlocking(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mempool := NewMempool(10, mockBroadcaster, mockLedger)
@@ -1085,10 +1085,10 @@ func TestMempool_BroadcastWithoutBlocking(t *testing.T) {
 func TestMempool_RaceConditionHandling(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	
+
 	// Get the public key address for sender
 	_, sender1Addr := getOrCreateKeyPair("sender1")
-	
+
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mempool := NewMempool(2, mockBroadcaster, mockLedger) // Small size to trigger race conditions

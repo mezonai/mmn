@@ -1,13 +1,15 @@
-package blockstore
+package db
 
 import (
 	"fmt"
 	"github.com/syndtr/goleveldb/leveldb"
+	"sync"
 )
 
 // LevelDBProvider implements DatabaseProvider for LevelDB
 type LevelDBProvider struct {
-	db *leveldb.DB
+	once sync.Once
+	db   *leveldb.DB
 }
 
 // NewLevelDBProvider creates a new LevelDB provider
@@ -49,7 +51,12 @@ func (p *LevelDBProvider) Has(key []byte) (bool, error) {
 
 // Close closes the database connection
 func (p *LevelDBProvider) Close() error {
-	return p.db.Close()
+	// avoid double close when being used for multiple store
+	var err error
+	p.once.Do(func() {
+		err = p.db.Close()
+	})
+	return err
 }
 
 // Batch returns a new batch for atomic operations

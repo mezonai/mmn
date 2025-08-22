@@ -1,4 +1,4 @@
-package blockstore
+package db
 
 // DatabaseProvider abstracts the low-level database operations
 // This interface allows BlockStore to work with different database backends

@@ -5,10 +5,10 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/store"
 	"time"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
@@ -66,7 +66,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs blockstore.Store, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
@@ -350,7 +350,7 @@ func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 }
 
 // when no peers connected the blocks will not sync must run after 30s if synced stop sync
-func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
+func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	// wait network setup
 	time.Sleep(10 * time.Second)
 	ticker := time.NewTicker(30 * time.Second)
@@ -381,7 +381,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 	}
 }
 
-func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
+func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
 	// wait network setup
 	time.Sleep(2 * time.Second)
 
