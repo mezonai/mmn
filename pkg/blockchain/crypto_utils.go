@@ -6,8 +6,9 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
 	"math/big"
+
+	"github.com/mezonai/mmn/pkg/common"
 )
 
 // GenerateKeyPair creates a new ECDSA key pair.
@@ -24,7 +25,7 @@ func SignTransaction(tx *Transaction, privKey *ecdsa.PrivateKey) (string, error)
 	}
 	// Serialize signature (concatenate r and s)
 	signature := append(r.Bytes(), s.Bytes()...)
-	return hex.EncodeToString(signature), nil
+	return common.EncodeBytesToBase58(signature), nil
 }
 
 // VerifyTransactionSignature verifies that the transaction signature is valid.
@@ -32,7 +33,7 @@ func VerifyTransactionSignature(tx *Transaction, pubKey *ecdsa.PublicKey) bool {
 	if tx.Signature == "" {
 		return false
 	}
-	sigBytes, err := hex.DecodeString(tx.Signature)
+	sigBytes, err := common.DecodeBase58ToBytes(tx.Signature)
 	if err != nil {
 		return false
 	}

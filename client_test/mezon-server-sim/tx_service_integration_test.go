@@ -17,6 +17,7 @@ import (
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
 	pb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
+	"github.com/mr-tron/base58"
 
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -120,9 +121,9 @@ func getFaucetAccount() (string, ed25519.PrivateKey) {
 	faucetSeed := faucetPrivateKeyDer[len(faucetPrivateKeyDer)-32:]
 	faucetPrivateKey := ed25519.NewKeyFromSeed(faucetSeed)
 	faucetPublicKey := faucetPrivateKey.Public().(ed25519.PublicKey)
-	faucetPublicKeyHex := hex.EncodeToString(faucetPublicKey[:])
-	fmt.Println("faucetPublicKeyHex", faucetPublicKeyHex)
-	return faucetPublicKeyHex, faucetPrivateKey
+	faucetPublicKeyBase58 := base58.Encode(faucetPublicKey[:])
+	fmt.Println("faucetPublicKeyBase58", faucetPublicKeyBase58)
+	return faucetPublicKeyBase58, faucetPrivateKey
 }
 
 // seedAccountFromFaucet sends initial tokens from faucet to a given address
@@ -459,7 +460,7 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 	fromPriv := []byte{216, 225, 123, 4, 170, 149, 32, 216, 126, 223, 75, 46, 184, 101, 133, 247, 98, 166, 96, 57, 12, 104, 188, 249, 247, 23, 108, 201, 37, 25, 40, 231}
 	fromPrivateKey := ed25519.NewKeyFromSeed(fromPriv)
 	fromPublicKey := fromPrivateKey.Public().(ed25519.PublicKey)
-	fromAddr := hex.EncodeToString(fromPublicKey[:])
+	fromAddr := base58.Encode(fromPublicKey[:])
 
 	// Seed the "from account" first
 	t.Logf("Seeding amount %d for %s", seedAmount, fromAddr[:16])

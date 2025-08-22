@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mezonai/mmn/pkg/common"
 	"github.com/mezonai/mmn/poh"
 
 	"gopkg.in/yaml.v3"
@@ -35,16 +36,21 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 	return &cfgFile.Config, nil
 }
 
-// LoadEd25519PrivKey loads an Ed25519 private key from a file (expects hex encoding)
+// LoadEd25519PrivKey loads an Ed25519 private key from a file (accepts base58 or hex)
 func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	keyHex := strings.TrimSpace(string(data))
-	privBytes, err := hex.DecodeString(keyHex)
-	if err != nil {
-		return nil, err
+	privBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(privBytes) == 0 {
+		// Fallback to hex
+		hb, herr := hex.DecodeString(keyHex)
+		if herr != nil {
+			return nil, fmt.Errorf("failed to decode private key as base58 or hex: %v | %v", err, herr)
+		}
+		privBytes = hb
 	}
 
 	var privKey ed25519.PrivateKey
@@ -127,9 +133,14 @@ func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 
 	keyHex := strings.TrimSpace(string(data))
 
-	privBytes, err := hex.DecodeString(keyHex)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode hex private key: %w", err)
+	privBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(privBytes) == 0 {
+		// Fallback to hex
+		hb, herr := hex.DecodeString(keyHex)
+		if herr != nil {
+			return "", fmt.Errorf("failed to decode private key (base58 and hex): %v | %v", err, herr)
+		}
+		privBytes = hb
 	}
 
 	var privKey ed25519.PrivateKey
@@ -143,5 +154,5 @@ func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 
 	pubKey := privKey.Public().(ed25519.PublicKey)
 
-	return hex.EncodeToString(pubKey), nil
+	return common.EncodeBytesToBase58(pubKey), nil
 }

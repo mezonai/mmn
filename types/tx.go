@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/mezonai/mmn/pkg/common"
 )
 
 const (
@@ -30,11 +32,11 @@ func (tx *Transaction) Serialize() []byte {
 }
 
 func (tx *Transaction) Verify() bool {
-	pub, err := hexToEd25519(tx.Sender)
+	pub, err := base58ToEd25519(tx.Sender)
 	if err != nil {
 		return false
 	}
-	signature, err := hex.DecodeString(tx.Signature)
+	signature, err := common.DecodeBase58ToBytes(tx.Signature)
 	if err != nil {
 		return false
 	}
@@ -51,8 +53,8 @@ func (tx *Transaction) Hash() string {
 	return hex.EncodeToString(sum256[:])
 }
 
-func hexToEd25519(hexstr string) (ed25519.PublicKey, error) {
-	b, err := hex.DecodeString(hexstr)
+func base58ToEd25519(addr string) (ed25519.PublicKey, error) {
+	b, err := common.DecodeBase58ToBytes(addr)
 	if err != nil || len(b) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("invalid pubkey")
 	}

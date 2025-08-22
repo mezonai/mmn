@@ -5,10 +5,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/hex"
+	"crypto/x509"
 	"fmt"
 
 	"github.com/mezonai/mmn/pkg/blockchain"
+	"github.com/mezonai/mmn/pkg/common"
 )
 
 // Wallet represents a user's wallet with a private key and a public address.
@@ -25,8 +26,13 @@ func NewWallet() (*Wallet, error) {
 		return nil, err
 	}
 	pubKey := &privKey.PublicKey
-	// For simplicity, let's use the hex encoding of the public key as the address.
-	address := hex.EncodeToString(elliptic.Marshal(elliptic.P256(), pubKey.X, pubKey.Y))
+
+	der, err := x509.MarshalPKIXPublicKey(pubKey)
+	if err != nil {
+		return nil, err
+	}
+	address := common.EncodeBytesToBase58(der)
+
 	return &Wallet{
 		PrivateKey: privKey,
 		PublicKey:  pubKey,

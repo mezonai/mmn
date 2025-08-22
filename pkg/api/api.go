@@ -4,13 +4,13 @@ package api
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/mezonai/mmn/pkg/blockchain"
+	"github.com/mezonai/mmn/pkg/common"
 	"github.com/mezonai/mmn/pkg/contract"
 	"github.com/mezonai/mmn/pkg/p2p"
 	"github.com/mezonai/mmn/pkg/utils"
@@ -151,8 +151,8 @@ func (s *Server) submitTransactionHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verify the signature.
-	// We assume tx.Sender holds the hex-encoded public key.
-	pubKeyBytes, err := hex.DecodeString(tx.Sender)
+	// We assume tx.Sender holds the base58-encoded public key.
+	pubKeyBytes, err := common.DecodeBase58ToBytes(tx.Sender)
 	if err != nil {
 		http.Error(w, "Invalid sender public key format", http.StatusBadRequest)
 		return
@@ -331,7 +331,7 @@ func (s *Server) deployContractHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Decode the code.
-	code, err := hex.DecodeString(req.Code)
+	code, err := common.DecodeBase58ToBytes(req.Code)
 	if err != nil {
 		http.Error(w, "Invalid code encoding", http.StatusBadRequest)
 		return
