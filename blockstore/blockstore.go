@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
@@ -178,7 +178,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	// Store block tsx
-	txs := make([]*types.Transaction, 0)
+	txs := make([]*transaction.Transaction, 0)
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
 	}

@@ -84,38 +84,6 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	// Todo: remove from input and update client
 	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 
-	// Add validation checks before adding to mempool
-	// 1. Verify signature
-	if !tx.Verify() {
-		fmt.Printf("[gRPC] Signature verification failed for tx: %+v\n", tx)
-		return &pb.AddTxResponse{Ok: false, Error: "invalid signature"}, nil
-	}
-
-	// 2. Check for zero amount
-	if tx.Amount == 0 {
-		fmt.Printf("[gRPC] Zero amount detected: %d\n", tx.Amount)
-		return &pb.AddTxResponse{Ok: false, Error: "zero amount not allowed"}, nil
-	}
-
-	// 3. Check sender account exists (except for faucet transactions)
-	senderAccount := s.ledger.GetAccount(tx.Sender)
-	if senderAccount == nil {
-		fmt.Printf("[gRPC] Sender account %s does not exist\n", tx.Sender)
-		return &pb.AddTxResponse{Ok: false, Error: fmt.Sprintf("sender account %s does not exist", tx.Sender)}, nil
-	}
-
-	// 4. Check nonce is exactly next expected value
-	if tx.Nonce != senderAccount.Nonce+1 {
-		fmt.Printf("[gRPC] Invalid nonce: expected %d, got %d\n", senderAccount.Nonce+1, tx.Nonce)
-		return &pb.AddTxResponse{Ok: false, Error: "invalid nonce"}, nil
-	}
-
-	// 5. Check sufficient balance
-	if senderAccount.Balance < tx.Amount {
-		fmt.Printf("[gRPC] Insufficient balance: balance=%d, amount=%d\n", senderAccount.Balance, tx.Amount)
-		return &pb.AddTxResponse{Ok: false, Error: "insufficient balance"}, nil
-	}
-
 	txHash, err := s.mempool.AddTx(tx, true)
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
@@ -137,6 +105,55 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 		Address: addr,
 		Balance: acc.Balance,
 		Nonce:   acc.Nonce,
+	}, nil
+}
+
+func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
+	addr := in.Address
+	tag := in.Tag
+	fmt.Printf("[gRPC] GetCurrentNonce request for address: %s, tag: %s\n", addr, tag)
+
+	// Validate tag parameter
+	if tag != "latest" && tag != "pending" {
+		return &pb.GetCurrentNonceResponse{
+			Error: "invalid tag: must be 'latest' or 'pending'",
+		}, nil
+	}
+
+	// Get account from ledger
+	acc := s.ledger.GetAccount(addr)
+	if acc == nil {
+		fmt.Printf("[gRPC] Account not found for address: %s\n", addr)
+		return &pb.GetCurrentNonceResponse{
+			Address: addr,
+			Nonce:   0,
+			Tag:     tag,
+		}, nil
+	}
+
+	var currentNonce uint64
+
+	if tag == "latest" {
+		// For "latest", return the current nonce from the most recent mined block
+		currentNonce = acc.Nonce
+		fmt.Printf("[gRPC] Latest current nonce for %s: %d\n", addr, currentNonce)
+	} else { // tag == "pending"
+		// For "pending", return the largest nonce among pending transactions or current ledger nonce
+		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
+		if largestPendingNonce == 0 {
+			// No pending transactions, use current ledger nonce
+			currentNonce = acc.Nonce
+		} else {
+			// Return the largest pending nonce as current
+			currentNonce = largestPendingNonce
+		}
+		fmt.Printf("[gRPC] Pending current nonce for %s: largest pending: %d, current: %d\n", addr, largestPendingNonce, currentNonce)
+	}
+
+	return &pb.GetCurrentNonceResponse{
+		Address: addr,
+		Nonce:   currentNonce,
+		Tag:     tag,
 	}, nil
 }
 
@@ -281,4 +298,74 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 	}
 
 	return resp, nil
+}
+
+// GetBlockNumber returns current block number 
+func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.GetBlockNumberResponse, error) {
+	currentBlock := uint64(0)
+	
+	if s.blockStore != nil {
+		currentBlock = s.blockStore.GetLatestSlot()
+	}
+	
+	return &pb.GetBlockNumberResponse{
+		BlockNumber: currentBlock,
+	}, nil
+}
+
+
+// GetBlockByNumber retrieves a block by its number
+func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+
+	for _, num := range in.BlockNumbers {
+		block := s.blockStore.Block(num)
+		if block == nil {
+			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+		}
+
+		entries := make([]*pb.Entry, 0, len(block.Entries))
+		var allTxHashes []string
+
+		for _, entry := range block.Entries {
+			entries = append(entries, &pb.Entry{
+				NumHashes: entry.NumHashes,
+				Hash:      entry.Hash[:],
+				TxHashes:  entry.TxHashes,
+			})
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+
+		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
+		for _, txHash := range allTxHashes {
+			tx, err := s.ledger.GetTxByHash(txHash)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    tx.Amount,
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    pb.TransactionData_CONFIRMED,
+			})
+		}
+
+		pbBlock := &pb.Block{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			Entries:         entries,
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, pbBlock)
+	}
+
+	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
 }
