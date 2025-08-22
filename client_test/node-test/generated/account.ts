@@ -121,6 +121,40 @@ export interface GetTxHistoryResponse {
      */
     txs: TxMeta[];
 }
+/**
+ * @generated from protobuf message mmn.GetCurrentNonceRequest
+ */
+export interface GetCurrentNonceRequest {
+    /**
+     * @generated from protobuf field: string address = 1
+     */
+    address: string;
+    /**
+     * @generated from protobuf field: string tag = 2
+     */
+    tag: string; // "latest" or "pending"
+}
+/**
+ * @generated from protobuf message mmn.GetCurrentNonceResponse
+ */
+export interface GetCurrentNonceResponse {
+    /**
+     * @generated from protobuf field: string address = 1
+     */
+    address: string;
+    /**
+     * @generated from protobuf field: uint64 nonce = 2
+     */
+    nonce: bigint;
+    /**
+     * @generated from protobuf field: string tag = 3
+     */
+    tag: string;
+    /**
+     * @generated from protobuf field: string error = 4
+     */
+    error: string;
+}
 // @generated message type with reflection information, may provide speed optimized methods
 class GetAccountRequest$Type extends MessageType<GetAccountRequest> {
     constructor() {
@@ -444,10 +478,137 @@ class GetTxHistoryResponse$Type extends MessageType<GetTxHistoryResponse> {
  * @generated MessageType for protobuf message mmn.GetTxHistoryResponse
  */
 export const GetTxHistoryResponse = new GetTxHistoryResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetCurrentNonceRequest$Type extends MessageType<GetCurrentNonceRequest> {
+    constructor() {
+        super("mmn.GetCurrentNonceRequest", [
+            { no: 1, name: "address", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "tag", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetCurrentNonceRequest>): GetCurrentNonceRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.address = "";
+        message.tag = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetCurrentNonceRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetCurrentNonceRequest): GetCurrentNonceRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string address */ 1:
+                    message.address = reader.string();
+                    break;
+                case /* string tag */ 2:
+                    message.tag = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetCurrentNonceRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string address = 1; */
+        if (message.address !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.address);
+        /* string tag = 2; */
+        if (message.tag !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.tag);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetCurrentNonceRequest
+ */
+export const GetCurrentNonceRequest = new GetCurrentNonceRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetCurrentNonceResponse$Type extends MessageType<GetCurrentNonceResponse> {
+    constructor() {
+        super("mmn.GetCurrentNonceResponse", [
+            { no: 1, name: "address", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 3, name: "tag", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetCurrentNonceResponse>): GetCurrentNonceResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.address = "";
+        message.nonce = 0n;
+        message.tag = "";
+        message.error = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetCurrentNonceResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetCurrentNonceResponse): GetCurrentNonceResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string address */ 1:
+                    message.address = reader.string();
+                    break;
+                case /* uint64 nonce */ 2:
+                    message.nonce = reader.uint64().toBigInt();
+                    break;
+                case /* string tag */ 3:
+                    message.tag = reader.string();
+                    break;
+                case /* string error */ 4:
+                    message.error = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetCurrentNonceResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string address = 1; */
+        if (message.address !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.address);
+        /* uint64 nonce = 2; */
+        if (message.nonce !== 0n)
+            writer.tag(2, WireType.Varint).uint64(message.nonce);
+        /* string tag = 3; */
+        if (message.tag !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.tag);
+        /* string error = 4; */
+        if (message.error !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.error);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetCurrentNonceResponse
+ */
+export const GetCurrentNonceResponse = new GetCurrentNonceResponse$Type();
 /**
  * @generated ServiceType for protobuf service mmn.AccountService
  */
 export const AccountService = new ServiceType("mmn.AccountService", [
     { name: "GetAccount", options: {}, I: GetAccountRequest, O: GetAccountResponse },
-    { name: "GetTxHistory", options: {}, I: GetTxHistoryRequest, O: GetTxHistoryResponse }
+    { name: "GetTxHistory", options: {}, I: GetTxHistoryRequest, O: GetTxHistoryResponse },
+    { name: "GetCurrentNonce", options: {}, I: GetCurrentNonceRequest, O: GetCurrentNonceResponse }
 ]);

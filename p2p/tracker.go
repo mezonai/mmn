@@ -1,10 +1,13 @@
 package p2p
 
 import (
+	"context"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/logx"
 )
 
 func NewSyncRequestTracker(requestID string, fromSlot, toSlot uint64) *SyncRequestTracker {
@@ -80,4 +83,75 @@ func (t *SyncRequestTracker) CloseAllPeers() {
 	t.ActivePeer = ""
 	t.ActiveStream = nil
 	t.AllPeers = make(map[peer.ID]network.Stream)
+}
+
+// periodically send checkpoint probe and cleanup old sync requests
+func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
+	// wait network setup
+	time.Sleep(10 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ln.cleanupOldSyncRequests()
+			// probe checkpoint every tick
+			latest := bs.GetLatestSlot()
+			if latest >= MaxScanRange {
+				checkpoint := (latest / MaxScanRange) * MaxScanRange
+				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
+				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
+			}
+		case <-ln.ctx.Done():
+			return
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) startCleanupRoutine() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ln.CleanupExpiredRequests()
+			ln.cleanupOldMissingBlocksTracker()
+		case <-ln.ctx.Done():
+			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
+			return
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
+	// wait network setup
+	time.Sleep(2 * time.Second)
+
+	ctx := context.Background()
+
+	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
+		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
+	}
+	// sync from 0
+	if err := ln.RequestBlockSync(ctx, 0); err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
+	}
+
+	// wait for sync all blocks end before start scan
+	time.Sleep(15 * time.Second)
+	ln.scanMissingBlocks(bs)
+}
+
+func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
+	ln.syncMu.Lock()
+	defer ln.syncMu.Unlock()
+
+	now := time.Now()
+	for requestID, info := range ln.activeSyncRequests {
+		if !info.IsActive || now.Sub(info.StartTime) > 5*time.Minute {
+			delete(ln.activeSyncRequests, requestID)
+		}
+	}
 }
