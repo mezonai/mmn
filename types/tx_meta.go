@@ -1,5 +1,7 @@
 package types
 
+import "github.com/mezonai/mmn/transaction"
+
 const (
 	TxStatusFailed  = 0
 	TxStatusSuccess = 1
@@ -13,7 +15,7 @@ type TransactionMeta struct {
 	Error     string `json:"error"`
 }
 
-func NewTxMeta(tx *Transaction, slot uint64, blockHash string, status int32, err string) *TransactionMeta {
+func NewTxMeta(tx *transaction.Transaction, slot uint64, blockHash string, status int32, err string) *TransactionMeta {
 	return &TransactionMeta{
 		TxHash:    tx.Hash(),
 		Slot:      slot,

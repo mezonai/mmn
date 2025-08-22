@@ -214,12 +214,13 @@ func addHistory(acc *types.Account, tx *transaction.Transaction) {
 	acc.History = append(acc.History, tx.Hash())
 }
 
-func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, error) {
+func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error) {
 	tx, err := l.txStore.GetByHash(hash)
+	txMeta, err := l.txMetaStore.GetByHash(hash)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return tx, nil
+	return tx, txMeta, nil
 }
 
 func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {

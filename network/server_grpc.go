@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/store"
 	"net"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
@@ -174,7 +175,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, err := s.ledger.GetTxByHash(in.TxHash)
+	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
 	if err != nil {
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
@@ -184,6 +185,11 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Amount:    tx.Amount,
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+		Slot:      txMeta.Slot,
+		Blockhash: txMeta.BlockHash,
+		Status:    txMeta.Status,
+		ErrMsg:    txMeta.Error,
 	}
 	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
 }
@@ -474,7 +480,8 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, err := s.ledger.GetTxByHash(txHash)
+			tx, _, err := s.ledger.GetTxByHash(txHash)
+
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
