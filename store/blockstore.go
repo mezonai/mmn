@@ -1,4 +1,4 @@
-package blockstore
+package store
 
 import (
 	"encoding/binary"
@@ -15,13 +15,26 @@ import (
 )
 
 const (
-	// Key prefixes for generic store
-	genericPrefixMeta   = "meta:"
-	genericPrefixBlocks = "blocks:"
-
-	// Metadata keys
-	genericKeyLatestFinalized = "latest_finalized"
+	BlockMetaKeyLatestFinalized = "latest_finalized"
 )
+
+// SlotBoundary represents slot boundary information
+type SlotBoundary struct {
+	Slot uint64
+	Hash [32]byte
+}
+
+// BlockStore abstracts the block storage backend (filesystem, RocksDB, ...).
+// It is the minimal interface required by validator and network layers.
+type BlockStore interface {
+	Block(slot uint64) *block.Block
+	HasCompleteBlock(slot uint64) bool
+	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
+	GetLatestSlot() uint64
+	AddBlockPending(b *block.BroadcastedBlock) error
+	MarkFinalized(slot uint64) error
+	MustClose()
+}
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
 // This allows it to work with any database backend (LevelDB, RocksDB, etc.)
@@ -33,7 +46,7 @@ type GenericBlockStore struct {
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore) (Store, error) {
+func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore) (BlockStore, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
@@ -53,7 +66,7 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore) (Store, erro
 
 // loadLatestFinalized loads the latest finalized slot from the database
 func (s *GenericBlockStore) loadLatestFinalized() error {
-	key := []byte(genericPrefixMeta + genericKeyLatestFinalized)
+	key := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
 	value, err := s.provider.Get(key)
 	if err != nil {
 		return fmt.Errorf("failed to get latest finalized: %w", err)
@@ -75,9 +88,9 @@ func (s *GenericBlockStore) loadLatestFinalized() error {
 
 // slotToBlockKey converts a slot number to a block storage key
 func slotToBlockKey(slot uint64) []byte {
-	key := make([]byte, len(genericPrefixBlocks)+8)
-	copy(key, genericPrefixBlocks)
-	binary.BigEndian.PutUint64(key[len(genericPrefixBlocks):], slot)
+	key := make([]byte, len(PrefixBlock)+8)
+	copy(key, PrefixBlock)
+	binary.BigEndian.PutUint64(key[len(PrefixBlock):], slot)
 	return key
 }
 
@@ -173,6 +186,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	// Store block tsx
+	// TODO: storing block & its tsx should be atomic operation. Consider use batch or db transaction (if supported)
 	txs := make([]*types.Transaction, 0)
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
@@ -205,7 +219,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	s.latestFinalized = slot
 
 	// Store updated metadata
-	metaKey := []byte(genericPrefixMeta + genericKeyLatestFinalized)
+	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
 	metaValue := make([]byte, 8)
 	binary.BigEndian.PutUint64(metaValue, slot)
 
@@ -217,7 +231,10 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	return nil
 }
 
-// Close closes the underlying database provider
-func (s *GenericBlockStore) Close() error {
-	return s.provider.Close()
+// MustClose Close closes the underlying database provider
+func (s *GenericBlockStore) MustClose() {
+	err := s.provider.Close()
+	if err != nil {
+		logx.Error("BLOCK_STORE", "Failed to close provider")
+	}
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/store"
 	"time"
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
@@ -40,7 +40,7 @@ type Validator struct {
 	BatchSize                 int
 
 	netClient   interfaces.Broadcaster
-	blockStore  blockstore.Store
+	blockStore  store.BlockStore
 	ledger      *ledger.Ledger
 	session     *ledger.Session
 	lastSession *ledger.Session
@@ -68,7 +68,7 @@ func NewValidator(
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
 	p2pClient *p2p.Libp2pNetwork,
-	blockStore blockstore.Store,
+	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
 ) *Validator {
@@ -112,7 +112,7 @@ func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	defer ticker.Stop()
 	defer deadline.Stop()
 
-	var seed blockstore.SlotBoundary
+	var seed store.SlotBoundary
 
 waitLoop:
 	for {
@@ -149,10 +149,10 @@ func (v *Validator) onLeaderSlotEnd() {
 	v.lastSession = v.ledger.NewSession()
 }
 
-func (v *Validator) fastForwardTicks(prevSlot uint64) blockstore.SlotBoundary {
+func (v *Validator) fastForwardTicks(prevSlot uint64) store.SlotBoundary {
 	target := prevSlot * v.TicksPerSlot
 	hash, _ := v.Recorder.FastForward(target)
-	return blockstore.SlotBoundary{
+	return store.SlotBoundary{
 		Slot: prevSlot,
 		Hash: hash,
 	}

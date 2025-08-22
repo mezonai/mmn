@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mezonai/mmn/store"
 	"os"
 	"path/filepath"
 	"sync"
-
-	"github.com/mezonai/mmn/blockstore"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -22,11 +21,11 @@ var (
 
 type Ledger struct {
 	mu           sync.RWMutex
-	txStore      blockstore.TxStore
-	accountStore blockstore.AccountStore
+	txStore      store.TxStore
+	accountStore store.AccountStore
 }
 
-func NewLedger(txStore blockstore.TxStore, accountStore blockstore.AccountStore) *Ledger {
+func NewLedger(txStore store.TxStore, accountStore store.AccountStore) *Ledger {
 	return &Ledger{
 		txStore:      txStore,
 		accountStore: accountStore,
@@ -304,7 +303,7 @@ func (l *Ledger) appendWAL(b *block.Block) error {
 
 // LedgerView is a view of the ledger to verify block before applying it to the ledger.
 type LedgerView struct {
-	base    blockstore.AccountStore
+	base    store.AccountStore
 	overlay map[string]*types.SnapshotAccount
 }
 

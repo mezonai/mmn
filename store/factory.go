@@ -1,23 +1,25 @@
-package blockstore
+package store
 
 import (
 	"fmt"
 	"github.com/mezonai/mmn/db"
 )
 
-// StoreType represents the type of blockstore implementation
+// StoreType represents the type of store implementation
 type StoreType string
 
 const (
 	// LevelDBStoreType uses the LevelDB implementation
 	LevelDBStoreType StoreType = "leveldb"
+
 	// RocksDBStoreType uses the RocksDB implementation
 	RocksDBStoreType StoreType = "rocksdb"
+
 	// RedisStoreType uses the Redis implementation
 	RedisStoreType StoreType = "redis"
 )
 
-// StoreConfig holds configuration for creating blockstore instances
+// StoreConfig holds configuration for creating store instances
 type StoreConfig struct {
 	// Type specifies which store implementation to use
 	Type StoreType `json:"type" yaml:"type"`
@@ -44,7 +46,7 @@ func (sc *StoreConfig) Validate() error {
 	}
 }
 
-// StoreFactory creates blockstore instances
+// StoreFactory take responsibility to create store instances
 type StoreFactory struct{}
 
 // NewStoreFactory creates a new store factory
@@ -52,31 +54,38 @@ func NewStoreFactory() *StoreFactory {
 	return &StoreFactory{}
 }
 
-// CreateStore creates a new blockstore instance using the legacy approach
-// Deprecated: Use CreateStoreWithProvider for better abstraction
-func (sf *StoreFactory) CreateStore(config *StoreConfig) (Store, error) {
-	// Redirect to the provider-based implementation for consistency
-	return sf.CreateStoreWithProvider(config, nil)
-}
-
-// CreateStoreWithProvider creates a new blockstore instance using the provider pattern
-func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, ts TxStore) (Store, error) {
+// CreateStoreWithProvider creates store instances using the provider pattern
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig) (AccountStore, TxStore, BlockStore, error) {
 	if config == nil {
-		return nil, fmt.Errorf("config cannot be nil")
+		return nil, nil, nil, fmt.Errorf("config cannot be nil")
 	}
 
 	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, nil, nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	// Create the appropriate provider
 	provider, err := sf.CreateProvider(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create provider: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create provider: %w", err)
 	}
 
-	// Create generic blockstore with the provider
-	return NewGenericBlockStore(provider, ts)
+	accStore, err := NewGenericAccountStore(provider)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create account store: %w", err)
+	}
+
+	txStore, err := NewGenericTxStore(provider)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create transaction store: %w", err)
+	}
+
+	blkStore, err := NewGenericBlockStore(provider, txStore)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create block store: %w", err)
+	}
+
+	return accStore, txStore, blkStore, nil
 }
 
 // CreateProvider creates a database provider based on the configuration
@@ -108,23 +117,7 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider
 // Global factory instance
 var globalFactory = NewStoreFactory()
 
-// CreateStore creates a new blockstore instance using the global factory
-func CreateStore(config *StoreConfig, ts TxStore) (Store, error) {
-	return globalFactory.CreateStoreWithProvider(config, ts)
-}
-
-// NewLevelDBConfig creates a LevelDB store configuration
-func NewLevelDBConfig(directory string) *StoreConfig {
-	return &StoreConfig{
-		Type:      LevelDBStoreType,
-		Directory: directory,
-	}
-}
-
-// NewRocksDBConfig creates a RocksDB store configuration
-func NewRocksDBConfig(directory string) *StoreConfig {
-	return &StoreConfig{
-		Type:      RocksDBStoreType,
-		Directory: directory,
-	}
+// CreateStore creates new store instances using the global factory
+func CreateStore(config *StoreConfig) (AccountStore, TxStore, BlockStore, error) {
+	return globalFactory.CreateStoreWithProvider(config)
 }

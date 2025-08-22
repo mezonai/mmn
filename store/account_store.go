@@ -1,9 +1,10 @@
-package blockstore
+package store
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
 	"sync"
 )
@@ -13,7 +14,7 @@ type AccountStore interface {
 	StoreBatch(accounts []*types.Account) error
 	GetByAddr(addr string) (*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
-	Close() error
+	MustClose()
 }
 
 type GenericAccountStore struct {
@@ -40,7 +41,7 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 		return fmt.Errorf("failed to marshal account: %w", err)
 	}
 
-	err = as.dbProvider.Put([]byte(account.Address), accountData)
+	err = as.dbProvider.Put(as.getDbKey(account.Address), accountData)
 	if err != nil {
 		return fmt.Errorf("failed to write account to db: %w", err)
 	}
@@ -54,13 +55,12 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 
 	batch := as.dbProvider.Batch()
 	for _, account := range accounts {
-		addrBytes := []byte(account.Address)
 		accountData, err := json.Marshal(account)
 		if err != nil {
 			return fmt.Errorf("failed to marshal account: %w", err)
 		}
 
-		batch.Put(addrBytes, accountData)
+		batch.Put(as.getDbKey(account.Address), accountData)
 	}
 
 	err := batch.Write()
@@ -76,7 +76,7 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
 
-	data, err := as.dbProvider.Get([]byte(addr))
+	data, err := as.dbProvider.Get(as.getDbKey(addr))
 	if err != nil {
 		return nil, fmt.Errorf("could not get account %s from db: %w", addr, err)
 	}
@@ -100,9 +100,16 @@ func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {
 	as.mu.RLock()
 	defer as.mu.RUnlock()
 
-	return as.dbProvider.Has([]byte(addr))
+	return as.dbProvider.Has(as.getDbKey(addr))
 }
 
-func (as *GenericAccountStore) Close() error {
-	return as.dbProvider.Close()
+func (as *GenericAccountStore) MustClose() {
+	err := as.dbProvider.Close()
+	if err != nil {
+		logx.Error("ACCOUNT_STORE", "Failed to close db provider:", err.Error())
+	}
+}
+
+func (as *GenericAccountStore) getDbKey(addr string) []byte {
+	return []byte(PrefixAccount + addr)
 }

@@ -1,27 +1,23 @@
-package blockstore
+package store
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/logx"
 	"log"
 	"sync"
 
 	"github.com/mezonai/mmn/types"
 )
 
-const (
-	genericTxPrefixTrans = "tx:"
-)
-
-// TxStore is interface for transaction store that is responsible for persisting operations of tx
-// TODO: move TxStore to separate txstore package rather than blockstore package
+// TxStore is the interface for transaction store that is responsible for persisting operations of tx
 type TxStore interface {
 	Store(tx *types.Transaction) error
 	StoreBatch(txs []*types.Transaction) error
 	GetByHash(txHash string) (*types.Transaction, error)
 	GetBatch(txHashes []string) ([]*types.Transaction, error)
-	Close() error
+	MustClose()
 }
 
 // GenericTxStore provides transaction storage operations
@@ -53,13 +49,12 @@ func (ts *GenericTxStore) StoreBatch(txs []*types.Transaction) error {
 
 	batch := ts.dbProvider.Batch()
 	for _, tx := range txs {
-		txHashBytes := []byte(tx.Hash())
 		txData, err := json.Marshal(tx)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction: %w", err)
 		}
 
-		batch.Put(txHashBytes, txData)
+		batch.Put(ts.getDbKey(tx.Hash()), txData)
 	}
 
 	err := batch.Write()
@@ -75,7 +70,7 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*types.Transaction, error) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
-	data, err := ts.dbProvider.Get([]byte(txHash))
+	data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
 	if err != nil {
 		return nil, fmt.Errorf("could not get transaction %s from db: %w", txHash, err)
 	}
@@ -113,7 +108,14 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*types.Transaction, err
 	return transactions, nil
 }
 
-// Close closes the transaction store and related resources
-func (ts *GenericTxStore) Close() error {
-	return ts.dbProvider.Close()
+// MustClose closes the transaction store and related resources
+func (ts *GenericTxStore) MustClose() {
+	err := ts.dbProvider.Close()
+	if err != nil {
+		logx.Error("TX_STORE", "Failed to close provider")
+	}
+}
+
+func (ts *GenericTxStore) getDbKey(txHash string) []byte {
+	return []byte(PrefixTx + txHash)
 }
