@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/types"
 	"time"
+
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
@@ -47,7 +49,7 @@ type Validator struct {
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
-	pendingValidTxs   []*types.Transaction
+	pendingValidTxs   []*transaction.Transaction
 	stopCh            chan struct{}
 }
 
@@ -92,13 +94,14 @@ func NewValidator(
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
-		pendingValidTxs:           make([]*types.Transaction, 0, batchSize),
+		pendingValidTxs:           make([]*transaction.Transaction, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry
 	return v
 }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
+	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
 	v.leaderStartAtSlot = currentSlot
 	if currentSlot == 0 {
 		return
@@ -116,14 +119,14 @@ waitLoop:
 		select {
 		case <-ticker.C:
 			if v.blockStore.HasCompleteBlock(prevSlot) {
-				fmt.Printf("Found complete block for slot %d\n", prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("Found complete block for slot %d", prevSlot))
 				seed, _ = v.blockStore.LastEntryInfoAtSlot(prevSlot)
 				break waitLoop
 			} else {
-				fmt.Printf("No complete block for slot %d\n", prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
 			}
 		case <-deadline.C:
-			fmt.Printf("Meet at deadline %d\n", prevSlot)
+			logx.Info("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
 			seed = v.fastForwardTicks(prevSlot)
 			break waitLoop
 		case <-v.stopCh:
@@ -135,10 +138,11 @@ waitLoop:
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
 	v.lastSession = v.ledger.NewSession()
-	v.pendingValidTxs = make([]*types.Transaction, 0, v.BatchSize)
+	v.pendingValidTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 }
 
 func (v *Validator) onLeaderSlotEnd() {
+	logx.Info("LEADER", "onLeaderSlotEnd")
 	v.leaderStartAtSlot = NoSlot
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
@@ -146,7 +150,7 @@ func (v *Validator) onLeaderSlotEnd() {
 }
 
 func (v *Validator) fastForwardTicks(prevSlot uint64) blockstore.SlotBoundary {
-	target := prevSlot*v.TicksPerSlot + v.TicksPerSlot - 1
+	target := prevSlot * v.TicksPerSlot
 	hash, _ := v.Recorder.FastForward(target)
 	return blockstore.SlotBoundary{
 		Slot: prevSlot,
@@ -161,7 +165,7 @@ func (v *Validator) IsLeader(slot uint64) bool {
 }
 
 func (v *Validator) IsFollower(slot uint64) bool {
-	return v.IsLeader(slot)
+	return !v.IsLeader(slot)
 }
 
 // handleEntry buffers entries and assembles a block at slot boundary.
@@ -170,35 +174,39 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 	// When slot advances, assemble block for lastSlot if we were leader
 	if currentSlot > v.lastSlot && v.IsLeader(v.lastSlot) {
+
+		// Buffer entries
+		v.collectedEntries = append(v.collectedEntries, entries...)
+
 		// Retrieve previous block hash from blockStore
-		var hash [32]byte
-		if v.lastSlot == 0 {
-			hash = v.blockStore.Seed()
-		} else {
-			entry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-			hash = entry.Hash
-		}
+		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
+		prevHash := lastEntry.Hash
 
 		blk := block.AssembleBlock(
 			v.lastSlot,
-			hash,
+			prevHash,
 			v.Pubkey,
 			v.collectedEntries,
 		)
 
 		if err := v.ledger.VerifyBlock(blk); err != nil {
-			fmt.Printf("[LEADER] sanity verify fail: %v\n", err)
+			logx.Error("VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
 			v.session = v.lastSession.CopyWithOverlayClone()
 			return
 		}
 
 		blk.Sign(v.PrivKey)
-		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
+		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
 		// Persist then broadcast
-		v.blockStore.AddBlockPending(blk)
+		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+		if err := v.blockStore.AddBlockPending(blk); err != nil {
+			logx.Error("VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
+			return
+		}
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-			fmt.Println("Failed to broadcast block:", err)
+			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
+			return
 		}
 
 		// Self-vote
@@ -234,10 +242,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 		v.lastSession = v.session.CopyWithOverlayClone()
-	}
-
-	// Buffer entries only if leader of current slot
-	if v.IsLeader(currentSlot) {
+	} else if v.IsLeader(currentSlot) {
+		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)
 		fmt.Printf("Adding %d entries for slot %d\n", len(entries), currentSlot)
 	}
@@ -246,7 +252,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
-func (v *Validator) peekPendingValidTxs(size int) []*types.Transaction {
+func (v *Validator) peekPendingValidTxs(size int) []*transaction.Transaction {
 	if len(v.pendingValidTxs) == 0 {
 		return nil
 	}
@@ -254,7 +260,7 @@ func (v *Validator) peekPendingValidTxs(size int) []*types.Transaction {
 		size = len(v.pendingValidTxs)
 	}
 
-	result := make([]*types.Transaction, size)
+	result := make([]*transaction.Transaction, size)
 	copy(result, v.pendingValidTxs[:size])
 
 	return result
@@ -273,11 +279,12 @@ func (v *Validator) dropPendingValidTxs(size int) {
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
-	exception.SafeGoWithPanic("leaderBatchLoop", func() {
-		v.leaderBatchLoop()
-	})
 	exception.SafeGoWithPanic("roleMonitorLoop", func() {
 		v.roleMonitorLoop()
+	})
+
+	exception.SafeGoWithPanic("leaderBatchLoop", func() {
+		v.leaderBatchLoop()
 	})
 }
 

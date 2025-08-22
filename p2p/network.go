@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
+	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -249,4 +251,51 @@ func (ln *Libp2pNetwork) Close() {
 
 	ln.cancel()
 	ln.host.Close()
+}
+
+func (ln *Libp2pNetwork) GetPeersConnected() int {
+	return len(ln.peers)
+}
+
+func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
+	defer s.Close()
+
+	buf := make([]byte, 2048)
+	n, err := s.Read(buf)
+	if err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to read from bootstrap: ", err)
+		return
+	}
+
+	var msg map[string]interface{}
+	if err := json.Unmarshal(buf[:n], &msg); err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
+		return
+	}
+
+	newPeerIDStr := msg["new_peer_id"].(string)
+	newPeerID, err := peer.Decode(newPeerIDStr)
+	if err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Invalid peer ID: ", newPeerIDStr)
+		return
+	}
+
+	addrStrs := msg["addrs"].([]interface{})
+	var addrs []ma.Multiaddr
+	for _, a := range addrStrs {
+		maddr, err := ma.NewMultiaddr(a.(string))
+		if err == nil {
+			addrs = append(addrs, maddr)
+		}
+	}
+
+	peerInfo := peer.AddrInfo{
+		ID:    newPeerID,
+		Addrs: addrs,
+	}
+
+	err = ln.host.Connect(context.Background(), peerInfo)
+	if err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
+	}
 }

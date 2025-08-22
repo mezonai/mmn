@@ -46,7 +46,7 @@ RUN go mod download
 COPY . .
 
 # Build argument for database selection
-ARG DATABASE=leveldb
+ARG DATABASE=rocksdb
 
 # Build binary with appropriate tags
 RUN if [ "$DATABASE" = "rocksdb" ]; then \
