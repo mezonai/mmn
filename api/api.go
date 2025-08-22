@@ -9,7 +9,7 @@ import (
 
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 )
 
@@ -107,10 +107,10 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 
 	result := struct {
 		Total uint32
-		Txs   []*types.Transaction
+		Txs   []*transaction.Transaction
 	}{
 		Total: 0,
-		Txs:   make([]*types.Transaction, 0),
+		Txs:   make([]*transaction.Transaction, 0),
 	}
 	total, txs := s.Ledger.GetTxs(addr, uint32(limit), uint32(offset), uint32(filter))
 	result.Total = total

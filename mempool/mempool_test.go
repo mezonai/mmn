@@ -14,6 +14,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 )
 
@@ -156,7 +157,7 @@ func (ml *MockLedger) CreateAccountsFromGenesis(addresses []config.Address) erro
 
 // MockBroadcaster implements interfaces.Broadcaster for testing
 type MockBroadcaster struct {
-	broadcastedTxs []*types.Transaction
+	broadcastedTxs []*transaction.Transaction
 }
 
 func (mb *MockBroadcaster) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
@@ -167,12 +168,12 @@ func (mb *MockBroadcaster) BroadcastVote(ctx context.Context, vt *consensus.Vote
 	return nil
 }
 
-func (mb *MockBroadcaster) TxBroadcast(ctx context.Context, tx *types.Transaction) error {
+func (mb *MockBroadcaster) TxBroadcast(ctx context.Context, tx *transaction.Transaction) error {
 	mb.broadcastedTxs = append(mb.broadcastedTxs, tx)
 	return nil
 }
 
-func (mb *MockBroadcaster) GetBroadcastedTxs() []*types.Transaction {
+func (mb *MockBroadcaster) GetBroadcastedTxs() []*transaction.Transaction {
 	return mb.broadcastedTxs
 }
 
@@ -181,14 +182,14 @@ func (mb *MockBroadcaster) Reset() {
 }
 
 // Helper function to sign a transaction with the test private key
-func signTransaction(tx *types.Transaction, privateKey ed25519.PrivateKey) {
+func signTransaction(tx *transaction.Transaction, privateKey ed25519.PrivateKey) {
 	txData := tx.Serialize()
 	signature := ed25519.Sign(privateKey, txData)
 	tx.Signature = hex.EncodeToString(signature)
 }
 
 // Helper function to create a test transaction
-func createTestTx(txType int32, sender, recipient string, amount uint64, nonce uint64) *types.Transaction {
+func createTestTx(txType int32, sender, recipient string, amount uint64, nonce uint64) *transaction.Transaction {
 	// Use current time to ensure uniqueness across test runs
 	uniqueSuffix := time.Now().UnixNano()
 
@@ -205,7 +206,7 @@ func createTestTx(txType int32, sender, recipient string, amount uint64, nonce u
 		privateKey, actualSender = getOrCreateKeyPair(sender)
 	}
 
-	tx := &types.Transaction{
+	tx := &transaction.Transaction{
 		Type:      txType,
 		Sender:    actualSender,
 		Recipient: recipient,
@@ -1344,7 +1345,7 @@ func TestMempool_MaxPendingPerSender(t *testing.T) {
 	mockLedger.SetNonce(senderAddr, 0)
 
 	// Test 1: Add exactly MaxPendingPerSender (60) pending transactions
-	var addedTxs []*types.Transaction
+	var addedTxs []*transaction.Transaction
 	for i := 0; i < 60; i++ {
 		tx := createTestTx(0, "pending_sender", fmt.Sprintf("recipient_%d", i), 100, uint64(i+2)) // nonces 2-61
 		_, err := mempool.AddTx(tx, false)
@@ -1673,7 +1674,7 @@ func TestMempool_ChainPromotion(t *testing.T) {
 	ledger.SetNonce(senderAddr, 0)
 
 	// Add consecutive pending transactions (nonces 2, 3, 4, 5)
-	var txs []*types.Transaction
+	var txs []*transaction.Transaction
 	for i := 2; i <= 5; i++ {
 		tx := createTestTx(0, "chain_sender", fmt.Sprintf("recipient%d", i), 100, uint64(i))
 		_, err := mempool.AddTx(tx, false)
@@ -2406,7 +2407,7 @@ func TestMempool_ValidationEdgeCases(t *testing.T) {
 	}
 
 	// Test 2: Invalid signature (manually create transaction with bad signature)
-	txInvalidSig := &types.Transaction{
+	txInvalidSig := &transaction.Transaction{
 		Type:      0,
 		Sender:    senderAddr,
 		Recipient: "recipient2",
@@ -2435,7 +2436,7 @@ func TestMempool_ValidationEdgeCases(t *testing.T) {
 	}
 
 	// Test 4: Empty sender address
-	txEmptySender := &types.Transaction{
+	txEmptySender := &transaction.Transaction{
 		Type:      0,
 		Sender:    "", // Empty sender
 		Recipient: "recipient4",
@@ -2497,7 +2498,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 	for i := range longTextData {
 		longTextData[i] = 'A'
 	}
-	txLongText := &types.Transaction{
+	txLongText := &transaction.Transaction{
 		Type:      0,
 		Sender:    senderAddr,
 		Recipient: "recipient2",
@@ -2516,7 +2517,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 	}
 
 	// Test 3: Negative timestamp (if possible)
-	txNegativeTime := &types.Transaction{
+	txNegativeTime := &transaction.Transaction{
 		Type:      0,
 		Sender:    senderAddr,
 		Recipient: "recipient3",
@@ -2535,7 +2536,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 	}
 
 	// Test 4: Invalid transaction type
-	txInvalidType := &types.Transaction{
+	txInvalidType := &transaction.Transaction{
 		Type:      999, // Invalid type
 		Sender:    senderAddr,
 		Recipient: "recipient4",
