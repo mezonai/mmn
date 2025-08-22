@@ -7,11 +7,12 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -20,6 +21,59 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+// Transaction status enum
+type TransactionStatus int32
+
+const (
+	TransactionStatus_PENDING   TransactionStatus = 0 // Transaction is in mempool
+	TransactionStatus_CONFIRMED TransactionStatus = 1 // Transaction is included in a block
+	TransactionStatus_FINALIZED TransactionStatus = 2 // Transaction is finalized (block has enough votes)
+	TransactionStatus_FAILED    TransactionStatus = 3 // Transaction failed validation
+)
+
+// Enum value maps for TransactionStatus.
+var (
+	TransactionStatus_name = map[int32]string{
+		0: "PENDING",
+		1: "CONFIRMED",
+		2: "FINALIZED",
+		3: "FAILED",
+	}
+	TransactionStatus_value = map[string]int32{
+		"PENDING":   0,
+		"CONFIRMED": 1,
+		"FINALIZED": 2,
+		"FAILED":    3,
+	}
+)
+
+func (x TransactionStatus) Enum() *TransactionStatus {
+	p := new(TransactionStatus)
+	*p = x
+	return p
+}
+
+func (x TransactionStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TransactionStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_tx_proto_enumTypes[0].Descriptor()
+}
+
+func (TransactionStatus) Type() protoreflect.EnumType {
+	return &file_tx_proto_enumTypes[0]
+}
+
+func (x TransactionStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TransactionStatus.Descriptor instead.
+func (TransactionStatus) EnumDescriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{0}
+}
 
 type TxMsg struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -165,6 +219,58 @@ func (x *SignedTxMsg) GetSignature() string {
 	return ""
 }
 
+type TxResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TxResponse) Reset() {
+	*x = TxResponse{}
+	mi := &file_tx_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TxResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TxResponse) ProtoMessage() {}
+
+func (x *TxResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TxResponse.ProtoReflect.Descriptor instead.
+func (*TxResponse) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *TxResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *TxResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 type AddTxResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -176,7 +282,7 @@ type AddTxResponse struct {
 
 func (x *AddTxResponse) Reset() {
 	*x = AddTxResponse{}
-	mi := &file_tx_proto_msgTypes[2]
+	mi := &file_tx_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -188,7 +294,7 @@ func (x *AddTxResponse) String() string {
 func (*AddTxResponse) ProtoMessage() {}
 
 func (x *AddTxResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[2]
+	mi := &file_tx_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -201,7 +307,7 @@ func (x *AddTxResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddTxResponse.ProtoReflect.Descriptor instead.
 func (*AddTxResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{2}
+	return file_tx_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AddTxResponse) GetOk() bool {
@@ -234,7 +340,7 @@ type GetTxByHashRequest struct {
 
 func (x *GetTxByHashRequest) Reset() {
 	*x = GetTxByHashRequest{}
-	mi := &file_tx_proto_msgTypes[3]
+	mi := &file_tx_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -246,7 +352,7 @@ func (x *GetTxByHashRequest) String() string {
 func (*GetTxByHashRequest) ProtoMessage() {}
 
 func (x *GetTxByHashRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[3]
+	mi := &file_tx_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -259,7 +365,7 @@ func (x *GetTxByHashRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTxByHashRequest.ProtoReflect.Descriptor instead.
 func (*GetTxByHashRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{3}
+	return file_tx_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetTxByHashRequest) GetTxHash() string {
@@ -282,7 +388,7 @@ type TxInfo struct {
 
 func (x *TxInfo) Reset() {
 	*x = TxInfo{}
-	mi := &file_tx_proto_msgTypes[4]
+	mi := &file_tx_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -294,7 +400,7 @@ func (x *TxInfo) String() string {
 func (*TxInfo) ProtoMessage() {}
 
 func (x *TxInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[4]
+	mi := &file_tx_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -307,7 +413,7 @@ func (x *TxInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxInfo.ProtoReflect.Descriptor instead.
 func (*TxInfo) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{4}
+	return file_tx_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TxInfo) GetSender() string {
@@ -355,7 +461,7 @@ type GetTxByHashResponse struct {
 
 func (x *GetTxByHashResponse) Reset() {
 	*x = GetTxByHashResponse{}
-	mi := &file_tx_proto_msgTypes[5]
+	mi := &file_tx_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -367,7 +473,7 @@ func (x *GetTxByHashResponse) String() string {
 func (*GetTxByHashResponse) ProtoMessage() {}
 
 func (x *GetTxByHashResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[5]
+	mi := &file_tx_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -380,7 +486,7 @@ func (x *GetTxByHashResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTxByHashResponse.ProtoReflect.Descriptor instead.
 func (*GetTxByHashResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{5}
+	return file_tx_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetTxByHashResponse) GetError() string {
@@ -395,6 +501,181 @@ func (x *GetTxByHashResponse) GetTx() *TxInfo {
 		return x.Tx
 	}
 	return nil
+}
+
+// Request to get transaction status
+type GetTransactionStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetTransactionStatusRequest) Reset() {
+	*x = GetTransactionStatusRequest{}
+	mi := &file_tx_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetTransactionStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetTransactionStatusRequest) ProtoMessage() {}
+
+func (x *GetTransactionStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetTransactionStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetTransactionStatusRequest) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetTransactionStatusRequest) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+// Unified transaction status message used for both unary and streaming responses
+type TransactionStatusInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	Status        TransactionStatus      `protobuf:"varint,2,opt,name=status,proto3,enum=mmn.TransactionStatus" json:"status,omitempty"`
+	BlockSlot     uint64                 `protobuf:"varint,3,opt,name=block_slot,json=blockSlot,proto3" json:"block_slot,omitempty"`         // Slot where transaction was included (if confirmed/finalized)
+	BlockHash     string                 `protobuf:"bytes,4,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`          // Hash of the block (if confirmed/finalized)
+	Confirmations uint64                 `protobuf:"varint,5,opt,name=confirmations,proto3" json:"confirmations,omitempty"`                  // Number of confirmations
+	ErrorMessage  string                 `protobuf:"bytes,6,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Error message if failed
+	Timestamp     uint64                 `protobuf:"varint,7,opt,name=timestamp,proto3" json:"timestamp,omitempty"`                          // Timestamp when status was last updated
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransactionStatusInfo) Reset() {
+	*x = TransactionStatusInfo{}
+	mi := &file_tx_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransactionStatusInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransactionStatusInfo) ProtoMessage() {}
+
+func (x *TransactionStatusInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransactionStatusInfo.ProtoReflect.Descriptor instead.
+func (*TransactionStatusInfo) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *TransactionStatusInfo) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+func (x *TransactionStatusInfo) GetStatus() TransactionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return TransactionStatus_PENDING
+}
+
+func (x *TransactionStatusInfo) GetBlockSlot() uint64 {
+	if x != nil {
+		return x.BlockSlot
+	}
+	return 0
+}
+
+func (x *TransactionStatusInfo) GetBlockHash() string {
+	if x != nil {
+		return x.BlockHash
+	}
+	return ""
+}
+
+func (x *TransactionStatusInfo) GetConfirmations() uint64 {
+	if x != nil {
+		return x.Confirmations
+	}
+	return 0
+}
+
+func (x *TransactionStatusInfo) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *TransactionStatusInfo) GetTimestamp() uint64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
+// Request to subscribe to all transaction status updates
+type SubscribeTransactionStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeTransactionStatusRequest) Reset() {
+	*x = SubscribeTransactionStatusRequest{}
+	mi := &file_tx_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeTransactionStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeTransactionStatusRequest) ProtoMessage() {}
+
+func (x *SubscribeTransactionStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tx_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeTransactionStatusRequest.ProtoReflect.Descriptor instead.
+func (*SubscribeTransactionStatusRequest) Descriptor() ([]byte, []int) {
+	return file_tx_proto_rawDescGZIP(), []int{9}
 }
 
 var File_tx_proto protoreflect.FileDescriptor
@@ -413,7 +694,11 @@ const file_tx_proto_rawDesc = "" +
 	"\vSignedTxMsg\x12!\n" +
 	"\x06tx_msg\x18\x01 \x01(\v2\n" +
 	".mmn.TxMsgR\x05txMsg\x12\x1c\n" +
-	"\tsignature\x18\x02 \x01(\tR\tsignature\"N\n" +
+	"\tsignature\x18\x02 \x01(\tR\tsignature\"2\n" +
+	"\n" +
+	"TxResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"N\n" +
 	"\rAddTxResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x17\n" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x14\n" +
@@ -428,10 +713,32 @@ const file_tx_proto_rawDesc = "" +
 	"\ttext_data\x18\x05 \x01(\tR\btextData\"H\n" +
 	"\x13GetTxByHashResponse\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1b\n" +
-	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx2|\n" +
-	"\tTxService\x12-\n" +
+	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\"6\n" +
+	"\x1bGetTransactionStatusRequest\x12\x17\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x87\x02\n" +
+	"\x15TransactionStatusInfo\x12\x17\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12.\n" +
+	"\x06status\x18\x02 \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1d\n" +
+	"\n" +
+	"block_slot\x18\x03 \x01(\x04R\tblockSlot\x12\x1d\n" +
+	"\n" +
+	"block_hash\x18\x04 \x01(\tR\tblockHash\x12$\n" +
+	"\rconfirmations\x18\x05 \x01(\x04R\rconfirmations\x12#\n" +
+	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\x12\x1c\n" +
+	"\ttimestamp\x18\a \x01(\x04R\ttimestamp\"#\n" +
+	"!SubscribeTransactionStatusRequest*J\n" +
+	"\x11TransactionStatus\x12\v\n" +
+	"\aPENDING\x10\x00\x12\r\n" +
+	"\tCONFIRMED\x10\x01\x12\r\n" +
+	"\tFINALIZED\x10\x02\x12\n" +
+	"\n" +
+	"\x06FAILED\x10\x032\xe8\x02\n" +
+	"\tTxService\x120\n" +
+	"\vTxBroadcast\x12\x10.mmn.SignedTxMsg\x1a\x0f.mmn.TxResponse\x12-\n" +
 	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12@\n" +
-	"\vGetTxByHash\x12\x17.mmn.GetTxByHashRequest\x1a\x18.mmn.GetTxByHashResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
+	"\vGetTxByHash\x12\x17.mmn.GetTxByHashRequest\x1a\x18.mmn.GetTxByHashResponse\x12T\n" +
+	"\x14GetTransactionStatus\x12 .mmn.GetTransactionStatusRequest\x1a\x1a.mmn.TransactionStatusInfo\x12b\n" +
+	"\x1aSubscribeTransactionStatus\x12&.mmn.SubscribeTransactionStatusRequest\x1a\x1a.mmn.TransactionStatusInfo0\x01B\x11Z\x0fmmn/proto;protob\x06proto3"
 
 var (
 	file_tx_proto_rawDescOnce sync.Once
@@ -445,27 +752,40 @@ func file_tx_proto_rawDescGZIP() []byte {
 	return file_tx_proto_rawDescData
 }
 
-var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_tx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_tx_proto_goTypes = []any{
-	(*TxMsg)(nil),               // 0: mmn.TxMsg
-	(*SignedTxMsg)(nil),         // 1: mmn.SignedTxMsg
-	(*AddTxResponse)(nil),       // 2: mmn.AddTxResponse
-	(*GetTxByHashRequest)(nil),  // 3: mmn.GetTxByHashRequest
-	(*TxInfo)(nil),              // 4: mmn.TxInfo
-	(*GetTxByHashResponse)(nil), // 5: mmn.GetTxByHashResponse
+	(TransactionStatus)(0),                    // 0: mmn.TransactionStatus
+	(*TxMsg)(nil),                             // 1: mmn.TxMsg
+	(*SignedTxMsg)(nil),                       // 2: mmn.SignedTxMsg
+	(*TxResponse)(nil),                        // 3: mmn.TxResponse
+	(*AddTxResponse)(nil),                     // 4: mmn.AddTxResponse
+	(*GetTxByHashRequest)(nil),                // 5: mmn.GetTxByHashRequest
+	(*TxInfo)(nil),                            // 6: mmn.TxInfo
+	(*GetTxByHashResponse)(nil),               // 7: mmn.GetTxByHashResponse
+	(*GetTransactionStatusRequest)(nil),       // 8: mmn.GetTransactionStatusRequest
+	(*TransactionStatusInfo)(nil),             // 9: mmn.TransactionStatusInfo
+	(*SubscribeTransactionStatusRequest)(nil), // 10: mmn.SubscribeTransactionStatusRequest
 }
 var file_tx_proto_depIdxs = []int32{
-	0, // 0: mmn.SignedTxMsg.tx_msg:type_name -> mmn.TxMsg
-	4, // 1: mmn.GetTxByHashResponse.tx:type_name -> mmn.TxInfo
-	1, // 2: mmn.TxService.AddTx:input_type -> mmn.SignedTxMsg
-	3, // 3: mmn.TxService.GetTxByHash:input_type -> mmn.GetTxByHashRequest
-	2, // 4: mmn.TxService.AddTx:output_type -> mmn.AddTxResponse
-	5, // 5: mmn.TxService.GetTxByHash:output_type -> mmn.GetTxByHashResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1,  // 0: mmn.SignedTxMsg.tx_msg:type_name -> mmn.TxMsg
+	6,  // 1: mmn.GetTxByHashResponse.tx:type_name -> mmn.TxInfo
+	0,  // 2: mmn.TransactionStatusInfo.status:type_name -> mmn.TransactionStatus
+	2,  // 3: mmn.TxService.TxBroadcast:input_type -> mmn.SignedTxMsg
+	2,  // 4: mmn.TxService.AddTx:input_type -> mmn.SignedTxMsg
+	5,  // 5: mmn.TxService.GetTxByHash:input_type -> mmn.GetTxByHashRequest
+	8,  // 6: mmn.TxService.GetTransactionStatus:input_type -> mmn.GetTransactionStatusRequest
+	10, // 7: mmn.TxService.SubscribeTransactionStatus:input_type -> mmn.SubscribeTransactionStatusRequest
+	3,  // 8: mmn.TxService.TxBroadcast:output_type -> mmn.TxResponse
+	4,  // 9: mmn.TxService.AddTx:output_type -> mmn.AddTxResponse
+	7,  // 10: mmn.TxService.GetTxByHash:output_type -> mmn.GetTxByHashResponse
+	9,  // 11: mmn.TxService.GetTransactionStatus:output_type -> mmn.TransactionStatusInfo
+	9,  // 12: mmn.TxService.SubscribeTransactionStatus:output_type -> mmn.TransactionStatusInfo
+	8,  // [8:13] is the sub-list for method output_type
+	3,  // [3:8] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_tx_proto_init() }
@@ -478,13 +798,14 @@ func file_tx_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tx_proto_rawDesc), len(file_tx_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   6,
+			NumEnums:      1,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_tx_proto_goTypes,
 		DependencyIndexes: file_tx_proto_depIdxs,
+		EnumInfos:         file_tx_proto_enumTypes,
 		MessageInfos:      file_tx_proto_msgTypes,
 	}.Build()
 	File_tx_proto = out.File
