@@ -11,14 +11,30 @@ import (
 	"github.com/mezonai/mmn/types"
 )
 
+// Constants for zero-fee blockchain optimization
+const (
+	MaxPendingPerSender = 60               // Max future transactions per sender
+	StaleTimeout        = 10 * time.Minute // Remove old pending transactions
+	MaxFutureNonce      = 64               // Max nonce distance from current
+)
+
+// PendingTransaction wraps a transaction with timestamp for timeout management
+type PendingTransaction struct {
+	Tx        *types.Transaction
+	Timestamp time.Time
+}
+
 type Mempool struct {
 	mu          sync.RWMutex // Changed to RWMutex for better concurrency
 	txsBuf      map[string][]byte
 	txOrder     []string // Maintain FIFO order
 	max         int
 	broadcaster interfaces.Broadcaster
-	ledger      interfaces.Ledger            // Add ledger for validation
-	nonceTxMap  map[string]map[uint64]string // sender -> nonce -> txHash for duplicate nonce detection
+	ledger      interfaces.Ledger // Add ledger for validation
+
+	pendingTxs    map[string]map[uint64]*PendingTransaction // sender -> nonce -> pending tx
+	readyQueue    []*types.Transaction                      // ready-to-process transactions
+	accountNonces map[string]uint64                         // cached account nonces for efficiency
 	eventRouter *events.EventRouter          // Event router for transaction status updates
 }
 
@@ -29,7 +45,11 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		max:         max,
 		broadcaster: broadcaster,
 		ledger:      ledger,
-		nonceTxMap:  make(map[string]map[uint64]string),
+
+		// Initialize zero-fee optimization fields
+		pendingTxs:    make(map[string]map[uint64]*PendingTransaction),
+		readyQueue:    make([]*types.Transaction, 0),
+		accountNonces: make(map[string]uint64),
 		eventRouter: eventRouter,
 	}
 }
@@ -38,7 +58,7 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 	// Generate hash first (read-only operation)
 	txHash := tx.Hash()
 
-	// Validate transaction before adding to mempool
+	// Initial basic validation (signature, format, etc.)
 	if err := mp.validateTransaction(tx); err != nil {
 		fmt.Printf("Dropping invalid tx %s: %v\n", txHash, err)
 		return "", err
@@ -50,16 +70,6 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 		mp.mu.RUnlock()
 		fmt.Println("Dropping duplicate tx", txHash)
 		return "", fmt.Errorf("duplicate transaction")
-	}
-
-	// Check for duplicate nonce from same sender
-	if senderNonces, exists := mp.nonceTxMap[tx.Sender]; exists {
-		if existingTxHash, nonceExists := senderNonces[tx.Nonce]; nonceExists {
-			mp.mu.RUnlock()
-			fmt.Printf("Dropping duplicate nonce tx %s (sender: %s, nonce: %d, existing: %s)\n",
-				txHash, tx.Sender[:8], tx.Nonce, existingTxHash)
-			return "", fmt.Errorf("duplicate nonce %d for sender %s", tx.Nonce, tx.Sender[:8])
-		}
 	}
 
 	// Check if mempool is full
@@ -80,29 +90,43 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
-	// Double-check nonce after acquiring write lock
-	if senderNonces, exists := mp.nonceTxMap[tx.Sender]; exists {
-		if existingTxHash, nonceExists := senderNonces[tx.Nonce]; nonceExists {
-			fmt.Printf("Dropping duplicate nonce tx (double-check) %s (sender: %s, nonce: %d, existing: %s)\n",
-				txHash, tx.Sender[:8], tx.Nonce, existingTxHash)
-			return "", fmt.Errorf("duplicate nonce %d for sender %s", tx.Nonce, tx.Sender[:8])
-		}
-	}
-
 	if len(mp.txsBuf) >= mp.max {
 		fmt.Println("Dropping full mempool (double-check)")
 		return "", fmt.Errorf("mempool full")
 	}
 
 	fmt.Println("Adding tx", tx)
-	mp.txsBuf[txHash] = tx.Bytes()
-	mp.txOrder = append(mp.txOrder, txHash) // Add to order queue
 
-	// Track nonce for duplicate detection
-	if mp.nonceTxMap[tx.Sender] == nil {
-		mp.nonceTxMap[tx.Sender] = make(map[uint64]string)
+	// Determine if transaction is ready or pending
+	currentNonce := mp.getCurrentNonce(tx.Sender, mp.ledger.GetAccount(tx.Sender).Nonce)
+	isReady := tx.Nonce == currentNonce+1
+
+	// Validate balance accounting for existing pending/ready transactions
+	if err := mp.validateBalance(tx); err != nil {
+		fmt.Printf("Dropping tx %s due to insufficient balance: %s\n", txHash, err.Error())
+		return "", err
 	}
-	mp.nonceTxMap[tx.Sender][tx.Nonce] = txHash
+
+	if isReady {
+		// Add to ready queue for immediate processing
+		mp.readyQueue = append(mp.readyQueue, tx)
+		fmt.Printf("Added ready tx %s (sender: %s, nonce: %d)\n", txHash, tx.Sender[:8], tx.Nonce)
+	} else {
+		// Add to pending transactions
+		if mp.pendingTxs[tx.Sender] == nil {
+			mp.pendingTxs[tx.Sender] = make(map[uint64]*PendingTransaction)
+		}
+		mp.pendingTxs[tx.Sender][tx.Nonce] = &PendingTransaction{
+			Tx:        tx,
+			Timestamp: time.Now(),
+		}
+		fmt.Printf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)\n",
+			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1)
+	}
+
+	// Always add to txsBuf and txOrder for compatibility
+	mp.txsBuf[txHash] = tx.Bytes()
+	mp.txOrder = append(mp.txOrder, txHash)
 
 	// Publish event for transaction status tracking
 	if mp.eventRouter != nil {
@@ -127,6 +151,43 @@ func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) 
 }
 
 // validateTransaction performs comprehensive transaction validation
+// getCurrentNonce returns the current nonce for a sender, using cached value if available
+func (mp *Mempool) getCurrentNonce(sender string, ledgerNonce uint64) uint64 {
+	if cachedNonce, exists := mp.accountNonces[sender]; exists {
+		// Use the higher of cached or ledger nonce (in case ledger was updated externally)
+		if cachedNonce > ledgerNonce {
+			return cachedNonce
+		}
+	}
+	return ledgerNonce
+}
+
+func (mp *Mempool) validateBalance(tx *types.Transaction) error {
+	senderAccount := mp.ledger.GetAccount(tx.Sender)
+	availableBalance := senderAccount.Balance
+
+	// Subtract amounts from pending transactions to get true available balance
+	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
+		for _, pendingTx := range pendingNonces {
+			availableBalance -= pendingTx.Tx.Amount
+		}
+	}
+
+	// Also subtract amounts from ready queue transactions for this sender
+	for _, readyTx := range mp.readyQueue {
+		if readyTx.Sender == tx.Sender {
+			availableBalance -= readyTx.Amount
+		}
+	}
+
+	if availableBalance < tx.Amount {
+		return fmt.Errorf("insufficient available balance: have %d (after pending: %d), need %d",
+			senderAccount.Balance, availableBalance, tx.Amount)
+	}
+
+	return nil
+}
+
 func (mp *Mempool) validateTransaction(tx *types.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
 	if !tx.Verify() {
@@ -148,54 +209,81 @@ func (mp *Mempool) validateTransaction(tx *types.Transaction) error {
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}
 
-	// 4. Check nonce is exactly next expected value
-	if tx.Nonce != senderAccount.Nonce+1 {
-		return fmt.Errorf("invalid nonce: expected %d, got %d", senderAccount.Nonce+1, tx.Nonce)
+	// 4. Enhanced nonce validation for zero-fee blockchain
+	// Get current nonce (use cached value if available, otherwise from ledger)
+	currentNonce := mp.getCurrentNonce(tx.Sender, senderAccount.Nonce)
+
+	// Reject old transactions (nonce too low)
+	if tx.Nonce <= currentNonce {
+		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
 	}
 
-	// 5. Check sufficient balance
-	if senderAccount.Balance < tx.Amount {
-		return fmt.Errorf("insufficient balance: have %d, need %d", senderAccount.Balance, tx.Amount)
+	// Prevent spam with reasonable future nonce limit
+	if tx.Nonce > currentNonce+MaxFutureNonce {
+		return fmt.Errorf("nonce too high: max allowed %d, got %d",
+			currentNonce+MaxFutureNonce, tx.Nonce)
+	}
+
+	// 6. Check pending transaction limits per sender
+	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
+		if len(pendingNonces) >= MaxPendingPerSender {
+			return fmt.Errorf("too many pending transactions for sender %s: max %d",
+				tx.Sender[:8], MaxPendingPerSender)
+		}
+
+		// 7. Check for duplicate nonce in pending transactions
+		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
+			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions",
+				tx.Nonce, tx.Sender[:8])
+		}
+	}
+
+	// 8. Check for duplicate nonce in ready queue
+	for _, readyTx := range mp.readyQueue {
+		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
+			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
+				tx.Nonce, tx.Sender[:8])
+		}
 	}
 
 	return nil
 }
 
-// PullBatch optimizes batch extraction with FIFO order
+// PullBatch implements smart dependency resolution for zero-fee blockchain
 func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
 	batch := make([][]byte, 0, batchSize)
-	removedTxHashes := make([]string, 0, batchSize)
+	processedCount := 0
 
-	// Process transactions in FIFO order
-	for i, txHash := range mp.txOrder {
-		if i >= batchSize {
-			break
+	// Clean up stale transactions first
+	mp.cleanupStaleTransactions()
+
+	// Keep processing until no more ready transactions or batch is full
+	for processedCount < batchSize {
+		readyTxs := mp.findReadyTransactions(batchSize - processedCount)
+		if len(readyTxs) == 0 {
+			fmt.Printf("No more ready transactions found, processed %d\n", processedCount)
+			break // No more ready transactions
 		}
 
-		if txData, exists := mp.txsBuf[txHash]; exists {
-			batch = append(batch, txData)
-			removedTxHashes = append(removedTxHashes, txHash)
+		fmt.Printf("Found %d ready transactions\n", len(readyTxs))
+		for _, tx := range readyTxs {
+			batch = append(batch, tx.Bytes())
+			mp.removeTransaction(tx)
+			mp.updateAccountNonce(tx.Sender, tx.Nonce)
+			processedCount++
+
+			fmt.Printf("Processed tx %s (sender: %s, nonce: %d)\n",
+				tx.Hash(), tx.Sender[:8], tx.Nonce)
 		}
+
+		// Check if any pending transactions became ready after processing
+		mp.promotePendingTransactions()
 	}
 
-	// Remove processed transactions from both map and order slice
-	if len(batch) > 0 {
-		// Remove from map and clean up nonce tracking
-		for i := 0; i < len(batch) && i < len(mp.txOrder); i++ {
-			txHash := mp.txOrder[i]
-			delete(mp.txsBuf, txHash)
-
-			// Clean up nonce tracking
-			mp.cleanupNonceTracking(txHash)
-		}
-
-		// Remove from order slice
-		mp.txOrder = mp.txOrder[len(batch):]
-	}
-
+	fmt.Printf("PullBatch returning %d transactions\n", len(batch))
 	return batch
 }
 
@@ -238,19 +326,163 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 	return result
 }
 
-// cleanupNonceTracking removes nonce tracking for a specific transaction
-func (mp *Mempool) cleanupNonceTracking(txHash string) {
-	// Find and remove the transaction from nonce tracking
-	for sender, nonces := range mp.nonceTxMap {
-		for nonce, hash := range nonces {
-			if hash == txHash {
-				delete(nonces, nonce)
-				// If no more nonces for this sender, remove the sender entry
-				if len(nonces) == 0 {
-					delete(mp.nonceTxMap, sender)
-				}
-				return
+// findReadyTransactions finds transactions that are ready to be processed
+func (mp *Mempool) findReadyTransactions(maxCount int) []*types.Transaction {
+	readyTxs := make([]*types.Transaction, 0, maxCount)
+
+	// First, process from ready queue
+	for len(mp.readyQueue) > 0 && len(readyTxs) < maxCount {
+		tx := mp.readyQueue[0]
+		mp.readyQueue = mp.readyQueue[1:]
+		readyTxs = append(readyTxs, tx)
+	}
+
+	// Then check pending transactions for newly ready ones
+	for sender, pendingMap := range mp.pendingTxs {
+		if len(readyTxs) >= maxCount {
+			break
+		}
+
+		currentNonce := mp.getCurrentNonce(sender, mp.ledger.GetAccount(sender).Nonce)
+		expectedNonce := currentNonce + 1
+
+		if pendingTx, exists := pendingMap[expectedNonce]; exists {
+			readyTxs = append(readyTxs, pendingTx.Tx)
+			delete(pendingMap, expectedNonce)
+			if len(pendingMap) == 0 {
+				delete(mp.pendingTxs, sender)
 			}
 		}
+	}
+
+	return readyTxs
+}
+
+// removeTransaction removes a transaction from all tracking structures
+func (mp *Mempool) removeTransaction(tx *types.Transaction) {
+	txHash := tx.Hash()
+
+	// Remove from txsBuf
+	delete(mp.txsBuf, txHash)
+
+	// Remove from txOrder
+	for i, hash := range mp.txOrder {
+		if hash == txHash {
+			mp.txOrder = append(mp.txOrder[:i], mp.txOrder[i+1:]...)
+			break
+		}
+	}
+}
+
+// updateAccountNonce updates the cached nonce for an account
+func (mp *Mempool) updateAccountNonce(sender string, nonce uint64) {
+	mp.accountNonces[sender] = nonce
+	fmt.Printf("Updated cached nonce for %s to %d\n", sender[:8], nonce)
+}
+
+// promotePendingTransactions checks if any pending transactions became ready
+func (mp *Mempool) promotePendingTransactions() {
+	for sender, pendingMap := range mp.pendingTxs {
+		currentNonce := mp.getCurrentNonce(sender, mp.ledger.GetAccount(sender).Nonce)
+		expectedNonce := currentNonce + 1
+
+		if pendingTx, exists := pendingMap[expectedNonce]; exists {
+			mp.readyQueue = append(mp.readyQueue, pendingTx.Tx)
+			delete(pendingMap, expectedNonce)
+			if len(pendingMap) == 0 {
+				delete(mp.pendingTxs, sender)
+			}
+			fmt.Printf("Promoted pending tx to ready (sender: %s, nonce: %d)\n",
+				sender[:8], expectedNonce)
+		}
+	}
+}
+
+// cleanupStaleTransactions removes transactions that have been pending too long
+func (mp *Mempool) cleanupStaleTransactions() {
+	now := time.Now()
+	staleThreshold := now.Add(-StaleTimeout)
+
+	for sender, pendingMap := range mp.pendingTxs {
+		for nonce, pendingTx := range pendingMap {
+			if pendingTx.Timestamp.Before(staleThreshold) {
+				// Remove stale transaction
+				mp.removeTransaction(pendingTx.Tx)
+				delete(pendingMap, nonce)
+				fmt.Printf("Removed stale transaction (sender: %s, nonce: %d)\n",
+					sender[:8], nonce)
+			}
+		}
+		if len(pendingMap) == 0 {
+			delete(mp.pendingTxs, sender)
+		}
+	}
+}
+
+// PeriodicCleanup performs comprehensive mempool maintenance
+// This should be called periodically by the node to maintain mempool health
+func (mp *Mempool) PeriodicCleanup() {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	fmt.Println("Starting periodic mempool cleanup...")
+
+	// Clean up stale transactions
+	mp.cleanupStaleTransactions()
+
+	// Promote any newly ready transactions
+	mp.promotePendingTransactions()
+
+	// Log current mempool state
+	totalPending := 0
+	for _, pendingMap := range mp.pendingTxs {
+		totalPending += len(pendingMap)
+	}
+
+	fmt.Printf("Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
+		len(mp.readyQueue), totalPending, len(mp.txsBuf))
+}
+
+// GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
+// Returns 0 if no pending transactions exist for the sender
+func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
+	mp.mu.RLock()
+	defer mp.mu.RUnlock()
+
+	pendingMap, exists := mp.pendingTxs[sender]
+	if !exists || len(pendingMap) == 0 {
+		return 0
+	}
+
+	var largestNonce uint64 = 0
+	for nonce := range pendingMap {
+		if nonce > largestNonce {
+			largestNonce = nonce
+		}
+	}
+
+	return largestNonce
+}
+
+// GetMempoolStats returns current mempool statistics
+func (mp *Mempool) GetMempoolStats() map[string]interface{} {
+	mp.mu.RLock()
+	defer mp.mu.RUnlock()
+
+	totalPending := 0
+	pendingBySender := make(map[string]int)
+
+	for sender, pendingMap := range mp.pendingTxs {
+		count := len(pendingMap)
+		totalPending += count
+		pendingBySender[sender[:8]] = count
+	}
+
+	return map[string]interface{}{
+		"ready_transactions":   len(mp.readyQueue),
+		"pending_transactions": totalPending,
+		"total_transactions":   len(mp.txsBuf),
+		"pending_by_sender":    pendingBySender,
+		"unique_senders":       len(mp.pendingTxs),
 	}
 }

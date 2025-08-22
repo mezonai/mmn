@@ -11,7 +11,6 @@ import (
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
@@ -75,7 +74,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(
 	collector *consensus.Collector,
 	mp *mempool.Mempool,
 	recorder *poh.PohRecorder,
-	eventRouter *events.EventRouter,
 ) {
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {

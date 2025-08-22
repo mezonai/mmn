@@ -15,6 +15,8 @@ import type {
   GetAccountResponse as GenGetAccountResponse,
   GetTxHistoryRequest as GenGetTxHistoryRequest,
   GetTxHistoryResponse as GenGetTxHistoryResponse,
+  GetCurrentNonceRequest as GenGetCurrentNonceRequest,
+  GetCurrentNonceResponse as GenGetCurrentNonceResponse,
 } from './generated/account';
 
 export class GrpcClient {
@@ -167,6 +169,18 @@ export class GrpcClient {
       } catch (_e) {
         // ignore
       }
+    };
+  }
+
+  async getCurrentNonce(address: string, tag: string = 'latest'): Promise<{ address: string; nonce: string; tag: string; error: string }> {
+    const req: GenGetCurrentNonceRequest = { address, tag };
+    const call = this.accountClient.getCurrentNonce(req);
+    const res: GenGetCurrentNonceResponse = await call.response;
+    return {
+      address: res.address,
+      nonce: res.nonce.toString(),
+      tag: res.tag,
+      error: res.error,
     };
   }
 
