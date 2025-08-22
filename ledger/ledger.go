@@ -256,38 +256,3 @@ func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32)
 
 	return total, txs
 }
-
-func (l *Ledger) appendWAL(b *block.Block) error {
-	path := "ledger/wal.log"
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("write WAL fail: %v", err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	for _, entry := range b.Entries {
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
-		}
-
-		for _, tx := range txs {
-			_ = enc.Encode(types.TxRecord{
-				Slot:      b.Slot,
-				Amount:    tx.Amount,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Timestamp: tx.Timestamp,
-				TextData:  tx.TextData,
-				Type:      tx.Type,
-				Nonce:     tx.Nonce,
-			})
-		}
-	}
-	return nil
-}
