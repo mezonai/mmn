@@ -8,6 +8,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -19,22 +20,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	TxService_TxBroadcast_FullMethodName                = "/mmn.TxService/TxBroadcast"
 	TxService_AddTx_FullMethodName                      = "/mmn.TxService/AddTx"
+	TxService_GetTxByHash_FullMethodName                = "/mmn.TxService/GetTxByHash"
 	TxService_GetTransactionStatus_FullMethodName       = "/mmn.TxService/GetTransactionStatus"
 	TxService_SubscribeTransactionStatus_FullMethodName = "/mmn.TxService/SubscribeTransactionStatus"
-	TxService_GetTxByHash_FullMethodName                = "/mmn.TxService/GetTxByHash"
 )
 
 // TxServiceClient is the client API for TxService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TxServiceClient interface {
+	TxBroadcast(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*TxResponse, error)
 	AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error)
-	// Get current status of a transaction
-	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*GetTransactionStatusResponse, error)
-	// Subscribe to status updates for all transactions
-	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusUpdate], error)
 	GetTxByHash(ctx context.Context, in *GetTxByHashRequest, opts ...grpc.CallOption) (*GetTxByHashResponse, error)
+	// Get current status of a transaction
+	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*TransactionStatusInfo, error)
+	// Subscribe to status updates for all transactions
+	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusInfo], error)
 }
 
 type txServiceClient struct {
@@ -43,6 +46,16 @@ type txServiceClient struct {
 
 func NewTxServiceClient(cc grpc.ClientConnInterface) TxServiceClient {
 	return &txServiceClient{cc}
+}
+
+func (c *txServiceClient) TxBroadcast(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*TxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TxResponse)
+	err := c.cc.Invoke(ctx, TxService_TxBroadcast_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *txServiceClient) AddTx(ctx context.Context, in *SignedTxMsg, opts ...grpc.CallOption) (*AddTxResponse, error) {
@@ -55,35 +68,6 @@ func (c *txServiceClient) AddTx(ctx context.Context, in *SignedTxMsg, opts ...gr
 	return out, nil
 }
 
-func (c *txServiceClient) GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*GetTransactionStatusResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetTransactionStatusResponse)
-	err := c.cc.Invoke(ctx, TxService_GetTransactionStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *txServiceClient) SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusUpdate], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &TxService_ServiceDesc.Streams[0], TxService_SubscribeTransactionStatus_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[SubscribeTransactionStatusRequest, TransactionStatusUpdate]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type TxService_SubscribeTransactionStatusClient = grpc.ServerStreamingClient[TransactionStatusUpdate]
-
 func (c *txServiceClient) GetTxByHash(ctx context.Context, in *GetTxByHashRequest, opts ...grpc.CallOption) (*GetTxByHashResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTxByHashResponse)
@@ -94,16 +78,46 @@ func (c *txServiceClient) GetTxByHash(ctx context.Context, in *GetTxByHashReques
 	return out, nil
 }
 
+func (c *txServiceClient) GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*TransactionStatusInfo, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TransactionStatusInfo)
+	err := c.cc.Invoke(ctx, TxService_GetTransactionStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *txServiceClient) SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusInfo], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &TxService_ServiceDesc.Streams[0], TxService_SubscribeTransactionStatus_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SubscribeTransactionStatusRequest, TransactionStatusInfo]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TxService_SubscribeTransactionStatusClient = grpc.ServerStreamingClient[TransactionStatusInfo]
+
 // TxServiceServer is the server API for TxService service.
 // All implementations must embed UnimplementedTxServiceServer
 // for forward compatibility.
 type TxServiceServer interface {
+	TxBroadcast(context.Context, *SignedTxMsg) (*TxResponse, error)
 	AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error)
-	// Get current status of a transaction
-	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*GetTransactionStatusResponse, error)
-	// Subscribe to status updates for all transactions
-	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusUpdate]) error
 	GetTxByHash(context.Context, *GetTxByHashRequest) (*GetTxByHashResponse, error)
+	// Get current status of a transaction
+	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error)
+	// Subscribe to status updates for all transactions
+	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error
 	mustEmbedUnimplementedTxServiceServer()
 }
 
@@ -114,17 +128,20 @@ type TxServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedTxServiceServer struct{}
 
+func (UnimplementedTxServiceServer) TxBroadcast(context.Context, *SignedTxMsg) (*TxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TxBroadcast not implemented")
+}
 func (UnimplementedTxServiceServer) AddTx(context.Context, *SignedTxMsg) (*AddTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddTx not implemented")
 }
-func (UnimplementedTxServiceServer) GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*GetTransactionStatusResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTransactionStatus not implemented")
-}
-func (UnimplementedTxServiceServer) SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusUpdate]) error {
-	return status.Errorf(codes.Unimplemented, "method SubscribeTransactionStatus not implemented")
-}
 func (UnimplementedTxServiceServer) GetTxByHash(context.Context, *GetTxByHashRequest) (*GetTxByHashResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTxByHash not implemented")
+}
+func (UnimplementedTxServiceServer) GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTransactionStatus not implemented")
+}
+func (UnimplementedTxServiceServer) SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error {
+	return status.Errorf(codes.Unimplemented, "method SubscribeTransactionStatus not implemented")
 }
 func (UnimplementedTxServiceServer) mustEmbedUnimplementedTxServiceServer() {}
 func (UnimplementedTxServiceServer) testEmbeddedByValue()                   {}
@@ -147,6 +164,24 @@ func RegisterTxServiceServer(s grpc.ServiceRegistrar, srv TxServiceServer) {
 	s.RegisterService(&TxService_ServiceDesc, srv)
 }
 
+func _TxService_TxBroadcast_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignedTxMsg)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxServiceServer).TxBroadcast(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TxService_TxBroadcast_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxServiceServer).TxBroadcast(ctx, req.(*SignedTxMsg))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TxService_AddTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SignedTxMsg)
 	if err := dec(in); err != nil {
@@ -161,6 +196,24 @@ func _TxService_AddTx_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TxServiceServer).AddTx(ctx, req.(*SignedTxMsg))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TxService_GetTxByHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTxByHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxServiceServer).GetTxByHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TxService_GetTxByHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxServiceServer).GetTxByHash(ctx, req.(*GetTxByHashRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -188,29 +241,11 @@ func _TxService_SubscribeTransactionStatus_Handler(srv interface{}, stream grpc.
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(TxServiceServer).SubscribeTransactionStatus(m, &grpc.GenericServerStream[SubscribeTransactionStatusRequest, TransactionStatusUpdate]{ServerStream: stream})
+	return srv.(TxServiceServer).SubscribeTransactionStatus(m, &grpc.GenericServerStream[SubscribeTransactionStatusRequest, TransactionStatusInfo]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type TxService_SubscribeTransactionStatusServer = grpc.ServerStreamingServer[TransactionStatusUpdate]
-
-func _TxService_GetTxByHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTxByHashRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(TxServiceServer).GetTxByHash(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: TxService_GetTxByHash_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxServiceServer).GetTxByHash(ctx, req.(*GetTxByHashRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
+type TxService_SubscribeTransactionStatusServer = grpc.ServerStreamingServer[TransactionStatusInfo]
 
 // TxService_ServiceDesc is the grpc.ServiceDesc for TxService service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -220,16 +255,20 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*TxServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "TxBroadcast",
+			Handler:    _TxService_TxBroadcast_Handler,
+		},
+		{
 			MethodName: "AddTx",
 			Handler:    _TxService_AddTx_Handler,
 		},
 		{
-			MethodName: "GetTransactionStatus",
-			Handler:    _TxService_GetTransactionStatus_Handler,
-		},
-		{
 			MethodName: "GetTxByHash",
 			Handler:    _TxService_GetTxByHash_Handler,
+		},
+		{
+			MethodName: "GetTransactionStatus",
+			Handler:    _TxService_GetTransactionStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

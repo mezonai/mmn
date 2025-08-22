@@ -125,6 +125,7 @@ func (c *GRPCClient) GetTxHistory(addr string, limit, offset, filter int) (domai
 func (c *GRPCClient) SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxService_SubscribeTransactionStatusClient, error) {
 	stream, err := c.txCli.SubscribeTransactionStatus(ctx, &mmnpb.SubscribeTransactionStatusRequest{})
 	if err != nil {
+		fmt.Printf("SubscribeTransactionStatus error: %v", err)
 		return nil, err
 	}
 	return stream, nil

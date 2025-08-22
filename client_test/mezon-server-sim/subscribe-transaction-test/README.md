@@ -75,7 +75,7 @@ CREATE INDEX idx_unlocked_items_tx_hash ON unlocked_items(tx_hash);
 ### Components
 
 1. **TxService.SubscribeTransactionStatus()**: Main subscription function
-2. **processTransactionStatusUpdate()**: Processes each status update with optimization logic
+2. **processTransactionStatusInfo()**: Processes each status update with optimization logic
 3. **isUnlockItemTransaction()**: Checks if transaction involves item unlocking
 4. **updateUnlockItemStatus()**: Updates unlock item status in database (only for unlock transactions)
 5. **handleConfirmedTransaction()**: Custom logic for confirmed transactions
@@ -85,7 +85,7 @@ CREATE INDEX idx_unlocked_items_tx_hash ON unlocked_items(tx_hash);
 ### Data Flow
 
 ```
-MMN Server → gRPC Stream → SubscribeTransactionStatus() → processTransactionStatusUpdate() → isUnlockItemTransaction() → [Conditional] updateUnlockItemStatus() → Custom Logic
+MMN Server → gRPC Stream → SubscribeTransactionStatus() → processTransactionStatusInfo() → isUnlockItemTransaction() → [Conditional] updateUnlockItemStatus() → Custom Logic
 ```
 
 ### Optimization Logic
@@ -102,7 +102,7 @@ MMN Server → gRPC Stream → SubscribeTransactionStatus() → processTransacti
 Extend the handler functions in `tx_service.go`:
 
 ```go
-func (s *TxService) handleConfirmedTransaction(ctx context.Context, update *mmnpb.TransactionStatusUpdate) error {
+func (s *TxService) handleConfirmedTransaction(ctx context.Context, update *mmnpb.TransactionStatusInfo) error {
     // Add your custom logic here:
     
     return nil

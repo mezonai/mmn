@@ -8,8 +8,8 @@ import (
 	mmnpb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
 )
 
-// Test processTransactionStatusUpdate function with different status types
-func TestTxService_processTransactionStatusUpdate_StatusHandling(t *testing.T) {
+// Test processTransactionStatusInfo function with different status types
+func TestTxService_processTransactionStatusInfo_StatusHandling(t *testing.T) {
 	// Create a minimal TxService for testing (without database for simplicity)
 	service := &TxService{}
 
@@ -18,11 +18,11 @@ func TestTxService_processTransactionStatusUpdate_StatusHandling(t *testing.T) {
 	// Test different transaction statuses to ensure they don't panic
 	testCases := []struct {
 		name   string
-		update *mmnpb.TransactionStatusUpdate
+		update *mmnpb.TransactionStatusInfo
 	}{
 		{
 			name: "PENDING status",
-			update: &mmnpb.TransactionStatusUpdate{
+			update: &mmnpb.TransactionStatusInfo{
 				TxHash:    "tx_pending",
 				Status:    mmnpb.TransactionStatus_PENDING,
 				Timestamp: uint64(time.Now().Unix()),
@@ -30,7 +30,7 @@ func TestTxService_processTransactionStatusUpdate_StatusHandling(t *testing.T) {
 		},
 		{
 			name: "CONFIRMED status",
-			update: &mmnpb.TransactionStatusUpdate{
+			update: &mmnpb.TransactionStatusInfo{
 				TxHash:    "tx_confirmed",
 				Status:    mmnpb.TransactionStatus_CONFIRMED,
 				BlockHash: "block123",
@@ -40,7 +40,7 @@ func TestTxService_processTransactionStatusUpdate_StatusHandling(t *testing.T) {
 		},
 		{
 			name: "FAILED status",
-			update: &mmnpb.TransactionStatusUpdate{
+			update: &mmnpb.TransactionStatusInfo{
 				TxHash:       "tx_failed",
 				Status:       mmnpb.TransactionStatus_FAILED,
 				ErrorMessage: "Insufficient balance",
@@ -49,38 +49,22 @@ func TestTxService_processTransactionStatusUpdate_StatusHandling(t *testing.T) {
 		},
 		{
 			name: "FINALIZED status",
-			update: &mmnpb.TransactionStatusUpdate{
+			update: &mmnpb.TransactionStatusInfo{
 				TxHash:        "tx_finalized",
 				Status:        mmnpb.TransactionStatus_FINALIZED,
 				Confirmations: 10,
 				Timestamp:     uint64(time.Now().Unix()),
 			},
 		},
-		{
-			name: "EXPIRED status",
-			update: &mmnpb.TransactionStatusUpdate{
-				TxHash:    "tx_expired",
-				Status:    mmnpb.TransactionStatus_EXPIRED,
-				Timestamp: uint64(time.Now().Unix()),
-			},
-		},
-		{
-			name: "UNKNOWN status",
-			update: &mmnpb.TransactionStatusUpdate{
-				TxHash:    "tx_unknown",
-				Status:    mmnpb.TransactionStatus_UNKNOWN,
-				Timestamp: uint64(time.Now().Unix()),
-			},
-		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// This test mainly ensures that processTransactionStatusUpdate
+			// This test mainly ensures that processTransactionStatusInfo
 			// doesn't panic for different status types and handles them gracefully
 			// Note: This will result in database errors since we don't have a real DB,
 			// but that's expected for this unit test
-			err := service.processTransactionStatusUpdate(ctx, tc.update)
+			err := service.processTransactionStatusInfo(ctx, tc.update)
 
 			// We expect database errors since no DB is connected, but no panics
 			if err == nil {
@@ -102,8 +86,6 @@ func TestGetStatusString(t *testing.T) {
 		{mmnpb.TransactionStatus_CONFIRMED, "CONFIRMED"},
 		{mmnpb.TransactionStatus_FINALIZED, "FINALIZED"},
 		{mmnpb.TransactionStatus_FAILED, "FAILED"},
-		{mmnpb.TransactionStatus_EXPIRED, "EXPIRED"},
-		{mmnpb.TransactionStatus_UNKNOWN, "UNKNOWN"},
 	}
 
 	for _, tc := range testCases {
@@ -125,8 +107,6 @@ func getStatusString(status mmnpb.TransactionStatus) string {
 		return "FINALIZED"
 	case mmnpb.TransactionStatus_FAILED:
 		return "FAILED"
-	case mmnpb.TransactionStatus_EXPIRED:
-		return "EXPIRED"
 	default:
 		return "UNKNOWN"
 	}

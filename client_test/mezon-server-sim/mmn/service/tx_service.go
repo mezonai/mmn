@@ -110,12 +110,21 @@ func (s *TxService) GiveCoffee(ctx context.Context, nonce uint64, fromUID, toUID
 }
 
 func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID, itemUID uint64, itemType string) (string, error) {
+	addr, _, err := s.ks.LoadKey(fromUID)
+	if err != nil {
+		return "", err
+	}
+	sender, err := s.GetAccountByAddress(ctx, addr)
+	if err != nil {
+		return "", err
+	}
+
 	// Test data
 	amount := uint64(1)
 	textData := "unlock item"
 
 	// Act
-	TxHash, err := s.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+	TxHash, err := s.SendToken(ctx, sender.Nonce+1, fromUID, toUID, amount, textData)
 
 	if err != nil {
 		return "", err
@@ -234,7 +243,7 @@ func (s *TxService) SubscribeTransactionStatus(ctx context.Context) error {
 			}
 
 			// Process the transaction status update
-			if err := s.processTransactionStatusUpdate(ctx, update); err != nil {
+			if err := s.processTransactionStatusInfo(ctx, update); err != nil {
 				log.Printf("Error processing transaction status update for tx %s: %v",
 					update.TxHash, err)
 				// Continue processing other updates even if one fails
@@ -247,8 +256,8 @@ func (s *TxService) SubscribeTransactionStatus(ctx context.Context) error {
 	}
 }
 
-// processTransactionStatusUpdate handles the business logic for each transaction status update
-func (s *TxService) processTransactionStatusUpdate(ctx context.Context, update *mmnpb.TransactionStatusUpdate) error {
+// processTransactionStatusInfo handles the business logic for each transaction status update
+func (s *TxService) processTransactionStatusInfo(ctx context.Context, update *mmnpb.TransactionStatusInfo) error {
 	// Check if this transaction is an unlock item transaction
 	isUnlockTransaction, err := s.isUnlockItemTransaction(ctx, update.TxHash)
 	if err != nil {
@@ -267,8 +276,6 @@ func (s *TxService) processTransactionStatusUpdate(ctx context.Context, update *
 		case mmnpb.TransactionStatus_FINALIZED:
 			status = domain.UNLOCK_ITEM_STATUS_SUCCESS
 		case mmnpb.TransactionStatus_FAILED:
-			status = domain.UNLOCK_ITEM_STATUS_FAILED
-		case mmnpb.TransactionStatus_EXPIRED:
 			status = domain.UNLOCK_ITEM_STATUS_FAILED
 		default:
 			return fmt.Errorf("unknown transaction status: %v", update.Status)
@@ -302,8 +309,6 @@ func (s *TxService) processTransactionStatusUpdate(ctx context.Context, update *
 		if err := s.handleFailedTransaction(ctx, update); err != nil {
 			log.Printf("Error handling failed transaction: %v", err)
 		}
-	case mmnpb.TransactionStatus_EXPIRED:
-		log.Printf("Transaction %s expired", update.TxHash)
 	default:
 		log.Printf("Unknown transaction status for tx %s: %s", update.TxHash, update.Status.String())
 	}
@@ -350,7 +355,7 @@ func (s *TxService) updateUnlockItemStatus(ctx context.Context, txHash string, s
 }
 
 // handleConfirmedTransaction processes business logic for confirmed transactions
-func (s *TxService) handleConfirmedTransaction(ctx context.Context, update *mmnpb.TransactionStatusUpdate) error {
+func (s *TxService) handleConfirmedTransaction(ctx context.Context, update *mmnpb.TransactionStatusInfo) error {
 	// Example: Update user balances, send notifications, etc.
 	log.Printf("Processing confirmed transaction %s in block %s", update.TxHash, update.BlockHash)
 
@@ -360,7 +365,7 @@ func (s *TxService) handleConfirmedTransaction(ctx context.Context, update *mmnp
 }
 
 // handleFinalizedTransaction processes business logic for finalized transactions
-func (s *TxService) handleFinalizedTransaction(ctx context.Context, update *mmnpb.TransactionStatusUpdate) error {
+func (s *TxService) handleFinalizedTransaction(ctx context.Context, update *mmnpb.TransactionStatusInfo) error {
 	// Example: Final settlement, compliance reporting, etc.
 	log.Printf("Processing finalized transaction %s with %d confirmations",
 		update.TxHash, update.Confirmations)
@@ -371,7 +376,7 @@ func (s *TxService) handleFinalizedTransaction(ctx context.Context, update *mmnp
 }
 
 // handleFailedTransaction processes business logic for failed transactions
-func (s *TxService) handleFailedTransaction(ctx context.Context, update *mmnpb.TransactionStatusUpdate) error {
+func (s *TxService) handleFailedTransaction(ctx context.Context, update *mmnpb.TransactionStatusInfo) error {
 	// Example: Refund processing, error notifications, etc.
 	log.Printf("Processing failed transaction %s: %s", update.TxHash, update.ErrorMessage)
 
@@ -379,6 +384,7 @@ func (s *TxService) handleFailedTransaction(ctx context.Context, update *mmnpb.T
 
 	return nil
 }
+
 // GetTxByHash retrieves transaction information by its hash
 func (s *TxService) GetTxByHash(ctx context.Context, txHash string) (domain.TxInfo, error) {
 	return s.bc.GetTxByHash(txHash)
