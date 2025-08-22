@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"github.com/mezonai/mmn/db"
+
+	"github.com/mezonai/mmn/events"
 )
 
 // StoreType represents the type of store implementation
@@ -55,7 +57,7 @@ func NewStoreFactory() *StoreFactory {
 }
 
 // CreateStoreWithProvider creates store instances using the provider pattern
-func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig) (AccountStore, TxStore, BlockStore, error) {
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, BlockStore, error) {
 	if config == nil {
 		return nil, nil, nil, fmt.Errorf("config cannot be nil")
 	}
@@ -80,7 +82,7 @@ func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig) (AccountSto
 		return nil, nil, nil, fmt.Errorf("failed to create transaction store: %w", err)
 	}
 
-	blkStore, err := NewGenericBlockStore(provider, txStore)
+	blkStore, err := NewGenericBlockStore(provider, txStore, eventRouter)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create block store: %w", err)
 	}
@@ -118,6 +120,6 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider
 var globalFactory = NewStoreFactory()
 
 // CreateStore creates new store instances using the global factory
-func CreateStore(config *StoreConfig) (AccountStore, TxStore, BlockStore, error) {
-	return globalFactory.CreateStoreWithProvider(config)
+func CreateStore(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, BlockStore, error) {
+	return globalFactory.CreateStoreWithProvider(config, eventRouter)
 }

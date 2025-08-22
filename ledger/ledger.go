@@ -1,16 +1,14 @@
 package ledger
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/mezonai/mmn/store"
-	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
@@ -24,12 +22,14 @@ type Ledger struct {
 	mu           sync.RWMutex
 	txStore      store.TxStore
 	accountStore store.AccountStore
+	eventRouter  *events.EventRouter
 }
 
-func NewLedger(txStore store.TxStore, accountStore store.AccountStore) *Ledger {
+func NewLedger(txStore store.TxStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
 	return &Ledger{
 		txStore:      txStore,
 		accountStore: accountStore,
+		eventRouter:  eventRouter,
 	}
 }
 
@@ -157,6 +157,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 
 			// try to apply tx
 			if err := applyTx(state, tx); err != nil {
+				// Publish specific transaction failure event
+				if l.eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
 				return fmt.Errorf("apply fail: %v", err)
 			}
 			fmt.Printf("Applied tx %s\n", tx.Hash())
@@ -267,41 +273,6 @@ func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32)
 	return total, txs
 }
 
-func (l *Ledger) appendWAL(b *block.Block) error {
-	path := "ledger/wal.log"
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("write WAL fail: %v", err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	for _, entry := range b.Entries {
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
-		}
-
-		for _, tx := range txs {
-			_ = enc.Encode(types.TxRecord{
-				Slot:      b.Slot,
-				Amount:    tx.Amount,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Timestamp: tx.Timestamp,
-				TextData:  tx.TextData,
-				Type:      tx.Type,
-				Nonce:     tx.Nonce,
-			})
-		}
-	}
-	return nil
-}
-
 // LedgerView is a view of the ledger to verify block before applying it to the ledger.
 type LedgerView struct {
 	base    store.AccountStore
@@ -390,11 +361,19 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 		tx, err := utils.ParseTx(r)
 		if err != nil || !tx.Verify() {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			if s.ledger.eventRouter != nil {
+				event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("sig/format: %v", err))
+				s.ledger.eventRouter.PublishTransactionEvent(event)
+			}
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
 		}
 		if err := s.view.ApplyTx(tx); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			if s.ledger.eventRouter != nil {
+				event := events.NewTransactionFailed(tx.Hash(), err.Error())
+				s.ledger.eventRouter.PublishTransactionEvent(event)
+			}
 			errs = append(errs, err)
 			continue
 		}

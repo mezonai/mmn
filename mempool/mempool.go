@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/transaction"
 )
@@ -35,9 +36,10 @@ type Mempool struct {
 	pendingTxs    map[string]map[uint64]*PendingTransaction // sender -> nonce -> pending tx
 	readyQueue    []*transaction.Transaction                // ready-to-process transactions
 	accountNonces map[string]uint64                         // cached account nonces for efficiency
+	eventRouter *events.EventRouter          // Event router for transaction status updates
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
@@ -49,12 +51,12 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		pendingTxs:    make(map[string]map[uint64]*PendingTransaction),
 		readyQueue:    make([]*transaction.Transaction, 0),
 		accountNonces: make(map[string]uint64),
+		eventRouter: eventRouter,
 	}
 }
 
 func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, error) {
 	// Generate hash first (read-only operation)
-	txBytes := tx.Bytes()
 	txHash := tx.Hash()
 
 	// Initial basic validation (signature, format, etc.)
@@ -128,8 +130,14 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 
 	// Always add to txsBuf and txOrder for compatibility
-	mp.txsBuf[txHash] = txBytes
+	mp.txsBuf[txHash] = tx.Bytes()
 	mp.txOrder = append(mp.txOrder, txHash)
+
+	// Publish event for transaction status tracking
+	if mp.eventRouter != nil {
+		event := events.NewTransactionAddedToMempool(txHash, tx)
+		mp.eventRouter.PublishTransactionEvent(event)
+	}
 
 	// Handle broadcast safely
 	if broadcast && mp.broadcaster != nil {

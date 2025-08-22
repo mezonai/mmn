@@ -70,7 +70,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
-				// Mark block as finalized
+				// Mark block as finalized and publish transaction finalization events
 				if err := bs.MarkFinalized(vote.Slot); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
 				}
@@ -102,7 +102,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
-				// Mark block as finalized
+				// Mark block as finalized and publish transaction finalization events
 				if err := bs.MarkFinalized(vote.Slot); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
 				}
@@ -147,7 +147,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
-				// Add to block store
+				// Add to block store and publish transaction inclusion events
 				if err := bs.AddBlockPending(blk); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
 					continue

@@ -47,14 +47,16 @@ func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 	}
 
 	blk := &block.Block{
-		Slot:      b.Slot,
-		Status:    block.BlockPending,
-		PrevHash:  b.PrevHash,
-		Entries:   entries,
-		LeaderID:  b.LeaderID,
-		Timestamp: b.Timestamp,
-		Hash:      b.Hash,
-		Signature: b.Signature,
+		BlockCore: block.BlockCore{
+			Slot:      b.Slot,
+			Status:    block.BlockPending,
+			PrevHash:  b.PrevHash,
+			LeaderID:  b.LeaderID,
+			Timestamp: b.Timestamp,
+			Hash:      b.Hash,
+			Signature: b.Signature,
+		},
+		Entries: entries,
 	}
 
 	return blk
@@ -83,13 +85,15 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.BroadcastedBlock, error) {
 	copy(bh[:], pbBlk.Hash)
 
 	return &block.BroadcastedBlock{
-		Slot:      pbBlk.Slot,
-		PrevHash:  prev,
-		Entries:   entries,
-		LeaderID:  pbBlk.LeaderId,
-		Timestamp: pbBlk.Timestamp,
-		Hash:      bh,
-		Signature: pbBlk.Signature,
+		BlockCore: block.BlockCore{
+			Slot:      pbBlk.Slot,
+			PrevHash:  prev,
+			LeaderID:  pbBlk.LeaderId,
+			Timestamp: pbBlk.Timestamp,
+			Hash:      bh,
+			Signature: pbBlk.Signature,
+		},
+		Entries: entries,
 	}, nil
 }
 
