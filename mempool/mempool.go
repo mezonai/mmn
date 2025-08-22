@@ -8,7 +8,7 @@ import (
 
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/interfaces"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 // Constants for zero-fee blockchain optimization
@@ -20,7 +20,7 @@ const (
 
 // PendingTransaction wraps a transaction with timestamp for timeout management
 type PendingTransaction struct {
-	Tx        *types.Transaction
+	Tx        *transaction.Transaction
 	Timestamp time.Time
 }
 
@@ -33,7 +33,7 @@ type Mempool struct {
 	ledger      interfaces.Ledger // Add ledger for validation
 
 	pendingTxs    map[string]map[uint64]*PendingTransaction // sender -> nonce -> pending tx
-	readyQueue    []*types.Transaction                      // ready-to-process transactions
+	readyQueue    []*transaction.Transaction                // ready-to-process transactions
 	accountNonces map[string]uint64                         // cached account nonces for efficiency
 	eventRouter *events.EventRouter          // Event router for transaction status updates
 }
@@ -48,13 +48,13 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 
 		// Initialize zero-fee optimization fields
 		pendingTxs:    make(map[string]map[uint64]*PendingTransaction),
-		readyQueue:    make([]*types.Transaction, 0),
+		readyQueue:    make([]*transaction.Transaction, 0),
 		accountNonces: make(map[string]uint64),
 		eventRouter: eventRouter,
 	}
 }
 
-func (mp *Mempool) AddTx(tx *types.Transaction, broadcast bool) (string, error) {
+func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, error) {
 	// Generate hash first (read-only operation)
 	txHash := tx.Hash()
 
@@ -162,7 +162,7 @@ func (mp *Mempool) getCurrentNonce(sender string, ledgerNonce uint64) uint64 {
 	return ledgerNonce
 }
 
-func (mp *Mempool) validateBalance(tx *types.Transaction) error {
+func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	senderAccount := mp.ledger.GetAccount(tx.Sender)
 	availableBalance := senderAccount.Balance
 
@@ -188,7 +188,7 @@ func (mp *Mempool) validateBalance(tx *types.Transaction) error {
 	return nil
 }
 
-func (mp *Mempool) validateTransaction(tx *types.Transaction) error {
+func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
 	if !tx.Verify() {
 		return fmt.Errorf("invalid signature")
@@ -327,8 +327,8 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 }
 
 // findReadyTransactions finds transactions that are ready to be processed
-func (mp *Mempool) findReadyTransactions(maxCount int) []*types.Transaction {
-	readyTxs := make([]*types.Transaction, 0, maxCount)
+func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transaction {
+	readyTxs := make([]*transaction.Transaction, 0, maxCount)
 
 	// First, process from ready queue
 	for len(mp.readyQueue) > 0 && len(readyTxs) < maxCount {
@@ -359,7 +359,7 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*types.Transaction {
 }
 
 // removeTransaction removes a transaction from all tracking structures
-func (mp *Mempool) removeTransaction(tx *types.Transaction) {
+func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 	txHash := tx.Hash()
 
 	// Remove from txsBuf

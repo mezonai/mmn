@@ -452,3 +452,21 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 		}
 	}
 }
+
+func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
+	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
+
+	data, err := json.Marshal(blk)
+	if err != nil {
+		logx.Error("BLOCK", "Failed to marshal block: ", err)
+		return err
+	}
+
+	if ln.topicBlocks != nil {
+		logx.Info("BLOCK", "Publishing block to pubsub topic")
+		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
+			logx.Error("BLOCK", "Failed to publish block:", err)
+		}
+	}
+	return nil
+}
