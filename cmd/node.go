@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/store"
+
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
@@ -21,10 +24,8 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
-	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
-	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/validator"
 
 	"github.com/spf13/cobra"
