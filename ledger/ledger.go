@@ -13,6 +13,8 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 )
 
@@ -25,13 +27,15 @@ type Ledger struct {
 	txStore      store.TxStore
 	txMetaStore  store.TxMetaStore
 	accountStore store.AccountStore
+	eventRouter  *events.EventRouter
 }
 
-func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore) *Ledger {
+func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
 	return &Ledger{
 		txStore:      txStore,
 		txMetaStore:  txMetaStore,
 		accountStore: accountStore,
+		eventRouter:  eventRouter,
 	}
 }
 
@@ -141,6 +145,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 
 			// try to apply tx
 			if err := applyTx(state, tx); err != nil {
+				// Publish specific transaction failure event
+				if l.eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
 				fmt.Printf("Apply fail: %v\n", err)
 				state[tx.Sender].Nonce++
 				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
@@ -175,7 +185,7 @@ func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
 }
 
 // Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
-func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
+func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
@@ -200,11 +210,11 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	return nil
 }
 
-func addHistory(acc *types.Account, tx *types.Transaction) {
+func addHistory(acc *types.Account, tx *transaction.Transaction) {
 	acc.History = append(acc.History, tx.Hash())
 }
 
-func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
+func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, error) {
 	tx, err := l.txStore.GetByHash(hash)
 	if err != nil {
 		return nil, err
@@ -212,18 +222,18 @@ func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
 	return tx, nil
 }
 
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*types.Transaction) {
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	txs := make([]*types.Transaction, 0)
+	txs := make([]*transaction.Transaction, 0)
 	acc, err := l.accountStore.GetByAddr(addr)
 	if err != nil {
 		return 0, txs
 	}
 
 	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]*types.Transaction, 0)
+	filteredHistory := make([]*transaction.Transaction, 0)
 	transactions, err := l.txStore.GetBatch(acc.History)
 	if err != nil {
 		return 0, txs

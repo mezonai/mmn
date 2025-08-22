@@ -7,10 +7,11 @@ import (
 	"github.com/mezonai/mmn/db"
 	"sync"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -33,6 +34,8 @@ type BlockStore interface {
 	GetLatestSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
+	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
+	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 }
 
@@ -43,17 +46,19 @@ type GenericBlockStore struct {
 	mu              sync.RWMutex
 	latestFinalized uint64
 	txStore         TxStore
+	eventRouter     *events.EventRouter
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore) (BlockStore, error) {
+func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, eventRouter *events.EventRouter) (BlockStore, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
 
 	store := &GenericBlockStore{
-		provider: provider,
-		txStore:  ts,
+		provider:    provider,
+		txStore:     ts,
+		eventRouter: eventRouter,
 	}
 
 	// Load existing metadata
@@ -187,7 +192,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 
 	// Store block tsx
 	// TODO: storing block & its tsx should be atomic operation. Consider use batch or db transaction (if supported)
-	txs := make([]*types.Transaction, 0)
+	txs := make([]*transaction.Transaction, 0)
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
 	}
@@ -195,25 +200,41 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		return fmt.Errorf("failed to store txs: %w", err)
 	}
 
+	// Publish transaction inclusion events if event router is provided
+	if s.eventRouter != nil {
+		blockHashHex := b.HashString()
+
+		// Publish TransactionIncludedInBlock events for each transaction in the block
+		for _, entry := range b.Entries {
+			for _, tx := range entry.Transactions {
+				event := events.NewTransactionIncludedInBlock(tx.Hash(), b.Slot, blockHashHex)
+				s.eventRouter.PublishTransactionEvent(event)
+			}
+		}
+	}
+
 	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
+
 	return nil
 }
 
 // MarkFinalized marks a block as finalized and updates metadata
 func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Check if block exists
-	key := slotToBlockKey(slot)
-	exists, err := s.provider.Has(key)
-	if err != nil {
-		return fmt.Errorf("failed to check block existence: %w", err)
-	}
-
-	if !exists {
+	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
 	}
+
+	// Get block data only if event router is provided
+	var blk *block.Block
+	if s.eventRouter != nil {
+		blk = s.Block(slot)
+		if blk == nil {
+			return fmt.Errorf("failed to get block data for slot %d", slot)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	// Update latest finalized
 	s.latestFinalized = slot
@@ -227,7 +248,25 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 		return fmt.Errorf("failed to update latest finalized: %w", err)
 	}
 
+	// Publish transaction finalization events if event router is provided
+	if s.eventRouter != nil && blk != nil {
+		blockHashHex := blk.HashString()
+
+		for _, entry := range blk.Entries {
+			txs, err := s.txStore.GetBatch(entry.TxHashes)
+			if err != nil {
+				logx.Warn("BLOCKSTORE", "Failed to get transactions for finalization event", "slot", slot, "error", err)
+				continue
+			}
+			for _, tx := range txs {
+				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
+				s.eventRouter.PublishTransactionEvent(event)
+			}
+		}
+	}
+
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
+
 	return nil
 }
 
@@ -237,4 +276,61 @@ func (s *GenericBlockStore) MustClose() {
 	if err != nil {
 		logx.Error("BLOCK_STORE", "Failed to close provider")
 	}
+}
+
+// GetConfirmations calculates the number of confirmations for a transaction in a given block slot.
+// Confirmations = latestFinalized - blockSlot + 1 if the block is finalized,
+// otherwise returns 1 for confirmed but not finalized blocks.
+func (bs *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+
+	latest := bs.latestFinalized
+	if latest >= blockSlot {
+		return latest - blockSlot + 1
+	}
+	return 1 // Confirmed but not yet finalized
+}
+
+// GetTransactionBlockInfo searches all stored blocks for a transaction. It returns the containing slot, the whole block, whether the
+// block is finalized, and whether it was found.
+func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blk *block.Block, finalized bool, found bool) {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+
+	// Iterate through all slots from 0 to latest finalized to search for the transaction
+	latestSlot := bs.latestFinalized
+	for s := uint64(0); s <= latestSlot; s++ {
+		key := slotToBlockKey(s)
+		value, err := bs.provider.Get(key)
+		if err != nil {
+			logx.Error("BLOCKSTORE", "Failed to get block for transaction search", s, "error:", err)
+			continue
+		}
+
+		if value == nil {
+			continue
+		}
+
+		var blockData block.Block
+		if err := json.Unmarshal(value, &blockData); err != nil {
+			logx.Error("BLOCKSTORE", "Failed to unmarshal block for transaction search", s, "error:", err)
+			continue
+		}
+
+		// Search through all entries in the block
+		for _, entry := range blockData.Entries {
+			for _, tx := range entry.TxHashes {
+				tx, err := bs.txStore.GetByHash(tx)
+				if err != nil {
+					logx.Warn("BLOCKSTORE", "Failed to get transaction for transaction search", "slot", s, "error", err)
+					continue
+				}
+				if tx.Hash() == clientHashHex {
+					return s, &blockData, blockData.Status == block.BlockFinalized, true
+				}
+			}
+		}
+	}
+	return 0, nil, false, false
 }

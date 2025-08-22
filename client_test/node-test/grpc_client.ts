@@ -5,56 +5,34 @@ import { AccountServiceClient, IAccountServiceClient } from './generated/account
 import type {
   TxMsg as GenTxMsg,
   SignedTxMsg as GenSignedTxMsg,
-  TxResponse as GenTxResponse,
   AddTxResponse as GenAddTxResponse,
+  TransactionStatusInfo as GenTxStatusInfo,
+  SubscribeTransactionStatusRequest as GenSubscribeTxStatusRequest,
 } from './generated/tx';
+import { TransactionStatus as GenTxStatusEnum } from './generated/tx';
 import type {
   GetAccountRequest as GenGetAccountRequest,
   GetAccountResponse as GenGetAccountResponse,
   GetTxHistoryRequest as GenGetTxHistoryRequest,
   GetTxHistoryResponse as GenGetTxHistoryResponse,
+  GetCurrentNonceRequest as GenGetCurrentNonceRequest,
+  GetCurrentNonceResponse as GenGetCurrentNonceResponse,
 } from './generated/account';
 
 export class GrpcClient {
   private transport: GrpcTransport;
   private txClient: ITxServiceClient;
   private accountClient: IAccountServiceClient;
+  private debug: boolean;
 
-  constructor(serverAddress: string) {
+  constructor(serverAddress: string, debug: boolean = false) {
     this.transport = new GrpcTransport({
       host: serverAddress,
       channelCredentials: ChannelCredentials.createInsecure(),
     });
     this.txClient = new TxServiceClient(this.transport);
     this.accountClient = new AccountServiceClient(this.transport);
-  }
-
-  async broadcastTransaction(
-    txMsg: {
-      type: number;
-      sender: string;
-      recipient: string;
-      amount: number;
-      timestamp: number;
-      text_data: string;
-      nonce: number;
-    },
-    signature: string
-  ): Promise<{ ok: boolean; error?: string }> {
-    const genTx: GenTxMsg = {
-      type: txMsg.type,
-      sender: txMsg.sender,
-      recipient: txMsg.recipient,
-      amount: BigInt(txMsg.amount),
-      timestamp: BigInt(txMsg.timestamp),
-      textData: txMsg.text_data,
-      nonce: BigInt(txMsg.nonce),
-    };
-    const req: GenSignedTxMsg = { txMsg: genTx, signature };
-
-    const call = this.txClient.txBroadcast(req as any as GenSignedTxMsg);
-    const res: GenTxResponse = await call.response;
-    return { ok: res.ok, error: res.error };
+    this.debug = debug;
   }
 
   async addTransaction(
@@ -121,7 +99,96 @@ export class GrpcClient {
     };
   }
 
+  subscribeTransactionStatus(
+    onUpdate: (update: {
+      tx_hash: string;
+      status: string;
+      block_slot?: string;
+      block_hash?: string;
+      confirmations?: string;
+      error_message?: string;
+      timestamp?: string;
+    }) => void,
+    onError: (error: any) => void,
+    onComplete: () => void
+  ): () => void {
+    const req: GenSubscribeTxStatusRequest = {}; // Empty request for all transactions
+    const abortController = new AbortController();
+    const call = this.txClient.subscribeTransactionStatus(req, { abort: abortController.signal });
+
+    (async () => {
+      try {
+        for await (const update of call.responses as AsyncIterable<GenTxStatusInfo>) {
+          // Log the raw update from the server (with BigInt handling)
+          const serializableUpdate = {
+            txHash: update.txHash,
+            status: update.status,
+            blockSlot: update.blockSlot?.toString(),
+            blockHash: update.blockHash,
+            confirmations: update.confirmations?.toString(),
+            errorMessage: update.errorMessage,
+            timestamp: update.timestamp?.toString(),
+          };
+          if (this.debug) {
+          console.log(`🔄 Raw Update from Server:`, JSON.stringify(serializableUpdate, null, 2));
+        }
+
+          const statusStr = GenTxStatusEnum[update.status] as unknown as string;
+          const processedUpdate = {
+            tx_hash: update.txHash,
+            status: statusStr || 'UNKNOWN',
+            block_slot: update.blockSlot ? update.blockSlot.toString() : undefined,
+            block_hash: update.blockHash || undefined,
+            confirmations: update.confirmations ? update.confirmations.toString() : undefined,
+            error_message: update.errorMessage || undefined,
+            timestamp: update.timestamp ? update.timestamp.toString() : undefined,
+          };
+
+          // Log the processed update
+          if (this.debug) {
+          console.log(`📤 Processing Update:`, JSON.stringify(processedUpdate, null, 2));
+        }
+
+          onUpdate(processedUpdate);
+        }
+        onComplete();
+      } catch (err: any) {
+        if (abortController.signal.aborted) {
+          // treat as completed due to unsubscribe
+          onComplete();
+          return;
+        }
+        onError(err);
+      }
+    })();
+
+    // Return unsubscribe that cancels the streaming call
+    return () => {
+      try {
+        abortController.abort();
+      } catch (_e) {
+        // ignore
+      }
+    };
+  }
+
+  async getCurrentNonce(address: string, tag: string = 'latest'): Promise<{ address: string; nonce: string; tag: string; error: string }> {
+    const req: GenGetCurrentNonceRequest = { address, tag };
+    const call = this.accountClient.getCurrentNonce(req);
+    const res: GenGetCurrentNonceResponse = await call.response;
+    return {
+      address: res.address,
+      nonce: res.nonce.toString(),
+      tag: res.tag,
+      error: res.error,
+    };
+  }
+
   close(): void {
     this.transport.close();
+  }
+
+  setDebug(debug: boolean) {
+    this.debug = debug;
   }
 }

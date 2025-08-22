@@ -40,7 +40,20 @@ message GetTxHistoryResponse {
   repeated TxMeta txs = 2;
 }
 
+message GetCurrentNonceRequest {
+  string address = 1;
+  string tag = 2; // "latest" or "pending"
+}
+
+message GetCurrentNonceResponse {
+  string address = 1;
+  uint64 nonce = 2;
+  string tag = 3;
+  string error = 4;
+}
+
 service AccountService {
-  rpc GetAccount   (GetAccountRequest)   returns (GetAccountResponse);
-  rpc GetTxHistory (GetTxHistoryRequest) returns (GetTxHistoryResponse);
+  rpc GetAccount     (GetAccountRequest)     returns (GetAccountResponse);
+  rpc GetTxHistory   (GetTxHistoryRequest)   returns (GetTxHistoryResponse);
+  rpc GetCurrentNonce (GetCurrentNonceRequest) returns (GetCurrentNonceResponse);
 }
