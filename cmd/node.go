@@ -132,7 +132,7 @@ func runNode() {
 		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
 		return
 	}
-	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	ts, err := initializeTxStore(txStoreDir, databaseBackend)
 	if err != nil {
 		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
 		return

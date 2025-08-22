@@ -210,83 +210,88 @@ func (v *EnhancedValidator) handleEntry(entries []poh.Entry) {
 	// When slot advances, assemble block for lastSlot if we were leader
 	// Skip slot 0 as it already has genesis block
 	if currentSlot > v.lastSlot && v.lastSlot > 0 && v.IsLeader(v.lastSlot) {
-		// Buffer entries
-		v.collectedEntries = append(v.collectedEntries, entries...)
-
-		// Retrieve previous block hash from blockStore
-		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-		prevHash := lastEntry.Hash
-
-		blk := block.AssembleBlock(
-			v.lastSlot,
-			prevHash,
-			v.Pubkey,
-			v.collectedEntries,
-		)
-
-		if err := v.ledger.VerifyBlock(blk); err != nil {
-			logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
-			v.session = v.lastSession.CopyWithOverlayClone()
-			return
-		}
-
-		blk.Sign(v.PrivKey)
-		logx.Info("ENHANCED_VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
-
-		// Persist then broadcast
-		logx.Info("ENHANCED_VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
-		if err := v.blockStore.AddBlockPending(blk); err != nil {
-			logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
-			return
-		}
-		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-			logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
-			return
-		}
-
-		// Create enhanced vote using dynamic collector
-		vote := &consensus.Vote{
-			Slot:      blk.Slot,
-			BlockHash: blk.Hash,
-			VoterID:   v.Pubkey,
-		}
-		vote.Sign(v.PrivKey)
-
-		// Use dynamic voting with slot range and root slot
-		slotRange := []uint64{blk.Slot}
-		rootSlot := v.getRootSlot()
-
-		fmt.Printf("[ENHANCED_LEADER] Adding dynamic vote %d to collector for self-vote\n", vote.Slot)
-		if committed, needApply, err := v.dynamicCollector.AddDynamicVote(vote, v.voteAccount, slotRange, rootSlot); err != nil {
-			fmt.Printf("[ENHANCED_LEADER] Add dynamic vote error: %v\n", err)
+		// Check if block already exists for this slot to avoid duplicates
+		if v.blockStore.Block(v.lastSlot) != nil {
+			logx.Info("ENHANCED_VALIDATOR", fmt.Sprintf("Block already exists for slot %d, skipping", v.lastSlot))
 		} else {
-			// Record vote in dynamic scheduler
-			v.DynamicSchedule.RecordVote(v.Pubkey, vote.Slot)
+			// Buffer entries
+			v.collectedEntries = append(v.collectedEntries, entries...)
 
-			if committed && needApply {
-				fmt.Printf("[ENHANCED_LEADER] slot %d committed with dynamic voting!\n", vote.Slot)
-				block := v.blockStore.Block(vote.Slot)
-				if block == nil {
-					fmt.Printf("[ENHANCED_LEADER] Block not found for slot %d\n", vote.Slot)
-				} else if err := v.ledger.ApplyBlock(block); err != nil {
-					fmt.Printf("[ENHANCED_LEADER] Apply block error: %v\n", err)
-				}
-				if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
-					fmt.Printf("[ENHANCED_LEADER] Mark block as finalized error: %v\n", err)
-				}
-				fmt.Printf("[ENHANCED_LEADER] slot %d finalized!\n", vote.Slot)
+			// Retrieve previous block hash from blockStore
+			lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
+			prevHash := lastEntry.Hash
+
+			blk := block.AssembleBlock(
+				v.lastSlot,
+				prevHash,
+				v.Pubkey,
+				v.collectedEntries,
+			)
+
+			if err := v.ledger.VerifyBlock(blk); err != nil {
+				logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
+				v.session = v.lastSession.CopyWithOverlayClone()
+				return
 			}
-		}
 
-		// Broadcast vote
-		fmt.Printf("[ENHANCED_LEADER] Broadcasted vote %d from %s\n", vote.Slot, v.Pubkey)
-		if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
-			fmt.Printf("[ENHANCED_LEADER] Failed to broadcast vote: %v\n", err)
-		}
+			blk.Sign(v.PrivKey)
+			logx.Info("ENHANCED_VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
-		// Reset buffer
-		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-		v.lastSession = v.session.CopyWithOverlayClone()
+			// Persist then broadcast
+			logx.Info("ENHANCED_VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+			if err := v.blockStore.AddBlockPending(blk); err != nil {
+				logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
+				return
+			}
+			if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
+				logx.Error("ENHANCED_VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
+				return
+			}
+
+			// Create enhanced vote using dynamic collector
+			vote := &consensus.Vote{
+				Slot:      blk.Slot,
+				BlockHash: blk.Hash,
+				VoterID:   v.Pubkey,
+			}
+			vote.Sign(v.PrivKey)
+
+			// Use dynamic voting with slot range and root slot
+			slotRange := []uint64{blk.Slot}
+			rootSlot := v.getRootSlot()
+
+			fmt.Printf("[ENHANCED_LEADER] Adding dynamic vote %d to collector for self-vote\n", vote.Slot)
+			if committed, needApply, err := v.dynamicCollector.AddDynamicVote(vote, v.voteAccount, slotRange, rootSlot); err != nil {
+				fmt.Printf("[ENHANCED_LEADER] Add dynamic vote error: %v\n", err)
+			} else {
+				// Record vote in dynamic scheduler
+				v.DynamicSchedule.RecordVote(v.Pubkey, vote.Slot)
+
+				if committed && needApply {
+					fmt.Printf("[ENHANCED_LEADER] slot %d committed with dynamic voting!\n", vote.Slot)
+					block := v.blockStore.Block(vote.Slot)
+					if block == nil {
+						fmt.Printf("[ENHANCED_LEADER] Block not found for slot %d\n", vote.Slot)
+					} else if err := v.ledger.ApplyBlock(block); err != nil {
+						fmt.Printf("[ENHANCED_LEADER] Apply block error: %v\n", err)
+					}
+					if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
+						fmt.Printf("[ENHANCED_LEADER] Mark block as finalized error: %v\n", err)
+					}
+					fmt.Printf("[ENHANCED_LEADER] slot %d finalized!\n", vote.Slot)
+				}
+			}
+
+			// Broadcast vote
+			fmt.Printf("[ENHANCED_LEADER] Broadcasted vote %d from %s\n", vote.Slot, v.Pubkey)
+			if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
+				fmt.Printf("[ENHANCED_LEADER] Failed to broadcast vote: %v\n", err)
+			}
+
+			// Reset buffer
+			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+			v.lastSession = v.session.CopyWithOverlayClone()
+		}
 	} else if v.IsLeader(currentSlot) {
 		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)
