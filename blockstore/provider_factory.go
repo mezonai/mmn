@@ -1,6 +1,9 @@
 package blockstore
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/mezonai/mmn/db"
+)
 
 type DBVendor string
 
@@ -14,16 +17,17 @@ type DBOptions struct {
 	Directory string
 }
 
-func CreateDBProvider(vendor DBVendor, options DBOptions) (DatabaseProvider, error) {
+// Deprecated
+func CreateDBProvider(vendor DBVendor, options DBOptions) (db.DatabaseProvider, error) {
 	switch vendor {
 	case LevelDB:
-		return NewLevelDBProvider(options.Directory)
+		return db.NewLevelDBProvider(options.Directory)
 
 	case RocksDB:
-		return NewRocksDBProvider(options.Directory)
+		return db.NewRocksDBProvider(options.Directory)
 
 	case Redis:
-		return NewRedisProvider("localhost:6379")
+		return db.NewRedisProvider("localhost:6379")
 
 	default:
 		return nil, fmt.Errorf("unsupported db provider: %s", vendor)

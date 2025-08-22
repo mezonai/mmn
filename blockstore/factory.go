@@ -2,6 +2,7 @@ package blockstore
 
 import (
 	"fmt"
+	"github.com/mezonai/mmn/db"
 )
 
 // StoreType represents the type of blockstore implementation
@@ -79,7 +80,7 @@ func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, ts TxStore)
 }
 
 // CreateProvider creates a database provider based on the configuration
-func (sf *StoreFactory) CreateProvider(config *StoreConfig) (DatabaseProvider, error) {
+func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config cannot be nil")
 	}
@@ -90,14 +91,14 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (DatabaseProvider, e
 
 	switch config.Type {
 	case LevelDBStoreType:
-		return NewLevelDBProvider(config.Directory)
+		return db.NewLevelDBProvider(config.Directory)
 
 	case RocksDBStoreType:
-		return NewRocksDBProvider(config.Directory)
+		return db.NewRocksDBProvider(config.Directory)
 
 	case RedisStoreType:
 		// just for debug
-		return NewRedisProvider("localhost:6379")
+		return db.NewRedisProvider("localhost:6379")
 
 	default:
 		return nil, fmt.Errorf("unsupported store type: %s", config.Type)

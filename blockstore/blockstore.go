@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/db"
 	"sync"
 
 	"github.com/mezonai/mmn/types"
@@ -25,14 +26,14 @@ const (
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
 // This allows it to work with any database backend (LevelDB, RocksDB, etc.)
 type GenericBlockStore struct {
-	provider        DatabaseProvider
+	provider        db.DatabaseProvider
 	mu              sync.RWMutex
 	latestFinalized uint64
 	txStore         TxStore
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider DatabaseProvider, ts TxStore) (Store, error) {
+func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore) (Store, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}

@@ -3,6 +3,7 @@ package blockstore
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/types"
 	"sync"
 )
@@ -17,10 +18,10 @@ type AccountStore interface {
 
 type GenericAccountStore struct {
 	mu         sync.RWMutex
-	dbProvider DatabaseProvider
+	dbProvider db.DatabaseProvider
 }
 
-func NewGenericAccountStore(dbProvider DatabaseProvider) (*GenericAccountStore, error) {
+func NewGenericAccountStore(dbProvider db.DatabaseProvider) (*GenericAccountStore, error) {
 	if dbProvider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}

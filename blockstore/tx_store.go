@@ -3,6 +3,7 @@ package blockstore
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/db"
 	"log"
 	"sync"
 
@@ -26,11 +27,11 @@ type TxStore interface {
 // GenericTxStore provides transaction storage operations
 type GenericTxStore struct {
 	mu         sync.RWMutex
-	dbProvider DatabaseProvider
+	dbProvider db.DatabaseProvider
 }
 
 // NewGenericTxStore creates a new transaction store
-func NewGenericTxStore(dbProvider DatabaseProvider) (*GenericTxStore, error) {
+func NewGenericTxStore(dbProvider db.DatabaseProvider) (*GenericTxStore, error) {
 	if dbProvider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
