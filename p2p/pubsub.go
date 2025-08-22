@@ -85,6 +85,17 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
+			// Remove processed transactions from mempool
+			processedHashSet := make(map[string]struct{})
+			for _, entry := range blk.Entries {
+				if !entry.IsTickOnly() {
+					for _, tx := range entry.Transactions {
+						processedHashSet[tx.Hash()] = struct{}{}
+					}
+				}
+			}
+			mp.RemoveProcessedTxs(processedHashSet)
+
 			// Reset poh to sync poh clock with leader
 			logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
 			recorder.Reset(blk.LastEntryHash(), blk.Slot)

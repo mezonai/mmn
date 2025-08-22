@@ -246,3 +246,21 @@ func (mp *Mempool) cleanupNonceTracking(txHash string) {
 		}
 	}
 }
+
+// RemoveProcessedTxs - remove processed transactions from mempool
+func (mp *Mempool) RemoveProcessedTxs(processedHashSet map[string]struct{}) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	newTxsOrder := make([]string, 0)
+	for _, txHash := range mp.txOrder {
+		if _, exists := processedHashSet[txHash]; exists {
+			delete(mp.txsBuf, txHash)
+			mp.cleanupNonceTracking(txHash)
+			continue
+		}
+		newTxsOrder = append(newTxsOrder, txHash)
+	}
+
+	mp.txOrder = newTxsOrder
+}
