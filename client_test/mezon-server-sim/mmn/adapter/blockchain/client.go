@@ -122,6 +122,15 @@ func (c *GRPCClient) GetTxHistory(addr string, limit, offset, filter int) (domai
 	return utils.FromProtoTxHistory(res), nil
 }
 
+func (c *GRPCClient) SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxService_SubscribeTransactionStatusClient, error) {
+	stream, err := c.txCli.SubscribeTransactionStatus(ctx, &mmnpb.SubscribeTransactionStatusRequest{})
+	if err != nil {
+		fmt.Printf("SubscribeTransactionStatus error: %v", err)
+		return nil, err
+	}
+	return stream, nil
+}
+
 func (c *GRPCClient) GetTxByHash(txHash string) (domain.TxInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(c.cfg.Timeout)*time.Millisecond)
 	defer cancel()

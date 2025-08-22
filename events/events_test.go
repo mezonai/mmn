@@ -169,25 +169,25 @@ func TestMultipleSubscribers(t *testing.T) {
 func TestNewTransactionFailed(t *testing.T) {
 	txHash := "test-tx-hash"
 	errorMessage := "insufficient funds"
-	
+
 	failedEvent := NewTransactionFailed(txHash, errorMessage)
-	
+
 	if failedEvent == nil {
 		t.Fatal("NewTransactionFailed returned nil")
 	}
-	
+
 	if failedEvent.Type() != EventTransactionFailed {
 		t.Errorf("Expected event type %s, got %s", EventTransactionFailed, failedEvent.Type())
 	}
-	
+
 	if failedEvent.TxHash() != txHash {
 		t.Errorf("Expected tx hash %s, got %s", txHash, failedEvent.TxHash())
 	}
-	
+
 	if failedEvent.ErrorMessage() != errorMessage {
 		t.Errorf("Expected error message %s, got %s", errorMessage, failedEvent.ErrorMessage())
 	}
-	
+
 	// Check timestamp is recent
 	now := time.Now()
 	if failedEvent.Timestamp().Sub(now) > time.Second {
@@ -198,7 +198,7 @@ func TestNewTransactionFailed(t *testing.T) {
 func TestEventRouterPublishTransactionFailed(t *testing.T) {
 	eventBus := NewEventBus()
 	eventRouter := NewEventRouter(eventBus)
-	
+
 	// Subscribe to events
 	subscriberID, eventChan := eventRouter.Subscribe()
 	defer eventRouter.Unsubscribe(subscriberID)
@@ -207,20 +207,20 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 	txHash := "failed-tx-hash"
 	errorMessage := "invalid signature"
 	failedEvent := NewTransactionFailed(txHash, errorMessage)
-	
+
 	eventRouter.PublishTransactionEvent(failedEvent)
-	
+
 	// Wait for event
 	select {
 	case receivedEvent := <-eventChan:
 		if receivedEvent.Type() != EventTransactionFailed {
 			t.Errorf("Expected event type %s, got %s", EventTransactionFailed, receivedEvent.Type())
 		}
-		
+
 		if receivedEvent.TxHash() != txHash {
 			t.Errorf("Expected tx hash %s, got %s", txHash, receivedEvent.TxHash())
 		}
-		
+
 		// Type assert to get error message
 		if failedEvent, ok := receivedEvent.(*TransactionFailed); ok {
 			if failedEvent.ErrorMessage() != errorMessage {
@@ -229,7 +229,7 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 		} else {
 			t.Error("Failed to type assert to TransactionFailed")
 		}
-		
+
 	case <-time.After(time.Second):
 		t.Error("Timeout waiting for event")
 	}
