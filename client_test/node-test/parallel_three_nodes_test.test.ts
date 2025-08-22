@@ -9,7 +9,8 @@ import {
   serializeTx,
   signTx,
   sendTxViaGrpc,
-  fundAccount
+  fundAccount,
+  getCurrentNonce
 } from './utils';
 
 // Node configurations
@@ -55,16 +56,21 @@ async function verifyBalanceAcrossNodes(nodeClients: NodeClient[], address: stri
 // Check consensus across all nodes (single attempt)
 async function getBalanceCrossNodes(nodeClients: NodeClient[], address: string): Promise<number | null> {
   const balances: number[] = [];
+  const nodeBalances: { [key: string]: number } = {};
   
   for (const nodeClient of nodeClients) {
     try {
       const balance = await getAccountBalance(nodeClient.client, address);
       balances.push(balance);
+      nodeBalances[nodeClient.name] = balance;
+      console.log(`${nodeClient.name} balance for ${address.substring(0, 8)}...: ${balance}`);
     } catch (error) {
       console.error(`Failed to get balance from ${nodeClient.name}:`, error);
       return null;
     }
   }
+  
+  console.log(`All node balances for ${address.substring(0, 8)}...:`, nodeBalances);
   
   // Check if all balances are the same
   if (balances.every(balance => balance === balances[0])) {
@@ -72,6 +78,7 @@ async function getBalanceCrossNodes(nodeClients: NodeClient[], address: string):
   }
   
   console.log(`Consensus check failed - Balances:`, balances);
+  console.log(`Node-specific balances:`, nodeBalances);
   return null;
 }
 
@@ -127,14 +134,15 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
         nonce: faucetAccount.nonce 
       });
       
-      // Get current faucet account nonce and use a unique nonce
-      const fundingNonce = parseInt(faucetAccount.nonce) + 1;
+      // Get current faucet account nonce using getCurrentNonce
+      const currentFaucetNonce = await getCurrentNonce(nodeClients[0].client, faucetPublicKeyHex, 'pending');
+      const fundingNonce = currentFaucetNonce + 1;
       
-      console.log(`Funding sender ${sender.publicKeyHex.substring(0, 8)}... with nonce ${fundingNonce}`);
+      console.log(`Funding sender ${sender.publicKeyHex.substring(0, 8)}... with nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
       const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 3000);
       if (!fundResponse.ok) {
         console.warn('Funding failed, this might be due to mempool being full or nonce conflicts:', fundResponse.error);
-        console.warn('Faucet nonce:', faucetAccount.nonce, 'Used nonce:', fundingNonce);
+        console.warn('Faucet current nonce:', currentFaucetNonce, 'Used nonce:', fundingNonce);
         // Skip this test if funding fails - this is expected in a busy test environment
         return;
       }
@@ -335,9 +343,9 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       let fundResponse;
       for (let i = 0; i < nodeClients.length; i++) {
         try {
-          await waitForTransaction(400); // ~ 1 slot
-          const faucetAccount = await nodeClients[i].client.getAccount(faucetPublicKeyHex);
-          const fundingNonce = parseInt(faucetAccount.nonce) + 1;
+          const currentFaucetNonce = await getCurrentNonce(nodeClients[i].client, faucetPublicKeyHex, 'pending');
+          const fundingNonce = currentFaucetNonce + 1;
+          console.log(`Node ${i + 1}: Using nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
           fundResponse = await fundAccount(nodeClients[i].client, sender.publicKeyHex, 1000);
           if (fundResponse.ok) break;
         } catch (error) {

@@ -8,15 +8,15 @@ import (
 	"log"
 	"sync"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 // TxStore is the interface for transaction store that is responsible for persisting operations of tx
 type TxStore interface {
-	Store(tx *types.Transaction) error
-	StoreBatch(txs []*types.Transaction) error
-	GetByHash(txHash string) (*types.Transaction, error)
-	GetBatch(txHashes []string) ([]*types.Transaction, error)
+	Store(tx *transaction.Transaction) error
+	StoreBatch(txs []*transaction.Transaction) error
+	GetByHash(txHash string) (*transaction.Transaction, error)
+	GetBatch(txHashes []string) ([]*transaction.Transaction, error)
 	MustClose()
 }
 
@@ -38,12 +38,12 @@ func NewGenericTxStore(dbProvider db.DatabaseProvider) (*GenericTxStore, error) 
 }
 
 // Store stores a transaction in the database
-func (ts *GenericTxStore) Store(tx *types.Transaction) error {
-	return ts.StoreBatch([]*types.Transaction{tx})
+func (ts *GenericTxStore) Store(tx *transaction.Transaction) error {
+	return ts.StoreBatch([]*transaction.Transaction{tx})
 }
 
 // StoreBatch stores a batch of transactions in the database
-func (ts *GenericTxStore) StoreBatch(txs []*types.Transaction) error {
+func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
@@ -66,7 +66,7 @@ func (ts *GenericTxStore) StoreBatch(txs []*types.Transaction) error {
 }
 
 // GetByHash retrieves a transaction by its hash
-func (ts *GenericTxStore) GetByHash(txHash string) (*types.Transaction, error) {
+func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, error) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
@@ -76,7 +76,7 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*types.Transaction, error) {
 	}
 
 	// Deserialize transaction
-	var tx types.Transaction
+	var tx transaction.Transaction
 	err = json.Unmarshal(data, &tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txHash, err)
@@ -86,16 +86,16 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*types.Transaction, error) {
 }
 
 // GetBatch retrieves multiple transactions by their hashes
-func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*types.Transaction, error) {
+func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transaction, error) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
 	if len(txHashes) == 0 {
-		return []*types.Transaction{}, nil
+		return []*transaction.Transaction{}, nil
 	}
 
 	// TODO: implement batch get
-	transactions := make([]*types.Transaction, 0, len(txHashes))
+	transactions := make([]*transaction.Transaction, 0, len(txHashes))
 	for _, txHash := range txHashes {
 		t, err := ts.GetByHash(txHash)
 		if err != nil {
