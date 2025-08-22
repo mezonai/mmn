@@ -28,6 +28,7 @@ type GenericBlockStore struct {
 	provider        DatabaseProvider
 	mu              sync.RWMutex
 	latestFinalized uint64
+	currentSlot     uint64 // Current processing slot
 	txStore         TxStore
 }
 
@@ -45,6 +46,11 @@ func NewGenericBlockStore(provider DatabaseProvider, ts TxStore) (Store, error) 
 	// Load existing metadata
 	if err := store.loadLatestFinalized(); err != nil {
 		return nil, fmt.Errorf("failed to load metadata: %w", err)
+	}
+
+	// Load block history
+	if err := store.LoadBlockHistory(); err != nil {
+		logx.Error("BLOCKSTORE", "Failed to load block history:", err)
 	}
 
 	return store, nil
@@ -180,6 +186,11 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		return fmt.Errorf("failed to store txs: %w", err)
 	}
 
+	// Update current slot if this block is newer
+	if b.Slot > s.currentSlot {
+		s.currentSlot = b.Slot
+	}
+
 	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
 	return nil
 }
@@ -219,4 +230,104 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 // Close closes the underlying database provider
 func (s *GenericBlockStore) Close() error {
 	return s.provider.Close()
+}
+
+// GetCurrentSlot returns the current processing slot
+func (s *GenericBlockStore) GetCurrentSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentSlot
+}
+
+// GetFinalizedSlot returns the latest finalized slot
+func (s *GenericBlockStore) GetFinalizedSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.latestFinalized
+}
+
+// LoadBlockHistory loads existing blocks from storage and updates current slot
+func (s *GenericBlockStore) LoadBlockHistory() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Since we don't have iterator, we'll scan slots from 0 upwards
+	// until we find a gap or reach a reasonable limit
+	maxSlot := uint64(0)
+	count := 0
+
+	// Check slots from 0 to find the highest existing slot
+	// We'll check up to a reasonable limit to avoid infinite loop
+	const maxScanSlots = 100000
+
+	consecutiveMisses := 0
+	const maxConsecutiveMisses = 1000 // Stop scanning after 1000 consecutive misses
+
+	for slot := uint64(0); slot < maxScanSlots && consecutiveMisses < maxConsecutiveMisses; slot++ {
+		key := slotToBlockKey(slot)
+		exists, err := s.provider.Has(key)
+		if err != nil {
+			logx.Error("BLOCKSTORE", "Error checking slot", slot, ":", err)
+			continue
+		}
+
+		if exists {
+			maxSlot = slot
+			count++
+			consecutiveMisses = 0
+		} else {
+			consecutiveMisses++
+		}
+	}
+
+	s.currentSlot = maxSlot
+
+	if count > 0 {
+		logx.Info("BLOCKSTORE", fmt.Sprintf("Loaded %d blocks from history, latest slot: %d", count, maxSlot))
+	}
+
+	return nil
+}
+
+// GetBlockRange returns blocks in the specified slot range
+func (s *GenericBlockStore) GetBlockRange(startSlot, endSlot uint64) ([]*block.Block, error) {
+	if startSlot > endSlot {
+		return nil, fmt.Errorf("invalid slot range: start %d > end %d", startSlot, endSlot)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	blocks := make([]*block.Block, 0, endSlot-startSlot+1)
+
+	for slot := startSlot; slot <= endSlot; slot++ {
+		blk := s.blockAtSlot(slot) // Use internal method to avoid double-locking
+		if blk != nil {
+			blocks = append(blocks, blk)
+		}
+	}
+
+	return blocks, nil
+}
+
+// blockAtSlot is an internal method that doesn't acquire locks
+func (s *GenericBlockStore) blockAtSlot(slot uint64) *block.Block {
+	key := slotToBlockKey(slot)
+	value, err := s.provider.Get(key)
+	if err != nil {
+		logx.Error("BLOCKSTORE", "Failed to get block", slot, "error:", err)
+		return nil
+	}
+
+	if value == nil {
+		return nil
+	}
+
+	var blk block.Block
+	if err := json.Unmarshal(value, &blk); err != nil {
+		logx.Error("BLOCKSTORE", "Failed to unmarshal block", slot, "error:", err)
+		return nil
+	}
+
+	return &blk
 }

@@ -216,19 +216,20 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 	// In a real implementation, you'd track server start time
 	uptime := uint64(now.Unix()) // Placeholder for actual uptime
 
-	// Get current slot and block height
+	// Get current slot and block height from blockstore
 	currentSlot := uint64(0)
 	blockHeight := uint64(0)
-
-	if s.validator != nil && s.validator.Recorder != nil {
-		currentSlot = s.validator.Recorder.CurrentSlot()
-	}
+	finalizedSlot := uint64(0)
 
 	if s.blockStore != nil {
-		// Get the latest finalized block height
-		// For now, we'll use a simple approach to get block height
-		// In a real implementation, you might want to track this separately
-		blockHeight = currentSlot // Use current slot as approximation
+		currentSlot = s.blockStore.GetCurrentSlot()
+		finalizedSlot = s.blockStore.GetFinalizedSlot()
+		blockHeight = finalizedSlot // Use finalized slot as block height
+	}
+
+	// Fallback to validator recorder if blockstore doesn't have current slot
+	if currentSlot == 0 && s.validator != nil && s.validator.Recorder != nil {
+		currentSlot = s.validator.Recorder.CurrentSlot()
 	}
 
 	// Get mempool size

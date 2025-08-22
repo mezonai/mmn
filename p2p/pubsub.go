@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mezonai/mmn/block"
@@ -87,8 +88,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			if err := bs.AddBlockPending(blk); err != nil {
-				logx.Error("BLOCK", "Failed to store block: ", err)
-				return err
+				// Ignore "already exists" errors - it's normal in distributed systems
+				if !strings.Contains(err.Error(), "already exists") {
+					logx.Error("BLOCK", "Failed to store block: ", err)
+					return err
+				}
+				// Block already exists, this is fine - just continue
+				logx.Debug("BLOCK", fmt.Sprintf("Block at slot %d already exists, skipping", blk.Slot))
 			}
 
 			// Reset poh to sync poh clock with leader
@@ -198,8 +204,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 				// Add to block store
 				if err := bs.AddBlockPending(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
-					continue
+					// Ignore "already exists" errors - it's normal in distributed systems
+					if !strings.Contains(err.Error(), "already exists") {
+						logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
+						continue
+					}
+					// Block already exists, this is fine - just continue
+					logx.Debug("NETWORK:SYNC BLOCK", fmt.Sprintf("Synced block at slot %d already exists, skipping", blk.Slot))
 				}
 
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
