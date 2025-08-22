@@ -298,3 +298,76 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 
 	return resp, nil
 }
+
+// GetBlockNumber returns current block number 
+func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.GetBlockNumberResponse, error) {
+	currentBlock := uint64(0)
+	
+	if s.blockStore != nil {
+		currentBlock = s.blockStore.GetLatestSlot()
+	}
+	
+	timestamp := uint64(time.Now().Unix())
+	
+	return &pb.GetBlockNumberResponse{
+		BlockNumber: currentBlock,
+		Timestamp:   timestamp,
+	}, nil
+}
+
+
+// GetBlockByNumber retrieves a block by its number
+func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+
+	for _, num := range in.BlockNumbers {
+		block := s.blockStore.Block(num)
+		if block == nil {
+			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+		}
+
+		entries := make([]*pb.Entry, 0, len(block.Entries))
+		var allTxHashes []string
+
+		for _, entry := range block.Entries {
+			entries = append(entries, &pb.Entry{
+				NumHashes: entry.NumHashes,
+				Hash:      entry.Hash[:],
+				TxHashes:  entry.TxHashes,
+			})
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+
+		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
+		for _, txHash := range allTxHashes {
+			tx, err := s.ledger.GetTxByHash(txHash)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    tx.Amount,
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    pb.TransactionData_CONFIRMED,
+			})
+		}
+
+		pbBlock := &pb.Block{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			Entries:         entries,
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, pbBlock)
+	}
+
+	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
+}
