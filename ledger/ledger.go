@@ -38,19 +38,30 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	_, err := l.createAccountWithoutLocking(addr, balance)
+	return err
+}
+
+func (l *Ledger) createAccountWithoutLocking(addr string, balance uint64) (*types.Account, error) {
 	existed, err := l.accountStore.ExistsByAddr(addr)
 	if err != nil {
-		return fmt.Errorf("could not check existence of account: %w", err)
+		return nil, fmt.Errorf("could not check existence of account: %w", err)
 	}
 	if existed {
-		return ErrAccountExisted
+		return nil, ErrAccountExisted
 	}
 
-	return l.accountStore.Store(&types.Account{
+	account := &types.Account{
 		Address: addr,
 		Balance: balance,
 		Nonce:   0,
-	})
+	}
+	err = l.accountStore.Store(account)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store account: %w", err)
+	}
+
+	return account, nil
 }
 
 // CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
@@ -120,9 +131,19 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err != nil {
 				return err
 			}
+			if sender == nil {
+				if sender, err = l.createAccountWithoutLocking(tx.Sender, 0); err != nil {
+					return err
+				}
+			}
 			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
 			if err != nil {
 				return err
+			}
+			if recipient == nil {
+				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, 0); err != nil {
+					return err
+				}
 			}
 			state := map[string]*types.Account{
 				sender.Address:    sender,
