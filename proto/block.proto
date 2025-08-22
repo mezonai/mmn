@@ -54,7 +54,6 @@ message GetBlockByNumberRequest {
 
 message GetBlockNumberResponse {
   uint64 block_number = 1;
-  uint64 timestamp = 2;
 }
 
 message GetBlockByNumberResponse {
