@@ -223,7 +223,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 	})
 
-	go ln.startInitialSync(bs)
+	go ln.startInitialSync()
 
 	go ln.startPeriodicSyncCheck(bs)
 
@@ -233,6 +233,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
+
+	// register validators before subscribing
+	_ = ln.registerTopicValidators()
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
@@ -361,11 +364,11 @@ func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	}
 }
 
-// when no peers connected the blocks will not sync must run after 30s if synced stop sync
+// when no peers connected the blocks will not sync must run after 8s if synced stop sync
 func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
 	// wait network setup
-	time.Sleep(10 * time.Second)
-	ticker := time.NewTicker(30 * time.Second)
+	time.Sleep(3 * time.Second)
+	ticker := time.NewTicker(8 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -379,13 +382,15 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
 }
 
 func (ln *Libp2pNetwork) startCleanupRoutine() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(2 * time.Minute) // Reduced from 5 minutes for faster cleanup
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			ln.RefreshAuthenticationForConnectedPeers()
 			ln.CleanupExpiredRequests()
+			ln.CleanupExpiredAuthentications()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
@@ -393,9 +398,9 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 	}
 }
 
-func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
+func (ln *Libp2pNetwork) startInitialSync() {
 	// wait network setup
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 
 	ctx := context.Background()
 
@@ -404,6 +409,6 @@ func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
 	}
 	// sync from 0
 	if err := ln.RequestBlockSync(ctx, 0); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: ", err.Error())
 	}
 }
