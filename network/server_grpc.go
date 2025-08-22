@@ -320,11 +320,8 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 		currentBlock = s.blockStore.GetLatestSlot()
 	}
 
-	timestamp := uint64(time.Now().Unix())
-
 	return &pb.GetBlockNumberResponse{
 		BlockNumber: currentBlock,
-		Timestamp:   timestamp,
 	}, nil
 }
 

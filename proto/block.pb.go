@@ -512,7 +512,6 @@ func (x *GetBlockByNumberRequest) GetBlockNumbers() []uint64 {
 type GetBlockNumberResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BlockNumber   uint64                 `protobuf:"varint,1,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
-	Timestamp     uint64                 `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -550,13 +549,6 @@ func (*GetBlockNumberResponse) Descriptor() ([]byte, []int) {
 func (x *GetBlockNumberResponse) GetBlockNumber() uint64 {
 	if x != nil {
 		return x.BlockNumber
-	}
-	return 0
-}
-
-func (x *GetBlockNumberResponse) GetTimestamp() uint64 {
-	if x != nil {
-		return x.Timestamp
 	}
 	return 0
 }
@@ -656,10 +648,9 @@ const file_proto_block_proto_rawDesc = "" +
 	"followerId\"\r\n" +
 	"\vEmptyParams\">\n" +
 	"\x17GetBlockByNumberRequest\x12#\n" +
-	"\rblock_numbers\x18\x01 \x03(\x04R\fblockNumbers\"Y\n" +
+	"\rblock_numbers\x18\x01 \x03(\x04R\fblockNumbers\";\n" +
 	"\x16GetBlockNumberResponse\x12!\n" +
-	"\fblock_number\x18\x01 \x01(\x04R\vblockNumber\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x04R\ttimestamp\"T\n" +
+	"\fblock_number\x18\x01 \x01(\x04R\vblockNumber\"T\n" +
 	"\x18GetBlockByNumberResponse\x12\"\n" +
 	"\x06blocks\x18\x01 \x03(\v2\n" +
 	".mmn.BlockR\x06blocks\x12\x14\n" +
