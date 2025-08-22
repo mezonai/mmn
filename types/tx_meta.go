@@ -6,15 +6,19 @@ const (
 )
 
 type TransactionMeta struct {
-	TxHash string `json:"tx_hash"`
-	Status int32  `json:"status"`
-	Error  string `json:"error"`
+	TxHash    string `json:"tx_hash"`
+	Slot      uint64 `json:"slot"`
+	BlockHash string `json:"block_hash"`
+	Status    int32  `json:"status"`
+	Error     string `json:"error"`
 }
 
-func NewTxMeta(tx *Transaction, status int32, err string) *TransactionMeta {
+func NewTxMeta(tx *Transaction, slot uint64, blockHash string, status int32, err string) *TransactionMeta {
 	return &TransactionMeta{
-		TxHash: tx.Hash(),
-		Status: status,
-		Error:  err,
+		TxHash:    tx.Hash(),
+		Slot:      slot,
+		BlockHash: blockHash,
+		Status:    status,
+		Error:     err,
 	}
 }

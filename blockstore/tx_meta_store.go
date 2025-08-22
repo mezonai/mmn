@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	txMetaPrefix = "meta:"
+	txMetaPrefix = "txmeta:"
 )
 
 type TxMetaStore interface {

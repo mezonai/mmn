@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"encoding/gob"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -85,12 +86,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		for _, tx := range txs {
 			if err := applyTx(l.state, tx); err != nil {
 				l.state[tx.Sender].Nonce++
-				txMetas = append(txMetas, types.NewTxMeta(tx, types.TxStatusFailed, err.Error()))
+				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
 				fmt.Printf("apply fail: %v\n", err)
 				continue
 			}
 			fmt.Printf("Applied tx %s\n", tx.Hash())
-			txMetas = append(txMetas, types.NewTxMeta(tx, types.TxStatusSuccess, ""))
+			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			addHistory(l.state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
 				addHistory(l.state[tx.Recipient], tx)
