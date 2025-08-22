@@ -830,13 +830,14 @@ describe('Token Transfer Tests', () => {
         sendTxViaGrpc(grpcClient, tx3),
       ]);
 
-      await waitForTransaction(4000);
-
       console.log('Concurrent transaction results:', {
         tx1Success: response1.ok,
         tx2Success: response2.ok,
         tx3Success: response3.ok,
       });
+
+      const txHashes = [response1.tx_hash, response2.tx_hash, response3.tx_hash].filter(Boolean);
+      await Promise.all(txHashes.map(txHash => transactionTracker.waitForTerminalStatus(txHash!)));
 
       // Verify balances
       const senderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -911,10 +912,10 @@ describe('Token Transfer Tests', () => {
       const validResponse = await sendTxViaGrpc(grpcClient, validTx);
       const invalidResponse = await sendTxViaGrpc(grpcClient, invalidTx);
 
-      await waitForTransaction(2000);
-
       // SECURITY VALIDATION: Valid nonce should succeed
       expect(validResponse.ok).toBe(true);
+
+      await transactionTracker.waitForTerminalStatus(validResponse.tx_hash!);
 
       // Future nonce may be queued or rejected depending on system implementation
       // The key security property is that balances remain consistent
