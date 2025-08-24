@@ -17,5 +17,6 @@ type Store interface {
 	GetLatestSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
+	IsApplied(slot uint64) bool
 	Close() error
 }

@@ -62,6 +62,9 @@ type Libp2pNetwork struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Add mutex for applyDataToBlock thread safety
+	applyBlockMu sync.Mutex
 }
 
 type PeerInfo struct {

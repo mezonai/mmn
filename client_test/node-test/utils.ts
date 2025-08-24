@@ -141,7 +141,7 @@ export async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
 // Fund account with tokens (with retry logic for multi-threaded usage)
 export async function 
 
-fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, maxRetries: number = 3) {
+fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, maxRetries: number = 5) {
   let lastError: any;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -175,7 +175,8 @@ fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, ma
          const isNonceError = response.error && (response.error.includes('nonce') || response.error.includes('invalid nonce'));
          
          if (isNonceError && attempt < maxRetries) {
-            const delay = 1000; // Exponential backoff: 1s
+            // delay should random from 100 to 800
+            const delay = Math.floor(Math.random() * (1200 - 100 + 1)) + 400; // Random delay between 400ms and 1200ms
             console.warn(`Fund transaction failed due to nonce issue (attempt ${attempt}/${maxRetries}): ${response.error}. Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;

@@ -184,6 +184,13 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	return nil
 }
 
+func (s *GenericBlockStore) IsApplied(slot uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.latestFinalized >= slot
+}
+
 // MarkFinalized marks a block as finalized and updates metadata
 func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	s.mu.Lock()
