@@ -3,8 +3,10 @@ package ledger
 import (
 	"errors"
 	"fmt"
-	"github.com/mezonai/mmn/store"
+	"sort"
 	"sync"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -109,8 +111,23 @@ func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 		base:    base,
 		overlay: make(map[string]*types.SnapshotAccount),
 	}
+
 	for _, entry := range b.Entries {
-		for _, tx := range entry.Transactions {
+		// Sort transactions within the entry by (sender, nonce) to ensure proper ordering
+		// This fixes race conditions where multiple transactions from same sender
+		// are in the same block but not properly ordered
+		sortedTxs := make([]*transaction.Transaction, len(entry.Transactions))
+		copy(sortedTxs, entry.Transactions)
+
+		// Sort by sender first, then by nonce within each sender
+		sort.Slice(sortedTxs, func(i, j int) bool {
+			if sortedTxs[i].Sender == sortedTxs[j].Sender {
+				return sortedTxs[i].Nonce < sortedTxs[j].Nonce
+			}
+			return sortedTxs[i].Sender < sortedTxs[j].Sender
+		})
+
+		for _, tx := range sortedTxs {
 			if err := view.ApplyTx(tx); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}
