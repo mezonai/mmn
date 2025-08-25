@@ -1,6 +1,8 @@
 package blockstore
 
-import "github.com/mezonai/mmn/block"
+import (
+	"github.com/mezonai/mmn/block"
+)
 
 // SlotBoundary represents slot boundary information
 type SlotBoundary struct {
@@ -19,7 +21,7 @@ type Store interface {
 	GetFinalizedSlot() uint64 // Get latest finalized slot
 	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
-	LoadBlockHistory() error // Load existing blocks from storage
-	GetBlockRange(startSlot, endSlot uint64) ([]*block.Block, error)
+	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
+	GetConfirmations(blockSlot uint64) uint64
 	Close() error
 }

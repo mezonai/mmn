@@ -3,11 +3,11 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"github.com/mezonai/mmn/store"
 	"sync"
 	"time"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/multiformats/go-multiaddr"
@@ -26,7 +26,7 @@ type Libp2pNetwork struct {
 	peers       map[peer.ID]*PeerInfo
 	mu          sync.RWMutex
 
-	blockStore blockstore.Store
+	blockStore store.BlockStore
 
 	topicBlocks       *pubsub.Topic
 	topicVotes        *pubsub.Topic

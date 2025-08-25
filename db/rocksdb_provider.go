@@ -1,19 +1,21 @@
 //go:build rocksdb
 // +build rocksdb
 
-package blockstore
+package db
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/linxGnu/grocksdb"
 )
 
 // RocksDBProvider implements DatabaseProvider for RocksDB
 type RocksDBProvider struct {
-	db *grocksdb.DB
-	ro *grocksdb.ReadOptions
-	wo *grocksdb.WriteOptions
+	once sync.Once
+	db   *grocksdb.DB
+	ro   *grocksdb.ReadOptions
+	wo   *grocksdb.WriteOptions
 }
 
 // NewRocksDBProvider creates a new RocksDB provider
@@ -83,9 +85,12 @@ func (p *RocksDBProvider) Has(key []byte) (bool, error) {
 
 // Close closes the database connection
 func (p *RocksDBProvider) Close() error {
-	p.db.Close()
-	p.ro.Destroy()
-	p.wo.Destroy()
+	// avoid double close when being used for multiple store
+	p.once.Do(func() {
+		p.ro.Destroy()
+		p.wo.Destroy()
+		p.db.Close()
+	})
 	return nil
 }
 
