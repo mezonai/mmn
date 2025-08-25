@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/poh"
@@ -16,7 +16,7 @@ import (
 func fromPBEntry(e *pb.Entry) (poh.Entry, error) {
 	var hashArr [32]byte
 	copy(hashArr[:], e.Hash)
-	txs := make([]*types.Transaction, len(e.Transactions))
+	txs := make([]*transaction.Transaction, len(e.Transactions))
 	for i, txBytes := range e.Transactions {
 		tx, err := ParseTx(txBytes)
 		if err != nil {
@@ -47,14 +47,16 @@ func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 	}
 
 	blk := &block.Block{
-		Slot:      b.Slot,
-		Status:    block.BlockPending,
-		PrevHash:  b.PrevHash,
-		Entries:   entries,
-		LeaderID:  b.LeaderID,
-		Timestamp: b.Timestamp,
-		Hash:      b.Hash,
-		Signature: b.Signature,
+		BlockCore: block.BlockCore{
+			Slot:      b.Slot,
+			Status:    block.BlockPending,
+			PrevHash:  b.PrevHash,
+			LeaderID:  b.LeaderID,
+			Timestamp: b.Timestamp,
+			Hash:      b.Hash,
+			Signature: b.Signature,
+		},
+		Entries: entries,
 	}
 
 	return blk
@@ -83,13 +85,15 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.BroadcastedBlock, error) {
 	copy(bh[:], pbBlk.Hash)
 
 	return &block.BroadcastedBlock{
-		Slot:      pbBlk.Slot,
-		PrevHash:  prev,
-		Entries:   entries,
-		LeaderID:  pbBlk.LeaderId,
-		Timestamp: pbBlk.Timestamp,
-		Hash:      bh,
-		Signature: pbBlk.Signature,
+		BlockCore: block.BlockCore{
+			Slot:      pbBlk.Slot,
+			PrevHash:  prev,
+			LeaderID:  pbBlk.LeaderId,
+			Timestamp: pbBlk.Timestamp,
+			Hash:      bh,
+			Signature: pbBlk.Signature,
+		},
+		Entries: entries,
 	}, nil
 }
 
@@ -131,14 +135,14 @@ func ToProtoEntries(entries []poh.Entry) ([]*pb.Entry, error) {
 
 // -- Tx --
 
-func ParseTx(data []byte) (*types.Transaction, error) {
-	var tx types.Transaction
+func ParseTx(data []byte) (*transaction.Transaction, error) {
+	var tx transaction.Transaction
 	err := json.Unmarshal(data, &tx)
 	return &tx, err
 }
 
-func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*types.Transaction, error) {
-	return &types.Transaction{
+func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
+	return &transaction.Transaction{
 		Type:      pbTx.TxMsg.Type,
 		Sender:    pbTx.TxMsg.Sender,
 		Recipient: pbTx.TxMsg.Recipient,
@@ -150,14 +154,14 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*types.Transaction, error) {
 	}, nil
 }
 
-func ToProtoSignedTx(tx *types.Transaction) *pb.SignedTxMsg {
+func ToProtoSignedTx(tx *transaction.Transaction) *pb.SignedTxMsg {
 	return &pb.SignedTxMsg{
 		TxMsg:     ToProtoTx(tx),
 		Signature: tx.Signature,
 	}
 }
 
-func ToProtoTx(tx *types.Transaction) *pb.TxMsg {
+func ToProtoTx(tx *transaction.Transaction) *pb.TxMsg {
 	return &pb.TxMsg{
 		Type:      tx.Type,
 		Sender:    tx.Sender,

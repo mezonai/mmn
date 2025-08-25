@@ -1,37 +1,72 @@
 package ledger
 
 import (
-	"encoding/gob"
-	"encoding/json"
+	"encoding/hex"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 
-	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 )
 
+var (
+	ErrAccountExisted = errors.New("account existed")
+)
+
 type Ledger struct {
-	state       map[string]*types.Account // address (public key hex) → account
-	mu          sync.RWMutex
-	txStore     blockstore.TxStore
-	txMetaStore blockstore.TxMetaStore
+	mu           sync.RWMutex
+	txStore      store.TxStore
+	txMetaStore  store.TxMetaStore
+	accountStore store.AccountStore
+	eventRouter  *events.EventRouter
 }
 
-func NewLedger(txStore blockstore.TxStore, txMetaStore blockstore.TxMetaStore) *Ledger {
-	return &Ledger{state: make(map[string]*types.Account), txStore: txStore, txMetaStore: txMetaStore}
+func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
+	return &Ledger{
+		txStore:      txStore,
+		txMetaStore:  txMetaStore,
+		accountStore: accountStore,
+		eventRouter:  eventRouter,
+	}
 }
 
-// Initialize initial account
-func (l *Ledger) CreateAccount(addr string, balance uint64) {
+// CreateAccount creates and stores a new account into db, return error if an account with the same addr existed
+func (l *Ledger) CreateAccount(addr string, balance uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.state[addr] = &types.Account{Balance: balance, Nonce: 0}
+	_, err := l.createAccountWithoutLocking(addr, balance)
+	return err
+}
+
+// createAccountWithoutLocking creates account and store in db without locking ledger. This is useful
+// when calling method has already acquired lock for ledger to avoid recursive locking and deadlock
+func (l *Ledger) createAccountWithoutLocking(addr string, balance uint64) (*types.Account, error) {
+	existed, err := l.accountStore.ExistsByAddr(addr)
+	if err != nil {
+		return nil, fmt.Errorf("could not check existence of account: %w", err)
+	}
+	if existed {
+		return nil, ErrAccountExisted
+	}
+
+	account := &types.Account{
+		Address: addr,
+		Balance: balance,
+		Nonce:   0,
+	}
+	err = l.accountStore.Store(account)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store account: %w", err)
+	}
+
+	return account, nil
 }
 
 // CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
@@ -40,34 +75,32 @@ func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 	defer l.mu.Unlock()
 
 	for _, addr := range addrs {
-		if _, exists := l.state[addr.Address]; exists {
-			return fmt.Errorf("genesis account %s already exists", addr.Address)
+		_, err := l.createAccountWithoutLocking(addr.Address, addr.Amount)
+		if err != nil {
+			return fmt.Errorf("could not create genesis account %s: %w", addr.Address, err)
 		}
-
-		l.state[addr.Address] = &types.Account{Balance: addr.Amount, Nonce: 0}
 	}
 	return nil
 }
 
 // AccountExists checks if an account exists (implements LedgerInterface)
-func (l *Ledger) AccountExists(addr string) bool {
+func (l *Ledger) AccountExists(addr string) (bool, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-
-	_, exists := l.state[addr]
-	return exists
+	return l.accountStore.ExistsByAddr(addr)
 }
 
-// Query balance
-func (l *Ledger) Balance(addr string) uint64 {
+// Balance returns current balance for addr
+func (l *Ledger) Balance(addr string) (uint64, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	acc, ok := l.state[addr]
-	if !ok {
-		return 0
+	acc, err := l.accountStore.GetByAddr(addr)
+	if err != nil {
+		return 0, err
 	}
-	return acc.Balance
+
+	return acc.Balance, nil
 }
 
 func (l *Ledger) ApplyBlock(b *block.Block) error {
@@ -83,43 +116,73 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
 		for _, tx := range txs {
-			if err := applyTx(l.state, tx); err != nil {
-				l.state[tx.Sender].Nonce++
-				txMetas = append(txMetas, types.NewTxMeta(tx, types.TxStatusFailed, err.Error()))
-				fmt.Printf("apply fail: %v\n", err)
+			// load account state
+			sender, err := l.accountStore.GetByAddr(tx.Sender)
+			if err != nil {
+				return err
+			}
+			if sender == nil {
+				if sender, err = l.createAccountWithoutLocking(tx.Sender, 0); err != nil {
+					return err
+				}
+			}
+			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
+			if err != nil {
+				return err
+			}
+			if recipient == nil {
+				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, 0); err != nil {
+					return err
+				}
+			}
+			state := map[string]*types.Account{
+				sender.Address:    sender,
+				recipient.Address: recipient,
+			}
+
+			// try to apply tx
+			if err := applyTx(state, tx); err != nil {
+				// Publish specific transaction failure event
+				if l.eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
+				fmt.Printf("Apply fail: %v\n", err)
+				state[tx.Sender].Nonce++
+				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
 				continue
 			}
 			fmt.Printf("Applied tx %s\n", tx.Hash())
-			txMetas = append(txMetas, types.NewTxMeta(tx, types.TxStatusSuccess, ""))
-			addHistory(l.state[tx.Sender], tx)
+			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
+			addHistory(state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
-				addHistory(l.state[tx.Recipient], tx)
+				addHistory(state[tx.Recipient], tx)
+			}
+
+			// commit the update
+			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
+				return err
 			}
 		}
-
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
 		}
 	}
 
-	if err := l.appendWAL(b); err != nil {
-		return err
-	}
-	if b.Slot%1000 == 0 {
-		_ = l.SaveSnapshot("ledger/snapshot.gob")
-	}
 	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
 	return nil
 }
 
-func (l *Ledger) GetAccount(addr string) *types.Account {
+// GetAccount returns account with addr (nil if not exist)
+func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	return l.state[addr]
+	return l.accountStore.GetByAddr(addr)
 }
 
-// Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
+// Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
+func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
@@ -144,31 +207,31 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	return nil
 }
 
-func addHistory(acc *types.Account, tx *types.Transaction) {
+func addHistory(acc *types.Account, tx *transaction.Transaction) {
 	acc.History = append(acc.History, tx.Hash())
 }
 
-func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
+func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error) {
 	tx, err := l.txStore.GetByHash(hash)
+	txMeta, err := l.txMetaStore.GetByHash(hash)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return tx, nil
+	return tx, txMeta, nil
 }
 
-// TODO: need to optimize this by using BadgerDB
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*types.Transaction) {
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	txs := make([]*types.Transaction, 0)
-	acc, ok := l.state[addr]
-	if !ok {
+	txs := make([]*transaction.Transaction, 0)
+	acc, err := l.accountStore.GetByAddr(addr)
+	if err != nil {
 		return 0, txs
 	}
 
 	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]*types.Transaction, 0)
+	filteredHistory := make([]*transaction.Transaction, 0)
 	transactions, err := l.txStore.GetBatch(acc.History)
 	if err != nil {
 		return 0, txs
@@ -189,83 +252,4 @@ func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32)
 	txs = filteredHistory[start:end]
 
 	return total, txs
-}
-
-func (l *Ledger) appendWAL(b *block.Block) error {
-	path := "ledger/wal.log"
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return fmt.Errorf("write WAL fail: %v", err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	for _, entry := range b.Entries {
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
-		}
-
-		for _, tx := range txs {
-			_ = enc.Encode(types.TxRecord{
-				Slot:      b.Slot,
-				Amount:    tx.Amount,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Timestamp: tx.Timestamp,
-				TextData:  tx.TextData,
-				Type:      tx.Type,
-				Nonce:     tx.Nonce,
-			})
-		}
-	}
-	return nil
-}
-
-func (l *Ledger) SaveSnapshot(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if err := gob.NewEncoder(f).Encode(l.state); err != nil {
-		return err
-	}
-	defer f.Close()
-	return os.Rename(tmp, path)
-}
-
-func (l *Ledger) LoadLedger() error {
-	// 1. snapshot
-	if s, err := os.Open("ledger/snapshot.gob"); err == nil {
-		_ = gob.NewDecoder(s).Decode(&l.state)
-		s.Close()
-	}
-
-	// 2. replay WAL
-	if w, err := os.Open("ledger/wal.log"); err == nil {
-		dec := json.NewDecoder(w)
-		var rec types.TxRecord
-		for dec.Decode(&rec) == nil {
-			_ = applyTx(l.state, &types.Transaction{
-				Type:      rec.Type,
-				Sender:    rec.Sender,
-				Recipient: rec.Recipient,
-				Amount:    rec.Amount,
-				Timestamp: rec.Timestamp,
-				TextData:  rec.TextData,
-				Nonce:     rec.Nonce,
-			})
-		}
-		w.Close()
-	}
-	return nil
 }

@@ -139,7 +139,7 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 	faucetSeed := faucetPrivateKey.Seed()
 	txHash, err := service.SendTokenWithoutDatabase(
 		ctx,
-		faucetAccount.Nonce,
+		faucetAccount.Nonce+1,
 		faucetPublicKey,
 		toAddress,
 		faucetSeed,
@@ -191,7 +191,7 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", domain.TxTypeTransfer)
+	txHash, err := service.SendTokenWithoutDatabase(ctx, account.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", domain.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
 	}
@@ -254,6 +254,62 @@ func TestSendToken_Integration_ExistingUsers(t *testing.T) {
 
 	// Act
 	txHash, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("SendToken failed: %v", err)
+	}
+
+	if txHash == "" {
+		t.Fatal("Expected non-empty transaction hash")
+	}
+
+	t.Logf("Transaction successful! Hash: %s", txHash)
+}
+
+func TestGiveCoffee_Integration_ExistingUsers(t *testing.T) {
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Test data
+	fromUID := uint64(1)
+	toUID := uint64(2)
+
+	t.Logf("Give coffee between existing users: %d -> %d", fromUID, toUID)
+
+	// Act
+	txHash, err := service.GiveCoffee(ctx, 0, fromUID, toUID)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("SendToken failed: %v", err)
+	}
+
+	if txHash == "" {
+		t.Fatal("Expected non-empty transaction hash")
+	}
+
+	t.Logf("Transaction successful! Hash: %s", txHash)
+}
+
+func TestUnlockItem_Integration_ExistingUsers(t *testing.T) {
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Test data
+	fromUID := uint64(1)
+	toUID := uint64(2)
+	itemUID := uint64(5)
+	itemType := "testing"
+
+	t.Logf("Sending tokens to unlock item: %d -> %d", fromUID, toUID)
+
+	// Act
+	txHash, err := service.UnlockItem(ctx, 0, fromUID, toUID, itemUID, itemType)
 
 	// Assert
 	if err != nil {
@@ -394,7 +450,11 @@ func TestGetTxByHash_Integration(t *testing.T) {
 
 	// Send a transaction to get a valid hash
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(ctx, 0, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
+	faucetAccount, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	if err != nil {
+		t.Fatalf("GetAccountByAddress failed: %v", err)
+	}
+	txHash, err := service.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("Failed to create test transaction: %v", err)
 	}

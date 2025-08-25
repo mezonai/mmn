@@ -3,13 +3,13 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"github.com/mezonai/mmn/store"
 	"sync"
 	"time"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/multiformats/go-multiaddr"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -26,7 +26,7 @@ type Libp2pNetwork struct {
 	peers       map[peer.ID]*PeerInfo
 	mu          sync.RWMutex
 
-	blockStore blockstore.Store
+	blockStore store.BlockStore
 
 	topicBlocks       *pubsub.Topic
 	topicVotes        *pubsub.Topic
@@ -36,7 +36,7 @@ type Libp2pNetwork struct {
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
-	onTransactionReceived  func(*types.Transaction) error
+	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 
@@ -129,7 +129,7 @@ type SyncRequestTracker struct {
 type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
-	OnTransactionReceived  func(*types.Transaction) error
+	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
 }

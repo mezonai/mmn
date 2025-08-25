@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/store"
+
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
@@ -41,14 +42,14 @@ type Validator struct {
 	BatchSize                 int
 
 	netClient  interfaces.Broadcaster
-	blockStore blockstore.Store
+	blockStore store.BlockStore
 	ledger     *ledger.Ledger
 	collector  *consensus.Collector
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
-	pendingTxs        []*types.Transaction
+	pendingTxs        []*transaction.Transaction
 	stopCh            chan struct{}
 }
 
@@ -67,7 +68,7 @@ func NewValidator(
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
 	p2pClient *p2p.Libp2pNetwork,
-	blockStore blockstore.Store,
+	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
 ) *Validator {
@@ -91,7 +92,7 @@ func NewValidator(
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
-		pendingTxs:                make([]*types.Transaction, 0, batchSize),
+		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry
 	return v
@@ -109,7 +110,7 @@ func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	defer ticker.Stop()
 	defer deadline.Stop()
 
-	var seed blockstore.SlotBoundary
+	var seed store.SlotBoundary
 
 waitLoop:
 	for {
@@ -133,7 +134,7 @@ waitLoop:
 
 	v.Recorder.Reset(seed.Hash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-	v.pendingTxs = make([]*types.Transaction, 0, v.BatchSize)
+	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 }
 
 func (v *Validator) onLeaderSlotEnd() {
@@ -142,10 +143,10 @@ func (v *Validator) onLeaderSlotEnd() {
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 }
 
-func (v *Validator) fastForwardTicks(prevSlot uint64) blockstore.SlotBoundary {
+func (v *Validator) fastForwardTicks(prevSlot uint64) store.SlotBoundary {
 	target := prevSlot * v.TicksPerSlot
 	hash, _ := v.Recorder.FastForward(target)
-	return blockstore.SlotBoundary{
+	return store.SlotBoundary{
 		Slot: prevSlot,
 		Hash: hash,
 	}
@@ -238,7 +239,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
-func (v *Validator) peekPendingTxs(size int) []*types.Transaction {
+func (v *Validator) peekPendingTxs(size int) []*transaction.Transaction {
 	if len(v.pendingTxs) == 0 {
 		return nil
 	}
@@ -246,7 +247,7 @@ func (v *Validator) peekPendingTxs(size int) []*types.Transaction {
 		size = len(v.pendingTxs)
 	}
 
-	result := make([]*types.Transaction, size)
+	result := make([]*transaction.Transaction, size)
 	copy(result, v.pendingTxs[:size])
 
 	return result

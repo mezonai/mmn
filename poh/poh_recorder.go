@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 type PohRecorder struct {
@@ -67,7 +67,7 @@ func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
 	return lastHash, nil
 }
 
-func (r *PohRecorder) RecordTxs(txs []*types.Transaction) (*Entry, error) {
+func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -116,7 +116,7 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 	return r.tickHeight/r.ticksPerSlot + 1
 }
 
-func HashTransactions(txs []*types.Transaction) [32]byte {
+func HashTransactions(txs []*transaction.Transaction) [32]byte {
 	var all []byte
 	for _, tx := range txs {
 		all = append(all, tx.Bytes()...)

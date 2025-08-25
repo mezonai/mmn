@@ -181,48 +181,20 @@ func initializeNode() {
 
 	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
 
-	// Initialize tx store
-	txStoreDir := filepath.Join(initDataDir, "txstore")
-	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
-		return
-	}
-	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	// Initialize db store inside directory
+	dbStoreDir := filepath.Join(initDataDir, "store")
+	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, initDatabase, nil)
 	if err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		logx.Error("INIT", "Failed to initialize db store:", err.Error())
 		return
 	}
-	defer ts.Close()
-
-	// Initialize tx meta store
-	txMetaStoreDir := filepath.Join(initDataDir, "txmetastore")
-	if err := os.MkdirAll(txMetaStoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create txmetastore directory:", err.Error())
-		return
-	}
-	tms, err := initializeTxMetaStore(txMetaStoreDir, initDatabase)
-	if err != nil {
-		logx.Error("INIT", "Failed to create txmetastore directory:", err.Error())
-		return
-	}
-	defer tms.Close()
-
-	// Initialize blockstore
-	blockstoreDir := filepath.Join(initDataDir, "blockstore")
-	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create blockstore directory:", err.Error())
-		return
-	}
-
-	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts)
-	if err != nil {
-		logx.Error("INIT", "Failed to initialize blockstore:", err.Error())
-		return
-	}
-	defer bs.Close()
+	defer bs.MustClose()
+	defer ts.MustClose()
+	defer tms.MustClose()
+	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts, tms)
+	ld := ledger.NewLedger(ts, tms, as, nil)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -281,11 +253,6 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	err := ld.CreateAccountsFromGenesis(cfg.Alloc.Addresses)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create genesis alloc account: %w", err)
-	}
-
-	// Save ledger snapshot to persist alloc account
-	if err := ld.SaveSnapshot("ledger/snapshot.gob"); err != nil {
-		return nil, fmt.Errorf("failed to save ledger snapshot: %w", err)
 	}
 
 	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with alloc account %s", cfg.Alloc.Addresses))
