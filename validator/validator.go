@@ -200,43 +200,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 		// Persist then broadcast
 		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
-		if err := v.blockStore.AddBlockPending(blk); err != nil {
-			logx.Error("VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
-			return
-		}
+
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
 			return
-		}
-
-		// Self-vote
-		vote := &consensus.Vote{
-			Slot:      blk.Slot,
-			BlockHash: blk.Hash,
-			VoterID:   v.Pubkey,
-		}
-		vote.Sign(v.PrivKey)
-		fmt.Printf("[LEADER] Adding vote %d to collector for self-vote\n", vote.Slot)
-		if committed, needApply, err := v.collector.AddVote(vote); err != nil {
-			fmt.Printf("[LEADER] Add vote error: %v\n", err)
-		} else if committed && needApply {
-			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
-			block := v.blockStore.Block(vote.Slot)
-			if block == nil {
-				fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
-			} else if err := v.ledger.ApplyBlock(block); err != nil {
-				fmt.Printf("[LEADER] Apply block error: %v\n", err)
-			}
-			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
-				fmt.Printf("[LEADER] Mark block as finalized error: %v\n", err)
-			}
-			fmt.Printf("[LEADER] slot %d finalized!\n", vote.Slot)
-		}
-
-		// Broadcast vote
-		fmt.Printf("[LEADER] Broadcasted vote %d to %s\n", vote.Slot, v.Pubkey)
-		if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
-			fmt.Printf("[LEADER] Failed to broadcast vote: %v\n", err)
 		}
 
 		// Reset buffer
