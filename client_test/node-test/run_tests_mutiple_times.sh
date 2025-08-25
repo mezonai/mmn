@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script to run npm test 20 times sequentially
+# Script to run npm test 50 times sequentially
 
-echo "Starting 20 sequential test runs..."
+echo "Starting 50 sequential test runs..."
 echo "======================================"
 
-for i in {1..20}
+for i in {1..50}
 do
     echo "\n--- Test Run #$i ---"
     echo "$(date): Starting test run $i"

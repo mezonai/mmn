@@ -26,10 +26,6 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 				logx.Warn("NETWORK:VOTE", "Next error:", err)
 				continue
 			}
-			if msg.ReceivedFrom == ln.host.ID() {
-				logx.Debug("NETWORK:VOTE", "Skipping vote message from self")
-				continue
-			}
 
 			var voteMsg VoteMessage
 			if err := json.Unmarshal(msg.Data, &voteMsg); err != nil {
