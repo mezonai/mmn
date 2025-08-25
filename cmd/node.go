@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/store"
 	"log"
 	"net"
 	"os"
@@ -15,6 +12,10 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -86,6 +87,7 @@ func runNode() {
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -98,7 +100,7 @@ func runNode() {
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
+		logx.Error("NODE", "Please run 'mmn init --data-dir', ", dataDir, ", first to initialize the node")
 		return
 	}
 
@@ -136,6 +138,12 @@ func runNode() {
 	defer ts.MustClose()
 	defer as.MustClose()
 
+	// Enable periodic snapshots (every 1000 slots) into dataDir/snapshots
+	if gbs, ok := bs.(*store.GenericBlockStore); ok {
+		snapDir := filepath.Join(dataDir, "snapshots")
+		gbs.EnableSnapshots(snapDir, 1000)
+	}
+
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {
 		p2pPort, err = getRandomFreePort()
@@ -163,7 +171,15 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts, as, eventRouter)
+	// Enable bank-hash persistence via StateMetaStore
+	provider := store.GetProviderFromAccountStore(as)
+	var ld *ledger.Ledger
+	if provider != nil {
+		stateMeta := store.NewGenericStateMetaStore(provider)
+		ld = ledger.NewLedgerWithStateMeta(ts, as, eventRouter, stateMeta)
+	} else {
+		ld = ledger.NewLedger(ts, as, eventRouter)
+	}
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)

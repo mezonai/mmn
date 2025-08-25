@@ -3,8 +3,9 @@ package ledger
 import (
 	"errors"
 	"fmt"
-	"github.com/mezonai/mmn/store"
 	"sync"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -19,17 +20,30 @@ var (
 )
 
 type Ledger struct {
-	mu           sync.RWMutex
-	txStore      store.TxStore
-	accountStore store.AccountStore
-	eventRouter  *events.EventRouter
+	mu               sync.RWMutex
+	txStore          store.TxStore
+	accountStore     store.AccountStore
+	eventRouter      *events.EventRouter
+	stateMeta        store.StateMetaStore
+	expectedBankHash map[uint64][32]byte
 }
 
 func NewLedger(txStore store.TxStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
 	return &Ledger{
-		txStore:      txStore,
-		accountStore: accountStore,
-		eventRouter:  eventRouter,
+		txStore:          txStore,
+		accountStore:     accountStore,
+		eventRouter:      eventRouter,
+		expectedBankHash: make(map[uint64][32]byte),
+	}
+}
+
+func NewLedgerWithStateMeta(txStore store.TxStore, accountStore store.AccountStore, eventRouter *events.EventRouter, stateMeta store.StateMetaStore) *Ledger {
+	return &Ledger{
+		txStore:          txStore,
+		accountStore:     accountStore,
+		eventRouter:      eventRouter,
+		stateMeta:        stateMeta,
+		expectedBankHash: make(map[uint64][32]byte),
 	}
 }
 
@@ -116,6 +130,26 @@ func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 			}
 		}
 	}
+
+	if l.stateMeta != nil {
+		updated := make(map[string]*types.Account, len(view.overlay))
+		for addr, snap := range view.overlay {
+			updated[addr] = &types.Account{Address: addr, Balance: snap.Balance, Nonce: snap.Nonce}
+		}
+		delta := ComputeAccountsDeltaHash(updated)
+		var prev [32]byte
+		if b.Slot > 0 {
+			if h, ok, _ := l.stateMeta.GetBankHash(b.Slot - 1); ok {
+				prev = h
+			}
+		}
+		expected := CombineBankHash(prev, delta)
+
+		l.mu.Lock()
+		l.expectedBankHash[b.Slot] = expected
+		l.mu.Unlock()
+	}
+
 	return nil
 }
 
@@ -123,6 +157,8 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
+
+	updated := make(map[string]*types.Account)
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -179,6 +215,32 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				return err
 			}
+
+			updated[sender.Address] = sender
+			updated[recipient.Address] = recipient
+		}
+	}
+
+	// After applying all changes, compute and persist bank hash if configured
+	if l.stateMeta != nil {
+		delta := ComputeAccountsDeltaHash(updated)
+		var prev [32]byte
+		if b.Slot > 0 {
+			if h, ok, _ := l.stateMeta.GetBankHash(b.Slot - 1); ok {
+				prev = h
+			}
+		}
+		newHash := CombineBankHash(prev, delta)
+		if err := l.stateMeta.SetBankHash(b.Slot, newHash); err != nil {
+			return fmt.Errorf("failed to store bank hash for slot %d: %w", b.Slot, err)
+		}
+
+		if expected, ok := l.expectedBankHash[b.Slot]; ok {
+			if expected != newHash {
+				return fmt.Errorf("bank hash mismatch at slot %d: expected %x, got %x", b.Slot, expected, newHash)
+			}
+			// Once validated, we can delete the expected entry to avoid growth
+			delete(l.expectedBankHash, b.Slot)
 		}
 	}
 
