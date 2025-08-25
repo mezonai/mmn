@@ -180,7 +180,10 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey13", faucetPublicKey)
-	toAddress := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
+	// Convert previously hex-formatted recipient to base58
+	hexRecipient := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
+	recBytes, _ := hex.DecodeString(hexRecipient)
+	toAddress := base58.Encode(recBytes)
 
 	// Check balance of toAddress
 	account, err := service.GetAccountByAddress(ctx, faucetPublicKey)

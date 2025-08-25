@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mezonai/mmn/pkg/common"
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/poh"
 
 	"gopkg.in/yaml.v3"

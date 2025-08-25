@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mezonai/mmn/pkg/common"
+	"github.com/mezonai/mmn/common"
 )
 
 const (
