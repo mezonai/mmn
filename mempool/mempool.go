@@ -3,9 +3,11 @@ package mempool
 import (
 	"context"
 	"fmt"
-	"github.com/mezonai/mmn/logx"
 	"sync"
 	"time"
+
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/interfaces"
@@ -172,25 +174,25 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	if err != nil || senderAccount == nil {
 		return fmt.Errorf("could not get sender accont: %w", err)
 	}
-	availableBalance := senderAccount.Balance
+	availableBalance := new(uint256.Int).Set(senderAccount.Balance)
 
 	// Subtract amounts from pending transactions to get true available balance
 	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
 		for _, pendingTx := range pendingNonces {
-			availableBalance -= pendingTx.Tx.Amount
+			availableBalance.Sub(availableBalance, pendingTx.Tx.Amount)
 		}
 	}
 
 	// Also subtract amounts from ready queue transactions for this sender
 	for _, readyTx := range mp.readyQueue {
 		if readyTx.Sender == tx.Sender {
-			availableBalance -= readyTx.Amount
+			availableBalance.Sub(availableBalance, readyTx.Amount)
 		}
 	}
 
-	if availableBalance < tx.Amount {
-		return fmt.Errorf("insufficient available balance: have %d (after pending: %d), need %d",
-			senderAccount.Balance, availableBalance, tx.Amount)
+	if availableBalance.Cmp(tx.Amount) < 0 {
+		return fmt.Errorf("insufficient available balance: have %s (after pending: %s), need %s",
+			senderAccount.Balance.String(), availableBalance.String(), tx.Amount.String())
 	}
 
 	return nil
@@ -203,7 +205,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	}
 
 	// 2. Check for zero amount
-	if tx.Amount == 0 {
+	if tx.Amount == nil || tx.Amount.IsZero() {
 		return fmt.Errorf("zero amount not allowed")
 	}
 

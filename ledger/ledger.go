@@ -3,8 +3,10 @@ package ledger
 import (
 	"errors"
 	"fmt"
-	"github.com/mezonai/mmn/store"
 	"sync"
+
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -34,7 +36,7 @@ func NewLedger(txStore store.TxStore, accountStore store.AccountStore, eventRout
 }
 
 // CreateAccount creates and stores a new account into db, return error if an account with the same addr existed
-func (l *Ledger) CreateAccount(addr string, balance uint64) error {
+func (l *Ledger) CreateAccount(addr string, balance *uint256.Int) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -44,7 +46,7 @@ func (l *Ledger) CreateAccount(addr string, balance uint64) error {
 
 // createAccountWithoutLocking creates account and store in db without locking ledger. This is useful
 // when calling method has already acquired lock for ledger to avoid recursive locking and deadlock
-func (l *Ledger) createAccountWithoutLocking(addr string, balance uint64) (*types.Account, error) {
+func (l *Ledger) createAccountWithoutLocking(addr string, balance *uint256.Int) (*types.Account, error) {
 	existed, err := l.accountStore.ExistsByAddr(addr)
 	if err != nil {
 		return nil, fmt.Errorf("could not check existence of account: %w", err)
@@ -88,13 +90,13 @@ func (l *Ledger) AccountExists(addr string) (bool, error) {
 }
 
 // Balance returns current balance for addr
-func (l *Ledger) Balance(addr string) (uint64, error) {
+func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
 	acc, err := l.accountStore.GetByAddr(addr)
 	if err != nil {
-		return 0, err
+		return uint256.NewInt(0), err
 	}
 
 	return acc.Balance, nil
@@ -137,7 +139,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				return err
 			}
 			if sender == nil {
-				if sender, err = l.createAccountWithoutLocking(tx.Sender, 0); err != nil {
+				if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
 					return err
 				}
 			}
@@ -146,7 +148,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				return err
 			}
 			if recipient == nil {
-				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, 0); err != nil {
+				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
 					return err
 				}
 			}
@@ -209,24 +211,24 @@ func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
 func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
-		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
+		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: uint256.NewInt(0), Nonce: 0}
 		sender = state[tx.Sender]
 	}
 	recipient, ok := state[tx.Recipient]
 	if !ok {
-		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: 0, Nonce: 0}
+		state[tx.Recipient] = &types.Account{Address: tx.Recipient, Balance: uint256.NewInt(0), Nonce: 0}
 		recipient = state[tx.Recipient]
 	}
 
-	if sender.Balance < tx.Amount {
+	if sender.Balance.Cmp(tx.Amount) < 0 {
 		return fmt.Errorf("insufficient balance")
 	}
 	// Strict nonce validation to prevent duplicate transactions
 	if tx.Nonce != sender.Nonce+1 {
 		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
-	sender.Balance -= tx.Amount
-	recipient.Balance += tx.Amount
+	sender.Balance.Sub(sender.Balance, tx.Amount)
+	recipient.Balance.Add(recipient.Balance, tx.Amount)
 	sender.Nonce = tx.Nonce
 	return nil
 }
@@ -302,14 +304,14 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	if acc, ok := lv.loadForRead(addr); ok {
 		return acc
 	}
-	cp := types.SnapshotAccount{Balance: 0, Nonce: 0}
+	cp := types.SnapshotAccount{Balance: uint256.NewInt(0), Nonce: 0}
 	lv.overlay[addr] = &cp
 	return &cp
 }
 
 func (lv *LedgerView) ApplyTx(tx *transaction.Transaction) error {
 	// Validate zero amount transfers
-	if tx.Amount == 0 {
+	if tx.Amount.Cmp(uint256.NewInt(0)) == 0 {
 		return fmt.Errorf("zero amount transfers are not allowed")
 	}
 
@@ -321,7 +323,7 @@ func (lv *LedgerView) ApplyTx(tx *transaction.Transaction) error {
 	sender := lv.loadOrCreate(tx.Sender)
 	recipient := lv.loadOrCreate(tx.Recipient)
 
-	if sender.Balance < tx.Amount {
+	if sender.Balance.Cmp(tx.Amount) < 0 {
 		return fmt.Errorf("insufficient balance")
 	}
 	// Strict nonce validation to prevent duplicate transactions (Ethereum standard)
@@ -329,8 +331,8 @@ func (lv *LedgerView) ApplyTx(tx *transaction.Transaction) error {
 		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
 
-	sender.Balance -= tx.Amount
-	recipient.Balance += tx.Amount
+	sender.Balance.Sub(sender.Balance, tx.Amount)
+	recipient.Balance.Add(recipient.Balance, tx.Amount)
 	sender.Nonce = tx.Nonce
 	return nil
 }

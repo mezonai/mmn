@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/store"
 	"net"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
@@ -103,13 +104,18 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	if acc == nil {
 		return &pb.GetAccountResponse{
 			Address: addr,
-			Balance: 0,
+			Balance: "0",
 			Nonce:   0,
 		}, nil
 	}
+	balance := "0"
+	if acc.Balance != nil {
+		balance = acc.Balance.String()
+	}
+	
 	return &pb.GetAccountResponse{
 		Address: addr,
-		Balance: acc.Balance,
+		Balance: balance,
 		Nonce:   acc.Nonce,
 	}, nil
 }
@@ -178,10 +184,15 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 	if err != nil {
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
+	amount := "0"
+	if tx.Amount != nil {
+		amount = tx.Amount.String()
+	}
+	
 	txInfo := &pb.TxInfo{
 		Sender:    tx.Sender,
 		Recipient: tx.Recipient,
-		Amount:    tx.Amount,
+		Amount:    amount,
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
 	}
@@ -193,10 +204,15 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
 	txMetas := make([]*pb.TxMeta, len(txs))
 	for i, tx := range txs {
+		amount := "0"
+		if tx.Amount != nil {
+			amount = tx.Amount.String()
+		}
+		
 		txMetas[i] = &pb.TxMeta{
 			Sender:    tx.Sender,
 			Recipient: tx.Recipient,
-			Amount:    tx.Amount,
+			Amount:    amount,
 			Nonce:     tx.Nonce,
 			Timestamp: tx.Timestamp,
 			Status:    pb.TxMeta_CONFIRMED,
@@ -478,11 +494,16 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
+			amount := "0"
+			if tx.Amount != nil {
+				amount = tx.Amount.String()
+			}
+			
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
 				Recipient: tx.Recipient,
-				Amount:    tx.Amount,
+				Amount:    amount,
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
 				Status:    pb.TransactionData_CONFIRMED,

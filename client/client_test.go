@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
 	mmnpb "github.com/mezonai/mmn/proto"
 	"github.com/mr-tron/base58"
 )
@@ -112,7 +113,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	transferType := TxTypeTransfer
 	fromAddr := faucetPublicKey
 	toAddr := toAddress
-	amount := uint64(1)
+	amount := uint256.NewInt(1)
 	nonce := uint64(0)
 	textData := "Integration test transfer"
 

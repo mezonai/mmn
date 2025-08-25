@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -73,19 +74,19 @@ func getOrCreateKeyPair(sender string) (ed25519.PrivateKey, string) {
 
 // MockLedger implements interfaces.Ledger for testing
 type MockLedger struct {
-	balances map[string]uint64
+	balances map[string]*uint256.Int
 	nonces   map[string]uint64
 	mu       sync.RWMutex
 }
 
 func NewMockLedger() *MockLedger {
 	ml := &MockLedger{
-		balances: make(map[string]uint64),
+		balances: make(map[string]*uint256.Int),
 		nonces:   make(map[string]uint64),
 	}
 
 	// Pre-populate with test account
-	ml.balances[testPublicKeyHex] = 1000000 // Large balance for testing
+	ml.balances[testPublicKeyHex] = uint256.NewInt(1000000) // Large balance for testing
 	ml.nonces[testPublicKeyHex] = 0
 
 	return ml
@@ -98,10 +99,13 @@ func (ml *MockLedger) UpdateNonce(address string, nonce uint64) {
 	ml.nonces[address] = nonce
 }
 
-func (ml *MockLedger) GetBalance(address string) uint64 {
+func (ml *MockLedger) GetBalance(address string) *uint256.Int {
 	ml.mu.RLock()
 	defer ml.mu.RUnlock()
-	return ml.balances[address]
+	if balance, exists := ml.balances[address]; exists {
+		return balance
+	}
+	return uint256.NewInt(0)
 }
 
 func (ml *MockLedger) GetNonce(address string) uint64 {
@@ -113,7 +117,7 @@ func (ml *MockLedger) GetNonce(address string) uint64 {
 func (ml *MockLedger) SetBalance(address string, balance uint64) {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
-	ml.balances[address] = balance
+	ml.balances[address] = uint256.NewInt(balance)
 }
 
 func (ml *MockLedger) SetNonce(address string, nonce uint64) {
@@ -143,8 +147,11 @@ func (ml *MockLedger) GetAccount(addr string) (*types.Account, error) {
 	}, nil
 }
 
-func (ml *MockLedger) Balance(addr string) (uint64, error) {
-	return ml.balances[addr], nil
+func (ml *MockLedger) Balance(addr string) (*uint256.Int, error) {
+	if balance, exists := ml.balances[addr]; exists {
+		return balance, nil
+	}
+	return uint256.NewInt(0), nil
 }
 
 func (ml *MockLedger) CreateAccountsFromGenesis(addresses []config.Address) error {
@@ -210,7 +217,7 @@ func createTestTx(txType int32, sender, recipient string, amount uint64, nonce u
 		Type:      txType,
 		Sender:    actualSender,
 		Recipient: recipient,
-		Amount:    amount,
+		Amount:    uint256.NewInt(amount),
 		Timestamp: uint64(uniqueSuffix) + nonce,                        // Make timestamp unique
 		TextData:  fmt.Sprintf("test data %d-%d", nonce, uniqueSuffix), // Make text data unique
 		Nonce:     nonce,
@@ -2411,7 +2418,7 @@ func TestMempool_ValidationEdgeCases(t *testing.T) {
 		Type:      0,
 		Sender:    senderAddr,
 		Recipient: "recipient2",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().UnixNano()),
 		TextData:  "invalid sig test",
 		Nonce:     1,
@@ -2440,7 +2447,7 @@ func TestMempool_ValidationEdgeCases(t *testing.T) {
 		Type:      0,
 		Sender:    "", // Empty sender
 		Recipient: "recipient4",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().UnixNano()),
 		TextData:  "empty sender test",
 		Nonce:     1,
@@ -2502,7 +2509,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 		Type:      0,
 		Sender:    senderAddr,
 		Recipient: "recipient2",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().UnixNano()),
 		TextData:  string(longTextData),
 		Nonce:     1,
@@ -2521,7 +2528,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 		Type:      0,
 		Sender:    senderAddr,
 		Recipient: "recipient3",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: 0, // Zero timestamp
 		TextData:  "zero timestamp test",
 		Nonce:     2,
@@ -2540,7 +2547,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 		Type:      999, // Invalid type
 		Sender:    senderAddr,
 		Recipient: "recipient4",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().UnixNano()),
 		TextData:  "invalid type test",
 		Nonce:     3,

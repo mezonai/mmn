@@ -29,9 +29,9 @@ export interface GetAccountResponse {
      */
     address: string;
     /**
-     * @generated from protobuf field: uint64 balance = 2
+     * @generated from protobuf field: string balance = 2
      */
-    balance: bigint;
+    balance: string;
     /**
      * @generated from protobuf field: uint64 nonce = 3
      */
@@ -71,9 +71,9 @@ export interface TxMeta {
      */
     recipient: string; // recipient address
     /**
-     * @generated from protobuf field: uint64 amount = 3
+     * @generated from protobuf field: string amount = 3
      */
-    amount: bigint; // amount
+    amount: string; // amount
     /**
      * @generated from protobuf field: uint64 nonce = 4
      */
@@ -207,14 +207,14 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
     constructor() {
         super("mmn.GetAccountResponse", [
             { no: 1, name: "address", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 2, name: "balance", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 2, name: "balance", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 3, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
         ]);
     }
     create(value?: PartialMessage<GetAccountResponse>): GetAccountResponse {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.address = "";
-        message.balance = 0n;
+        message.balance = "";
         message.nonce = 0n;
         if (value !== undefined)
             reflectionMergePartial<GetAccountResponse>(this, message, value);
@@ -228,8 +228,8 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
                 case /* string address */ 1:
                     message.address = reader.string();
                     break;
-                case /* uint64 balance */ 2:
-                    message.balance = reader.uint64().toBigInt();
+                case /* string balance */ 2:
+                    message.balance = reader.string();
                     break;
                 case /* uint64 nonce */ 3:
                     message.nonce = reader.uint64().toBigInt();
@@ -249,9 +249,9 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
         /* string address = 1; */
         if (message.address !== "")
             writer.tag(1, WireType.LengthDelimited).string(message.address);
-        /* uint64 balance = 2; */
-        if (message.balance !== 0n)
-            writer.tag(2, WireType.Varint).uint64(message.balance);
+        /* string balance = 2; */
+        if (message.balance !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.balance);
         /* uint64 nonce = 3; */
         if (message.nonce !== 0n)
             writer.tag(3, WireType.Varint).uint64(message.nonce);
@@ -342,7 +342,7 @@ class TxMeta$Type extends MessageType<TxMeta> {
         super("mmn.TxMeta", [
             { no: 1, name: "sender", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "recipient", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 3, name: "amount", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 3, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 4, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 5, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 6, name: "status", kind: "enum", T: () => ["mmn.TxMeta.Status", TxMeta_Status] }
@@ -352,7 +352,7 @@ class TxMeta$Type extends MessageType<TxMeta> {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.sender = "";
         message.recipient = "";
-        message.amount = 0n;
+        message.amount = "";
         message.nonce = 0n;
         message.timestamp = 0n;
         message.status = 0;
@@ -371,8 +371,8 @@ class TxMeta$Type extends MessageType<TxMeta> {
                 case /* string recipient */ 2:
                     message.recipient = reader.string();
                     break;
-                case /* uint64 amount */ 3:
-                    message.amount = reader.uint64().toBigInt();
+                case /* string amount */ 3:
+                    message.amount = reader.string();
                     break;
                 case /* uint64 nonce */ 4:
                     message.nonce = reader.uint64().toBigInt();
@@ -401,9 +401,9 @@ class TxMeta$Type extends MessageType<TxMeta> {
         /* string recipient = 2; */
         if (message.recipient !== "")
             writer.tag(2, WireType.LengthDelimited).string(message.recipient);
-        /* uint64 amount = 3; */
-        if (message.amount !== 0n)
-            writer.tag(3, WireType.Varint).uint64(message.amount);
+        /* string amount = 3; */
+        if (message.amount !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.amount);
         /* uint64 nonce = 4; */
         if (message.nonce !== 0n)
             writer.tag(4, WireType.Varint).uint64(message.nonce);
