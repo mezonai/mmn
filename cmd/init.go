@@ -183,17 +183,18 @@ func initializeNode() {
 
 	// Initialize db store inside directory
 	dbStoreDir := filepath.Join(initDataDir, "store")
-	as, ts, bs, err := initializeDBStore(dbStoreDir, initDatabase, nil)
+	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, initDatabase, nil)
 	if err != nil {
 		logx.Error("INIT", "Failed to initialize db store:", err.Error())
 		return
 	}
 	defer bs.MustClose()
 	defer ts.MustClose()
+	defer tms.MustClose()
 	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts, as, nil)
+	ld := ledger.NewLedger(ts, tms, as, nil)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)

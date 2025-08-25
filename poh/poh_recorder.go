@@ -71,10 +71,6 @@ func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	txHashes := make([]string, len(txs))
-	for i, tx := range txs {
-		txHashes[i] = tx.Hash()
-	}
 	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	if pohEntry == nil {

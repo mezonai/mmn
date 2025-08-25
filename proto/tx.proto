@@ -47,6 +47,11 @@ message TxInfo {
   uint64 amount = 3;
   uint64 timestamp = 4;
   string text_data = 5;
+  uint64 nonce = 6;
+  uint64 slot = 7;
+  string blockhash = 8;
+  int32 status = 9;
+  string err_msg = 10;
 }
 
 message GetTxByHashResponse {
