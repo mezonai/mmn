@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 import { GrpcClient } from './grpc_client';
 
 // Faucet keypair from genesis configuration
@@ -8,7 +9,7 @@ export const faucetPrivateKeyHex =
 export const faucetPrivateKeyDer = Buffer.from(faucetPrivateKeyHex, 'hex');
 export const faucetSeed = faucetPrivateKeyDer.slice(-32);
 export const faucetKeyPair = nacl.sign.keyPair.fromSeed(faucetSeed);
-export const faucetPublicKeyHex = Buffer.from(faucetKeyPair.publicKey).toString('hex');
+export const faucetPublicKeyBase58 = bs58.encode(faucetKeyPair.publicKey);
 export const faucetPrivateKey = crypto.createPrivateKey({
   key: faucetPrivateKeyDer,
   format: 'der',
@@ -33,7 +34,8 @@ export interface Tx {
 // Test account generation with enhanced metadata
 export function generateTestAccount() {
   const keyPair = nacl.sign.keyPair();
-  const publicKeyHex = Buffer.from(keyPair.publicKey).toString('hex');
+  // Keep the field name publicKeyHex for compatibility; store base58 value
+  const publicKeyHex = bs58.encode(keyPair.publicKey);
   const privateKeyDer = Buffer.concat([
     Buffer.from('302e020100300506032b657004220420', 'hex'),
     Buffer.from(keyPair.secretKey.slice(0, 32))
@@ -106,7 +108,7 @@ export function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
   
   // Sign using Ed25519 (nacl)
   const signature = nacl.sign.detached(serializedData, keyPair.secretKey);
-  return Buffer.from(signature).toString('hex');
+  return bs58.encode(Buffer.from(signature));
 }
 
 // Send transaction via gRPC
@@ -147,18 +149,17 @@ fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, ma
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       // Get current faucet account nonce using GetCurrentNonce gRPC method
-      const currentNonceValue = await getCurrentNonce(grpcClient, faucetPublicKeyHex, 'pending');
+      const currentNonceValue = await getCurrentNonce(grpcClient, faucetPublicKeyBase58, 'pending');
       const nextNonce = currentNonceValue + 1;
       
       console.log(`Fund transaction attempt ${attempt}: Using nonce ${nextNonce} (current nonce from gRPC: ${currentNonceValue})`);
       
-      const fundTx = buildTx(faucetPublicKeyHex, recipientAddress, amount, 'Funding account', nextNonce, TxTypeTransfer);
+      const fundTx = buildTx(faucetPublicKeyBase58, recipientAddress, amount, 'Funding account', nextNonce, TxTypeTransfer);
       fundTx.signature = signTx(fundTx, faucetPrivateKey);
       
       const response = await sendTxViaGrpc(grpcClient, fundTx);
       
       console.log(`Fund transaction response (attempt ${attempt}):`, response);
-      
       // If successful, wait and verify the balance was updated
       if (response.ok) {
         await waitForTransaction(800); // ~ 2 slots
