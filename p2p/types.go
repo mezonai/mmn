@@ -3,9 +3,10 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/mezonai/mmn/store"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -51,6 +52,7 @@ type Libp2pNetwork struct {
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
 
+	// start request sync list/scan blocks
 	missingBlocksTracker map[uint64]*MissingBlockInfo
 	missingBlocksMu      sync.RWMutex
 
@@ -59,6 +61,7 @@ type Libp2pNetwork struct {
 
 	recentlyRequestedSlots map[uint64]time.Time
 	recentlyRequestedMu    sync.RWMutex
+	// end request sync list/scan blocks
 
 	ctx    context.Context
 	cancel context.CancelFunc
