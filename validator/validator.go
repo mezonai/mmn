@@ -253,6 +253,10 @@ func (v *Validator) Run() {
 	exception.SafeGoWithPanic("leaderBatchLoop", func() {
 		v.leaderBatchLoop()
 	})
+
+	exception.SafeGoWithPanic("mempoolCleanupLoop", func() {
+		v.mempoolCleanupLoop()
+	})
 }
 
 func (v *Validator) leaderBatchLoop() {
@@ -320,6 +324,21 @@ func (v *Validator) roleMonitorLoop() {
 					v.onLeaderSlotEnd()
 				}
 			}
+		}
+	}
+}
+
+func (v *Validator) mempoolCleanupLoop() {
+	cleanupTicker := time.NewTicker(1 * time.Minute)
+	defer cleanupTicker.Stop()
+
+	for {
+		select {
+		case <-v.stopCh:
+			return
+		case <-cleanupTicker.C:
+			logx.Info("VALIDATOR", "Running periodic mempool cleanup")
+			v.Mempool.PeriodicCleanup()
 		}
 	}
 }

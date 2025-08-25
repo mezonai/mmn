@@ -6,6 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/logx"
+
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/transaction"
@@ -14,7 +17,7 @@ import (
 // Constants for zero-fee blockchain optimization
 const (
 	MaxPendingPerSender = 60               // Max future transactions per sender
-	StaleTimeout        = 10 * time.Minute // Remove old pending transactions
+	StaleTimeout        = 60 * time.Minute // Remove old pending transactions
 	MaxFutureNonce      = 64               // Max nonce distance from current
 )
 
@@ -429,7 +432,57 @@ func (mp *Mempool) cleanupStaleTransactions() {
 	}
 }
 
-// PeriodicCleanup performs comprehensive mempool maintenance
+func (mp *Mempool) BlockCleanup(block *block.Block) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	// Track removed transactions for logging
+	removedCount := 0
+
+	// Iterate through all entries in the block and clean up all transaction references
+	for _, entry := range block.Entries {
+		for _, txHash := range entry.TxHashes {
+			// Remove from main transaction buffer
+			if _, exists := mp.txsBuf[txHash]; exists {
+				delete(mp.txsBuf, txHash)
+
+				// Remove from txOrder
+				for i, hash := range mp.txOrder {
+					if hash == txHash {
+						mp.txOrder = append(mp.txOrder[:i], mp.txOrder[i+1:]...)
+						break
+					}
+				}
+
+				removedCount++
+			}
+
+			// Remove from ready queue
+			for i := len(mp.readyQueue) - 1; i >= 0; i-- {
+				if mp.readyQueue[i].Hash() == txHash {
+					mp.readyQueue = append(mp.readyQueue[:i], mp.readyQueue[i+1:]...)
+				}
+			}
+
+			// Remove from pending transactions
+			for sender, nonceTxs := range mp.pendingTxs {
+				for nonce, pendingTx := range nonceTxs {
+					if pendingTx.Tx.Hash() == txHash {
+						delete(nonceTxs, nonce)
+						// Clean up empty sender map
+						if len(nonceTxs) == 0 {
+							delete(mp.pendingTxs, sender)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	logx.Info("BlockCleanup completed", "removed_transactions", removedCount, "block_slot", block.Slot)
+}
+
 // This should be called periodically by the node to maintain mempool health
 func (mp *Mempool) PeriodicCleanup() {
 	mp.mu.Lock()

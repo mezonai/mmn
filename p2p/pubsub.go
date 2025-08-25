@@ -178,7 +178,7 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
-	mp.PeriodicCleanup() // clean data after apply block
+	go mp.BlockCleanup(block)
 	return nil
 }
 
