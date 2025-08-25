@@ -378,7 +378,7 @@ func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckRespons
 
 	if s.blockStore != nil {
 		currentSlot = s.blockStore.GetCurrentSlot()
-		finalizedSlot = s.blockStore.GetFinalizedSlot()
+		finalizedSlot = s.blockStore.GetLatestSlot()
 		blockHeight = finalizedSlot // Use finalized slot as block height
 	}
 

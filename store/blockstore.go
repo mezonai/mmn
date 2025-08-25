@@ -4,8 +4,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/db"
 	"sync"
+
+	"github.com/mezonai/mmn/db"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -31,6 +32,7 @@ type BlockStore interface {
 	Block(slot uint64) *block.Block
 	HasCompleteBlock(slot uint64) bool
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
+	GetCurrentSlot() uint64   // Get current processing slot
 	GetLatestSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
@@ -47,6 +49,7 @@ type GenericBlockStore struct {
 	latestFinalized uint64
 	txStore         TxStore
 	eventRouter     *events.EventRouter
+	currentSlot     uint64
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
@@ -139,11 +142,22 @@ func (s *GenericBlockStore) HasCompleteBlock(slot uint64) bool {
 	return exists
 }
 
+// GetCurrentSlot returns the current processing slot
+func (s *GenericBlockStore) GetCurrentSlot() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentSlot
+}
+
 // GetLatestSlot returns the latest finalized slot
 func (s *GenericBlockStore) GetLatestSlot() uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.latestFinalized
+}
+
+func (s *GenericBlockStore) Close() error {
+	return s.provider.Close()
 }
 
 // LastEntryInfoAtSlot returns the slot boundary information for the given slot
