@@ -2,7 +2,7 @@ import { TransactionStatus } from './generated/tx';
 import { GrpcClient } from './grpc_client';
 import { TransactionTracker } from './transaction_tracker';
 import {
-  faucetPublicKeyHex,
+  faucetPublicKeyBase58,
   TxTypeTransfer,
   generateTestAccount,
   waitForTransaction,
@@ -137,7 +137,7 @@ describe('Token Transfer Tests', () => {
 
       // Verify transaction history with detailed verification
       const expectedTransactions = [
-        { sender: faucetPublicKeyHex, recipient: sender.publicKeyHex, amount: 1000 }, // funding
+        { sender: faucetPublicKeyBase58, recipient: sender.publicKeyHex, amount: 1000 }, // funding
         { sender: sender.publicKeyHex, recipient: recipient.publicKeyHex, amount: 100 }, // transfer
       ];
       const senderHasHistory = await verifyTransactionHistory(
@@ -489,7 +489,7 @@ describe('Token Transfer Tests', () => {
 
       // Verify transaction history for sender (funding + 3 transfers) with detailed verification
       const expectedSenderTransactions = [
-        { sender: faucetPublicKeyHex, recipient: sender.publicKeyHex, amount: 1000 }, // funding
+        { sender: faucetPublicKeyBase58, recipient: sender.publicKeyHex, amount: 1000 }, // funding
         { sender: sender.publicKeyHex, recipient: recipient1.publicKeyHex, amount: 100 }, // transfer 1
         { sender: sender.publicKeyHex, recipient: recipient2.publicKeyHex, amount: 200 }, // transfer 2
         { sender: sender.publicKeyHex, recipient: recipient3.publicKeyHex, amount: 300 }, // transfer 3
@@ -537,7 +537,7 @@ describe('Token Transfer Tests', () => {
 
       // Verify transaction history (funding + self transfer) with detailed verification
       const expectedTransactions = [
-        { sender: faucetPublicKeyHex, recipient: account.publicKeyHex, amount: 1000 }, // funding
+        { sender: faucetPublicKeyBase58, recipient: account.publicKeyHex, amount: 1000 }, // funding
         { sender: account.publicKeyHex, recipient: account.publicKeyHex, amount: 100 }, // self transfer
       ];
       const hasHistory = await verifyTransactionHistory(

@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/store"
+
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/store"
 	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/libp2p/go-libp2p"

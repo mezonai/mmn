@@ -9,9 +9,10 @@ import (
 	"time"
 
 	mmnpb "github.com/mezonai/mmn/proto"
+	"github.com/mr-tron/base58"
 )
 
-const faucetAddress = "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
+const faucetAddress = "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
 
 func defaultClient() (*MmnClient, error) {
 	cfg := Config{Endpoint: "localhost:9001"}
@@ -37,9 +38,9 @@ func getFaucetAccount() (string, ed25519.PrivateKey) {
 	faucetSeed := faucetPrivateKeyDer[len(faucetPrivateKeyDer)-32:]
 	faucetPrivateKey := ed25519.NewKeyFromSeed(faucetSeed)
 	faucetPublicKey := faucetPrivateKey.Public().(ed25519.PublicKey)
-	faucetPublicKeyHex := hex.EncodeToString(faucetPublicKey[:])
-	fmt.Println("faucetPublicKeyHex", faucetPublicKeyHex)
-	return faucetPublicKeyHex, faucetPrivateKey
+	faucetPublicKeyBase58 := base58.Encode(faucetPublicKey[:])
+	fmt.Println("faucetPublicKeyBase58", faucetPublicKeyBase58)
+	return faucetPublicKeyBase58, faucetPrivateKey
 }
 
 func TestClient_Config(t *testing.T) {
@@ -104,7 +105,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey", faucetPublicKey)
-	toAddress := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
+	toAddress := "PqbfV5pLGCBSkUcCgNL6L3JTQBwFEFtos3ADhT4FVPP" // dummy base58 for test
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetPrivateKeySeed := faucetPrivateKey.Seed()

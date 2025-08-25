@@ -1,7 +1,7 @@
 import { GrpcClient } from './grpc_client';
 import { TransactionTracker } from './transaction_tracker';
 import {
-  faucetPublicKeyHex,
+  faucetPublicKeyBase58,
   TxTypeTransfer,
   generateTestAccount,
   waitForTransaction,
@@ -144,7 +144,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
 
       // Fund sender account using node1
       await waitForTransaction(800); // ~ 2 slots
-      const faucetAccount = await nodeClients[0].client.getAccount(faucetPublicKeyHex);
+      const faucetAccount = await nodeClients[0].client.getAccount(faucetPublicKeyBase58);
       console.log('Faucet account state:', {
         address: faucetAccount.address,
         balance: faucetAccount.balance,
@@ -152,7 +152,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       });
       
       // Get current faucet account nonce using getCurrentNonce
-      const currentFaucetNonce = await getCurrentNonce(nodeClients[0].client, faucetPublicKeyHex, 'pending');
+      const currentFaucetNonce = await getCurrentNonce(nodeClients[0].client, faucetPublicKeyBase58, 'pending');
       const fundingNonce = currentFaucetNonce + 1;
       
       console.log(`Funding sender ${sender.publicKeyHex.substring(0, 8)}... with nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
@@ -378,7 +378,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       let fundResponse;
       for (let i = 0; i < nodeClients.length; i++) {
         try {
-          const currentFaucetNonce = await getCurrentNonce(nodeClients[i].client, faucetPublicKeyHex, 'pending');
+          const currentFaucetNonce = await getCurrentNonce(nodeClients[i].client, faucetPublicKeyBase58, 'pending');
           const fundingNonce = currentFaucetNonce + 1;
           console.log(`Node ${i + 1}: Using nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
           fundResponse = await fundAccount(nodeClients[i].client, sender.publicKeyHex, 1000);

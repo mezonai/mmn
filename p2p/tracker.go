@@ -86,7 +86,7 @@ func (t *SyncRequestTracker) CloseAllPeers() {
 	t.AllPeers = make(map[peer.ID]network.Stream)
 }
 
-// periodically send checkpoint probe and cleanup old sync requests
+// when no peers connected the blocks will not sync must run after 30s if synced stop sync
 func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	// wait network setup
 	time.Sleep(10 * time.Second)
