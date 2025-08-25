@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/mezonai/mmn/block"
@@ -24,10 +25,42 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
+			// Slot bounds: reject if slot <= latest finalized or duplicate
+			if blk.Slot <= bs.GetLatestSlot() {
+				return fmt.Errorf("invalid slot: not ahead of latest finalized")
+			}
+
+			// Check parent hash against block s-1 if present
+			if blk.Slot > 0 {
+				prev := bs.Block(blk.Slot - 1)
+				if prev != nil {
+					if blk.PrevHash != prev.LastEntryHash() {
+						return fmt.Errorf("parent hash mismatch")
+					}
+				}
+			}
+
+			// Timestamp bounds: monotonic vs previous if present
+			if blk.Slot > 0 {
+				if prev := bs.Block(blk.Slot - 1); prev != nil {
+					if blk.Timestamp < prev.Timestamp {
+						return fmt.Errorf("invalid timestamp: older than parent")
+					}
+				}
+			}
+
+			// Verify block signature using LeaderID as ed25519 public key
+			leaderPubKeyBytes, err := hex.DecodeString(blk.LeaderID)
+			if err != nil || len(leaderPubKeyBytes) != ed25519.PublicKeySize {
+				return fmt.Errorf("invalid leader public key")
+			}
+			if ok := blk.VerifySignature(ed25519.PublicKey(leaderPubKeyBytes)); !ok {
+				return fmt.Errorf("invalid block signature")
+			}
+
 			// Verify PoH
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
-				logx.Error("BLOCK", "Invalid PoH:", err)
 				return fmt.Errorf("invalid PoH")
 			}
 
@@ -132,6 +165,39 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 				// skip add pending if block already exists
 				if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+					continue
+				}
+
+				// Slot bounds: reject if slot <= latest finalized or duplicate
+				if blk.Slot <= bs.GetLatestSlot() {
+					continue
+				}
+
+				// Check parent hash against block s-1 if present
+				if blk.Slot > 0 {
+					prev := bs.Block(blk.Slot - 1)
+					if prev != nil {
+						if blk.PrevHash != prev.LastEntryHash() {
+							continue
+						}
+					}
+				}
+
+				// Timestamp monotonic vs previous if present
+				if blk.Slot > 0 {
+					if prev := bs.Block(blk.Slot - 1); prev != nil {
+						if blk.Timestamp < prev.Timestamp {
+							continue
+						}
+					}
+				}
+
+				// Verify block signature using LeaderID as ed25519 public key
+				leaderPubKeyBytes, err := hex.DecodeString(blk.LeaderID)
+				if err != nil || len(leaderPubKeyBytes) != ed25519.PublicKeySize {
+					continue
+				}
+				if ok := blk.VerifySignature(ed25519.PublicKey(leaderPubKeyBytes)); !ok {
 					continue
 				}
 
