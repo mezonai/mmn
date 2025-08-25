@@ -48,9 +48,11 @@ func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
 
 func (ln *Libp2pNetwork) ConvertMessageToBlock(msg BlockMessage) *block.Block {
 	return &block.Block{
-		Slot:      msg.Slot,
-		LeaderID:  msg.LeaderID,
-		Timestamp: uint64(msg.Timestamp.Second()),
+		BlockCore: block.BlockCore{
+			Slot:      msg.Slot,
+			LeaderID:  msg.LeaderID,
+			Timestamp: uint64(msg.Timestamp.Second()),
+		},
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"time"
 
 	"github.com/mezonai/mmn/poh"
@@ -16,15 +17,19 @@ const (
 	BlockFinalized
 )
 
-type Block struct {
+type BlockCore struct {
 	Slot      uint64
 	PrevHash  [32]byte // hash of the last entry in the previous block
-	Entries   []poh.PersistentEntry
 	LeaderID  string
 	Timestamp uint64
 	Hash      [32]byte
 	Signature []byte
 	Status    BlockStatus
+}
+
+type Block struct {
+	BlockCore
+	Entries []poh.PersistentEntry
 }
 
 func (b *Block) LastEntryHash() [32]byte {
@@ -32,14 +37,18 @@ func (b *Block) LastEntryHash() [32]byte {
 }
 
 type BroadcastedBlock struct {
-	Slot      uint64
-	PrevHash  [32]byte // hash of the last entry in the previous block
-	Entries   []poh.Entry
-	LeaderID  string
-	Timestamp uint64
-	Hash      [32]byte
-	Signature []byte
-	Status    BlockStatus
+	BlockCore
+	Entries []poh.Entry
+}
+
+// HashString returns the block hash as a hex string
+func (b *BlockCore) HashString() string {
+	return hex.EncodeToString(b.Hash[:])
+}
+
+// PrevHashString returns the previous block hash as a hex string
+func (b *BlockCore) PrevHashString() string {
+	return hex.EncodeToString(b.PrevHash[:])
 }
 
 func AssembleBlock(
@@ -49,11 +58,13 @@ func AssembleBlock(
 	entries []poh.Entry,
 ) *BroadcastedBlock {
 	b := &BroadcastedBlock{
-		Slot:      slot,
-		PrevHash:  prevHash,
-		Entries:   entries,
-		LeaderID:  leaderID,
-		Timestamp: uint64(time.Now().UnixNano()),
+		BlockCore: BlockCore{
+			Slot:      slot,
+			PrevHash:  prevHash,
+			LeaderID:  leaderID,
+			Timestamp: uint64(time.Now().UnixNano()),
+		},
+		Entries: entries,
 	}
 	b.Hash = b.computeHash()
 	return b

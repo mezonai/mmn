@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/store"
 )
 
-func (ln *Libp2pNetwork) scanMissingBlocks(bs blockstore.Store) {
+func (ln *Libp2pNetwork) scanMissingBlocks(bs store.BlockStore) {
 	latest := bs.GetLatestSlot()
 	if latest < 1 {
 		logx.Info("NETWORK:SCAN", "No blocks in store, skipping scan")
@@ -138,7 +138,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 	logx.Info("NETWORK:SCAN", "Completed processing all ")
 }
 
-func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs blockstore.Store, slot uint64) bool {
+func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs store.BlockStore, slot uint64) bool {
 	latest := bs.GetLatestSlot()
 	if latest < 1 {
 		return false
@@ -159,7 +159,7 @@ func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs blockstore.Store, slot uint64)
 	return false
 }
 
-func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs blockstore.Store, slot uint64) {
+func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot uint64) {
 	if !ln.shouldCheckAroundSlot(bs, slot) {
 		logx.Debug("NETWORK:SCAN", "Skipping check around slot ", slot, " not needed")
 		return
@@ -204,7 +204,7 @@ func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs blockstore.Store, slot u
 	}
 }
 
-func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs blockstore.Store) bool {
+func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
 	latest := bs.GetLatestSlot()
 	if latest < 1 {
 		return false
@@ -225,7 +225,7 @@ func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs blockstore.Store) bool {
 	return false
 }
 
-func (ln *Libp2pNetwork) startContinuousGapDetection(bs blockstore.Store) {
+func (ln *Libp2pNetwork) startContinuousGapDetection(bs store.BlockStore) {
 	time.Sleep(15 * time.Second)
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -245,7 +245,7 @@ func (ln *Libp2pNetwork) startContinuousGapDetection(bs blockstore.Store) {
 	}
 }
 
-func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs blockstore.Store) {
+func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs store.BlockStore) {
 	ln.missingBlocksMu.Lock()
 	defer ln.missingBlocksMu.Unlock()
 
