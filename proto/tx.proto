@@ -3,6 +3,14 @@ package mmn;
 
 option go_package = "mmn/proto;proto";
 
+// Transaction status enum
+enum TransactionStatus {
+  PENDING = 0;      // Transaction is in mempool
+  CONFIRMED = 1;    // Transaction is included in a block
+  FINALIZED = 2;    // Transaction is finalized (block has enough votes)
+  FAILED = 3;       // Transaction failed validation
+}
+
 message TxMsg { 
   int32 type = 1;
   string sender = 2;
@@ -46,8 +54,35 @@ message GetTxByHashResponse {
   TxInfo tx = 2;
 }
 
+// Request to get transaction status
+message GetTransactionStatusRequest {
+  string tx_hash = 1;
+}
+
+// Unified transaction status message used for both unary and streaming responses
+message TransactionStatusInfo {
+  string tx_hash = 1;
+  TransactionStatus status = 2;
+  uint64 block_slot = 3;        // Slot where transaction was included (if confirmed/finalized)
+  string block_hash = 4;        // Hash of the block (if confirmed/finalized)
+  uint64 confirmations = 5;     // Number of confirmations
+  string error_message = 6;     // Error message if failed
+  uint64 timestamp = 7;         // Timestamp when status was last updated
+}
+
+// Request to subscribe to all transaction status updates
+message SubscribeTransactionStatusRequest {
+  // Empty request - subscribes to all transaction events
+}
+
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
   rpc AddTx (SignedTxMsg) returns (AddTxResponse);
   rpc GetTxByHash (GetTxByHashRequest) returns (GetTxByHashResponse);
+  
+  // Get current status of a transaction
+  rpc GetTransactionStatus(GetTransactionStatusRequest) returns (TransactionStatusInfo);
+  
+  // Subscribe to status updates for all transactions
+  rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusInfo);
 }
