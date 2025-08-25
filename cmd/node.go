@@ -100,7 +100,7 @@ func runNode() {
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir', ", dataDir, ", first to initialize the node")
+		logx.Error("NODE", "Please run 'mmn init --data-dir',", dataDir, ", first to initialize the node")
 		return
 	}
 
@@ -137,12 +137,6 @@ func runNode() {
 	defer bs.MustClose()
 	defer ts.MustClose()
 	defer as.MustClose()
-
-	// Enable periodic snapshots (every 1000 slots) into dataDir/snapshots
-	if gbs, ok := bs.(*store.GenericBlockStore); ok {
-		snapDir := filepath.Join(dataDir, "snapshots")
-		gbs.EnableSnapshots(snapDir, 1000)
-	}
 
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {

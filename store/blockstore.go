@@ -14,7 +14,6 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/snapshot"
 )
 
 const (
@@ -49,10 +48,6 @@ type GenericBlockStore struct {
 	latestFinalized uint64
 	txStore         TxStore
 	eventRouter     *events.EventRouter
-	// Start snapshot settings
-	snapshotDir    string
-	snapshotEveryN uint64
-	// End snapshot settings
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
@@ -62,11 +57,9 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, eventRouter 
 	}
 
 	store := &GenericBlockStore{
-		provider:       provider,
-		txStore:        ts,
-		eventRouter:    eventRouter,
-		snapshotDir:    "",
-		snapshotEveryN: 0,
+		provider:    provider,
+		txStore:     ts,
+		eventRouter: eventRouter,
 	}
 
 	// Load existing metadata
@@ -75,13 +68,6 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, eventRouter 
 	}
 
 	return store, nil
-}
-
-func (s *GenericBlockStore) EnableSnapshots(dir string, everyN uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.snapshotDir = dir
-	s.snapshotEveryN = everyN
 }
 
 // loadLatestFinalized loads the latest finalized slot from the database
@@ -261,17 +247,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 	if err := s.provider.Put(metaKey, metaValue); err != nil {
 		return fmt.Errorf("failed to update latest finalized: %w", err)
-	}
-
-	if s.snapshotEveryN > 0 && s.snapshotDir != "" && (slot%s.snapshotEveryN == 0) {
-		if _, ok := s.provider.(db.IterableProvider); ok {
-			fullHash, err := snapshot.ComputeFullBankHash(s.provider)
-			if err == nil {
-				if path, err := snapshot.WriteSnapshot(s.snapshotDir, s.provider, slot, fullHash); err == nil {
-					logx.Info("SNAPSHOT", "Wrote snapshot", "slot", slot, "hash", fmt.Sprintf("%x", fullHash), "path", path)
-				}
-			}
-		}
 	}
 
 	// Publish transaction finalization events if event router is provided
