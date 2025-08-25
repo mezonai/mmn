@@ -23,8 +23,3 @@ config:
     batch_size: 750
     leader_timeout: 50
     leader_timeout_loop_interval: 5
-  access_control:
-    allowlist_enabled: false
-    blacklist_enabled: false
-    allowed_peers: []
-    blacklisted_peers: []

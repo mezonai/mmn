@@ -182,6 +182,9 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Libp2p network started with ID: %s", ln.host.ID().String()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
+
+	ln.StartAccessControlTests()
+
 	return nil
 }
 
@@ -201,7 +204,13 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 			peerID := conn.RemotePeer()
 			logx.Info("AUTH:CONNECTION", "New connection from peer: ", peerID.String())
 
-			if !ln.IsAllowed(peerID) {
+			ln.listMu.RLock()
+			allowlistEmpty := ln.allowlistEnabled && len(ln.allowlist) == 0
+			ln.listMu.RUnlock()
+
+			if allowlistEmpty {
+				logx.Info("AUTH:CONNECTION", "Allowing bootnode connection when allowlist is empty:", peerID.String())
+			} else if !ln.IsAllowed(peerID) {
 				logx.Info("AUTH:CONNECTION", "Rejecting connection from peer not allowed by access control:", peerID.String())
 				conn.Close()
 				return

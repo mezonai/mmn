@@ -28,11 +28,13 @@ type Libp2pNetwork struct {
 
 	blockStore blockstore.Store
 
-	topicBlocks       *pubsub.Topic
-	topicVotes        *pubsub.Topic
-	topicTxs          *pubsub.Topic
-	topicBlockSyncReq *pubsub.Topic
-	topicLatestSlot   *pubsub.Topic
+	topicBlocks            *pubsub.Topic
+	topicVotes             *pubsub.Topic
+	topicTxs               *pubsub.Topic
+	topicBlockSyncReq      *pubsub.Topic
+	topicLatestSlot        *pubsub.Topic
+	topicAccessControl     *pubsub.Topic
+	topicAccessControlSync *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
@@ -158,7 +160,7 @@ type AuthChallenge struct {
 	PeerID    string `json:"peer_id"`
 	PublicKey string `json:"public_key"`
 	Timestamp int64  `json:"timestamp"`
-	Nonce     uint64 `json:"nonce"`
+	Nonce     uint64 `json:"nonce,string"`
 	ChainID   string `json:"chain_id"`
 }
 
@@ -169,7 +171,7 @@ type AuthResponse struct {
 	PeerID    string `json:"peer_id"`
 	PublicKey string `json:"public_key"`
 	Timestamp int64  `json:"timestamp"`
-	Nonce     uint64 `json:"nonce"`
+	Nonce     uint64 `json:"nonce,string"`
 	ChainID   string `json:"chain_id"`
 }
 
@@ -190,4 +192,20 @@ type AuthenticatedPeer struct {
 	PublicKey     ed25519.PublicKey
 	AuthTimestamp time.Time
 	IsValid       bool
+}
+
+type AccessControlUpdate struct {
+	Type      string `json:"type"`
+	Action    string `json:"action"`
+	PeerID    string `json:"peer_id"`
+	Timestamp int64  `json:"timestamp"`
+	NodeID    string `json:"node_id"`
+}
+
+type AccessControlSync struct {
+	Type       string   `json:"type"`
+	PeerIDs    []string `json:"peer_ids"`
+	Timestamp  int64    `json:"timestamp"`
+	NodeID     string   `json:"node_id"`
+	IsFullSync bool     `json:"is_full_sync"`
 }

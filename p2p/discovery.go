@@ -73,6 +73,7 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 							logx.Error("DISCOVERY", "Authentication failed: ", err.Error())
 						} else {
 							logx.Info("DISCOVERY", "Authentication successful with peer: ", peerID.String())
+							ln.AutoAddToAllowlistIfBootstrap(peerID)
 						}
 					}(p.ID)
 				}

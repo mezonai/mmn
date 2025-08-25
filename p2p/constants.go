@@ -12,6 +12,8 @@ const (
 	BlockSyncRequestTopic  = "block-sync/request"
 	BlockSyncResponseTopic = "block-sync/response"
 	LatestSlotTopic        = "latest-slot/request"
+	AccessControlTopic     = "access-control/update"
+	AccessControlSyncTopic = "access-control/sync"
 	AdvertiseName          = "mmn"
 
 	AuthChallengeSize = 32

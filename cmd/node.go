@@ -26,7 +26,6 @@ import (
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/validator"
 
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/spf13/cobra"
 )
 
@@ -192,11 +191,6 @@ func runNode() {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
-	// Configure access control
-	if err := configureAccessControl(libP2pClient, genesisPath); err != nil {
-		log.Fatalf("Failed to configure access control: %v", err)
-	}
-
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath)
 	if err != nil {
@@ -349,49 +343,6 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	val.Run()
 
 	return val, nil
-}
-
-// configureAccessControl sets up allowlist and blacklist for the P2P network from genesis.yml
-func configureAccessControl(p2pClient *p2p.Libp2pNetwork, genesisPath string) error {
-	// Load access control config from genesis.yml
-	accessControlCfg, err := config.LoadAccessControlConfig(genesisPath)
-	if err != nil {
-		logx.Warn("ACCESS CONTROL", "Failed to load access control config from genesis.yml:", err)
-		logx.Info("ACCESS CONTROL", "Access control disabled - no configuration found")
-		return nil
-	}
-
-	// Use genesis.yml configuration
-	p2pClient.EnableAllowlist(accessControlCfg.AllowlistEnabled)
-	p2pClient.EnableBlacklist(accessControlCfg.BlacklistEnabled)
-
-	// Load allowlist from genesis.yml
-	if accessControlCfg.AllowlistEnabled && len(accessControlCfg.AllowedPeers) > 0 {
-		for _, peerIDStr := range accessControlCfg.AllowedPeers {
-			peerID, err := peer.Decode(peerIDStr)
-			if err != nil {
-				logx.Warn("ACCESS CONTROL", "Invalid peer ID in genesis allowlist:", peerIDStr)
-				continue
-			}
-			p2pClient.AddToAllowlist(peerID)
-		}
-		logx.Info("ACCESS CONTROL", "Configured allowlist from genesis.yml with", len(accessControlCfg.AllowedPeers), "peers")
-	}
-
-	// Load blacklist from genesis.yml
-	if accessControlCfg.BlacklistEnabled && len(accessControlCfg.BlacklistedPeers) > 0 {
-		for _, peerIDStr := range accessControlCfg.BlacklistedPeers {
-			peerID, err := peer.Decode(peerIDStr)
-			if err != nil {
-				logx.Warn("ACCESS CONTROL", "Invalid peer ID in genesis blacklist:", peerIDStr)
-				continue
-			}
-			p2pClient.AddToBlacklist(peerID)
-		}
-		logx.Info("ACCESS CONTROL", "Configured blacklist from genesis.yml with", len(accessControlCfg.BlacklistedPeers), "peers")
-	}
-
-	return nil
 }
 
 // startServices starts all network and API services
