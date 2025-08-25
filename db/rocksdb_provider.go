@@ -4,6 +4,7 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 
@@ -100,6 +101,30 @@ func (p *RocksDBProvider) Batch() DatabaseBatch {
 		batch:    grocksdb.NewWriteBatch(),
 		provider: p,
 	}
+}
+
+// IteratePrefix implements IterableProvider for RocksDB
+func (p *RocksDBProvider) IteratePrefix(prefix []byte, fn func(key, value []byte) bool) error {
+	it := p.db.NewIterator(p.ro)
+	defer it.Close()
+
+	for it.Seek(prefix); it.Valid(); it.Next() {
+		k := it.Key()
+		v := it.Value()
+		if !bytes.HasPrefix(k.Data(), prefix) {
+			k.Free()
+			v.Free()
+			break
+		}
+		kdata := append([]byte(nil), k.Data()...)
+		vdata := append([]byte(nil), v.Data()...)
+		k.Free()
+		v.Free()
+		if !fn(kdata, vdata) {
+			break
+		}
+	}
+	return nil
 }
 
 // RocksDBBatch implements DatabaseBatch for RocksDB
