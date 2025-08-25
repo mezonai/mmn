@@ -1,7 +1,7 @@
 //go:build !rocksdb
 // +build !rocksdb
 
-package blockstore
+package db
 
 import "fmt"
 

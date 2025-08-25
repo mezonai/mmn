@@ -5,8 +5,8 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/store"
 
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
@@ -27,7 +27,7 @@ func NewNetWork(
 	selfPrivKey ed25519.PrivateKey,
 	listenAddr string,
 	bootstrapPeers []string,
-	blockStore blockstore.Store,
+	blockStore store.BlockStore,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
