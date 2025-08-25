@@ -4,8 +4,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/db"
 	"sync"
+
+	"github.com/mezonai/mmn/db"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -37,6 +38,7 @@ type BlockStore interface {
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
+	IsApplied(slot uint64) bool
 }
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
@@ -216,6 +218,13 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
 
 	return nil
+}
+
+func (s *GenericBlockStore) IsApplied(slot uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.latestFinalized >= slot
 }
 
 // MarkFinalized marks a block as finalized and updates metadata

@@ -3,8 +3,9 @@ package ledger
 import (
 	"errors"
 	"fmt"
-	"github.com/mezonai/mmn/store"
 	"sync"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -281,12 +282,16 @@ func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32)
 type LedgerView struct {
 	base    store.AccountStore
 	overlay map[string]*types.SnapshotAccount
+	mu      sync.RWMutex // Add mutex for overlay map protection
 }
 
 func (lv *LedgerView) loadForRead(addr string) (*types.SnapshotAccount, bool) {
+	lv.mu.RLock()
 	if acc, ok := lv.overlay[addr]; ok {
+		lv.mu.RUnlock()
 		return acc, true
 	}
+	lv.mu.RUnlock()
 	base, err := lv.base.GetByAddr(addr)
 	// TODO: re-verify this, will returning nil for error case be ok?
 	if err != nil || base == nil {
@@ -303,7 +308,9 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 		return acc
 	}
 	cp := types.SnapshotAccount{Balance: 0, Nonce: 0}
+	lv.mu.Lock()
 	lv.overlay[addr] = &cp
+	lv.mu.Unlock()
 	return &cp
 }
 
@@ -342,17 +349,20 @@ type Session struct {
 
 // Copy session with clone overlay
 func (s *Session) CopyWithOverlayClone() *Session {
+	s.view.mu.RLock()
 	overlayCopy := make(map[string]*types.SnapshotAccount, len(s.view.overlay))
 	for k, v := range s.view.overlay {
 		accCopy := *v
 		overlayCopy[k] = &accCopy
 	}
+	s.view.mu.RUnlock()
 
 	return &Session{
 		ledger: s.ledger,
 		view: &LedgerView{
 			base:    s.view.base,
 			overlay: overlayCopy,
+			mu:      sync.RWMutex{}, // Initialize mutex for new session
 		},
 	}
 }
