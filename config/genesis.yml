@@ -2,16 +2,16 @@ config:
   leader_schedule:
     - start_slot: 1
       end_slot: 100
-      leader: "6a4dd9b6efe0fc8f125be331735b0e33239e24f02c84e555ade9ea50bd1369db" # node 1/key1
+      leader: "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" # node 1/key1
     - start_slot: 101
       end_slot: 200
-      leader: "650b1d76a0e9f0e57b44c4bf6342f7e4b511d9b1310f7898129c90abca296248" # node 2/key2
+      leader: "7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV" # node 2/key2
     - start_slot: 201
       end_slot: 3000000000
-      leader: "066c7311f0f02057565bc1c4133ac3d009e9474ea90daa89ec9cf89d289d8e9b" # node 3/key3
+      leader: "S5MrFRhc92vmczcrDpNG8CLoDPh2jZH8f6Na11bFyDt" # node 3/key3
   alloc: # support array
     addresses: 
-      - address: "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
+      - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
         amount: 2000000000
   poh:
     hashes_per_tick: 10

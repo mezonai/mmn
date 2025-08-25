@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/mezonai/mmn/store"
+
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -85,8 +86,8 @@ func (t *SyncRequestTracker) CloseAllPeers() {
 	t.AllPeers = make(map[peer.ID]network.Stream)
 }
 
-// periodically send checkpoint probe and cleanup old sync requests
-func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
+// when no peers connected the blocks will not sync must run after 30s if synced stop sync
+func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	// wait network setup
 	time.Sleep(10 * time.Second)
 	ticker := time.NewTicker(30 * time.Second)
@@ -125,7 +126,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 	}
 }
 
-func (ln *Libp2pNetwork) startInitialSync(bs blockstore.Store) {
+func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
 	// wait network setup
 	time.Sleep(2 * time.Second)
 

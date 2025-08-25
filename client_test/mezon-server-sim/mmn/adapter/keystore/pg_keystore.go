@@ -7,13 +7,13 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/outbound"
+	"github.com/mr-tron/base58"
 
 	_ "github.com/lib/pq"
 )
@@ -89,8 +89,8 @@ func (p *pgStore) CreateKey(uid uint64) (string, []byte, error) {
 	privKey := ed25519.NewKeyFromSeed(seed)
 	pubKey := privKey.Public().(ed25519.PublicKey)
 
-	// Address is hex-encoded public key (for Verify to work)
-	addr := hex.EncodeToString(pubKey)
+	// Address is base58-encoded public key (to match node format)
+	addr := base58.Encode(pubKey)
 
 	// Store the seed (not the full private key) for SignTx compatibility
 	enc, err := p.encrypt(seed)

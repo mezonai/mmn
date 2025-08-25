@@ -3,9 +3,11 @@ package domain
 import (
 	"errors"
 	"fmt"
+
+	"github.com/mr-tron/base58"
 )
 
-const addressExpectedLength = 64
+const addressDecodedExpectedLength = 32
 
 var (
 	ErrInvalidAddress = errors.New("domain: invalid address format")
@@ -21,16 +23,12 @@ type Account struct {
 }
 
 func ValidateAddress(addr string) error {
-	s := addr
-	if len(s) != addressExpectedLength {
+	decoded, err := base58.Decode(addr)
+	if err != nil {
 		return ErrInvalidAddress
 	}
-	for _, c := range s {
-		if !((c >= '0' && c <= '9') ||
-			(c >= 'a' && c <= 'f') ||
-			(c >= 'A' && c <= 'F')) {
-			return ErrInvalidAddress
-		}
+	if len(decoded) != addressDecodedExpectedLength {
+		return ErrInvalidAddress
 	}
 	return nil
 }
@@ -106,6 +104,12 @@ type TxHistoryResponse struct {
 	Total uint32
 	Txs   []*TxMetaResponse
 }
+
+const (
+	UNLOCK_ITEM_STATUS_PENDING = 0
+	UNLOCK_ITEM_STATUS_SUCCESS = 1
+	UNLOCK_ITEM_STATUS_FAILED  = 2
+)
 
 // TxInfo represents transaction information returned by GetTxByHash
 type TxInfo struct {
