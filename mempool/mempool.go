@@ -99,6 +99,22 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	currentNonce := mp.getCurrentNonce(tx.Sender, mp.ledger.GetAccount(tx.Sender).Nonce)
 	isReady := tx.Nonce == currentNonce+1
 
+	// Check for duplicate nonce in ready queue
+	for _, readyTx := range mp.readyQueue {
+		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
+			fmt.Printf("Dropping tx %s: duplicate nonce %d in ready queue\n", txHash, tx.Nonce)
+			return "", fmt.Errorf("duplicate nonce %d for sender %s in ready queue", tx.Nonce, tx.Sender[:8])
+		}
+	}
+
+	// Check for duplicate nonce in pending transactions
+	if pendingMap, exists := mp.pendingTxs[tx.Sender]; exists {
+		if _, hasDup := pendingMap[tx.Nonce]; hasDup {
+			fmt.Printf("Dropping tx %s: duplicate nonce %d in pending\n", txHash, tx.Nonce)
+			return "", fmt.Errorf("duplicate nonce %d for sender %s in pending", tx.Nonce, tx.Sender[:8])
+		}
+	}
+
 	// Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
 		fmt.Printf("Dropping tx %s due to insufficient balance: %s\n", txHash, err.Error())
@@ -108,7 +124,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	if isReady {
 		// Add to ready queue for immediate processing
 		mp.readyQueue = append(mp.readyQueue, tx)
-		fmt.Printf("Added ready tx %s (sender: %s, nonce: %d)\n", txHash, tx.Sender[:8], tx.Nonce)
+		fmt.Printf("Added ready tx %s (sender: %s, nonce: %d, current_nonce: %d)\n", txHash, tx.Sender[:8], tx.Nonce, currentNonce)
 	} else {
 		// Add to pending transactions
 		if mp.pendingTxs[tx.Sender] == nil {
@@ -145,13 +161,38 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 // validateTransaction performs comprehensive transaction validation
 // getCurrentNonce returns the current nonce for a sender, using cached value if available
 func (mp *Mempool) getCurrentNonce(sender string, ledgerNonce uint64) uint64 {
-	if cachedNonce, exists := mp.accountNonces[sender]; exists {
-		// Use the higher of cached or ledger nonce (in case ledger was updated externally)
-		if cachedNonce > ledgerNonce {
-			return cachedNonce
+	var finalNonce uint64 = ledgerNonce
+
+	// Check cached nonce (transactions processed but not yet applied to ledger)
+	if cachedNonce, exists := mp.accountNonces[sender]; exists && cachedNonce > ledgerNonce {
+		finalNonce = cachedNonce
+		fmt.Printf("[NONCE] Using cached nonce for %s: cached=%d, ledger=%d\n", sender[:8], cachedNonce, ledgerNonce)
+	}
+
+	// Check for highest nonce in ready queue for this sender
+	var highestReadyNonce uint64 = finalNonce
+	for _, tx := range mp.readyQueue {
+		if tx.Sender == sender && tx.Nonce > highestReadyNonce {
+			highestReadyNonce = tx.Nonce
 		}
 	}
-	return ledgerNonce
+
+	if highestReadyNonce > finalNonce {
+		finalNonce = highestReadyNonce
+		fmt.Printf("[NONCE] Using ready queue nonce for %s: ready=%d, previous=%d\n", sender[:8], highestReadyNonce, finalNonce)
+	}
+
+	fmt.Printf("[NONCE] Final nonce for %s: %d (ledger=%d, cached=%s, ready_max=%d)\n",
+		sender[:8], finalNonce, ledgerNonce,
+		func() string {
+			if c, exists := mp.accountNonces[sender]; exists {
+				return fmt.Sprintf("%d", c)
+			}
+			return "none"
+		}(),
+		highestReadyNonce)
+
+	return finalNonce
 }
 
 func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
@@ -368,8 +409,18 @@ func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 
 // updateAccountNonce updates the cached nonce for an account
 func (mp *Mempool) updateAccountNonce(sender string, nonce uint64) {
-	mp.accountNonces[sender] = nonce
-	fmt.Printf("Updated cached nonce for %s to %d\n", sender[:8], nonce)
+	// Update cached nonce only if new nonce is higher
+	if currentCached, exists := mp.accountNonces[sender]; exists {
+		if nonce > currentCached {
+			mp.accountNonces[sender] = nonce
+			fmt.Printf("Updated cached nonce for %s from %d to %d\n", sender[:8], currentCached, nonce)
+		} else {
+			fmt.Printf("Skipped nonce update for %s: %d <= %d (current)\n", sender[:8], nonce, currentCached)
+		}
+	} else {
+		mp.accountNonces[sender] = nonce
+		fmt.Printf("Set initial cached nonce for %s to %d\n", sender[:8], nonce)
+	}
 }
 
 // promotePendingTransactions checks if any pending transactions became ready
@@ -437,21 +488,65 @@ func (mp *Mempool) PeriodicCleanup() {
 
 // GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
 // Returns 0 if no pending transactions exist for the sender
+// This now includes both pending transactions and ready queue transactions
 func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
 
-	pendingMap, exists := mp.pendingTxs[sender]
-	if !exists || len(pendingMap) == 0 {
-		return 0
-	}
-
 	var largestNonce uint64 = 0
-	for nonce := range pendingMap {
-		if nonce > largestNonce {
-			largestNonce = nonce
+
+	// Check pending transactions
+	pendingMap, exists := mp.pendingTxs[sender]
+	if exists {
+		for nonce := range pendingMap {
+			if nonce > largestNonce {
+				largestNonce = nonce
+			}
 		}
 	}
+
+	// Check ready queue transactions for the same sender
+	for _, tx := range mp.readyQueue {
+		if tx.Sender == sender && tx.Nonce > largestNonce {
+			largestNonce = tx.Nonce
+		}
+	}
+
+	// Check cached nonce (transactions that were processed but not yet applied to ledger)
+	if cachedNonce, exists := mp.accountNonces[sender]; exists && cachedNonce > largestNonce {
+		largestNonce = cachedNonce
+	}
+
+	fmt.Printf("[MEMPOOL] GetLargestPendingNonce for %s: pending=%d, ready_queue=%d, cached=%d, result=%d\n",
+		sender[:8],
+		func() uint64 {
+			if len(pendingMap) > 0 {
+				max := uint64(0)
+				for n := range pendingMap {
+					if n > max {
+						max = n
+					}
+				}
+				return max
+			}
+			return 0
+		}(),
+		func() uint64 {
+			max := uint64(0)
+			for _, tx := range mp.readyQueue {
+				if tx.Sender == sender && tx.Nonce > max {
+					max = tx.Nonce
+				}
+			}
+			return max
+		}(),
+		func() uint64 {
+			if c, exists := mp.accountNonces[sender]; exists {
+				return c
+			}
+			return 0
+		}(),
+		largestNonce)
 
 	return largestNonce
 }
