@@ -190,27 +190,40 @@ func NewValidatorWithDynamic(
 }
 
 // GetCurrentEpochInfo returns information about the current epoch (only for dynamic scheduling)
-func (v *Validator) GetCurrentEpochInfo(slot uint64) *EpochInfo {
+func (v *Validator) GetCurrentEpochInfo(slot uint64) *poh.EpochInfo {
 	if !v.useDynamic || v.DynamicSchedule == nil {
 		return nil
 	}
+	return v.DynamicSchedule.GetCurrentEpoch(slot)
+}
 
-	epochInfo := v.DynamicSchedule.GetCurrentEpoch(slot)
-	if epochInfo == nil {
-		return nil
+// GetCurrentLeaderRange returns the leader range containing the current slot
+func (v *Validator) GetCurrentLeaderRange(slot uint64) (*poh.LeaderSlotRange, bool) {
+	if !v.useDynamic || v.DynamicSchedule == nil {
+		return nil, false
 	}
+	return v.DynamicSchedule.GetLeaderRange(slot)
+}
 
-	return &EpochInfo{
-		Epoch:      epochInfo.Epoch,
-		StartSlot:  epochInfo.StartSlot,
-		EndSlot:    epochInfo.EndSlot,
-		TotalStake: epochInfo.TotalStake,
-		Validators: epochInfo.Validators,
+// GetAllEpochRanges returns all leader ranges for the current epoch
+func (v *Validator) GetAllEpochRanges(slot uint64) []poh.LeaderSlotRange {
+	if !v.useDynamic || v.DynamicSchedule == nil {
+		return []poh.LeaderSlotRange{}
 	}
+	return v.DynamicSchedule.GetCurrentEpochRanges(slot)
 }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
+
+	// Log leader range information for dynamic scheduling
+	if v.useDynamic && v.DynamicSchedule != nil {
+		if leaderRange, found := v.GetCurrentLeaderRange(currentSlot); found {
+			logx.Info("LEADER", fmt.Sprintf("Leader range: slots %d-%d (total %d slots)",
+				leaderRange.StartSlot, leaderRange.EndSlot, leaderRange.SlotCount))
+		}
+	}
+
 	v.leaderStartAtSlot = currentSlot
 	if currentSlot == 0 {
 		return

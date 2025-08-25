@@ -23,6 +23,14 @@ type Validator struct {
 	DeactivatedSlot uint64 `json:"deactivated_slot"` // Slot when validator was deactivated
 }
 
+// LeaderSlotRange represents a continuous slot range assigned to a leader
+type LeaderSlotRange struct {
+	Leader    string `json:"leader"`     // Validator pubkey
+	StartSlot uint64 `json:"start_slot"` // First slot (inclusive)
+	EndSlot   uint64 `json:"end_slot"`   // Last slot (inclusive)
+	SlotCount uint64 `json:"slot_count"` // Number of consecutive slots
+}
+
 // EpochInfo contains information about an epoch
 type EpochInfo struct {
 	Epoch            uint64                `json:"epoch"`
@@ -35,18 +43,20 @@ type EpochInfo struct {
 	Validators       map[string]*Validator `json:"validators"`
 	TotalStake       uint64                `json:"total_stake"`
 	LeaderSchedule   []string              `json:"leader_schedule"` // Ordered list of validator pubkeys
+	LeaderRanges     []LeaderSlotRange     `json:"leader_ranges"`   // Leader assignments with slot ranges
 }
 
 // DynamicLeaderSchedule manages epoch-based leader rotation using PoS
 type DynamicLeaderSchedule struct {
-	mu               sync.RWMutex
-	currentEpoch     *EpochInfo
-	nextEpoch        *EpochInfo
-	validators       map[string]*Validator
-	slotsPerEpoch    uint64
-	epochStartSlot   uint64
-	seed             []byte
-	lastScheduleSlot uint64
+	mu                  sync.RWMutex
+	currentEpoch        *EpochInfo
+	nextEpoch           *EpochInfo
+	validators          map[string]*Validator
+	slotsPerEpoch       uint64
+	epochStartSlot      uint64
+	seed                []byte
+	lastScheduleSlot    uint64
+	maxConsecutiveSlots uint64 // Maximum consecutive slots per leader (default: 4)
 }
 
 // NewDynamicLeaderSchedule creates a new dynamic leader scheduler
@@ -55,11 +65,12 @@ func NewDynamicLeaderSchedule(slotsPerEpoch uint64, genesisValidators map[string
 	rand.Read(seed)
 
 	dls := &DynamicLeaderSchedule{
-		validators:       make(map[string]*Validator),
-		slotsPerEpoch:    slotsPerEpoch,
-		epochStartSlot:   0,
-		seed:             seed,
-		lastScheduleSlot: 0,
+		validators:          make(map[string]*Validator),
+		slotsPerEpoch:       slotsPerEpoch,
+		epochStartSlot:      0,
+		seed:                seed,
+		lastScheduleSlot:    0,
+		maxConsecutiveSlots: 4, // Maximum 4 consecutive slots per leader
 	}
 
 	// Initialize with genesis validators
@@ -117,6 +128,65 @@ func (dls *DynamicLeaderSchedule) LeaderAt(slot uint64) (string, bool) {
 	}
 
 	return epoch.LeaderSchedule[slotInEpoch], true
+}
+
+// GetLeaderRange returns the leader slot range containing the given slot
+func (dls *DynamicLeaderSchedule) GetLeaderRange(slot uint64) (*LeaderSlotRange, bool) {
+	epoch := dls.GetCurrentEpoch(slot)
+	if epoch == nil || len(epoch.LeaderRanges) == 0 {
+		return nil, false
+	}
+
+	// Find the range containing this slot
+	for _, r := range epoch.LeaderRanges {
+		if slot >= epoch.StartSlot+r.StartSlot && slot <= epoch.StartSlot+r.EndSlot {
+			// Adjust range to absolute slot numbers
+			adjustedRange := LeaderSlotRange{
+				Leader:    r.Leader,
+				StartSlot: epoch.StartSlot + r.StartSlot,
+				EndSlot:   epoch.StartSlot + r.EndSlot,
+				SlotCount: r.SlotCount,
+			}
+			return &adjustedRange, true
+		}
+	}
+
+	return nil, false
+}
+
+// GetCurrentEpochRanges returns all leader ranges for the current epoch
+func (dls *DynamicLeaderSchedule) GetCurrentEpochRanges(currentSlot uint64) []LeaderSlotRange {
+	epoch := dls.GetCurrentEpoch(currentSlot)
+	if epoch == nil {
+		return []LeaderSlotRange{}
+	}
+
+	// Adjust ranges to absolute slot numbers
+	ranges := make([]LeaderSlotRange, len(epoch.LeaderRanges))
+	for i, r := range epoch.LeaderRanges {
+		ranges[i] = LeaderSlotRange{
+			Leader:    r.Leader,
+			StartSlot: epoch.StartSlot + r.StartSlot,
+			EndSlot:   epoch.StartSlot + r.EndSlot,
+			SlotCount: r.SlotCount,
+		}
+	}
+
+	return ranges
+}
+
+// SetMaxConsecutiveSlots sets the maximum consecutive slots per leader
+func (dls *DynamicLeaderSchedule) SetMaxConsecutiveSlots(maxSlots uint64) {
+	dls.mu.Lock()
+	defer dls.mu.Unlock()
+	dls.maxConsecutiveSlots = maxSlots
+}
+
+// GetMaxConsecutiveSlots returns the maximum consecutive slots per leader
+func (dls *DynamicLeaderSchedule) GetMaxConsecutiveSlots() uint64 {
+	dls.mu.RLock()
+	defer dls.mu.RUnlock()
+	return dls.maxConsecutiveSlots
 }
 
 // AddValidator adds a new validator to the system
@@ -197,8 +267,8 @@ func (dls *DynamicLeaderSchedule) generateEpoch(epochNum uint64, startSlot uint6
 	// Generate epoch seed using previous epoch hash
 	epochSeed := dls.generateEpochSeed(epochNum)
 
-	// Create weighted leader schedule
-	leaderSchedule := dls.generateLeaderSchedule(activeValidators, totalStake, epochSeed)
+	// Create weighted leader schedule with ranges
+	leaderSchedule, leaderRanges := dls.generateLeaderSchedule(activeValidators, totalStake, epochSeed)
 
 	// Create validator map for this epoch
 	validators := make(map[string]*Validator)
@@ -224,6 +294,7 @@ func (dls *DynamicLeaderSchedule) generateEpoch(epochNum uint64, startSlot uint6
 		Validators:     validators,
 		TotalStake:     totalStake,
 		LeaderSchedule: leaderSchedule,
+		LeaderRanges:   leaderRanges,
 	}
 }
 
@@ -239,13 +310,14 @@ func (dls *DynamicLeaderSchedule) generateEpochSeed(epochNum uint64) []byte {
 	return hasher.Sum(nil)
 }
 
-// generateLeaderSchedule creates a weighted random leader schedule based on stake
-func (dls *DynamicLeaderSchedule) generateLeaderSchedule(validators []*Validator, totalStake uint64, seed []byte) []string {
+// generateLeaderSchedule creates a weighted random leader schedule with consecutive slot constraints
+func (dls *DynamicLeaderSchedule) generateLeaderSchedule(validators []*Validator, totalStake uint64, seed []byte) ([]string, []LeaderSlotRange) {
 	if len(validators) == 0 || totalStake == 0 {
-		return []string{}
+		return []string{}, []LeaderSlotRange{}
 	}
 
 	schedule := make([]string, dls.slotsPerEpoch)
+	ranges := make([]LeaderSlotRange, 0)
 
 	// Create cumulative stake array for weighted selection
 	cumulativeStakes := make([]uint64, len(validators))
@@ -254,30 +326,126 @@ func (dls *DynamicLeaderSchedule) generateLeaderSchedule(validators []*Validator
 		cumulativeStakes[i] = cumulativeStakes[i-1] + validators[i].ActiveStake
 	}
 
-	// Generate schedule for each slot
+	// Track consecutive slot count for current leader
+	lastLeader := ""
+	currentRangeStart := uint64(0)
+	consecutiveCount := uint64(0)
+
+	// Generate schedule for each slot with consecutive slot constraint
 	for slot := uint64(0); slot < dls.slotsPerEpoch; slot++ {
-		// Create slot-specific seed
-		slotSeed := sha256.Sum256(append(seed, byte(slot)))
+		var selectedValidator string
 
-		// Convert seed to number in range [0, totalStake)
-		seedBig := new(big.Int).SetBytes(slotSeed[:])
-		totalStakeBig := new(big.Int).SetUint64(totalStake)
-		randomStake := new(big.Int).Mod(seedBig, totalStakeBig).Uint64()
+		// If previous leader has reached max consecutive slots, force different validator
+		if lastLeader != "" && consecutiveCount >= dls.maxConsecutiveSlots {
+			// Must select a different validator
+			maxAttempts := 100
+			attempts := 0
 
-		// Find validator with binary search
-		validatorIdx := sort.Search(len(cumulativeStakes), func(i int) bool {
-			return cumulativeStakes[i] > randomStake
-		})
+			for attempts < maxAttempts {
+				// Create slot-specific seed
+				slotSeed := sha256.Sum256(append(seed, byte(slot), byte(attempts)))
 
-		if validatorIdx < len(validators) {
-			schedule[slot] = validators[validatorIdx].PubKey
+				// Convert seed to number in range [0, totalStake)
+				seedBig := new(big.Int).SetBytes(slotSeed[:])
+				totalStakeBig := new(big.Int).SetUint64(totalStake)
+				randomStake := new(big.Int).Mod(seedBig, totalStakeBig).Uint64()
+
+				// Find validator with binary search
+				validatorIdx := sort.Search(len(cumulativeStakes), func(i int) bool {
+					return cumulativeStakes[i] > randomStake
+				})
+
+				if validatorIdx < len(validators) {
+					candidate := validators[validatorIdx].PubKey
+
+					// Must be different from last leader
+					if candidate != lastLeader {
+						selectedValidator = candidate
+						break
+					}
+				}
+
+				attempts++
+			}
+
+			// Fallback: pick first different validator
+			if selectedValidator == "" {
+				for _, validator := range validators {
+					if validator.PubKey != lastLeader {
+						selectedValidator = validator.PubKey
+						break
+					}
+				}
+			}
+		} else {
+			// Normal selection with weighted probability
+			maxAttempts := 100
+			attempts := 0
+
+			for attempts < maxAttempts {
+				// Create slot-specific seed
+				slotSeed := sha256.Sum256(append(seed, byte(slot), byte(attempts)))
+
+				// Convert seed to number in range [0, totalStake)
+				seedBig := new(big.Int).SetBytes(slotSeed[:])
+				totalStakeBig := new(big.Int).SetUint64(totalStake)
+				randomStake := new(big.Int).Mod(seedBig, totalStakeBig).Uint64()
+
+				// Find validator with binary search
+				validatorIdx := sort.Search(len(cumulativeStakes), func(i int) bool {
+					return cumulativeStakes[i] > randomStake
+				})
+
+				if validatorIdx < len(validators) {
+					selectedValidator = validators[validatorIdx].PubKey
+					break
+				}
+
+				attempts++
+			}
+		}
+
+		// Ensure we always have a leader for each slot
+		if selectedValidator == "" && len(validators) > 0 {
+			selectedValidator = validators[0].PubKey
+		}
+
+		schedule[slot] = selectedValidator
+
+		// Update consecutive counting and ranges
+		if selectedValidator != lastLeader {
+			// Close previous range if exists
+			if lastLeader != "" {
+				ranges = append(ranges, LeaderSlotRange{
+					Leader:    lastLeader,
+					StartSlot: currentRangeStart,
+					EndSlot:   slot - 1,
+					SlotCount: slot - currentRangeStart,
+				})
+			}
+
+			// Start new range
+			currentRangeStart = slot
+			lastLeader = selectedValidator
+			consecutiveCount = 1
+		} else {
+			// Same leader, increment count
+			consecutiveCount++
 		}
 	}
 
-	return schedule
-}
+	// Close final range
+	if lastLeader != "" {
+		ranges = append(ranges, LeaderSlotRange{
+			Leader:    lastLeader,
+			StartSlot: currentRangeStart,
+			EndSlot:   dls.slotsPerEpoch - 1,
+			SlotCount: dls.slotsPerEpoch - currentRangeStart,
+		})
+	}
 
-// advanceToNextEpoch moves to the next epoch and generates the following one
+	return schedule, ranges
+} // advanceToNextEpoch moves to the next epoch and generates the following one
 func (dls *DynamicLeaderSchedule) advanceToNextEpoch(currentSlot uint64) {
 	if dls.nextEpoch == nil {
 		return

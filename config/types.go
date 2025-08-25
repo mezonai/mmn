@@ -35,11 +35,12 @@ type DynamicValidatorConfig struct {
 }
 
 type DynamicLeaderSchedulerConfig struct {
-	Enabled         bool                     `yaml:"enabled"`
-	SlotsPerEpoch   uint64                   `yaml:"slots_per_epoch"`
-	Validators      []DynamicValidatorConfig `yaml:"validators"`
-	TotalStake      uint64                   `yaml:"total_stake"`
-	VotingThreshold float64                  `yaml:"voting_threshold"`
+	Enabled             bool                     `yaml:"enabled"`
+	SlotsPerEpoch       uint64                   `yaml:"slots_per_epoch"`
+	MaxConsecutiveSlots uint64                   `yaml:"max_consecutive_slots"`
+	Validators          []DynamicValidatorConfig `yaml:"validators"`
+	TotalStake          uint64                   `yaml:"total_stake"`
+	VotingThreshold     float64                  `yaml:"voting_threshold"`
 }
 
 // GenesisConfig holds the configuration from genesis.yml

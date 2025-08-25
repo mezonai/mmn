@@ -3,6 +3,7 @@ config:
   dynamic_leader_scheduler:
     enabled: true
     slots_per_epoch: 432
+    max_consecutive_slots: 4  # Maximum consecutive slots per leader
     validators: []  # Dynamic validators will be registered when nodes join
     total_stake: 0  # Will be calculated dynamically
     voting_threshold: 0.67  # 2/3 supermajority

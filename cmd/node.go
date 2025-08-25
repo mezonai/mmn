@@ -51,6 +51,7 @@ var (
 	useDynamicScheduler bool
 	validatorStake      uint64
 	slotsPerEpoch       uint64
+	maxConsecutiveSlots uint64
 )
 
 var runCmd = &cobra.Command{
@@ -77,6 +78,7 @@ func init() {
 	runCmd.Flags().BoolVar(&useDynamicScheduler, "use-dynamic-scheduler", true, "Use dynamic leader scheduler (Solana-like PoS)")
 	runCmd.Flags().Uint64Var(&validatorStake, "validator-stake", 1000000, "Initial validator stake for dynamic scheduler")
 	runCmd.Flags().Uint64Var(&slotsPerEpoch, "slots-per-epoch", 432, "Number of slots per epoch for dynamic scheduler")
+	runCmd.Flags().Uint64Var(&maxConsecutiveSlots, "max-consecutive-slots", 4, "Maximum consecutive slots per leader")
 }
 
 // getRandomFreePort returns a random free port
@@ -337,7 +339,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 		// Initialize dynamic components
 		dynamicScheduler, dynamicCollector, err := initializeEnhancedComponents(
-			nodeConfig.PubKey, validatorStake, slotsPerEpoch, cfg)
+			nodeConfig.PubKey, validatorStake, slotsPerEpoch, maxConsecutiveSlots, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize enhanced components: %v", err)
 		}
@@ -403,7 +405,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 }
 
 // initializeEnhancedComponents creates dynamic PoS components
-func initializeEnhancedComponents(pubKey string, validatorStake, slotsPerEpoch uint64, cfg *config.GenesisConfig) (*poh.DynamicLeaderSchedule, *consensus.DynamicCollector, error) {
+func initializeEnhancedComponents(pubKey string, validatorStake, slotsPerEpoch, maxConsecutiveSlots uint64, cfg *config.GenesisConfig) (*poh.DynamicLeaderSchedule, *consensus.DynamicCollector, error) {
 	log.Printf("[ENHANCED_COMPONENTS]: Initializing dynamic PoS components")
 
 	// Create validators map from config if available, otherwise use command line params
@@ -439,6 +441,16 @@ func initializeEnhancedComponents(pubKey string, validatorStake, slotsPerEpoch u
 
 	// Create dynamic leader scheduler
 	scheduler := poh.NewDynamicLeaderSchedule(slotsPerEpoch, validators)
+
+	// Configure max consecutive slots if specified in config or command line
+	maxSlots := maxConsecutiveSlots // Command line default
+	if cfg.DynamicLeaderScheduler != nil && cfg.DynamicLeaderScheduler.MaxConsecutiveSlots > 0 {
+		maxSlots = cfg.DynamicLeaderScheduler.MaxConsecutiveSlots
+		log.Printf("[ENHANCED_COMPONENTS]: Using max consecutive slots from config: %d", maxSlots)
+	} else {
+		log.Printf("[ENHANCED_COMPONENTS]: Using max consecutive slots from command line: %d", maxSlots)
+	}
+	scheduler.SetMaxConsecutiveSlots(maxSlots)
 
 	// Scheduler is initialized with epoch 0 by default
 	log.Printf("[ENHANCED_COMPONENTS]: Dynamic scheduler initialized with epoch 0")
