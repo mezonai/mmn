@@ -36,7 +36,7 @@ type Mempool struct {
 	pendingTxs    map[string]map[uint64]*PendingTransaction // sender -> nonce -> pending tx
 	readyQueue    []*transaction.Transaction                // ready-to-process transactions
 	accountNonces map[string]uint64                         // cached account nonces for efficiency
-	eventRouter *events.EventRouter          // Event router for transaction status updates
+	eventRouter   *events.EventRouter                       // Event router for transaction status updates
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter) *Mempool {
@@ -51,7 +51,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		pendingTxs:    make(map[string]map[uint64]*PendingTransaction),
 		readyQueue:    make([]*transaction.Transaction, 0),
 		accountNonces: make(map[string]uint64),
-		eventRouter: eventRouter,
+		eventRouter:   eventRouter,
 	}
 }
 
@@ -514,10 +514,14 @@ func (mp *Mempool) RemoveProcessedTxs(processedHashSet map[string]struct{}) {
 	defer mp.mu.Unlock()
 
 	newTxsOrder := make([]string, 0)
+	countRemoved := 0
 	for _, txHash := range mp.txOrder {
+		if countRemoved >= len(processedHashSet) {
+			break
+		}
 		if _, exists := processedHashSet[txHash]; exists {
 			delete(mp.txsBuf, txHash)
-			mp.cleanupNonceTracking(txHash)
+			countRemoved++
 			continue
 		}
 		newTxsOrder = append(newTxsOrder, txHash)
