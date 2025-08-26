@@ -168,32 +168,25 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
-				// Slot bounds: reject if slot <= latest finalized or duplicate
-				if blk.Slot <= bs.GetLatestSlot() {
-					continue
-				}
-
 				// Check parent hash against block s-1 if present
-				if blk.Slot > 0 {
-					prev := bs.Block(blk.Slot - 1)
-					if prev != nil {
-						if blk.PrevHash != prev.LastEntryHash() {
-							continue
-						}
+				prev := bs.Block(blk.Slot - 1)
+				if prev != nil {
+					if blk.PrevHash != prev.LastEntryHash() {
+						logx.Error("NETWORK:SYNC BLOCK", "blk.PrevHash != prev.LastEntryHash()")
+						continue
 					}
 				}
 
 				// Timestamp monotonic vs previous if present
-				if blk.Slot > 0 {
-					if prev := bs.Block(blk.Slot - 1); prev != nil {
-						if blk.Timestamp < prev.Timestamp {
-							continue
-						}
+				if prev := bs.Block(blk.Slot - 1); prev != nil {
+					if blk.Timestamp < prev.Timestamp {
+						logx.Error("NETWORK:SYNC BLOCK", "blk.PrevHash != prev.LastEntryHash()")
+						continue
 					}
 				}
 
 				// Verify block signature using LeaderID as ed25519 public key
-				leaderPubKeyBytes, err := hex.DecodeString(blk.LeaderID)
+				leaderPubKeyBytes, err := common.DecodeBase58ToBytes(blk.LeaderID)
 				if err != nil || len(leaderPubKeyBytes) != ed25519.PublicKeySize {
 					continue
 				}
