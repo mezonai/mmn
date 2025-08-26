@@ -16,13 +16,13 @@ type TxRecord struct {
 }
 
 type Account struct {
-	Address string      `json:"address"`
+	Address string       `json:"address"`
 	Balance *uint256.Int `json:"balance"`
-	Nonce   uint64      `json:"nonce"`
-	History []string    `json:"history"` // tx hashes
+	Nonce   uint64       `json:"nonce"`
+	History []string     `json:"history"` // tx hashes
 }
 
 type SnapshotAccount struct {
 	Balance *uint256.Int `json:"balance"`
-	Nonce   uint64      `json:"nonce"`
+	Nonce   uint64       `json:"nonce"`
 }

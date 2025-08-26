@@ -148,17 +148,8 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
 		var err error
 		amount, err = uint256.FromDecimal(pbTx.TxMsg.Amount)
 		if err != nil {
-			// If decimal parsing fails, try as hex
-			if len(pbTx.TxMsg.Amount) >= 2 && (pbTx.TxMsg.Amount[:2] == "0x" || pbTx.TxMsg.Amount[:2] == "0X") {
-				amount, err = uint256.FromHex(pbTx.TxMsg.Amount)
-				if err != nil {
-					// If both fail, use 0
-					amount = uint256.NewInt(0)
-				}
-			} else {
-				// If both fail, use 0
-				amount = uint256.NewInt(0)
-			}
+			fmt.Println("Error parsing amount:", err)
+			return nil, err
 		}
 	}
 	
