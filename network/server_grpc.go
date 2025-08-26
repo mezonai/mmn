@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/consensus"
@@ -103,9 +104,10 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
-			Address: addr,
-			Balance: "0",
-			Nonce:   0,
+			Address:      addr,
+			Balance:      "0",
+			Nonce:        0,
+			Decimals:     uint32(config.GetDecimalsFactor()),
 		}, nil
 	}
 	balance := "0"
@@ -114,9 +116,10 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	}
 	
 	return &pb.GetAccountResponse{
-		Address: addr,
-		Balance: balance,
-		Nonce:   acc.Nonce,
+		Address:      addr,
+		Balance:      balance,
+		Nonce:        acc.Nonce,
+		Decimals:     uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -196,7 +199,10 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
 	}
-	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
+	return &pb.GetTxByHashResponse{
+		Tx:          txInfo,
+		Decimals:    uint32(config.GetDecimalsFactor()),
+	}, nil
 }
 
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
@@ -219,8 +225,9 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		}
 	}
 	return &pb.GetTxHistoryResponse{
-		Total: total,
-		Txs:   txMetas,
+		Total:        total,
+		Txs:          txMetas,
+		Decimals:     uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -524,5 +531,8 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		blocks = append(blocks, pbBlock)
 	}
 
-	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
+	return &pb.GetBlockByNumberResponse{
+		Blocks:       blocks,
+		Decimals:     uint32(config.GetDecimalsFactor()),
+	}, nil
 }

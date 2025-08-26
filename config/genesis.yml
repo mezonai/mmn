@@ -23,3 +23,5 @@ config:
     batch_size: 750
     leader_timeout: 50
     leader_timeout_loop_interval: 5
+  native_currency:
+    decimals: 9  

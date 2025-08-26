@@ -21,13 +21,13 @@ const (
 )
 
 type Tx struct {
-	Type      int         `json:"type"`
-	Sender    string      `json:"sender"`
-	Recipient string      `json:"recipient"`
+	Type      int          `json:"type"`
+	Sender    string       `json:"sender"`
+	Recipient string       `json:"recipient"`
 	Amount    *uint256.Int `json:"amount"`
-	Timestamp uint64      `json:"timestamp"`
-	TextData  string      `json:"text_data"`
-	Nonce     uint64      `json:"nonce"`
+	Timestamp uint64       `json:"timestamp"`
+	TextData  string       `json:"text_data"`
+	Nonce     uint64       `json:"nonce"`
 }
 
 type SignedTx struct {

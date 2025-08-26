@@ -187,13 +187,3 @@ func ToProtoTx(tx *transaction.Transaction) *pb.TxMsg {
 		Nonce:     tx.Nonce,
 	}
 }
-
-const (
-	// DecimalScale represents the scaling factor for amounts (10^6)
-	DecimalScale = 1e6
-)
-
-// GetDecimalScale returns the decimal scale factor that clients should use
-func GetDecimalScale() uint64 {
-	return DecimalScale
-}

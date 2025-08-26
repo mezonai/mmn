@@ -59,7 +59,7 @@ message GetBlockNumberResponse {
 message GetBlockByNumberResponse {
   repeated Block blocks = 1;   
   string error = 3;
-  uint64 decimal_scale = 4; // Decimal scale factor for amount formatting
+  uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
 service BlockService {

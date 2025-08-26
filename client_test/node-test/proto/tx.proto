@@ -52,7 +52,7 @@ message TxInfo {
 message GetTxByHashResponse {
   string error = 1;
   TxInfo tx = 2;
-  uint64 decimal_scale = 3; // Decimal scale factor for amount formatting
+  uint32 decimals = 3; // Number of fractional digits for amount formatting
 }
 
 // Request to get transaction status
