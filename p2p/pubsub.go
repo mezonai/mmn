@@ -3,10 +3,10 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
@@ -25,32 +25,23 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			// Slot bounds: reject if slot <= latest finalized or duplicate
-			if blk.Slot <= bs.GetLatestSlot() {
-				return fmt.Errorf("invalid slot: not ahead of latest finalized")
-			}
-
 			// Check parent hash against block s-1 if present
-			if blk.Slot > 0 {
-				prev := bs.Block(blk.Slot - 1)
-				if prev != nil {
-					if blk.PrevHash != prev.LastEntryHash() {
-						return fmt.Errorf("parent hash mismatch")
-					}
+			prev := bs.Block(blk.Slot - 1)
+			if prev != nil {
+				if blk.PrevHash != prev.LastEntryHash() {
+					return fmt.Errorf("parent hash mismatch")
 				}
 			}
 
 			// Timestamp bounds: monotonic vs previous if present
-			if blk.Slot > 0 {
-				if prev := bs.Block(blk.Slot - 1); prev != nil {
-					if blk.Timestamp < prev.Timestamp {
-						return fmt.Errorf("invalid timestamp: older than parent")
-					}
+			if prev := bs.Block(blk.Slot - 1); prev != nil {
+				if blk.Timestamp < prev.Timestamp {
+					return fmt.Errorf("invalid timestamp: older than parent")
 				}
 			}
 
 			// Verify block signature using LeaderID as ed25519 public key
-			leaderPubKeyBytes, err := hex.DecodeString(blk.LeaderID)
+			leaderPubKeyBytes, err := common.DecodeBase58ToBytes(blk.LeaderID)
 			if err != nil || len(leaderPubKeyBytes) != ed25519.PublicKeySize {
 				return fmt.Errorf("invalid leader public key")
 			}
