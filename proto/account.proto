@@ -11,6 +11,7 @@ message GetAccountResponse {
   string address = 1;
   string balance = 2;
   uint64 nonce   = 3;
+  uint64 decimal_scale = 4; // Decimal scale factor for amount formatting
 }
 
 message GetTxHistoryRequest {
@@ -38,6 +39,7 @@ message TxMeta {
 message GetTxHistoryResponse {
   uint32 total = 1;
   repeated TxMeta txs = 2;
+  uint64 decimal_scale = 3; // Decimal scale factor for amount formatting
 }
 
 message GetCurrentNonceRequest {

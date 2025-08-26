@@ -26,64 +26,6 @@ type Transaction struct {
 	Signature string      `json:"signature,omitempty"`
 }
 
-// Custom JSON marshaling for uint256.Int Amount field
-type transactionJSON struct {
-	Type      int32  `json:"type"`
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    string `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce,omitempty"`
-	Signature string `json:"signature,omitempty"`
-}
-
-func (tx *Transaction) MarshalJSON() ([]byte, error) {
-	amountStr := "0"
-	if tx.Amount != nil {
-		amountStr = tx.Amount.String()
-	}
-	
-	return json.Marshal(&transactionJSON{
-		Type:      tx.Type,
-		Sender:    tx.Sender,
-		Recipient: tx.Recipient,
-		Amount:    amountStr,
-		Timestamp: tx.Timestamp,
-		TextData:  tx.TextData,
-		Nonce:     tx.Nonce,
-		Signature: tx.Signature,
-	})
-}
-
-func (tx *Transaction) UnmarshalJSON(data []byte) error {
-	var aux transactionJSON
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	
-	tx.Type = aux.Type
-	tx.Sender = aux.Sender
-	tx.Recipient = aux.Recipient
-	tx.Timestamp = aux.Timestamp
-	tx.TextData = aux.TextData
-	tx.Nonce = aux.Nonce
-	tx.Signature = aux.Signature
-	
-	// Parse amount
-	if aux.Amount == "" {
-		tx.Amount = uint256.NewInt(0)
-	} else {
-		amount, err := uint256.FromDecimal(aux.Amount)
-		if err != nil {
-			return fmt.Errorf("invalid amount format: %w", err)
-		}
-		tx.Amount = amount
-	}
-	
-	return nil
-}
-
 func (tx *Transaction) Serialize() []byte {
 	amountStr := "0"
 	if tx.Amount != nil {

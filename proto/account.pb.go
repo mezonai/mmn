@@ -122,6 +122,7 @@ type GetAccountResponse struct {
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	Balance       string                 `protobuf:"bytes,2,opt,name=balance,proto3" json:"balance,omitempty"`
 	Nonce         uint64                 `protobuf:"varint,3,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	DecimalScale  uint64                 `protobuf:"varint,4,opt,name=decimal_scale,json=decimalScale,proto3" json:"decimal_scale,omitempty"` // Decimal scale factor for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -173,6 +174,13 @@ func (x *GetAccountResponse) GetBalance() string {
 func (x *GetAccountResponse) GetNonce() uint64 {
 	if x != nil {
 		return x.Nonce
+	}
+	return 0
+}
+
+func (x *GetAccountResponse) GetDecimalScale() uint64 {
+	if x != nil {
+		return x.DecimalScale
 	}
 	return 0
 }
@@ -333,6 +341,7 @@ type GetTxHistoryResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Total         uint32                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
 	Txs           []*TxMeta              `protobuf:"bytes,2,rep,name=txs,proto3" json:"txs,omitempty"`
+	DecimalScale  uint64                 `protobuf:"varint,3,opt,name=decimal_scale,json=decimalScale,proto3" json:"decimal_scale,omitempty"` // Decimal scale factor for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -379,6 +388,13 @@ func (x *GetTxHistoryResponse) GetTxs() []*TxMeta {
 		return x.Txs
 	}
 	return nil
+}
+
+func (x *GetTxHistoryResponse) GetDecimalScale() uint64 {
+	if x != nil {
+		return x.DecimalScale
+	}
+	return 0
 }
 
 type GetCurrentNonceRequest struct {
@@ -507,11 +523,12 @@ const file_account_proto_rawDesc = "" +
 	"\n" +
 	"\raccount.proto\x12\x03mmn\"-\n" +
 	"\x11GetAccountRequest\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\"^\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\"\x83\x01\n" +
 	"\x12GetAccountResponse\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n" +
 	"\abalance\x18\x02 \x01(\tR\abalance\x12\x14\n" +
-	"\x05nonce\x18\x03 \x01(\x04R\x05nonce\"u\n" +
+	"\x05nonce\x18\x03 \x01(\x04R\x05nonce\x12#\n" +
+	"\rdecimal_scale\x18\x04 \x01(\x04R\fdecimalScale\"u\n" +
 	"\x13GetTxHistoryRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\rR\x05limit\x12\x16\n" +
@@ -529,10 +546,11 @@ const file_account_proto_rawDesc = "" +
 	"\tCONFIRMED\x10\x01\x12\r\n" +
 	"\tFINALIZED\x10\x02\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x03\"K\n" +
+	"\x06FAILED\x10\x03\"p\n" +
 	"\x14GetTxHistoryResponse\x12\x14\n" +
 	"\x05total\x18\x01 \x01(\rR\x05total\x12\x1d\n" +
-	"\x03txs\x18\x02 \x03(\v2\v.mmn.TxMetaR\x03txs\"D\n" +
+	"\x03txs\x18\x02 \x03(\v2\v.mmn.TxMetaR\x03txs\x12#\n" +
+	"\rdecimal_scale\x18\x03 \x01(\x04R\fdecimalScale\"D\n" +
 	"\x16GetCurrentNonceRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x10\n" +
 	"\x03tag\x18\x02 \x01(\tR\x03tag\"q\n" +

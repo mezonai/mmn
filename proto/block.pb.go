@@ -557,6 +557,7 @@ type GetBlockByNumberResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Blocks        []*Block               `protobuf:"bytes,1,rep,name=blocks,proto3" json:"blocks,omitempty"`
 	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	DecimalScale  uint64                 `protobuf:"varint,4,opt,name=decimal_scale,json=decimalScale,proto3" json:"decimal_scale,omitempty"` // Decimal scale factor for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -605,6 +606,13 @@ func (x *GetBlockByNumberResponse) GetError() string {
 	return ""
 }
 
+func (x *GetBlockByNumberResponse) GetDecimalScale() uint64 {
+	if x != nil {
+		return x.DecimalScale
+	}
+	return 0
+}
+
 var File_block_proto protoreflect.FileDescriptor
 
 const file_block_proto_rawDesc = "" +
@@ -650,11 +658,12 @@ const file_block_proto_rawDesc = "" +
 	"\x17GetBlockByNumberRequest\x12#\n" +
 	"\rblock_numbers\x18\x01 \x03(\x04R\fblockNumbers\";\n" +
 	"\x16GetBlockNumberResponse\x12!\n" +
-	"\fblock_number\x18\x01 \x01(\x04R\vblockNumber\"T\n" +
+	"\fblock_number\x18\x01 \x01(\x04R\vblockNumber\"y\n" +
 	"\x18GetBlockByNumberResponse\x12\"\n" +
 	"\x06blocks\x18\x01 \x03(\v2\n" +
 	".mmn.BlockR\x06blocks\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error2\x83\x02\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12#\n" +
+	"\rdecimal_scale\x18\x04 \x01(\x04R\fdecimalScale2\x83\x02\n" +
 	"\fBlockService\x12/\n" +
 	"\tBroadcast\x12\n" +
 	".mmn.Block\x1a\x16.mmn.BroadcastResponse\x120\n" +

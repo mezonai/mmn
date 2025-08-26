@@ -133,6 +133,10 @@ export interface GetTxByHashResponse {
      * @generated from protobuf field: mmn.TxInfo tx = 2
      */
     tx?: TxInfo;
+    /**
+     * @generated from protobuf field: uint64 decimal_scale = 3
+     */
+    decimalScale: bigint; // Decimal scale factor for amount formatting
 }
 /**
  * Request to get transaction status
@@ -618,12 +622,14 @@ class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
     constructor() {
         super("mmn.GetTxByHashResponse", [
             { no: 1, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 2, name: "tx", kind: "message", T: () => TxInfo }
+            { no: 2, name: "tx", kind: "message", T: () => TxInfo },
+            { no: 3, name: "decimal_scale", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
         ]);
     }
     create(value?: PartialMessage<GetTxByHashResponse>): GetTxByHashResponse {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.error = "";
+        message.decimalScale = 0n;
         if (value !== undefined)
             reflectionMergePartial<GetTxByHashResponse>(this, message, value);
         return message;
@@ -638,6 +644,9 @@ class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
                     break;
                 case /* mmn.TxInfo tx */ 2:
                     message.tx = TxInfo.internalBinaryRead(reader, reader.uint32(), options, message.tx);
+                    break;
+                case /* uint64 decimal_scale */ 3:
+                    message.decimalScale = reader.uint64().toBigInt();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -657,6 +666,9 @@ class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
         /* mmn.TxInfo tx = 2; */
         if (message.tx)
             TxInfo.internalBinaryWrite(message.tx, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        /* uint64 decimal_scale = 3; */
+        if (message.decimalScale !== 0n)
+            writer.tag(3, WireType.Varint).uint64(message.decimalScale);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

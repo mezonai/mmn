@@ -454,6 +454,7 @@ type GetTxByHashResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Error         string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
 	Tx            *TxInfo                `protobuf:"bytes,2,opt,name=tx,proto3" json:"tx,omitempty"`
+	DecimalScale  uint64                 `protobuf:"varint,3,opt,name=decimal_scale,json=decimalScale,proto3" json:"decimal_scale,omitempty"` // Decimal scale factor for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -500,6 +501,13 @@ func (x *GetTxByHashResponse) GetTx() *TxInfo {
 		return x.Tx
 	}
 	return nil
+}
+
+func (x *GetTxByHashResponse) GetDecimalScale() uint64 {
+	if x != nil {
+		return x.DecimalScale
+	}
+	return 0
 }
 
 // Request to get transaction status
@@ -709,10 +717,11 @@ const file_tx_proto_rawDesc = "" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\tR\x06amount\x12\x1c\n" +
 	"\ttimestamp\x18\x04 \x01(\x04R\ttimestamp\x12\x1b\n" +
-	"\ttext_data\x18\x05 \x01(\tR\btextData\"H\n" +
+	"\ttext_data\x18\x05 \x01(\tR\btextData\"m\n" +
 	"\x13GetTxByHashResponse\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1b\n" +
-	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\"6\n" +
+	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\x12#\n" +
+	"\rdecimal_scale\x18\x03 \x01(\x04R\fdecimalScale\"6\n" +
 	"\x1bGetTransactionStatusRequest\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x87\x02\n" +
 	"\x15TransactionStatusInfo\x12\x17\n" +

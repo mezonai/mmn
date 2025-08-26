@@ -36,6 +36,10 @@ export interface GetAccountResponse {
      * @generated from protobuf field: uint64 nonce = 3
      */
     nonce: bigint;
+    /**
+     * @generated from protobuf field: uint64 decimal_scale = 4
+     */
+    decimalScale: bigint; // Decimal scale factor for amount formatting
 }
 /**
  * @generated from protobuf message mmn.GetTxHistoryRequest
@@ -120,6 +124,10 @@ export interface GetTxHistoryResponse {
      * @generated from protobuf field: repeated mmn.TxMeta txs = 2
      */
     txs: TxMeta[];
+    /**
+     * @generated from protobuf field: uint64 decimal_scale = 3
+     */
+    decimalScale: bigint; // Decimal scale factor for amount formatting
 }
 /**
  * @generated from protobuf message mmn.GetCurrentNonceRequest
@@ -208,7 +216,8 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
         super("mmn.GetAccountResponse", [
             { no: 1, name: "address", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "balance", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 3, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+            { no: 3, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 4, name: "decimal_scale", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
         ]);
     }
     create(value?: PartialMessage<GetAccountResponse>): GetAccountResponse {
@@ -216,6 +225,7 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
         message.address = "";
         message.balance = "";
         message.nonce = 0n;
+        message.decimalScale = 0n;
         if (value !== undefined)
             reflectionMergePartial<GetAccountResponse>(this, message, value);
         return message;
@@ -233,6 +243,9 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
                     break;
                 case /* uint64 nonce */ 3:
                     message.nonce = reader.uint64().toBigInt();
+                    break;
+                case /* uint64 decimal_scale */ 4:
+                    message.decimalScale = reader.uint64().toBigInt();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -255,6 +268,9 @@ class GetAccountResponse$Type extends MessageType<GetAccountResponse> {
         /* uint64 nonce = 3; */
         if (message.nonce !== 0n)
             writer.tag(3, WireType.Varint).uint64(message.nonce);
+        /* uint64 decimal_scale = 4; */
+        if (message.decimalScale !== 0n)
+            writer.tag(4, WireType.Varint).uint64(message.decimalScale);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -428,13 +444,15 @@ class GetTxHistoryResponse$Type extends MessageType<GetTxHistoryResponse> {
     constructor() {
         super("mmn.GetTxHistoryResponse", [
             { no: 1, name: "total", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
-            { no: 2, name: "txs", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => TxMeta }
+            { no: 2, name: "txs", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => TxMeta },
+            { no: 3, name: "decimal_scale", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
         ]);
     }
     create(value?: PartialMessage<GetTxHistoryResponse>): GetTxHistoryResponse {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.total = 0;
         message.txs = [];
+        message.decimalScale = 0n;
         if (value !== undefined)
             reflectionMergePartial<GetTxHistoryResponse>(this, message, value);
         return message;
@@ -449,6 +467,9 @@ class GetTxHistoryResponse$Type extends MessageType<GetTxHistoryResponse> {
                     break;
                 case /* repeated mmn.TxMeta txs */ 2:
                     message.txs.push(TxMeta.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* uint64 decimal_scale */ 3:
+                    message.decimalScale = reader.uint64().toBigInt();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -468,6 +489,9 @@ class GetTxHistoryResponse$Type extends MessageType<GetTxHistoryResponse> {
         /* repeated mmn.TxMeta txs = 2; */
         for (let i = 0; i < message.txs.length; i++)
             TxMeta.internalBinaryWrite(message.txs[i], writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        /* uint64 decimal_scale = 3; */
+        if (message.decimalScale !== 0n)
+            writer.tag(3, WireType.Varint).uint64(message.decimalScale);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
