@@ -26,7 +26,6 @@ import (
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/validator"
 
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/spf13/cobra"
 )
 
@@ -133,7 +132,7 @@ func runNode() {
 	defer ts.Close()
 
 	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(pubKey, blockstoreDir, databaseBackend, ts)
+	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -192,11 +191,6 @@ func runNode() {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
-	// Configure access control
-	if err := configureAccessControl(libP2pClient, genesisPath); err != nil {
-		log.Fatalf("Failed to configure access control: %v", err)
-	}
-
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath)
 	if err != nil {
@@ -205,7 +199,7 @@ func runNode() {
 
 	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
@@ -250,9 +244,7 @@ func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, erro
 }
 
 // initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(pubKey string, dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
-	seed := []byte(pubKey)
-
+func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
 	// Create store configuration with StoreType
 	storeType := blockstore.StoreType(backend)
 	config := &blockstore.StoreConfig{
@@ -266,7 +258,7 @@ func initializeBlockstore(pubKey string, dataDir string, backend string, ts bloc
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, seed, ts)
+	return blockstore.CreateStore(config, ts)
 }
 
 // initializePoH initializes Proof of History components
@@ -276,15 +268,15 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
 	}
 
-	seed := []byte(pubKey)
 	hashesPerTick := pohCfg.HashesPerTick
 	ticksPerSlot := pohCfg.TicksPerSlot
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
-	pohAutoHashInterval := tickInterval / 5
+	pohAutoHashInterval := tickInterval / 10
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
-	pohEngine := poh.NewPoh(seed, &hashesPerTick, pohAutoHashInterval)
+	empty_seed := []byte("")
+	pohEngine := poh.NewPoh(empty_seed, &hashesPerTick, pohAutoHashInterval)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
@@ -351,49 +343,6 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	val.Run()
 
 	return val, nil
-}
-
-// configureAccessControl sets up allowlist and blacklist for the P2P network from genesis.yml
-func configureAccessControl(p2pClient *p2p.Libp2pNetwork, genesisPath string) error {
-	// Load access control config from genesis.yml
-	accessControlCfg, err := config.LoadAccessControlConfig(genesisPath)
-	if err != nil {
-		logx.Warn("ACCESS CONTROL", "Failed to load access control config from genesis.yml:", err)
-		logx.Info("ACCESS CONTROL", "Access control disabled - no configuration found")
-		return nil
-	}
-
-	// Use genesis.yml configuration
-	p2pClient.EnableAllowlist(accessControlCfg.AllowlistEnabled)
-	p2pClient.EnableBlacklist(accessControlCfg.BlacklistEnabled)
-
-	// Load allowlist from genesis.yml
-	if accessControlCfg.AllowlistEnabled && len(accessControlCfg.AllowedPeers) > 0 {
-		for _, peerIDStr := range accessControlCfg.AllowedPeers {
-			peerID, err := peer.Decode(peerIDStr)
-			if err != nil {
-				logx.Warn("ACCESS CONTROL", "Invalid peer ID in genesis allowlist:", peerIDStr)
-				continue
-			}
-			p2pClient.AddToAllowlist(peerID)
-		}
-		logx.Info("ACCESS CONTROL", "Configured allowlist from genesis.yml with", len(accessControlCfg.AllowedPeers), "peers")
-	}
-
-	// Load blacklist from genesis.yml
-	if accessControlCfg.BlacklistEnabled && len(accessControlCfg.BlacklistedPeers) > 0 {
-		for _, peerIDStr := range accessControlCfg.BlacklistedPeers {
-			peerID, err := peer.Decode(peerIDStr)
-			if err != nil {
-				logx.Warn("ACCESS CONTROL", "Invalid peer ID in genesis blacklist:", peerIDStr)
-				continue
-			}
-			p2pClient.AddToBlacklist(peerID)
-		}
-		logx.Info("ACCESS CONTROL", "Configured blacklist from genesis.yml with", len(accessControlCfg.BlacklistedPeers), "peers")
-	}
-
-	return nil
 }
 
 // startServices starts all network and API services

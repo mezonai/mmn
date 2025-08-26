@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
+	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -82,7 +84,7 @@ func NewNetWork(
 		peers:              make(map[peer.ID]*PeerInfo),
 		syncStreams:        make(map[peer.ID]network.Stream),
 		blockStore:         blockStore,
-		maxPeers:           int(MaxPeers),
+		maxPeers:           int(P2pMaxPeerConnections),
 		activeSyncRequests: make(map[string]*SyncRequestInfo),
 		syncRequests:       make(map[string]*SyncRequestTracker),
 		authenticatedPeers: make(map[peer.ID]*AuthenticatedPeer),
@@ -91,6 +93,8 @@ func NewNetWork(
 		blacklist:          make(map[peer.ID]bool),
 		allowlistEnabled:   false,
 		blacklistEnabled:   true,
+		syncCompleted:      false,
+		activeSyncCount:    0,
 		ctx:                ctx,
 		cancel:             cancel,
 	}
@@ -179,6 +183,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Libp2p network started with ID: %s", ln.host.ID().String()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
+
 	return nil
 }
 
@@ -198,7 +203,13 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 			peerID := conn.RemotePeer()
 			logx.Info("AUTH:CONNECTION", "New connection from peer: ", peerID.String())
 
-			if !ln.IsAllowed(peerID) {
+			ln.listMu.RLock()
+			allowlistEmpty := ln.allowlistEnabled && len(ln.allowlist) == 0
+			ln.listMu.RUnlock()
+
+			if allowlistEmpty {
+				logx.Info("AUTH:CONNECTION", "Allowing bootnode connection when allowlist is empty:", peerID.String())
+			} else if !ln.IsAllowed(peerID) {
 				logx.Info("AUTH:CONNECTION", "Rejecting connection from peer not allowed by access control:", peerID.String())
 				conn.Close()
 				return
@@ -251,7 +262,6 @@ func (ln *Libp2pNetwork) Close() {
 	ln.cancel()
 	ln.host.Close()
 }
-
 func (ln *Libp2pNetwork) dedupePeerConnections(n network.Network, peerID peer.ID) {
 	conns := n.ConnsToPeer(peerID)
 	if len(conns) <= 1 {
@@ -304,4 +314,83 @@ func (ln *Libp2pNetwork) pickPreferredConnection(conns []network.Conn, remote pe
 		}
 	}
 	return preferred
+}
+
+// IncrementActiveSyncCount increments the active sync count
+func (ln *Libp2pNetwork) IncrementActiveSyncCount() {
+	ln.activeSyncCountMu.Lock()
+	defer ln.activeSyncCountMu.Unlock()
+	ln.activeSyncCount++
+	logx.Info("NETWORK:SYNC", "Active sync count incremented to:", ln.activeSyncCount)
+}
+
+// DecrementActiveSyncCount decrements the active sync count and enables allowlist if all syncs are done
+func (ln *Libp2pNetwork) DecrementActiveSyncCount() {
+	ln.activeSyncCountMu.Lock()
+	defer ln.activeSyncCountMu.Unlock()
+
+	if ln.activeSyncCount > 0 {
+		ln.activeSyncCount--
+		logx.Info("NETWORK:SYNC", "Active sync count decremented to:", ln.activeSyncCount)
+
+		// If no more active syncs, enable allowlist
+		if ln.activeSyncCount == 0 && !ln.IsAllowlistEnabled() {
+			ln.EnableAllowlist(true)
+			logx.Info("NETWORK:SYNC", "All syncs completed - Allowlist enabled for enhanced security")
+		}
+	}
+}
+
+// GetActiveSyncCount returns the current active sync count
+func (ln *Libp2pNetwork) GetActiveSyncCount() int {
+	ln.activeSyncCountMu.RLock()
+	defer ln.activeSyncCountMu.RUnlock()
+	return ln.activeSyncCount
+}
+
+func (ln *Libp2pNetwork) GetPeersConnected() int {
+	return len(ln.peers)
+}
+
+func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
+	defer s.Close()
+
+	buf := make([]byte, 2048)
+	n, err := s.Read(buf)
+	if err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to read from bootstrap: ", err)
+		return
+	}
+
+	var msg map[string]interface{}
+	if err := json.Unmarshal(buf[:n], &msg); err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
+		return
+	}
+
+	newPeerIDStr := msg["new_peer_id"].(string)
+	newPeerID, err := peer.Decode(newPeerIDStr)
+	if err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Invalid peer ID: ", newPeerIDStr)
+		return
+	}
+
+	addrStrs := msg["addrs"].([]interface{})
+	var addrs []ma.Multiaddr
+	for _, a := range addrStrs {
+		maddr, err := ma.NewMultiaddr(a.(string))
+		if err == nil {
+			addrs = append(addrs, maddr)
+		}
+	}
+
+	peerInfo := peer.AddrInfo{
+		ID:    newPeerID,
+		Addrs: addrs,
+	}
+
+	err = ln.host.Connect(context.Background(), peerInfo)
+	if err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
+	}
 }

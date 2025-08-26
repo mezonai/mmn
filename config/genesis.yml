@@ -14,17 +14,12 @@ config:
       - address: "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
         amount: 2000000000
   poh:
-    hashes_per_tick: 5
-    ticks_per_slot: 8
-    tick_interval_ms: 200
+    hashes_per_tick: 10
+    ticks_per_slot: 4
+    tick_interval_ms: 100
   mempool:
     max_txs: 100000
   validator:
     batch_size: 750
     leader_timeout: 50
     leader_timeout_loop_interval: 5
-  access_control:
-    allowlist_enabled: false
-    blacklist_enabled: false
-    allowed_peers: []
-    blacklisted_peers: []

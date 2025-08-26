@@ -12,6 +12,7 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 )
@@ -141,7 +142,7 @@ func (l *Ledger) GetAccount(addr string) *types.Account {
 }
 
 // Apply transaction to ledger (after verifying signature)
-func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
+func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: 0, Nonce: 0}
@@ -166,11 +167,11 @@ func applyTx(state map[string]*types.Account, tx *types.Transaction) error {
 	return nil
 }
 
-func addHistory(acc *types.Account, tx *types.Transaction) {
+func addHistory(acc *types.Account, tx *transaction.Transaction) {
 	acc.History = append(acc.History, tx.Hash())
 }
 
-func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
+func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, error) {
 	tx, err := l.txStore.GetByHash(hash)
 	if err != nil {
 		return nil, err
@@ -179,18 +180,18 @@ func (l *Ledger) GetTxByHash(hash string) (*types.Transaction, error) {
 }
 
 // TODO: need to optimize this by using BadgerDB
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*types.Transaction) {
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	txs := make([]*types.Transaction, 0)
+	txs := make([]*transaction.Transaction, 0)
 	acc, ok := l.state[addr]
 	if !ok {
 		return 0, txs
 	}
 
 	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]*types.Transaction, 0)
+	filteredHistory := make([]*transaction.Transaction, 0)
 	transactions, err := l.txStore.GetBatch(acc.History)
 	if err != nil {
 		return 0, txs
@@ -277,7 +278,7 @@ func (l *Ledger) LoadLedger() error {
 		dec := json.NewDecoder(w)
 		var rec types.TxRecord
 		for dec.Decode(&rec) == nil {
-			_ = applyTx(l.state, &types.Transaction{
+			_ = applyTx(l.state, &transaction.Transaction{
 				Type:      rec.Type,
 				Sender:    rec.Sender,
 				Recipient: rec.Recipient,
@@ -319,7 +320,7 @@ func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
 	return &cp
 }
 
-func (lv *LedgerView) ApplyTx(tx *types.Transaction) error {
+func (lv *LedgerView) ApplyTx(tx *transaction.Transaction) error {
 	// Validate zero amount transfers
 	if tx.Amount == 0 {
 		return fmt.Errorf("zero amount transfers are not allowed")
@@ -370,8 +371,8 @@ func (s *Session) CopyWithOverlayClone() *Session {
 }
 
 // Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([]*types.Transaction, []error) {
-	valid := make([]*types.Transaction, 0, len(raws))
+func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []error) {
+	valid := make([]*transaction.Transaction, 0, len(raws))
 	errs := make([]error, 0)
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
