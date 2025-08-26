@@ -478,6 +478,14 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
+			senderAcc, err := s.ledger.GetAccount(tx.Sender)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
+			}
+			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
+			}
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
@@ -486,6 +494,16 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
 				Status:    pb.TransactionData_CONFIRMED,
+				SenderAccount: &pb.AccountData{
+					Address: senderAcc.Address,
+					Balance: senderAcc.Balance,
+					Nonce:   senderAcc.Nonce,
+				},
+				RecipientAccount: &pb.AccountData{
+					Address: recipientAcc.Address,
+					Balance: recipientAcc.Balance,
+					Nonce:   recipientAcc.Nonce,
+				},
 			})
 		}
 
