@@ -24,14 +24,13 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 	remotePeer := s.Conn().RemotePeer()
 	logx.Info("AUTH", "Handling authentication request from peer: ", remotePeer.String())
 
-	limited := &io.LimitedReader{R: s, N: 2048}
+	limited := &io.LimitedReader{R: s, N: AuthLimitMessagePayload}
 	data, err := io.ReadAll(limited)
 	if err != nil {
 		logx.Error("AUTH", "Failed to read auth message: ", err.Error())
 		return
 	}
 
-	// If reader hit the limit, reject if payload ≥ 2048
 	if limited.N <= 0 {
 		return
 	}
@@ -476,7 +475,7 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to send challenge: %w", err)
 	}
 
-	buf := make([]byte, 2048)
+	buf := make([]byte, AuthLimitMessagePayload)
 	n, err := stream.Read(buf)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)

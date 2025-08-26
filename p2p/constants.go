@@ -21,7 +21,7 @@ const (
 )
 
 var (
-	ConnCount int32  = 0
-	MaxPeers  int32  = 50
-	BatchSize uint64 = 10 // for test only, should be 1000
+	P2pMaxPeerConnections   int32  = 50
+	SyncBlockBatchSize      uint64 = 10 // for test only, should be 1000
+	AuthLimitMessagePayload int64  = 2048
 )

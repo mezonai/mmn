@@ -290,7 +290,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			batch = append(batch, blk)
 		}
 
-		if len(batch) >= int(BatchSize) {
+		if len(batch) >= int(SyncBlockBatchSize) {
 			if err := ln.sendBlockBatchStream(batch, stream); err != nil {
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to send batch:", err)
 				return
@@ -312,7 +312,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 
 	if req.ToSlot < localLatestSlot {
 		nextFromSlot := req.ToSlot + 1
-		nextToSlot := nextFromSlot + BatchSize - 1
+		nextToSlot := nextFromSlot + SyncBlockBatchSize - 1
 		if nextToSlot > localLatestSlot {
 			nextToSlot = localLatestSlot
 		}
@@ -334,7 +334,7 @@ func (ln *Libp2pNetwork) RequestContinuousBlockSync(fromSlot, toSlot uint64, tar
 	currentSlot := fromSlot
 
 	for currentSlot < toSlot {
-		endSlot := currentSlot + BatchSize - 1
+		endSlot := currentSlot + SyncBlockBatchSize - 1
 		if endSlot > toSlot {
 			endSlot = toSlot
 		}

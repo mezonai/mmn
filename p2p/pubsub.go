@@ -158,6 +158,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
 			}
 
+			// Decrement active sync count when sync response is processed
+			ln.DecrementActiveSyncCount()
+
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {

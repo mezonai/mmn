@@ -115,6 +115,12 @@ func (ln *Libp2pNetwork) EnableBlacklist(enabled bool) {
 	ln.blacklistEnabled = enabled
 }
 
+func (ln *Libp2pNetwork) IsAllowlistEnabled() bool {
+	ln.listMu.RLock()
+	defer ln.listMu.RUnlock()
+	return ln.allowlistEnabled
+}
+
 func (ln *Libp2pNetwork) UpdatePeerScore(peerID peer.ID, eventType string, value interface{}) {
 	if ln.peerScoringManager != nil {
 		ln.peerScoringManager.UpdatePeerScore(peerID, eventType, value)

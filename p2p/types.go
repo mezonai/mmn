@@ -67,6 +67,12 @@ type Libp2pNetwork struct {
 	// Peer scoring system
 	peerScoringManager *PeerScoringManager
 
+	// Sync completion tracking
+	syncCompleted     bool
+	syncCompletedMu   sync.RWMutex
+	activeSyncCount   int
+	activeSyncCountMu sync.RWMutex
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }

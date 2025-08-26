@@ -84,7 +84,7 @@ func NewNetWork(
 		peers:              make(map[peer.ID]*PeerInfo),
 		syncStreams:        make(map[peer.ID]network.Stream),
 		blockStore:         blockStore,
-		maxPeers:           int(MaxPeers),
+		maxPeers:           int(P2pMaxPeerConnections),
 		activeSyncRequests: make(map[string]*SyncRequestInfo),
 		syncRequests:       make(map[string]*SyncRequestTracker),
 		authenticatedPeers: make(map[peer.ID]*AuthenticatedPeer),
@@ -93,6 +93,8 @@ func NewNetWork(
 		blacklist:          make(map[peer.ID]bool),
 		allowlistEnabled:   false,
 		blacklistEnabled:   true,
+		syncCompleted:      false,
+		activeSyncCount:    0,
 		ctx:                ctx,
 		cancel:             cancel,
 	}
@@ -258,6 +260,38 @@ func (ln *Libp2pNetwork) Close() {
 
 	ln.cancel()
 	ln.host.Close()
+}
+
+// IncrementActiveSyncCount increments the active sync count
+func (ln *Libp2pNetwork) IncrementActiveSyncCount() {
+	ln.activeSyncCountMu.Lock()
+	defer ln.activeSyncCountMu.Unlock()
+	ln.activeSyncCount++
+	logx.Info("NETWORK:SYNC", "Active sync count incremented to:", ln.activeSyncCount)
+}
+
+// DecrementActiveSyncCount decrements the active sync count and enables allowlist if all syncs are done
+func (ln *Libp2pNetwork) DecrementActiveSyncCount() {
+	ln.activeSyncCountMu.Lock()
+	defer ln.activeSyncCountMu.Unlock()
+
+	if ln.activeSyncCount > 0 {
+		ln.activeSyncCount--
+		logx.Info("NETWORK:SYNC", "Active sync count decremented to:", ln.activeSyncCount)
+
+		// If no more active syncs, enable allowlist
+		if ln.activeSyncCount == 0 && !ln.IsAllowlistEnabled() {
+			ln.EnableAllowlist(true)
+			logx.Info("NETWORK:SYNC", "All syncs completed - Allowlist enabled for enhanced security")
+		}
+	}
+}
+
+// GetActiveSyncCount returns the current active sync count
+func (ln *Libp2pNetwork) GetActiveSyncCount() int {
+	ln.activeSyncCountMu.RLock()
+	defer ln.activeSyncCountMu.RUnlock()
+	return ln.activeSyncCount
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
