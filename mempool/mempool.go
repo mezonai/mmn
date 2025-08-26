@@ -567,62 +567,16 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
-
-	var largestNonce uint64 = 0
-
-	// Check pending transactions
 	pendingMap, exists := mp.pendingTxs[sender]
-	if exists {
-		for nonce := range pendingMap {
-			if nonce > largestNonce {
-				largestNonce = nonce
-			}
+	if !exists || len(pendingMap) == 0 {
+		return 0
+	}
+	var largestNonce uint64 = 0
+	for nonce := range pendingMap {
+		if nonce > largestNonce {
+			largestNonce = nonce
 		}
 	}
-
-	// Check ready queue transactions for the same sender
-	for _, tx := range mp.readyQueue {
-		if tx.Sender == sender && tx.Nonce > largestNonce {
-			largestNonce = tx.Nonce
-		}
-	}
-
-	// Check cached nonce (transactions that were processed but not yet applied to ledger)
-	if cachedNonce, exists := mp.accountNonces[sender]; exists && cachedNonce > largestNonce {
-		largestNonce = cachedNonce
-	}
-
-	fmt.Printf("[MEMPOOL] GetLargestPendingNonce for %s: pending=%d, ready_queue=%d, cached=%d, result=%d\n",
-		sender[:8],
-		func() uint64 {
-			if len(pendingMap) > 0 {
-				max := uint64(0)
-				for n := range pendingMap {
-					if n > max {
-						max = n
-					}
-				}
-				return max
-			}
-			return 0
-		}(),
-		func() uint64 {
-			max := uint64(0)
-			for _, tx := range mp.readyQueue {
-				if tx.Sender == sender && tx.Nonce > max {
-					max = tx.Nonce
-				}
-			}
-			return max
-		}(),
-		func() uint64 {
-			if c, exists := mp.accountNonces[sender]; exists {
-				return c
-			}
-			return 0
-		}(),
-		largestNonce)
-
 	return largestNonce
 }
 
