@@ -1,5 +1,4 @@
 config:
-  # Dynamic leader scheduler configuration (Solana-like PoS)
   dynamic_leader_scheduler:
     enabled: true
     slots_per_epoch: 432
@@ -9,7 +8,7 @@ config:
     voting_threshold: 0.67  # 2/3 supermajority
   alloc: # support array
     addresses: 
-      - address: "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
+      - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
         amount: 2000000000
   poh:
     poh_auto_hash_interval: 10

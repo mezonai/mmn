@@ -23,5 +23,6 @@ type Store interface {
 	MarkFinalized(slot uint64) error
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
+	IsApplied(slot uint64) bool
 	Close() error
 }

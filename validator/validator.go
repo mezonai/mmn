@@ -324,9 +324,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 			if err := v.ledger.VerifyBlock(blk); err != nil {
 				logx.Error("VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
-				// Reset session to fresh state based on current ledger state
-				v.session = v.ledger.NewSession()
-				v.lastSession = v.ledger.NewSession()
+				v.session = v.lastSession.CopyWithOverlayClone()
 				return
 			}
 
@@ -335,79 +333,16 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 			// Persist then broadcast
 			logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
-			if err := v.blockStore.AddBlockPending(blk); err != nil {
-				logx.Error("VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
-				return
-			}
+
 			if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 				logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
 				return
 			}
-
-			// Create and handle vote based on mode
-			vote := &consensus.Vote{
-				Slot:      blk.Slot,
-				BlockHash: blk.Hash,
-				VoterID:   v.Pubkey,
-			}
-			vote.Sign(v.PrivKey)
-
-			if v.useDynamic && v.dynamicCollector != nil {
-				// Dynamic PoS voting
-				slotRange := []uint64{blk.Slot}
-				rootSlot := v.getRootSlot()
-
-				fmt.Printf("[LEADER] Adding dynamic vote %d to collector for self-vote\n", vote.Slot)
-				if committed, needApply, err := v.dynamicCollector.AddDynamicVote(vote, v.voteAccount, slotRange, rootSlot); err != nil {
-					fmt.Printf("[LEADER] Add dynamic vote error: %v\n", err)
-				} else {
-					// Record vote in dynamic scheduler
-					v.DynamicSchedule.RecordVote(v.Pubkey, vote.Slot)
-
-					if committed && needApply {
-						fmt.Printf("[LEADER] slot %d committed with dynamic voting!\n", vote.Slot)
-						block := v.blockStore.Block(vote.Slot)
-						if block == nil {
-							fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
-						} else if err := v.ledger.ApplyBlock(block); err != nil {
-							fmt.Printf("[LEADER] Apply block error: %v\n", err)
-						}
-						if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
-							fmt.Printf("[LEADER] Mark block as finalized error: %v\n", err)
-						}
-						fmt.Printf("[LEADER] slot %d finalized!\n", vote.Slot)
-					}
-				}
-			} else if v.collector != nil {
-				// Static consensus voting
-				fmt.Printf("[LEADER] Adding vote %d to collector for self-vote\n", vote.Slot)
-				if committed, needApply, err := v.collector.AddVote(vote); err != nil {
-					fmt.Printf("[LEADER] Add vote error: %v\n", err)
-				} else if committed && needApply {
-					fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
-					block := v.blockStore.Block(vote.Slot)
-					if block == nil {
-						fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
-					} else if err := v.ledger.ApplyBlock(block); err != nil {
-						fmt.Printf("[LEADER] Apply block error: %v\n", err)
-					}
-					if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
-						fmt.Printf("[LEADER] Mark block as finalized error: %v\n", err)
-					}
-					fmt.Printf("[LEADER] slot %d finalized!\n", vote.Slot)
-				}
-			}
-
-			// Broadcast vote
-			fmt.Printf("[LEADER] Broadcasted vote %d from %s\n", vote.Slot, v.Pubkey)
-			if err := v.netClient.BroadcastVote(context.Background(), vote); err != nil {
-				fmt.Printf("[LEADER] Failed to broadcast vote: %v\n", err)
-			}
-
-			// Reset buffer
-			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-			v.lastSession = v.session.CopyWithOverlayClone()
 		}
+
+		// Reset buffer
+		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+		v.lastSession = v.session.CopyWithOverlayClone()
 	} else if v.IsLeader(currentSlot) {
 		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)
@@ -469,6 +404,9 @@ func (v *Validator) Run() {
 			v.epochMonitorLoop()
 		})
 	}
+	exception.SafeGoWithPanic("mempoolCleanupLoop", func() {
+		v.mempoolCleanupLoop()
+	})
 }
 
 func (v *Validator) leaderBatchLoop() {
@@ -536,6 +474,21 @@ func (v *Validator) roleMonitorLoop() {
 					v.onLeaderSlotEnd()
 				}
 			}
+		}
+	}
+}
+
+func (v *Validator) mempoolCleanupLoop() {
+	cleanupTicker := time.NewTicker(1 * time.Minute)
+	defer cleanupTicker.Stop()
+
+	for {
+		select {
+		case <-v.stopCh:
+			return
+		case <-cleanupTicker.C:
+			logx.Info("VALIDATOR", "Running periodic mempool cleanup")
+			v.Mempool.PeriodicCleanup()
 		}
 	}
 }

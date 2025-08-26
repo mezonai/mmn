@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        DATABASE: rocksdb  #rocksdb or leveldb
-    image: mmn-node:rocksdb
+        DATABASE: leveldb  #leveldb or leveldb
+    image: mmn-node:leveldb
     container_name: bootnode
     command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
     ports:
@@ -13,13 +13,13 @@ services:
       - mezon
     restart: unless-stopped
   node1:
-    image: mmn-node:rocksdb
+    image: mmn-node:leveldb
     container_name: node1
     command: >
       sh -c '
         rm -rf ./node-data/node1 &&
-        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "rocksdb" --privkey-path "config/key1.txt" &&
-        ./mmn node --validator-stake 3000000 --use-dynamic-scheduler --database "rocksdb" --data-dir "./node-data/node1" --listen-addr ":8001" --grpc-addr ":9001" --p2p-port "8101" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key1.txt" &&
+        ./mmn node --validator-stake 3000000 --use-dynamic-scheduler --database "leveldb" --data-dir "./node-data/node1" --listen-addr ":8001" --grpc-addr ":9001" --p2p-port "8101" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -27,18 +27,20 @@ services:
       - "8001:8001"
       - "9001:9001"
       - "8101:8101"
+    volumes:
+      - node_data:/app/node-data
     networks:
       - mezon
     restart: unless-stopped
   node2:
-    image: mmn-node:rocksdb
+    image: mmn-node:leveldb
     container_name: node2
     command: >
       sh -c '
         sleep 5 &&
         rm -rf ./node-data/node2 &&
-        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "rocksdb" --privkey-path "config/key2.txt" &&
-        ./mmn node --validator-stake 2000000 --use-dynamic-scheduler --database "rocksdb" --data-dir "./node-data/node2" --listen-addr ":8002" --grpc-addr ":9002" --p2p-port "8102" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key2.txt" &&
+        ./mmn node --validator-stake 2000000 --use-dynamic-scheduler --database "leveldb" --data-dir "./node-data/node2" --listen-addr ":8002" --grpc-addr ":9002" --p2p-port "8102" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -46,19 +48,21 @@ services:
       - "8002:8002"
       - "9002:9002"
       - "8102:8102"
+    volumes:
+      - node_data:/app/node-data
     networks:
       - mezon
     restart: unless-stopped
 
   node3:
-    image: mmn-node:rocksdb
+    image: mmn-node:leveldb
     container_name: node3
     command: >
       sh -c '
         sleep 10 &&
         rm -rf ./node-data/node3 &&
-        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "rocksdb" --privkey-path "config/key3.txt" &&
-        ./mmn node --validator-stake 1000000 --use-dynamic-scheduler --database "rocksdb" --data-dir "./node-data/node3" --listen-addr ":8003" --grpc-addr ":9003" --p2p-port "8103" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key3.txt" &&
+        ./mmn node --validator-stake 1000000 --use-dynamic-scheduler --database "leveldb" --data-dir "./node-data/node3" --listen-addr ":8003" --grpc-addr ":9003" --p2p-port "8103" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -66,8 +70,12 @@ services:
       - "8003:8003"
       - "9003:9003"
       - "8103:8103"
+    volumes:
+      - node_data:/app/node-data
     networks:
       - mezon
     restart: unless-stopped
 networks:
   mezon:
+volumes:
+  node_data:
