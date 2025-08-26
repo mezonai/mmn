@@ -141,7 +141,6 @@ migrate/
 ├── database.go         # Database operations and schema management
 ├── transfer.go         # Token transfer and transaction handling
 ├── logger.go           # Structured logging system with colors
-├── types.go            # Struct definitions (Wallet, Tx, SignedTx)
 ├── config.go           # Configuration and constants
 ├── README.md           # This documentation
 └── go.mod              # Go module dependencies
