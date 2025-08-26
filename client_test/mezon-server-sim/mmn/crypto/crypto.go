@@ -2,11 +2,11 @@ package crypto
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
 	"errors"
 	"fmt"
 
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	"github.com/mr-tron/base58"
 )
 
 var ErrUnsupportedKey = errors.New("crypto: unsupported private key length")
@@ -30,18 +30,18 @@ func SignTx(tx *domain.Tx, privKey []byte) (domain.SignedTx, error) {
 
 	return domain.SignedTx{
 		Tx:  tx,
-		Sig: hex.EncodeToString(signature),
+		Sig: base58.Encode(signature),
 	}, nil
 }
 
 func Verify(tx *domain.Tx, sig string) bool {
-	decoded, err := hex.DecodeString(tx.Sender)
+	decoded, err := base58.Decode(tx.Sender)
 	if err != nil {
 		return false
 	}
 	pubKey := ed25519.PublicKey(decoded)
 	tx_hash := Serialize(tx)
-	signature, err := hex.DecodeString(sig)
+	signature, err := base58.Decode(sig)
 	if err != nil {
 		return false
 	}
