@@ -2,8 +2,9 @@ package p2p
 
 import (
 	"context"
-	"github.com/mezonai/mmn/store"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -92,10 +93,14 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
+	ctx := context.Background()
+
 	for {
 		select {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
+			// Periodically re-request latest slot to refresh syncing status
+			_, _ = ln.RequestLatestSlotFromPeers(ctx)
 		case <-ln.ctx.Done():
 			return
 		}
@@ -134,7 +139,7 @@ func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
 	}
 
 	if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
 	}
 }
 

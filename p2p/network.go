@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
@@ -87,6 +88,7 @@ func NewNetWork(
 		syncRequests:       make(map[string]*SyncRequestTracker),
 		ctx:                ctx,
 		cancel:             cancel,
+		isSyncing:          true, // Start in syncing mode
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -123,7 +125,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		// Use DNS resolution for bootstrap addresses
 		infos, err := discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Invalid bootstrap address: %s, error: %v", bootstrapPeer, err)
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", bootstrapPeer, "error:", err)
 			continue
 		}
 
@@ -221,4 +223,10 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
 	}
+}
+
+func (ln *Libp2pNetwork) IsSyncing() bool {
+	ln.mu.RLock()
+	defer ln.mu.RUnlock()
+	return ln.isSyncing
 }

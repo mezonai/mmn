@@ -20,6 +20,10 @@ import (
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
+			if ln.isSyncing {
+				return nil
+			}
+
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
 				return nil
 			}
@@ -125,19 +129,31 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
 			}
 
+			// After processing a batch, re-check latest slot to update syncing state
+			_, _ = ln.RequestLatestSlotFromPeers(context.Background())
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
 
 			localLatestSlot := bs.GetLatestSlot()
 			if latestSlot > localLatestSlot {
-				fromSlot := localLatestSlot + 1
-				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
+				// If we're behind more than the threshold, keep syncing; otherwise, mark synced
+				gap := latestSlot - localLatestSlot
+				if gap <= CatchUpThreshold {
+					ln.setSyncing(false)
+				} else {
+					ln.setSyncing(true)
+					fromSlot := localLatestSlot + 1
+					logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
 
-				ctx := context.Background()
-				if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
+					ctx := context.Background()
+					if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
+						logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
+					}
 				}
+			} else {
+				// Already at or ahead of latest, consider synced
+				ln.setSyncing(false)
 			}
 			return nil
 		},

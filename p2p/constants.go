@@ -15,7 +15,8 @@ const (
 )
 
 var (
-	ConnCount int32  = 0
-	MaxPeers  int32  = 50
-	BatchSize uint64 = 10 // for test only, should be 1000
+	ConnCount        int32  = 0
+	MaxPeers         int32  = 50
+	BatchSize        uint64 = 10 // for test only, should be 1000
+	CatchUpThreshold uint64 = 5  // slots within which node is considered caught up
 )
