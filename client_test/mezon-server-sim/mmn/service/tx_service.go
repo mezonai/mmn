@@ -28,6 +28,21 @@ func NewTxService(bc outbound.MainnetClient, ks outbound.WalletManager, db *sql.
 	return &TxService{bc: bc, ks: ks, db: db}
 }
 
+func (s *TxService) GetAccountAddress(uid uint64) (string, error) {
+	addr, _, err := s.ks.LoadKey(uid)
+	if err != nil {
+		if !errors.Is(err, domain.ErrKeyNotFound) {
+			fmt.Printf("SendToken LoadKey Err %d %v\n", uid, err)
+			return "", err
+		}
+		fmt.Printf("SendToken CreateKey %d\n", uid)
+		if addr, _, err = s.ks.CreateKey(uid); err != nil {
+			return "", err
+		}
+	}
+	return addr, nil
+}
+
 // SendToken forward 1 transfer token transaction to main-net.
 func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID uint64, amount uint64, textData string) (string, error) {
 	// Validate sender, recipient exists in database
@@ -100,7 +115,7 @@ func (s *TxService) GiveCoffee(ctx context.Context, nonce uint64, fromUID, toUID
 	textData := "give coffee"
 
 	// Act
-	TxHash, err := s.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+	TxHash, err := s.SendToken(ctx, nonce, fromUID, toUID, amount, textData)
 
 	if err != nil {
 		return "", err
@@ -192,9 +207,8 @@ func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, 
 	return res.TxHash, nil
 }
 
-func (s *TxService) ListFaucetTransactions(ctx context.Context, limit, page, filter int) (*api.WalletLedgerList, error) {
+func (s *TxService) ListFaucetTransactions(ctx context.Context, addr string, limit, page, filter int) (*api.WalletLedgerList, error) {
 	offset := (page - 1) * limit
-	addr := "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
 	history, err := s.bc.GetTxHistory(addr, limit, offset, filter)
 	if err != nil {
 		return nil, err

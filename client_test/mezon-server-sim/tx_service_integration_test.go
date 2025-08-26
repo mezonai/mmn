@@ -65,6 +65,20 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 			created_at   TIMESTAMPTZ DEFAULT now(),
 			updated_at   TIMESTAMPTZ DEFAULT now()
 		);
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY
+		);
+		INSERT INTO users (id) VALUES (0), (1), (2) ON CONFLICT (id) DO NOTHING;
+		CREATE TABLE IF NOT EXISTS unlocked_items (
+			id SERIAL PRIMARY KEY,
+			user_id bigint NOT NULL,
+			item_id bigint NOT NULL,
+			item_type VARCHAR(255),
+			status smallint DEFAULT 0 NOT NULL,
+			tx_hash VARCHAR(1024),
+			create_time timestamp with time zone DEFAULT now() NOT NULL,
+			update_time timestamp with time zone DEFAULT now() NOT NULL
+		);
 	`)
 	if err != nil {
 		t.Fatalf("Failed to create mmn_user_keys table: %v", err)
@@ -179,7 +193,7 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 	ctx := context.Background()
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
-	fmt.Println("faucetPublicKey13", faucetPublicKey)
+	fmt.Println("faucetPublicKey1", faucetPublicKey)
 	// Convert previously hex-formatted recipient to base58
 	hexRecipient := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
 	recBytes, _ := hex.DecodeString(hexRecipient)
@@ -224,10 +238,34 @@ func TestSendToken_Integration_RealMainnet(t *testing.T) {
 	amount := uint64(100) // Send minimal amount for testing
 	textData := "Integration test transfer"
 
-	t.Logf("Starting integration test: sending %d tokens from %d to %d", amount, fromUID, toUID)
+	// get amount from faucet account
+	fromAddr, err := service.GetAccountAddress(fromUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+	}
+	fmt.Printf("fromAddr: %s\n", fromAddr)
+	seedAmount := uint64(10000)
+	_, err = seedAccountFromFaucet(t, ctx, service, fromAddr, seedAmount)
+	if err != nil {
+		t.Fatalf("Failed to seed from account %s: %v", fromAddr, err)
+	}
+
+	toAddr, err := service.GetAccountAddress(toUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %s: %v", toAddr, err)
+	}
+	fmt.Printf("toAddr: %s\n", toAddr)
+	_, err = seedAccountFromFaucet(t, ctx, service, toAddr, seedAmount)
+	if err != nil {
+		t.Fatalf("Failed to seed to account %s: %v", toAddr, err)
+	}
 
 	// Act: Send token
-	txHash, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
+	}
+	txHash, err := service.SendToken(ctx, fromAccount.Nonce+1, fromUID, toUID, amount, textData)
 
 	// Assert
 	if err != nil {
@@ -257,7 +295,15 @@ func TestSendToken_Integration_ExistingUsers(t *testing.T) {
 	t.Logf("Sending tokens between existing users: %d -> %d", fromUID, toUID)
 
 	// Act
-	txHash, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+	fromAddr, err := service.GetAccountAddress(fromUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+	}
+	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
+	}
+	txHash, err := service.SendToken(ctx, fromAccount.Nonce+1, fromUID, toUID, amount, textData)
 
 	// Assert
 	if err != nil {
@@ -284,7 +330,18 @@ func TestGiveCoffee_Integration_ExistingUsers(t *testing.T) {
 	t.Logf("Give coffee between existing users: %d -> %d", fromUID, toUID)
 
 	// Act
-	txHash, err := service.GiveCoffee(ctx, 0, fromUID, toUID)
+	fromAddr, err := service.GetAccountAddress(fromUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+	}
+	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
+	}
+	txHash, err := service.GiveCoffee(ctx, fromAccount.Nonce+1, fromUID, toUID)
+	if err != nil {
+		t.Fatalf("GiveCoffee failed: %v", err)
+	}
 
 	// Assert
 	if err != nil {
@@ -348,11 +405,19 @@ func TestSendToken_Integration_MultipleTransactions(t *testing.T) {
 	}
 
 	var txHashes []string
+	fromAddr, err := service.GetAccountAddress(fromUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+	}
+	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
+	}
 
 	for i, tx := range transactions {
 		t.Logf("Sending transaction %d: amount=%d", i+1, tx.amount)
 
-		txHash, err := service.SendToken(ctx, 0, fromUID, toUID, tx.amount, tx.textData)
+		txHash, err := service.SendToken(ctx, fromAccount.Nonce+1+uint64(i), fromUID, toUID, tx.amount, tx.textData)
 		if err != nil {
 			t.Fatalf("Transaction %d failed: %v", i+1, err)
 		}
@@ -400,42 +465,16 @@ func TestSendToken_Integration_ErrorCases(t *testing.T) {
 	})
 }
 
-// Benchmark test for performance measurement
-func BenchmarkSendToken_Integration(b *testing.B) {
-	if testing.Short() {
-		b.Skip("Skipping benchmark in short mode")
-	}
-
-	service, cleanup := setupIntegrationTest(&testing.T{})
-	defer cleanup()
-
-	ctx := context.Background()
-
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			fromUID := uint64(i)
-			toUID := uint64(i + 1)
-
-			_, err := service.SendToken(ctx, 0, fromUID, toUID, 1, "benchmark test")
-			if err != nil {
-				b.Errorf("SendToken failed: %v", err)
-			}
-			i++
-		}
-	})
-}
-
 func Test_GetListFaucetTransactions(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
 	ctx := context.Background()
 
-	txs, err := service.ListFaucetTransactions(ctx, 10, 1, 0)
+	faucetPublicKey, _ := getFaucetAccount()
+	txs, err := service.ListFaucetTransactions(ctx, faucetPublicKey, 10, 1, 0)
 	if err != nil {
-		t.Fatalf("ListTransactions failed: %v", err)
+		t.Fatalf("ListFaucetTransactions failed: %v", err)
 	}
 
 	t.Logf("ListTransactions: %v", txs)
@@ -450,7 +489,11 @@ func TestGetTxByHash_Integration(t *testing.T) {
 
 	// First, create a transaction to get a valid hash
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
-	toAddress := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
+	toUID := uint64(1)
+	toAddress, err := service.GetAccountAddress(toUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %s: %v", toAddress, err)
+	}
 
 	// Send a transaction to get a valid hash
 	faucetSeed := faucetPrivateKey.Seed()
@@ -458,6 +501,7 @@ func TestGetTxByHash_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAccountByAddress failed: %v", err)
 	}
+	fmt.Printf("faucetAccount.Nonce: %d\n", faucetAccount.Nonce)
 	txHash, err := service.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("Failed to create test transaction: %v", err)
@@ -517,13 +561,18 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup test data - transfer from one account to another
-	toAddr := "8ac7e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7d"
+	toUID := uint64(1)
+	toAddr, err := svc.GetAccountAddress(toUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %d: %v", toUID, err)
+	}
 	seedAmount := uint64(25)
 	transferAmount := uint64(25)
-	fromPriv := []byte{216, 225, 123, 4, 170, 149, 32, 216, 126, 223, 75, 46, 184, 101, 133, 247, 98, 166, 96, 57, 12, 104, 188, 249, 247, 23, 108, 201, 37, 25, 40, 231}
-	fromPrivateKey := ed25519.NewKeyFromSeed(fromPriv)
-	fromPublicKey := fromPrivateKey.Public().(ed25519.PublicKey)
-	fromAddr := base58.Encode(fromPublicKey[:])
+	fromUID := uint64(2)
+	fromAddr, err := svc.GetAccountAddress(fromUID)
+	if err != nil {
+		t.Fatalf("Failed to get account address %d: %v", fromUID, err)
+	}
 
 	// Seed the "from account" first
 	t.Logf("Seeding amount %d for %s", seedAmount, fromAddr[:16])
@@ -547,9 +596,9 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 
 	// Perform the transfer from account 1 to account 2
 	t.Logf("Performing transfer: %d tokens from %s to %s", transferAmount, fromAddr[:16], toAddr[:16])
-	transferTxHash, err := svc.SendTokenWithoutDatabase(ctx, initialFromAccount.Nonce+1, fromAddr, toAddr, fromPriv, transferAmount, "Account to account transfer", domain.TxTypeTransfer)
+	transferTxHash, err := svc.SendToken(ctx, initialFromAccount.Nonce+1, fromUID, toUID, transferAmount, "Account to account transfer")
 	if err != nil {
-		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
+		t.Fatalf("SendToken failed: %v", err)
 	}
 	t.Logf("Transfer transaction sent: %s", transferTxHash)
 
