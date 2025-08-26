@@ -75,7 +75,7 @@ func CreateUserKeysTable(db *sql.DB) error {
 
 // GetUsers retrieves all users from the users table
 func GetUsers(db *sql.DB) ([]map[string]interface{}, error) {
-	rows, err := db.Query("SELECT id, name, balance FROM users ORDER BY id")
+	rows, err := db.Query("SELECT id, name, wallet FROM users ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query users: %v", err)
 	}
@@ -85,14 +85,14 @@ func GetUsers(db *sql.DB) ([]map[string]interface{}, error) {
 	for rows.Next() {
 		var id int
 		var name string
-		var balance uint64
-		if err := rows.Scan(&id, &name, &balance); err != nil {
+		var wallet uint64
+		if err := rows.Scan(&id, &name, &wallet); err != nil {
 			return nil, fmt.Errorf("failed to scan user row: %v", err)
 		}
 		users = append(users, map[string]interface{}{
 			"id":      id,
 			"name":    name,
-			"balance": balance,
+			"balance": wallet,
 		})
 	}
 
@@ -117,16 +117,4 @@ func CountExistingWallets(db *sql.DB) (int, error) {
 		return 0, fmt.Errorf("failed to count existing wallets: %v", err)
 	}
 	return count, nil
-}
-
-// SaveWallet saves a wallet to the database
-func SaveWallet(db *sql.DB, userID int, wallet *Wallet, encryptedPrivateKey string) error {
-	_, err := db.Exec(
-		"INSERT INTO mmn_user_keys (user_id, address, enc_privkey) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET address = EXCLUDED.address, enc_privkey = EXCLUDED.enc_privkey, updated_at = now()",
-		userID, wallet.Address, encryptedPrivateKey,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to save wallet: %v", err)
-	}
-	return nil
 }

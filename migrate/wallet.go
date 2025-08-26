@@ -5,29 +5,24 @@ import (
 	"crypto/cipher"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 )
 
-// CreateWallet generates a new Ed25519 wallet
-func CreateWallet() (*Wallet, error) {
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate key pair: %v", err)
-	}
+var ErrKeyNotFound = errors.New("keystore: not found")
 
-	// Create address from public key hash
-	hash := sha256.Sum256(publicKey)
-	address := hex.EncodeToString(hash[:])
-
-	return &Wallet{
-		PublicKey:  publicKey,
-		PrivateKey: privateKey,
-		Address:    address,
-	}, nil
+type WalletManager interface {
+	LoadKey(userID uint64) (addr string, privKey []byte, err error)
+	CreateKey(userID uint64) (addr string, privKey []byte, err error)
+}
+type pgStore struct {
+	db   *sql.DB
+	aead cipher.AEAD
 }
 
 // getFaucetAccount returns the hardcoded faucet account for testing
@@ -46,78 +41,85 @@ func GetFaucetAccount() (string, ed25519.PrivateKey) {
 	return faucetPublicKeyHex, faucetPrivateKey
 }
 
-// EncryptPrivateKey encrypts a private key using AES-GCM with the master key
-func EncryptPrivateKey(privateKey ed25519.PrivateKey, masterKey string) (string, error) {
-	// Decode master key from base64
-	keyBytes, err := base64.StdEncoding.DecodeString(masterKey)
+func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (WalletManager, error) {
+	mk, err := base64.StdEncoding.DecodeString(base64MasterKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode master key: %v", err)
+		return nil, fmt.Errorf("master-key decode: %w", err)
+	}
+	if len(mk) != 32 {
+		return nil, errors.New("master-key must be 32 bytes")
 	}
 
-	// Create AES cipher
-	block, err := aes.NewCipher(keyBytes[:32]) // Use first 32 bytes for AES-256
-	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %v", err)
-	}
+	block, _ := aes.NewCipher(mk)
+	aead, _ := cipher.NewGCM(block)
 
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %v", err)
-	}
-
-	// Generate nonce
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("failed to generate nonce: %v", err)
-	}
-
-	// Encrypt private key
-	ciphertext := gcm.Seal(nonce, nonce, privateKey, nil)
-
-	// Return base64 encoded result
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+	return &pgStore{db: db, aead: aead}, nil
 }
 
-// DecryptPrivateKey decrypts a private key using AES-GCM with the master key
-func DecryptPrivateKey(encryptedKey, masterKey string) (ed25519.PrivateKey, error) {
-	// Decode encrypted key from base64
-	ciphertext, err := base64.StdEncoding.DecodeString(encryptedKey)
+// ---------- helpers ----------
+func (p *pgStore) encrypt(plain []byte) ([]byte, error) {
+	nonce := make([]byte, p.aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+	return append(nonce, p.aead.Seal(nil, nonce, plain, nil)...), nil
+}
+func (p *pgStore) decrypt(ciphertext []byte) ([]byte, error) {
+	ns := p.aead.NonceSize()
+	if len(ciphertext) < ns {
+		return nil, errors.New("ciphertext too short")
+	}
+	return p.aead.Open(nil, ciphertext[:ns], ciphertext[ns:], nil)
+}
+
+// ---------- WalletManager ----------
+func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
+	var addr string
+	var enc []byte
+
+	// TODO: need use exist db model
+	err := p.db.QueryRow(`SELECT address, enc_privkey FROM mmn_user_keys WHERE user_id=$1`, uid).
+		Scan(&addr, &enc)
+	if errors.Is(err, sql.ErrNoRows) {
+		fmt.Printf("LoadKey ErrNoRows %d %s %s %v\n", uid, addr, enc, err)
+		return "", nil, ErrKeyNotFound
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode encrypted key: %v", err)
+		fmt.Printf("LoadKey Err %d %s %s %v\n", uid, addr, enc, err)
+		return "", nil, err
 	}
 
-	// Decode master key from base64
-	keyBytes, err := base64.StdEncoding.DecodeString(masterKey)
+	priv, err := p.decrypt(enc)
+	return addr, priv, err
+}
+
+func (p *pgStore) CreateKey(uid uint64) (string, []byte, error) {
+	fmt.Printf("CreateKey start %d\n", uid)
+
+	// Generate Ed25519 seed (32 bytes)
+	seed := make([]byte, ed25519.SeedSize)
+	_, err := rand.Read(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode master key: %v", err)
+		return "", nil, err
 	}
 
-	// Create AES cipher
-	block, err := aes.NewCipher(keyBytes[:32]) // Use first 32 bytes for AES-256
+	// Generate Ed25519 key pair from seed
+	privKey := ed25519.NewKeyFromSeed(seed)
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	// Address is hex-encoded public key (for Verify to work)
+	addr := hex.EncodeToString(pubKey)
+
+	// Store the seed (not the full private key) for SignTx compatibility
+	enc, err := p.encrypt(seed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %v", err)
+		return "", nil, err
 	}
 
-	// Create GCM mode
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %v", err)
-	}
-
-	// Extract nonce and encrypted data
-	nonceSize := gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
-	}
-
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-
-	// Decrypt private key
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt: %v", err)
-	}
-
-	return ed25519.PrivateKey(plaintext), nil
+	_, err = p.db.Exec(
+		`INSERT INTO mmn_user_keys (user_id, address, enc_privkey) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET address = EXCLUDED.address, enc_privkey = EXCLUDED.enc_privkey, updated_at = now()`,
+		uid, addr, enc,
+	)
+	fmt.Printf("CreateKey done %d %s\n", uid, addr)
+	return addr, seed, err
 }

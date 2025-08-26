@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -49,14 +50,6 @@ func main() {
 		LogFatal("❌ Database connection failed: %v", err)
 	}
 	defer db.Close()
-
-	// Test MMN blockchain connection
-	if err := TestConnection(config.MMNEndpoint); err != nil {
-		LogWarn("⚠️ MMN blockchain connection test failed: %v", err)
-		LogWarn("⚠️ Continuing anyway - transfers will fail if blockchain is unavailable")
-	} else {
-		LogConnectionTest("MMN blockchain", config.MMNEndpoint, true)
-	}
 
 	// Create mmn_user_keys table if it doesn't exist
 	if err := CreateUserKeysTable(db); err != nil {
@@ -108,46 +101,39 @@ func main() {
 			continue
 		}
 
-		// Create new wallet
-		wallet, err := CreateWallet()
+		ks, err := NewPgEncryptedStore(db, config.MasterKey)
 		if err != nil {
-			LogError("❌ Failed to create wallet for user %d: %v", userID, err)
+			fmt.Printf("Failed to create wallet manager: %v", err)
 			continue
 		}
-		LogWalletCreated(userID, wallet.Address)
-
-		// Encrypt private key using AES-GCM
-		encryptedPrivateKey, err := EncryptPrivateKey(wallet.PrivateKey, config.MasterKey)
-		if err != nil {
-			LogError("❌ Failed to encrypt private key for user %d: %v", userID, err)
-			continue
-		}
-		LogDebug("🔐 Private key encrypted for user %d", userID)
+		address, _, err := ks.LoadKey(uint64(userID))
 
 		if !*dryRun {
-			// Save wallet to database
-			if err := SaveWallet(db, userID, wallet, encryptedPrivateKey); err != nil {
-				LogError("❌ Failed to save wallet for user %d: %v", userID, err)
-				continue
+			if err != nil {
+				LogDebug("Create wallet for user %d\n", userID)
+				// Create new wallet
+				if address, _, err = ks.CreateKey(uint64(userID)); err != nil {
+					continue
+				}
+				LogWalletCreated(userID, address)
 			}
 			LogDatabaseOperation("INSERT/UPDATE", "mmn_user_keys", 1)
 			LogDebug("💾 Saved wallet to database for user %d", userID)
 
 			// Transfer tokens from faucet to user wallet
-			err = TransferTokens(config.MMNEndpoint, faucetAddress, wallet.Address, balance, faucetPrivateKey) // Transfer 1000 tokens
+			err = TransferTokens(config.MMNEndpoint, faucetAddress, address, balance, faucetPrivateKey) // Transfer 1000 tokens
 			if err != nil {
 				LogError("❌ Failed to transfer tokens to user %d: %v", userID, err)
 				// Continue even if transfer fails, wallet is already created
 			} else {
-				LogTokenTransfer(faucetAddress, wallet.Address, balance)
+				LogTokenTransfer(faucetAddress, address, balance)
 			}
 
 			// Add delay between transactions to avoid nonce conflicts
 			time.Sleep(2 * time.Second)
 		} else {
 			LogInfo("🔍 DRY-RUN: Would create wallet and transfer tokens for user %d (%s)", userID, name)
-			LogDebug("    Wallet Address: %s", wallet.Address)
-			LogDebug("    Public Key: %x", wallet.PublicKey)
+			LogDebug("    Wallet Address: %s", address)
 		}
 
 		successful++
