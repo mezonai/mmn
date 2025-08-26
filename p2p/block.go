@@ -311,7 +311,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			batch = append(batch, blk)
 		}
 
-		if len(batch) >= int(BatchSize) {
+		if len(batch) >= int(AuthLimitMessagePayload) {
 			if ln.peerScoringManager != nil {
 				if data, err := json.Marshal(batch); err == nil {
 					if !ln.peerScoringManager.CheckRateLimit(targetPeer, "bandwidth", int64(len(data))) {
@@ -347,7 +347,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 
 	if req.ToSlot < localLatestSlot {
 		nextFromSlot := req.ToSlot + 1
-		nextToSlot := nextFromSlot + BatchSize - 1
+		nextToSlot := nextFromSlot + SyncBlockBatchSize - 1
 		if nextToSlot > localLatestSlot {
 			nextToSlot = localLatestSlot
 		}
@@ -369,7 +369,7 @@ func (ln *Libp2pNetwork) RequestContinuousBlockSync(fromSlot, toSlot uint64, tar
 	currentSlot := fromSlot
 
 	for currentSlot < toSlot {
-		endSlot := currentSlot + BatchSize - 1
+		endSlot := currentSlot + SyncBlockBatchSize - 1
 		if endSlot > toSlot {
 			endSlot = toSlot
 		}
@@ -522,4 +522,22 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 			logx.Error("NETWORK:LATEST SLOT", "Error in latest slot callback:", err)
 		}
 	}
+}
+
+func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
+	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
+
+	data, err := json.Marshal(blk)
+	if err != nil {
+		logx.Error("BLOCK", "Failed to marshal block: ", err)
+		return err
+	}
+
+	if ln.topicBlocks != nil {
+		logx.Info("BLOCK", "Publishing block to pubsub topic")
+		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
+			logx.Error("BLOCK", "Failed to publish block:", err)
+		}
+	}
+	return nil
 }

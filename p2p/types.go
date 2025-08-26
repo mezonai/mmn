@@ -9,7 +9,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/blockstore"
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/multiformats/go-multiaddr"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -28,15 +28,17 @@ type Libp2pNetwork struct {
 
 	blockStore blockstore.Store
 
-	topicBlocks       *pubsub.Topic
-	topicVotes        *pubsub.Topic
-	topicTxs          *pubsub.Topic
-	topicBlockSyncReq *pubsub.Topic
-	topicLatestSlot   *pubsub.Topic
+	topicBlocks            *pubsub.Topic
+	topicVotes             *pubsub.Topic
+	topicTxs               *pubsub.Topic
+	topicBlockSyncReq      *pubsub.Topic
+	topicLatestSlot        *pubsub.Topic
+	topicAccessControl     *pubsub.Topic
+	topicAccessControlSync *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
-	onTransactionReceived  func(*types.Transaction) error
+	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 
@@ -64,6 +66,12 @@ type Libp2pNetwork struct {
 
 	// Peer scoring system
 	peerScoringManager *PeerScoringManager
+
+	// Sync completion tracking
+	syncCompleted     bool
+	syncCompletedMu   sync.RWMutex
+	activeSyncCount   int
+	activeSyncCountMu sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -147,7 +155,7 @@ type SyncRequestTracker struct {
 type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
-	OnTransactionReceived  func(*types.Transaction) error
+	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
 }
@@ -158,7 +166,7 @@ type AuthChallenge struct {
 	PeerID    string `json:"peer_id"`
 	PublicKey string `json:"public_key"`
 	Timestamp int64  `json:"timestamp"`
-	Nonce     uint64 `json:"nonce"`
+	Nonce     uint64 `json:"nonce,string"`
 	ChainID   string `json:"chain_id"`
 }
 
@@ -169,7 +177,7 @@ type AuthResponse struct {
 	PeerID    string `json:"peer_id"`
 	PublicKey string `json:"public_key"`
 	Timestamp int64  `json:"timestamp"`
-	Nonce     uint64 `json:"nonce"`
+	Nonce     uint64 `json:"nonce,string"`
 	ChainID   string `json:"chain_id"`
 }
 
@@ -190,4 +198,20 @@ type AuthenticatedPeer struct {
 	PublicKey     ed25519.PublicKey
 	AuthTimestamp time.Time
 	IsValid       bool
+}
+
+type AccessControlUpdate struct {
+	Type      string `json:"type"`
+	Action    string `json:"action"`
+	PeerID    string `json:"peer_id"`
+	Timestamp int64  `json:"timestamp"`
+	NodeID    string `json:"node_id"`
+}
+
+type AccessControlSync struct {
+	Type       string   `json:"type"`
+	PeerIDs    []string `json:"peer_ids"`
+	Timestamp  int64    `json:"timestamp"`
+	NodeID     string   `json:"node_id"`
+	IsFullSync bool     `json:"is_full_sync"`
 }

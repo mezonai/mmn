@@ -237,8 +237,12 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	score.LastUpdated = time.Now()
 	score.LastSeen = time.Now()
 
-	logx.Info("PEER_SCORING", "Updated score for peer", peerID.String()[:12]+"...",
-		"score:", score.Score, "event:", eventType)
+	peerIDStr := peerID.String()
+	if len(peerIDStr) > 12 {
+		peerIDStr = peerIDStr[:12] + "..."
+	}
+	logx.Info("PEER_SCORING", "Updated score for peer ", peerIDStr,
+		"score: ", score.Score, " event: ", eventType)
 }
 
 // OnTopicMessage should be called by validators when a message arrives on a topic
@@ -341,7 +345,11 @@ func (psm *PeerScoringManager) AutoManageAccessControl() {
 		if score.Score >= psm.config.AutoAllowlistThreshold {
 			if !psm.network.IsAllowed(peerID) {
 				psm.network.AddToAllowlist(peerID)
-				logx.Info("PEER_SCORING", "Auto-allowlisted peer "+peerID.String()[:12]+" (score: "+fmt.Sprintf("%.2f", score.Score)+")")
+				peerIDStr := peerID.String()
+				if len(peerIDStr) > 12 {
+					peerIDStr = peerIDStr[:12]
+				}
+				logx.Info("PEER_SCORING", "Auto-allowlisted peer "+peerIDStr+" (score: "+fmt.Sprintf("%.2f", score.Score)+")")
 			}
 		}
 
@@ -405,7 +413,11 @@ func (psm *PeerScoringManager) cleanupOldScores() {
 	for peerID, score := range psm.scores {
 		if score.LastSeen.Before(cutoff) && score.Score < 10 {
 			delete(psm.scores, peerID)
-			logx.Info("PEER_SCORING", "Cleaned up old peer score: "+peerID.String()[:12])
+			peerIDStr := peerID.String()
+			if len(peerIDStr) > 12 {
+				peerIDStr = peerIDStr[:12]
+			}
+			logx.Info("PEER_SCORING", "Cleaned up old peer score: "+peerIDStr)
 		}
 	}
 }

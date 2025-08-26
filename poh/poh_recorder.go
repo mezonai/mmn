@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 type PohRecorder struct {
@@ -36,9 +36,9 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tickHeight = slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.entries = make([]Entry, 0)
+	r.tickHeight = slot * r.ticksPerSlot
 	r.poh.Reset(lastHash)
+	r.entries = make([]Entry, 0) //TODO: need re-calculate entries base on last hash
 }
 
 func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
@@ -67,19 +67,7 @@ func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
 	return lastHash, nil
 }
 
-func (r *PohRecorder) ReseedAtSlot(seedHash [32]byte, slot uint64) {
-	tick := slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.ReseedAtTick(seedHash, tick)
-}
-
-func (r *PohRecorder) ReseedAtTick(seedHash [32]byte, tick uint64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.poh.Reset(seedHash)
-	r.tickHeight = tick
-}
-
-func (r *PohRecorder) RecordTxs(txs []*types.Transaction) (*Entry, error) {
+func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -127,10 +115,12 @@ func (r *PohRecorder) DrainEntries() []Entry {
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.tickHeight / r.ticksPerSlot
+
+	// +1 to make slot start from 1
+	return r.tickHeight/r.ticksPerSlot + 1
 }
 
-func HashTransactions(txs []*types.Transaction) [32]byte {
+func HashTransactions(txs []*transaction.Transaction) [32]byte {
 	var all []byte
 	for _, tx := range txs {
 		all = append(all, tx.Bytes()...)

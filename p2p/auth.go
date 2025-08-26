@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
@@ -30,17 +31,16 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 		}
 	}
 
-	limited := &io.LimitedReader{R: s, N: 2048}
+	limited := &io.LimitedReader{R: s, N: AuthLimitMessagePayload}
 	data, err := io.ReadAll(limited)
 	if err != nil {
 		logx.Error("AUTH", "Failed to read auth message: ", err.Error())
 		return
 	}
 
-	// If reader hit the limit, reject if payload ≥ 2048
 	if limited.N <= 0 {
 		if ln.peerScoringManager != nil {
-			ln.peerScoringManager.RecordRateLimitViolation(remotePeer, "bandwidth", int64(2048))
+			ln.peerScoringManager.RecordRateLimitViolation(remotePeer, "bandwidth", AuthLimitMessagePayload)
 		}
 		return
 	}
@@ -74,16 +74,84 @@ func (ln *Libp2pNetwork) handleAuthChallenge(s network.Stream, remotePeer peer.I
 		return
 	}
 
-	challengeBytes, err := json.Marshal(challengeData)
-	if err != nil {
-		logx.Error("AUTH", "Failed to marshal challenge data: ", err.Error())
+	var nonce uint64
+	if nonceInterface, exists := challengeData["nonce"]; exists {
+		switch v := nonceInterface.(type) {
+		case string:
+			var err error
+			nonce, err = strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				logx.Error("AUTH", "Failed to parse nonce from string: ", err.Error())
+				return
+			}
+		case float64:
+			nonce = uint64(v)
+		case int64:
+			nonce = uint64(v)
+		case uint64:
+			nonce = v
+		case int:
+			nonce = uint64(v)
+		case uint:
+			nonce = uint64(v)
+		default:
+			logx.Error("AUTH", "Invalid nonce type from ", remotePeer.String(), ": ", fmt.Sprintf("%T", v))
+			return
+		}
+	} else {
+		logx.Error("AUTH", "Missing nonce in challenge from ", remotePeer.String())
 		return
 	}
 
-	var challenge AuthChallenge
-	if err := json.Unmarshal(challengeBytes, &challenge); err != nil {
-		logx.Error("AUTH", "Failed to unmarshal challenge: ", err.Error())
+	version, _ := challengeData["version"].(string)
+	chainID, _ := challengeData["chain_id"].(string)
+	peerID, _ := challengeData["peer_id"].(string)
+	publicKey, _ := challengeData["public_key"].(string)
+
+	var timestamp int64
+	if tsInterface, exists := challengeData["timestamp"]; exists {
+		switch v := tsInterface.(type) {
+		case float64:
+			timestamp = int64(v)
+		case int64:
+			timestamp = v
+		case int:
+			timestamp = int64(v)
+		default:
+			logx.Error("AUTH", "Invalid timestamp type from ", remotePeer.String())
+			return
+		}
+	}
+
+	var challengeBytes []byte
+	if challengeInterface, exists := challengeData["challenge"]; exists {
+		switch v := challengeInterface.(type) {
+		case string:
+			var err error
+			challengeBytes, err = base64.StdEncoding.DecodeString(v)
+			if err != nil {
+				logx.Error("AUTH", "Failed to decode challenge from base64: ", err.Error())
+				return
+			}
+		case []byte:
+			challengeBytes = v
+		default:
+			logx.Error("AUTH", "Invalid challenge type from ", remotePeer.String())
+			return
+		}
+	} else {
+		logx.Error("AUTH", "Missing challenge from ", remotePeer.String())
 		return
+	}
+
+	challenge := AuthChallenge{
+		Version:   version,
+		Challenge: challengeBytes,
+		PeerID:    peerID,
+		PublicKey: publicKey,
+		Timestamp: timestamp,
+		Nonce:     nonce,
+		ChainID:   chainID,
 	}
 
 	if challenge.Version != AuthVersion {
@@ -152,16 +220,106 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 		return
 	}
 
-	responseBytes, err := json.Marshal(responseData)
-	if err != nil {
-		logx.Error("AUTH", "Failed to marshal response data: ", err.Error())
+	var nonce uint64
+	if nonceInterface, exists := responseData["nonce"]; exists {
+		switch v := nonceInterface.(type) {
+		case string:
+			var err error
+			nonce, err = strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				logx.Error("AUTH", "Failed to parse nonce from string: ", err.Error())
+				return
+			}
+		case float64:
+			nonce = uint64(v)
+		case int64:
+			nonce = uint64(v)
+		case uint64:
+			nonce = v
+		case int:
+			nonce = uint64(v)
+		case uint:
+			nonce = uint64(v)
+		default:
+			logx.Error("AUTH", "Invalid nonce type in response from ", remotePeer.String(), ": ", fmt.Sprintf("%T", v))
+			return
+		}
+	} else {
+		logx.Error("AUTH", "Missing nonce in response from ", remotePeer.String())
 		return
 	}
 
-	var response AuthResponse
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
-		logx.Error("AUTH", "Failed to unmarshal response: ", err.Error())
+	version, _ := responseData["version"].(string)
+	chainID, _ := responseData["chain_id"].(string)
+	peerID, _ := responseData["peer_id"].(string)
+	publicKey, _ := responseData["public_key"].(string)
+
+	var timestamp int64
+	if tsInterface, exists := responseData["timestamp"]; exists {
+		switch v := tsInterface.(type) {
+		case float64:
+			timestamp = int64(v)
+		case int64:
+			timestamp = v
+		case int:
+			timestamp = int64(v)
+		default:
+			logx.Error("AUTH", "Invalid timestamp type in response from ", remotePeer.String())
+			return
+		}
+	}
+
+	var challengeBytes []byte
+	if challengeInterface, exists := responseData["challenge"]; exists {
+		switch v := challengeInterface.(type) {
+		case string:
+			var err error
+			challengeBytes, err = base64.StdEncoding.DecodeString(v)
+			if err != nil {
+				logx.Error("AUTH", "Failed to decode challenge from base64 in response: ", err.Error())
+				return
+			}
+		case []byte:
+			challengeBytes = v
+		default:
+			logx.Error("AUTH", "Invalid challenge type in response from ", remotePeer.String())
+			return
+		}
+	} else {
+		logx.Error("AUTH", "Missing challenge in response from ", remotePeer.String())
 		return
+	}
+
+	var signature []byte
+	if sigInterface, exists := responseData["signature"]; exists {
+		switch v := sigInterface.(type) {
+		case string:
+			var err error
+			signature, err = base64.StdEncoding.DecodeString(v)
+			if err != nil {
+				logx.Error("AUTH", "Failed to decode signature from base64: ", err.Error())
+				return
+			}
+		case []byte:
+			signature = v
+		default:
+			logx.Error("AUTH", "Invalid signature type from ", remotePeer.String())
+			return
+		}
+	} else {
+		logx.Error("AUTH", "Missing signature in response from ", remotePeer.String())
+		return
+	}
+
+	response := AuthResponse{
+		Version:   version,
+		Challenge: challengeBytes,
+		Signature: signature,
+		PeerID:    peerID,
+		PublicKey: publicKey,
+		Timestamp: timestamp,
+		Nonce:     nonce,
+		ChainID:   chainID,
 	}
 
 	now := time.Now().Unix()
@@ -246,8 +404,6 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 		peerInfo.AuthTimestamp = time.Now()
 	}
 	ln.mu.Unlock()
-
-	logx.Info("AUTH", "Authentication successful with ", remotePeer.String())
 
 	ln.UpdatePeerScore(remotePeer, "auth_success", nil)
 
@@ -341,7 +497,7 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to send challenge: %w", err)
 	}
 
-	buf := make([]byte, 2048)
+	buf := make([]byte, AuthLimitMessagePayload)
 	n, err := stream.Read(buf)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
@@ -364,14 +520,93 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 			return fmt.Errorf("invalid response format")
 		}
 
-		responseBytes, err := json.Marshal(responseData)
-		if err != nil {
-			return fmt.Errorf("failed to marshal response data: %w", err)
+		var nonce uint64
+		if nonceInterface, exists := responseData["nonce"]; exists {
+			switch v := nonceInterface.(type) {
+			case string:
+				nonce, err = strconv.ParseUint(v, 10, 64)
+				if err != nil {
+					return fmt.Errorf("failed to parse nonce from string: %w", err)
+				}
+			case float64:
+				nonce = uint64(v)
+			case int64:
+				nonce = uint64(v)
+			case uint64:
+				nonce = v
+			case int:
+				nonce = uint64(v)
+			case uint:
+				nonce = uint64(v)
+			default:
+				return fmt.Errorf("invalid nonce type: %T", v)
+			}
+		} else {
+			return fmt.Errorf("missing nonce in response")
 		}
 
-		var response AuthResponse
-		if err := json.Unmarshal(responseBytes, &response); err != nil {
-			return fmt.Errorf("failed to unmarshal response: %w", err)
+		version, _ := responseData["version"].(string)
+		chainID, _ := responseData["chain_id"].(string)
+		responsePeerID, _ := responseData["peer_id"].(string)
+		publicKey, _ := responseData["public_key"].(string)
+
+		var timestamp int64
+		if tsInterface, exists := responseData["timestamp"]; exists {
+			switch v := tsInterface.(type) {
+			case float64:
+				timestamp = int64(v)
+			case int64:
+				timestamp = v
+			case int:
+				timestamp = int64(v)
+			default:
+				return fmt.Errorf("invalid timestamp type: %T", v)
+			}
+		}
+
+		var challengeBytes []byte
+		if challengeInterface, exists := responseData["challenge"]; exists {
+			switch v := challengeInterface.(type) {
+			case string:
+				challengeBytes, err = base64.StdEncoding.DecodeString(v)
+				if err != nil {
+					return fmt.Errorf("failed to decode challenge from base64: %w", err)
+				}
+			case []byte:
+				challengeBytes = v
+			default:
+				return fmt.Errorf("invalid challenge type: %T", v)
+			}
+		} else {
+			return fmt.Errorf("missing challenge in response")
+		}
+
+		var signature []byte
+		if sigInterface, exists := responseData["signature"]; exists {
+			switch v := sigInterface.(type) {
+			case string:
+				signature, err = base64.StdEncoding.DecodeString(v)
+				if err != nil {
+					return fmt.Errorf("failed to decode signature from base64: %w", err)
+				}
+			case []byte:
+				signature = v
+			default:
+				return fmt.Errorf("invalid signature type: %T", v)
+			}
+		} else {
+			return fmt.Errorf("missing signature in response")
+		}
+
+		response := AuthResponse{
+			Version:   version,
+			Challenge: challengeBytes,
+			Signature: signature,
+			PeerID:    responsePeerID,
+			PublicKey: publicKey,
+			Timestamp: timestamp,
+			Nonce:     nonce,
+			ChainID:   chainID,
 		}
 
 		now := time.Now().Unix()

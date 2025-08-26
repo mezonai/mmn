@@ -201,7 +201,7 @@ func initializeNode() {
 		return
 	}
 
-	bs, err := initializeBlockstore(pubKeyHex, blockstoreDir, initDatabase, ts)
+	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts)
 	if err != nil {
 		logx.Error("INIT", "Failed to initialize blockstore:", err.Error())
 		return

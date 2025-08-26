@@ -30,10 +30,10 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 		MaxStreamsPerMinute: 20,
 
 		// Bandwidth limits
-		MaxBytesPerSecond: 1024 * 1024,
+		MaxBytesPerSecond: 2 * 1024 * 1024,
 
 		// Block sync limits
-		MaxBlockRequestsPerMinute: 10,
+		MaxBlockRequestsPerMinute: 45,
 	}
 }
 

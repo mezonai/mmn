@@ -1,10 +1,13 @@
 package p2p
 
 import (
+	"context"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/logx"
 )
 
 func NewSyncRequestTracker(requestID string, fromSlot, toSlot uint64) *SyncRequestTracker {
@@ -80,4 +83,65 @@ func (t *SyncRequestTracker) CloseAllPeers() {
 	t.ActivePeer = ""
 	t.ActiveStream = nil
 	t.AllPeers = make(map[peer.ID]network.Stream)
+}
+
+// when no peers connected the blocks will not sync must run after 8s if synced stop sync
+func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs blockstore.Store) {
+	// wait network setup
+	time.Sleep(3 * time.Second)
+	ticker := time.NewTicker(8 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ln.cleanupOldSyncRequests()
+		case <-ln.ctx.Done():
+			return
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) startCleanupRoutine() {
+	ticker := time.NewTicker(2 * time.Minute) // Reduced from 5 minutes for faster cleanup
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ln.RefreshAuthenticationForConnectedPeers()
+			ln.CleanupExpiredRequests()
+			ln.CleanupExpiredAuthentications()
+		case <-ln.ctx.Done():
+			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
+			return
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) startInitialSync() {
+	// wait network setup
+	time.Sleep(500 * time.Millisecond)
+
+	ctx := context.Background()
+
+	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
+		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
+	}
+	// sync from 0
+	if err := ln.RequestBlockSync(ctx, 0); err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: ", err.Error())
+	}
+}
+
+func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
+	ln.syncMu.Lock()
+	defer ln.syncMu.Unlock()
+
+	now := time.Now()
+	for requestID, info := range ln.activeSyncRequests {
+		if !info.IsActive || now.Sub(info.StartTime) > 5*time.Minute {
+			delete(ln.activeSyncRequests, requestID)
+		}
+	}
 }

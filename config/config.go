@@ -119,14 +119,6 @@ func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
 	return &genesisCfg.Validator, nil
 }
 
-func LoadAccessControlConfig(path string) (*AccessControlConfig, error) {
-	genesisCfg, err := LoadGenesisConfig(path)
-	if err != nil {
-		return nil, err
-	}
-	return &genesisCfg.AccessControl, nil
-}
-
 func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 	data, err := os.ReadFile(privKeyPath)
 	if err != nil {

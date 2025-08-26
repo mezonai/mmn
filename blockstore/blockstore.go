@@ -1,13 +1,13 @@
 package blockstore
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/utils"
 	"sync"
+
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/logx"
@@ -28,19 +28,17 @@ type GenericBlockStore struct {
 	provider        DatabaseProvider
 	mu              sync.RWMutex
 	latestFinalized uint64
-	seedHash        [32]byte
 	txStore         TxStore
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider DatabaseProvider, seed []byte, ts TxStore) (Store, error) {
+func NewGenericBlockStore(provider DatabaseProvider, ts TxStore) (Store, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
 
 	store := &GenericBlockStore{
 		provider: provider,
-		seedHash: sha256.Sum256(seed),
 		txStore:  ts,
 	}
 
@@ -174,7 +172,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	// Store block tsx
-	txs := make([]*types.Transaction, 0)
+	txs := make([]*transaction.Transaction, 0)
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
 	}
@@ -216,11 +214,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
 	return nil
-}
-
-// Seed returns the seed hash
-func (s *GenericBlockStore) Seed() [32]byte {
-	return s.seedHash
 }
 
 // Close closes the underlying database provider
