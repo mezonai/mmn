@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/store"
 	"log"
 	"net"
 	"os"
@@ -15,6 +12,10 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -46,6 +47,11 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+	// Dynamic scheduler flags
+	useDynamicScheduler bool
+	validatorStake      uint64
+	slotsPerEpoch       uint64
+	maxConsecutiveSlots uint64
 )
 
 var runCmd = &cobra.Command{
@@ -68,6 +74,11 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 
+	// Dynamic scheduler flags
+	runCmd.Flags().BoolVar(&useDynamicScheduler, "use-dynamic-scheduler", true, "Use dynamic leader scheduler (Solana-like PoS)")
+	runCmd.Flags().Uint64Var(&validatorStake, "validator-stake", 1000000, "Initial validator stake for dynamic scheduler")
+	runCmd.Flags().Uint64Var(&slotsPerEpoch, "slots-per-epoch", 432, "Number of slots per epoch for dynamic scheduler")
+	runCmd.Flags().Uint64Var(&maxConsecutiveSlots, "max-consecutive-slots", 4, "Maximum consecutive slots per leader")
 }
 
 // getRandomFreePort returns a random free port
@@ -258,12 +269,12 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 	hashesPerTick := pohCfg.HashesPerTick
 	ticksPerSlot := pohCfg.TicksPerSlot
 	tickInterval := time.Duration(pohCfg.TickIntervalMs) * time.Millisecond
-	pohAutoHashInterval := tickInterval / 10
+	pohAutoHashInterval := pohCfg.PohAutoHashInterval
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
 	empty_seed := []byte("")
-	pohEngine := poh.NewPoh(empty_seed, &hashesPerTick, pohAutoHashInterval)
+	pohEngine := poh.NewPoh(empty_seed, &hashesPerTick, time.Duration(pohAutoHashInterval)*time.Millisecond)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
@@ -321,6 +332,36 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	log.Printf("Validator config: batchLoopInterval=%v, monitorLoopInterval=%v",
 		leaderBatchLoopInterval, roleMonitorLoopInterval)
 
+	// Check if dynamic scheduler is enabled
+	if useDynamicScheduler || (cfg.DynamicLeaderScheduler != nil && cfg.DynamicLeaderScheduler.Enabled) {
+		log.Printf("[DYNAMIC_SCHEDULER]: Using dynamic leader scheduler with PoS features")
+		log.Printf("[DYNAMIC_SCHEDULER]: Validator stake: %d, Slots per epoch: %d", validatorStake, slotsPerEpoch)
+
+		// Initialize dynamic components
+		dynamicScheduler, dynamicCollector, err := initializeEnhancedComponents(
+			nodeConfig.PubKey, validatorStake, slotsPerEpoch, maxConsecutiveSlots, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize enhanced components: %v", err)
+		}
+
+		// Create vote account (for now use same as pubkey with suffix)
+		voteAccount := nodeConfig.PubKey + "_vote"
+
+		// Create validator with dynamic PoS features
+		val := validator.NewValidatorWithDynamic(
+			nodeConfig.PubKey, privKey, recorder, pohService, dynamicScheduler, mp,
+			pohCfg.TicksPerSlot, leaderBatchLoopInterval, roleMonitorLoopInterval,
+			leaderTimeout, leaderTimeoutLoopInterval, validatorCfg.BatchSize,
+			p2pClient, bs, ld, dynamicCollector, voteAccount, validatorStake,
+		)
+		val.Run()
+
+		log.Printf("[DYNAMIC_SCHEDULER]: Dynamic validator started with PoS features")
+		return val, nil
+	}
+
+	// Use standard validator with static schedule
+	log.Printf("[STATIC_SCHEDULER]: Using static leader schedule")
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
@@ -361,4 +402,79 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
+}
+
+// initializeEnhancedComponents creates dynamic PoS components
+func initializeEnhancedComponents(pubKey string, validatorStake, slotsPerEpoch, maxConsecutiveSlots uint64, cfg *config.GenesisConfig) (*poh.DynamicLeaderSchedule, *consensus.DynamicCollector, error) {
+	log.Printf("[ENHANCED_COMPONENTS]: Initializing dynamic PoS components")
+
+	// Create validators map from config if available, otherwise use command line params
+	validators := make(map[string]*poh.Validator)
+	totalStake := uint64(0)
+
+	if cfg.DynamicLeaderScheduler != nil && len(cfg.DynamicLeaderScheduler.Validators) > 0 {
+		// Use validators from config
+		for _, v := range cfg.DynamicLeaderScheduler.Validators {
+			validators[v.Pubkey] = &poh.Validator{
+				PubKey:      v.Pubkey,
+				Stake:       v.Stake,
+				ActiveStake: v.ActiveStake,
+				IsActive:    v.IsActive,
+			}
+			if v.IsActive {
+				totalStake += v.ActiveStake
+			}
+		}
+		if cfg.DynamicLeaderScheduler.SlotsPerEpoch > 0 {
+			slotsPerEpoch = cfg.DynamicLeaderScheduler.SlotsPerEpoch
+		}
+	} else {
+		// Use command line parameters
+		validators[pubKey] = &poh.Validator{
+			PubKey:      pubKey,
+			Stake:       validatorStake,
+			ActiveStake: validatorStake,
+			IsActive:    true,
+		}
+		totalStake = validatorStake
+	}
+
+	// Create dynamic leader scheduler
+	scheduler := poh.NewDynamicLeaderSchedule(slotsPerEpoch, validators)
+
+	// Configure max consecutive slots if specified in config or command line
+	maxSlots := maxConsecutiveSlots // Command line default
+	if cfg.DynamicLeaderScheduler != nil && cfg.DynamicLeaderScheduler.MaxConsecutiveSlots > 0 {
+		maxSlots = cfg.DynamicLeaderScheduler.MaxConsecutiveSlots
+		log.Printf("[ENHANCED_COMPONENTS]: Using max consecutive slots from config: %d", maxSlots)
+	} else {
+		log.Printf("[ENHANCED_COMPONENTS]: Using max consecutive slots from command line: %d", maxSlots)
+	}
+	scheduler.SetMaxConsecutiveSlots(maxSlots)
+
+	// Scheduler is initialized with epoch 0 by default
+	log.Printf("[ENHANCED_COMPONENTS]: Dynamic scheduler initialized with epoch 0")
+
+	// Create dynamic collector with proper parameters
+	votingThreshold := 0.67 // Default 2/3 supermajority
+	if cfg.DynamicLeaderScheduler != nil && cfg.DynamicLeaderScheduler.VotingThreshold > 0 {
+		votingThreshold = cfg.DynamicLeaderScheduler.VotingThreshold
+	}
+
+	stakesMap := make(map[string]uint64)
+	for pubkey, val := range validators {
+		if val.IsActive {
+			stakesMap[pubkey] = val.ActiveStake
+		}
+	}
+
+	dynamicCollector := consensus.NewDynamicCollector(stakesMap, votingThreshold)
+
+	log.Printf("[ENHANCED_COMPONENTS]: Dynamic components initialized successfully")
+	log.Printf("[ENHANCED_COMPONENTS]: - Total stake: %d", totalStake)
+	log.Printf("[ENHANCED_COMPONENTS]: - Validators: %d", len(validators))
+	log.Printf("[ENHANCED_COMPONENTS]: - Slots per epoch: %d", slotsPerEpoch)
+	log.Printf("[ENHANCED_COMPONENTS]: - Voting threshold: %.2f", votingThreshold)
+
+	return scheduler, dynamicCollector, nil
 }

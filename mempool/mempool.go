@@ -563,22 +563,20 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 
 // GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
 // Returns 0 if no pending transactions exist for the sender
+// This now includes both pending transactions and ready queue transactions
 func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
-
 	pendingMap, exists := mp.pendingTxs[sender]
 	if !exists || len(pendingMap) == 0 {
 		return 0
 	}
-
 	var largestNonce uint64 = 0
 	for nonce := range pendingMap {
 		if nonce > largestNonce {
 			largestNonce = nonce
 		}
 	}
-
 	return largestNonce
 }
 

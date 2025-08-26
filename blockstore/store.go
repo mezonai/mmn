@@ -17,6 +17,8 @@ type Store interface {
 	HasCompleteBlock(slot uint64) bool
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
 	GetLatestSlot() uint64
+	GetCurrentSlot() uint64   // Get current processing slot
+	GetFinalizedSlot() uint64 // Get latest finalized slot
 	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)

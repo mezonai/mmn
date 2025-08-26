@@ -88,6 +88,7 @@ type PohConfig struct {
 	HashesPerTick  uint64 `yaml:"hashes_per_tick"`
 	TicksPerSlot   uint64 `yaml:"ticks_per_slot"`
 	TickIntervalMs int    `yaml:"tick_interval_ms"`
+	PohAutoHashInterval int `yaml:"poh_auto_hash_interval"`
 }
 
 type MempoolConfig struct {
