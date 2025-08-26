@@ -86,61 +86,30 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			vote.Sign(privKey)
 
-			committed, needApply, err := collector.AddVote(vote)
-			if err != nil {
-				logx.Error("VOTE", "Failed to add vote: ", err)
-				return err
-			}
-
-			if committed && needApply {
-				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
-				// Apply block to ledger
-				block := bs.Block(vote.Slot)
-				if block == nil {
-					return fmt.Errorf("block not found for slot %d", vote.Slot)
-				}
-				if err := ld.ApplyBlock(block); err != nil {
-					return fmt.Errorf("apply block error: %w", err)
-				}
-
-				// Mark block as finalized and publish transaction finalization events
-				if err := bs.MarkFinalized(vote.Slot); err != nil {
-					return fmt.Errorf("mark block as finalized error: %w", err)
-				}
-
-				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
-			}
-
+			// verify passed broadcast vote
 			ln.BroadcastVote(context.Background(), vote)
-
 			return nil
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
 			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-
 			committed, needApply, err := collector.AddVote(vote)
 			if err != nil {
 				logx.Error("VOTE", "Failed to add vote: ", err)
 				return err
 			}
 
+			// not leader => maybe vote come before block received => if dont have block just return
+			if bs.Block(vote.Slot) == nil {
+				logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
+				return nil
+			}
 			if committed && needApply {
-				logx.Info("VOTE", "Block committed: slot=", vote.Slot)
-				// Apply block to ledger
-				block := bs.Block(vote.Slot)
-				if block == nil {
-					return fmt.Errorf("block not found for slot %d", vote.Slot)
+				logx.Info("VOTE", "Committed vote from OnVoteReceived: slot= ", vote.Slot, ",voter= ", vote.VoterID)
+				err := ln.applyDataToBlock(vote, bs, ld, mp)
+				if err != nil {
+					logx.Error("VOTE", "Failed to apply data to block: ", err)
+					return err
 				}
-				if err := ld.ApplyBlock(block); err != nil {
-					return fmt.Errorf("apply block error: %w", err)
-				}
-
-				// Mark block as finalized and publish transaction finalization events
-				if err := bs.MarkFinalized(vote.Slot); err != nil {
-					return fmt.Errorf("mark block as finalized error: %w", err)
-				}
-
-				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
 			}
 
 			return nil
@@ -239,6 +208,37 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
+}
+
+func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
+	// Lock to ensure thread safety for concurrent apply processing
+	ln.applyBlockMu.Lock()
+	defer ln.applyBlockMu.Unlock()
+
+	logx.Info("VOTE", "Block committed: slot=", vote.Slot)
+	// check block apply or not if apply log and return
+	if bs.IsApplied(vote.Slot) {
+		logx.Info("VOTE", "Block already applied: slot=", vote.Slot)
+		return nil
+	}
+	// Apply block to ledger
+	block := bs.Block(vote.Slot)
+	if block == nil {
+		// missing block how to handle
+		return fmt.Errorf("block not found for slot %d", vote.Slot)
+	}
+	if err := ld.ApplyBlock(block); err != nil {
+		return fmt.Errorf("apply block error: %w", err)
+	}
+
+	// Mark block as finalized
+	if err := bs.MarkFinalized(vote.Slot); err != nil {
+		return fmt.Errorf("mark block as finalized error: %w", err)
+	}
+
+	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
+	go mp.BlockCleanup(block)
+	return nil
 }
 
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {

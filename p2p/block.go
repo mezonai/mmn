@@ -32,11 +32,6 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 				continue
 			}
 
-			if msg.ReceivedFrom == ln.host.ID() {
-				logx.Debug("NETWORK:BLOCK", "Skipping block message from self")
-				continue
-			}
-
 			var blk *block.BroadcastedBlock
 			if err := json.Unmarshal(msg.Data, &blk); err != nil {
 				logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)

@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 import { GrpcClient } from './grpc_client';
 
 // Fixed Ed25519 keypair for faucet (hardcoded for genesis config)
@@ -8,7 +9,7 @@ const faucetPrivateKeyHex =
 const faucetPrivateKeyDer = Buffer.from(faucetPrivateKeyHex, 'hex');
 const faucetSeed = faucetPrivateKeyDer.slice(-32);
 const faucetKeyPair = nacl.sign.keyPair.fromSeed(faucetSeed);
-const faucetPublicKeyHex = Buffer.from(faucetKeyPair.publicKey).toString('hex');
+const faucetPublicKeyBase58 = bs58.encode(faucetKeyPair.publicKey);
 const faucetPrivateKey = crypto.createPrivateKey({
   key: faucetPrivateKeyDer,
   format: 'der',
@@ -19,13 +20,13 @@ const faucetPrivateKey = crypto.createPrivateKey({
 function generateTestAccount() {
   const seed = crypto.randomBytes(32);
   const keyPair = nacl.sign.keyPair.fromSeed(seed);
-  const publicKeyHex = Buffer.from(keyPair.publicKey).toString('hex');
+  const publicKeyBase58 = bs58.encode(keyPair.publicKey);
   const privateKey = crypto.createPrivateKey({
     key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]),
     format: 'der',
     type: 'pkcs8',
   });
-  return { publicKeyHex, privateKey, keyPair, seed };
+  return { publicKeyBase58, privateKey, keyPair, seed };
 }
 
 // Generate multiple test accounts
@@ -74,19 +75,20 @@ function serializeTx(tx: Tx): Buffer {
 function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
   const serializedData = serializeTx(tx);
   const signature = crypto.sign(null, serializedData, privateKey);
-  return signature.toString('hex');
+  return bs58.encode(signature);
 }
 
-function verifyTx(tx: Tx, publicKeyHex: string): boolean {
+function verifyTx(tx: Tx, publicKeyBase58: string): boolean {
   const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
-  const publicKeyDer = Buffer.concat([spkiPrefix, Buffer.from(publicKeyHex, 'hex')]);
+  const publicKeyBytes = bs58.decode(publicKeyBase58);
+  const publicKeyDer = Buffer.concat([spkiPrefix, publicKeyBytes]);
   const publicKey = crypto.createPublicKey({
     key: publicKeyDer,
     format: 'der',
     type: 'spki',
   });
 
-  const signature = Buffer.from(tx.signature, 'hex');
+  const signature = bs58.decode(tx.signature);
   const serializedData = serializeTx(tx);
   return crypto.verify(null, serializedData, publicKey, signature);
 }
@@ -159,7 +161,7 @@ class TestSuite {
 
   private async testBasicFaucetTransaction() {
     const account = generateTestAccount();
-    const tx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 100, 'Basic faucet test', 0, FaucetTxType);
+    const tx = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 100, 'Basic faucet test', 0, FaucetTxType);
     tx.signature = signTx(tx, faucetPrivateKey);
 
     const response = await sendTxViaGrpc(this.grpcClient, tx);
@@ -171,12 +173,12 @@ class TestSuite {
     const recipient = generateTestAccount();
 
     // First fund the sender
-    const faucetTx = buildTx(faucetPublicKeyHex, sender.publicKeyHex, 200, 'Fund sender', 0, FaucetTxType);
+    const faucetTx = buildTx(faucetPublicKeyBase58, sender.publicKeyBase58, 200, 'Fund sender', 0, FaucetTxType);
     faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx);
 
     // Then transfer
-    const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 50, 'Basic transfer', 1, TransferTxType);
+    const transferTx = buildTx(sender.publicKeyBase58, recipient.publicKeyBase58, 50, 'Basic transfer', 1, TransferTxType);
     transferTx.signature = signTx(transferTx, sender.privateKey);
 
     const response = await sendTxViaGrpc(this.grpcClient, transferTx);
@@ -187,7 +189,7 @@ class TestSuite {
     const account = generateTestAccount();
 
     // Fund account
-    const faucetTx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 300, 'Fund for balance test', 0, FaucetTxType);
+    const faucetTx = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 300, 'Fund for balance test', 0, FaucetTxType);
     faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx);
 
@@ -195,7 +197,7 @@ class TestSuite {
     await new Promise((resolve) => setTimeout(resolve, 10000));
 
     // Verify balance via gRPC
-    const accountInfo = await this.grpcClient.getAccount(account.publicKeyHex);
+    const accountInfo = await this.grpcClient.getAccount(account.publicKeyBase58);
     if (parseInt(accountInfo.balance) !== 300) throw new Error(`Expected balance 300, got ${accountInfo.balance}`);
   }
 
@@ -203,13 +205,13 @@ class TestSuite {
     const account = generateTestAccount();
 
     // Create multiple transactions
-    const faucetTx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 500, 'Fund for history test', 0, FaucetTxType);
+    const faucetTx = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 500, 'Fund for history test', 0, FaucetTxType);
     faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx);
 
     const transferTx = buildTx(
-      account.publicKeyHex,
-      generateTestAccount().publicKeyHex,
+      account.publicKeyBase58,
+      generateTestAccount().publicKeyBase58,
       100,
       'History test transfer',
       1,
@@ -222,7 +224,7 @@ class TestSuite {
     await new Promise((resolve) => setTimeout(resolve, 10000));
 
     // Check history via gRPC
-    const history = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 0);
+    const history = await this.grpcClient.getTxHistory(account.publicKeyBase58, 10, 0, 0);
     if (history.total < 2) throw new Error('Transaction history incomplete');
   }
 
@@ -230,12 +232,12 @@ class TestSuite {
     const account = generateTestAccount();
 
     // Fund account
-    const faucetTx = buildTx(faucetPublicKeyHex, account.publicKeyHex, 100, 'Fund for self transfer', 0, FaucetTxType);
+    const faucetTx = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 100, 'Fund for self transfer', 0, FaucetTxType);
     faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx);
 
     // Self transfer
-    const selfTx = buildTx(account.publicKeyHex, account.publicKeyHex, 50, 'Self transfer', 1, TransferTxType);
+    const selfTx = buildTx(account.publicKeyBase58, account.publicKeyBase58, 50, 'Self transfer', 1, TransferTxType);
     selfTx.signature = signTx(selfTx, account.privateKey);
 
     const response = await sendTxViaGrpc(this.grpcClient, selfTx);
@@ -247,12 +249,12 @@ class TestSuite {
     const recipient = generateTestAccount();
 
     // Fund sender
-    const faucetTx = buildTx(faucetPublicKeyHex, sender.publicKeyHex, 100, 'Fund for duplicate test', 0, FaucetTxType);
+    const faucetTx = buildTx(faucetPublicKeyBase58, sender.publicKeyBase58, 100, 'Fund for duplicate test', 0, FaucetTxType);
     faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx);
 
     // Create transaction
-    const tx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 10, 'Duplicate test', 1, TransferTxType);
+    const tx = buildTx(sender.publicKeyBase58, recipient.publicKeyBase58, 10, 'Duplicate test', 1, TransferTxType);
     tx.signature = signTx(tx, sender.privateKey);
 
     // Send first time
@@ -265,7 +267,7 @@ class TestSuite {
   }
 
   private async testNonExistentAccountQuery() {
-    const nonExistentAddress = '0000000000000000000000000000000000000000000000000000000000000000';
+    const nonExistentAddress = bs58.encode(Buffer.alloc(32));
 
     try {
       await this.grpcClient.getAccount(nonExistentAddress);
@@ -282,13 +284,13 @@ class TestSuite {
     // Fund all accounts first to ensure they exist
     console.log('Funding all accounts for chain transfer test...');
     for (let i = 0; i < accounts.length; i++) {
-      const faucetTx = buildTx(faucetPublicKeyHex, accounts[i].publicKeyHex, 100, `Fund account ${i}`, 0, FaucetTxType);
+      const faucetTx = buildTx(faucetPublicKeyBase58, accounts[i].publicKeyBase58, 100, `Fund account ${i}`, 0, FaucetTxType);
       faucetTx.signature = signTx(faucetTx, faucetPrivateKey);
       await sendTxViaGrpc(this.grpcClient, faucetTx);
     }
 
     // Fund first account with additional amount for transfers
-    const additionalFundTx = buildTx(faucetPublicKeyHex, accounts[0].publicKeyHex, 900, 'Additional fund for chain', 1, FaucetTxType);
+    const additionalFundTx = buildTx(faucetPublicKeyBase58, accounts[0].publicKeyBase58, 900, 'Additional fund for chain', 1, FaucetTxType);
     additionalFundTx.signature = signTx(additionalFundTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, additionalFundTx);
 
@@ -299,8 +301,8 @@ class TestSuite {
     // Chain transfers
     for (let i = 0; i < accounts.length - 1; i++) {
       const tx = buildTx(
-        accounts[i].publicKeyHex,
-        accounts[i + 1].publicKeyHex,
+        accounts[i].publicKeyBase58,
+        accounts[i + 1].publicKeyBase58,
         200,
         `Chain transfer ${i}`,
         i + 2, // Start from nonce 2 since we already sent funding transactions
@@ -325,7 +327,7 @@ class TestSuite {
     const expectedBalances = [800, 100, 100, 300];
 
     for (let i = 0; i < accounts.length; i++) {
-      const accountInfo = await this.grpcClient.getAccount(accounts[i].publicKeyHex);
+      const accountInfo = await this.grpcClient.getAccount(accounts[i].publicKeyBase58);
       const expectedBalance = expectedBalances[i];
       
       console.log(`Account ${i} balance: ${accountInfo.balance}, expected: ${expectedBalance}`);
@@ -345,11 +347,11 @@ class TestSuite {
     const recipient = generateTestAccount();
 
     // Fund both accounts
-    const faucetTx1 = buildTx(faucetPublicKeyHex, account.publicKeyHex, 1000, 'Fund for filtering', 0, FaucetTxType);
+    const faucetTx1 = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 1000, 'Fund for filtering', 0, FaucetTxType);
     faucetTx1.signature = signTx(faucetTx1, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx1);
 
-    const faucetTx2 = buildTx(faucetPublicKeyHex, recipient.publicKeyHex, 100, 'Fund recipient', 1, FaucetTxType);
+    const faucetTx2 = buildTx(faucetPublicKeyBase58, recipient.publicKeyBase58, 100, 'Fund recipient', 1, FaucetTxType);
     faucetTx2.signature = signTx(faucetTx2, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx2);
 
@@ -357,8 +359,8 @@ class TestSuite {
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
     const transferTx = buildTx(
-      account.publicKeyHex,
-      recipient.publicKeyHex,
+      account.publicKeyBase58,
+      recipient.publicKeyBase58,
       200,
       'Filtering transfer',
       1,
@@ -371,9 +373,9 @@ class TestSuite {
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Test different filters
-    const allTxs = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 0);
-    const sentTxs = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 1);
-    const receivedTxs = await this.grpcClient.getTxHistory(account.publicKeyHex, 10, 0, 2);
+    const allTxs = await this.grpcClient.getTxHistory(account.publicKeyBase58, 10, 0, 0);
+    const sentTxs = await this.grpcClient.getTxHistory(account.publicKeyBase58, 10, 0, 1);
+    const receivedTxs = await this.grpcClient.getTxHistory(account.publicKeyBase58, 10, 0, 2);
 
     console.log(`Filter results - All: ${allTxs.total}, Sent: ${sentTxs.total}, Received: ${receivedTxs.total}`);
 
@@ -387,11 +389,11 @@ class TestSuite {
     const recipient = generateTestAccount();
 
     // Fund both accounts
-    const faucetTx1 = buildTx(faucetPublicKeyHex, account.publicKeyHex, 1000, 'Fund for pagination', 0, FaucetTxType);
+    const faucetTx1 = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 1000, 'Fund for pagination', 0, FaucetTxType);
     faucetTx1.signature = signTx(faucetTx1, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx1);
 
-    const faucetTx2 = buildTx(faucetPublicKeyHex, recipient.publicKeyHex, 100, 'Fund recipient', 1, FaucetTxType);
+    const faucetTx2 = buildTx(faucetPublicKeyBase58, recipient.publicKeyBase58, 100, 'Fund recipient', 1, FaucetTxType);
     faucetTx2.signature = signTx(faucetTx2, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx2);
 
@@ -401,8 +403,8 @@ class TestSuite {
     // Create multiple transactions
     for (let i = 0; i < 5; i++) {
       const tx = buildTx(
-        account.publicKeyHex,
-        recipient.publicKeyHex,
+        account.publicKeyBase58,
+        recipient.publicKeyBase58,
         10,
         `Pagination tx ${i}`,
         i + 1,
@@ -416,8 +418,8 @@ class TestSuite {
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Test pagination
-    const page1 = await this.grpcClient.getTxHistory(account.publicKeyHex, 3, 0, 0);
-    const page2 = await this.grpcClient.getTxHistory(account.publicKeyHex, 3, 3, 0);
+    const page1 = await this.grpcClient.getTxHistory(account.publicKeyBase58, 3, 0, 0);
+    const page2 = await this.grpcClient.getTxHistory(account.publicKeyBase58, 3, 3, 0);
 
     console.log(`Pagination results - Page 1: ${page1.txs.length}, Page 2: ${page2.txs.length}`);
 
