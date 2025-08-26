@@ -162,6 +162,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 
 			// commit the update
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
+				if l.eventRouter != nil {
+					event := events.NewTransactionFailed("", fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
 				return err
 			}
 		}
