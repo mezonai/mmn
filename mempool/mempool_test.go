@@ -1180,13 +1180,13 @@ func TestMempool_StaleTimeout(t *testing.T) {
 	mempool.mu.Lock()
 	for sender, pendingMap := range mempool.pendingTxs {
 		for nonce, pendingTx := range pendingMap {
-			// Make tx1 stale (older than StaleTimeout)
+			// Make tx1 stale (older than StaleTimeout = 60 minutes)
 			if sender == senderAddr1 {
-				pendingTx.Timestamp = time.Now().Add(-11 * time.Minute) // Older than 10min timeout
+				pendingTx.Timestamp = time.Now().Add(-61 * time.Minute) // Older than 60min timeout
 			}
 			// Keep tx2 fresh
 			if sender == senderAddr2 {
-				pendingTx.Timestamp = time.Now().Add(-5 * time.Minute) // Within timeout
+				pendingTx.Timestamp = time.Now().Add(-30 * time.Minute) // Within timeout
 			}
 			_ = nonce // avoid unused variable
 		}
@@ -1220,7 +1220,7 @@ func TestMempool_StaleTimeout(t *testing.T) {
 	mempool.mu.Lock()
 	if pendingMap, exists := mempool.pendingTxs[senderAddr1]; exists {
 		if pendingTx, exists := pendingMap[6]; exists {
-			pendingTx.Timestamp = time.Now().Add(-10 * time.Minute) // Exactly at timeout
+			pendingTx.Timestamp = time.Now().Add(-60 * time.Minute) // Exactly at timeout
 		}
 	}
 	mempool.mu.Unlock()
@@ -1244,7 +1244,7 @@ func TestMempool_StaleTimeout(t *testing.T) {
 	mempool.mu.Lock()
 	if pendingMap, exists := mempool.pendingTxs[senderAddr1]; exists {
 		if pendingTx, exists := pendingMap[7]; exists {
-			pendingTx.Timestamp = time.Now().Add(-10*time.Minute - time.Millisecond) // Slightly before threshold
+			pendingTx.Timestamp = time.Now().Add(-60*time.Minute - time.Millisecond) // Slightly before threshold
 		}
 	}
 	mempool.mu.Unlock()
