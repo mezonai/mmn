@@ -112,7 +112,7 @@ func (ln *Libp2pNetwork) setUpSyncNode(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 
-	ln.setUpSyncNodeTopics(ctx)
+	ln.setupSyncNodeTopics(ctx)
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
 		if bootstrapPeer == "" {

@@ -186,7 +186,12 @@ func runNode() {
 	if err != nil {
 		log.Fatalf("load private key: %v", err)
 	}
+	libP2pClient, collector, mp := syncNode(nodeConfig, bs, privKey, genesisPath, eventRouter, ld, recorder)
+	startNode(ctx, sigCh, cancel, cfg, nodeConfig, libP2pClient, ld, collector, bs, mp, eventRouter, privKey, genesisPath, pohService, recorder)
 
+}
+
+func syncNode(nodeConfig config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, eventRouter *events.EventRouter, ld *ledger.Ledger, recorder *poh.PohRecorder) (*p2p.Libp2pNetwork, *consensus.Collector, *mempool.Mempool) {
 	// Initialize network
 	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
 	if err != nil {
@@ -202,7 +207,10 @@ func runNode() {
 	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
+	return libP2pClient, collector, mp
+}
 
+func startNode(ctx context.Context, sigCh chan os.Signal, cancel func(), cfg *config.GenesisConfig, nodeConfig config.NodeConfig, libP2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, privKey ed25519.PrivateKey, genesisPath string, pohService *poh.PohService, recorder *poh.PohRecorder) {
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
 	if err != nil {
@@ -222,7 +230,6 @@ func runNode() {
 
 	//  block until cancel
 	<-ctx.Done()
-
 }
 
 // loadConfiguration loads all configuration files

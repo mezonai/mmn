@@ -18,6 +18,7 @@ import (
 	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
@@ -87,7 +88,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
 			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-
 			committed, needApply, err := collector.AddVote(vote)
 			if err != nil {
 				logx.Error("VOTE", "Failed to add vote: ", err)
@@ -129,7 +129,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnSyncResponseReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
-
 			for _, blk := range blocks {
 				if blk == nil {
 					continue
@@ -152,9 +151,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
-				// Add to block store and publish transaction inclusion events
-				if err := bs.AddBlockPending(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
+				if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to apply block: ", err.Error())
 					continue
 				}
 
@@ -164,7 +162,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
-
 			localLatestSlot := bs.GetLatestSlot()
 			if latestSlot > localLatestSlot {
 				fromSlot := localLatestSlot + 1
@@ -186,7 +183,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	go ln.startCleanupRoutine()
 }
 
-func (ln *Libp2pNetwork) setUpSyncNodeTopics(ctx context.Context) {
+func (ln *Libp2pNetwork) setupSyncNodeTopics(ctx context.Context) {
 	var err error
 
 	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
