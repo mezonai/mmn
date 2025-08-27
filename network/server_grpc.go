@@ -110,10 +110,7 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 			Decimals:     uint32(config.GetDecimalsFactor()),
 		}, nil
 	}
-	balance := "0"
-	if acc.Balance != nil {
-		balance = acc.Balance.String()
-	}
+	balance := utils.Uint256ToString(acc.Balance)
 	
 	return &pb.GetAccountResponse{
 		Address:      addr,
@@ -187,10 +184,7 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 	if err != nil {
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
-	amount := "0"
-	if tx.Amount != nil {
-		amount = tx.Amount.String()
-	}
+	amount := utils.Uint256ToString(tx.Amount)
 	
 	txInfo := &pb.TxInfo{
 		Sender:    tx.Sender,
@@ -210,10 +204,7 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
 	txMetas := make([]*pb.TxMeta, len(txs))
 	for i, tx := range txs {
-		amount := "0"
-		if tx.Amount != nil {
-			amount = tx.Amount.String()
-		}
+		amount := utils.Uint256ToString(tx.Amount)
 		
 		txMetas[i] = &pb.TxMeta{
 			Sender:    tx.Sender,
@@ -501,10 +492,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
-			amount := "0"
-			if tx.Amount != nil {
-				amount = tx.Amount.String()
-			}
+			amount := utils.Uint256ToString(tx.Amount)
 			
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,

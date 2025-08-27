@@ -173,10 +173,7 @@ func ToProtoSignedTx(tx *transaction.Transaction) *pb.SignedTxMsg {
 }
 
 func ToProtoTx(tx *transaction.Transaction) *pb.TxMsg {
-	amount := "0"
-	if tx.Amount != nil {
-		amount = tx.Amount.String()
-	}
+	amount := Uint256ToString(tx.Amount)
 	return &pb.TxMsg{
 		Type:      tx.Type,
 		Sender:    tx.Sender,
@@ -186,4 +183,12 @@ func ToProtoTx(tx *transaction.Transaction) *pb.TxMsg {
 		TextData:  tx.TextData,
 		Nonce:     tx.Nonce,
 	}
+}
+
+// Uint256ToString converts a *uint256.Int to string, returning "0" if nil
+func Uint256ToString(value *uint256.Int) string {
+	if value == nil {
+		return "0"
+	}
+	return value.String()
 }

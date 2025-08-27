@@ -7,6 +7,7 @@ import (
 
 	"github.com/holiman/uint256"
 	mmnpb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/utils"
 )
 
 const addressExpectedLength = 64
@@ -73,10 +74,7 @@ func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, 
 }
 
 func ToProtoTx(tx *Tx) *mmnpb.TxMsg {
-	amount := "0"
-	if tx.Amount != nil {
-		amount = tx.Amount.String()
-	}
+	amount := utils.Uint256ToString(tx.Amount)
 
 	return &mmnpb.TxMsg{
 		Type:      int32(tx.Type),

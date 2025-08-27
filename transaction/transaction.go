@@ -27,10 +27,7 @@ type Transaction struct {
 }
 
 func (tx *Transaction) Serialize() []byte {
-	amountStr := "0"
-	if tx.Amount != nil {
-		amountStr = tx.Amount.String()
-	}
+	amountStr := uint256ToString(tx.Amount)
 	metadata := fmt.Sprintf("%d|%s|%s|%s|%s|%d", tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce)
 	fmt.Println("Serialize metadata:", metadata)
 	return []byte(metadata)
@@ -64,4 +61,12 @@ func base58ToEd25519(addr string) (ed25519.PublicKey, error) {
 		return nil, fmt.Errorf("invalid pubkey")
 	}
 	return ed25519.PublicKey(b), nil
+}
+
+// uint256ToString converts a *uint256.Int to string, returning "0" if nil
+func uint256ToString(value *uint256.Int) string {
+	if value == nil {
+		return "0"
+	}
+	return value.String()
 }

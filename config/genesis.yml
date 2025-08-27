@@ -24,4 +24,4 @@ config:
     leader_timeout: 50
     leader_timeout_loop_interval: 5
   native_currency:
-    decimals: 9  
+    decimals: 6  
