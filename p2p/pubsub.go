@@ -15,6 +15,7 @@ import (
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
@@ -116,9 +117,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
-				// Add to block store and publish transaction inclusion events
-				if err := bs.AddBlockPending(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
+				if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to apply block: ", err.Error())
 					continue
 				}
 
