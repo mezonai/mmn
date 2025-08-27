@@ -10,6 +10,7 @@ import (
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -40,17 +41,15 @@ type Validator struct {
 	leaderTimeoutLoopInterval time.Duration
 	BatchSize                 int
 
-	netClient   interfaces.Broadcaster
-	blockStore  store.BlockStore
-	ledger      *ledger.Ledger
-	session     *ledger.Session
-	lastSession *ledger.Session
-	collector   *consensus.Collector
+	netClient  interfaces.Broadcaster
+	blockStore store.BlockStore
+	ledger     *ledger.Ledger
+	collector  *consensus.Collector
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
-	pendingValidTxs   []*transaction.Transaction
+	pendingTxs        []*transaction.Transaction
 	stopCh            chan struct{}
 }
 
@@ -89,13 +88,11 @@ func NewValidator(
 		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
-		session:                   ledger.NewSession(),
-		lastSession:               ledger.NewSession(),
 		lastSlot:                  0,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
-		pendingValidTxs:           make([]*transaction.Transaction, 0, batchSize),
+		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry
 	p2pClient.OnSyncPohFromLeader = v.handleResetPohFromLeader
@@ -136,9 +133,7 @@ waitLoop:
 
 	v.Recorder.Reset(seed.Hash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-	v.session = v.ledger.NewSession()
-	v.lastSession = v.ledger.NewSession()
-	v.pendingValidTxs = make([]*transaction.Transaction, 0, v.BatchSize)
+	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 	v.leaderStartAtSlot = currentSlot
 	logx.Info("LEADER", fmt.Sprintf("Leader ready to start at slot: %d", currentSlot))
 }
@@ -146,8 +141,6 @@ waitLoop:
 func (v *Validator) onLeaderSlotEnd() {
 	logx.Info("LEADER", "onLeaderSlotEnd")
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-	v.session = v.ledger.NewSession()
-	v.lastSession = v.ledger.NewSession()
 	v.leaderStartAtSlot = NoSlot
 }
 
@@ -194,12 +187,6 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			v.collectedEntries,
 		)
 
-		if err := v.ledger.VerifyBlock(blk); err != nil {
-			logx.Error("VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
-			v.session = v.lastSession.CopyWithOverlayClone()
-			return
-		}
-
 		blk.Sign(v.PrivKey)
 		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
@@ -213,7 +200,6 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-		v.lastSession = v.session.CopyWithOverlayClone()
 	} else if v.IsLeader(currentSlot) {
 		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)
@@ -234,28 +220,28 @@ func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) err
 	return nil
 }
 
-func (v *Validator) peekPendingValidTxs(size int) []*transaction.Transaction {
-	if len(v.pendingValidTxs) == 0 {
+func (v *Validator) peekPendingTxs(size int) []*transaction.Transaction {
+	if len(v.pendingTxs) == 0 {
 		return nil
 	}
-	if len(v.pendingValidTxs) < size {
-		size = len(v.pendingValidTxs)
+	if len(v.pendingTxs) < size {
+		size = len(v.pendingTxs)
 	}
 
 	result := make([]*transaction.Transaction, size)
-	copy(result, v.pendingValidTxs[:size])
+	copy(result, v.pendingTxs[:size])
 
 	return result
 }
 
-func (v *Validator) dropPendingValidTxs(size int) {
-	if size >= len(v.pendingValidTxs) {
-		v.pendingValidTxs = v.pendingValidTxs[:0]
+func (v *Validator) dropPendingTxs(size int) {
+	if size >= len(v.pendingTxs) {
+		v.pendingTxs = v.pendingTxs[:0]
 		return
 	}
 
-	copy(v.pendingValidTxs, v.pendingValidTxs[size:])
-	v.pendingValidTxs = v.pendingValidTxs[:len(v.pendingValidTxs)-size]
+	copy(v.pendingTxs, v.pendingTxs[size:])
+	v.pendingTxs = v.pendingTxs[:len(v.pendingTxs)-size]
 }
 
 func (v *Validator) Run() {
@@ -286,6 +272,7 @@ func (v *Validator) leaderBatchLoop() {
 			if !v.IsLeader(slot) {
 				continue
 			}
+
 			if !v.ReadyToStart(slot) {
 				logx.Warn("LEADER", fmt.Sprintf("Leader batch loop: leader has not ready to start for slot %d", slot))
 				continue
@@ -293,19 +280,21 @@ func (v *Validator) leaderBatchLoop() {
 
 			logx.Info("LEADER", fmt.Sprintf("Pulling batch for slot %d", slot))
 			batch := v.Mempool.PullBatch(v.BatchSize)
-			if len(batch) == 0 && len(v.pendingValidTxs) == 0 {
+			if len(batch) == 0 && len(v.pendingTxs) == 0 {
 				logx.Info("LEADER", fmt.Sprintf("No batch for slot %d", slot))
 				continue
 			}
 
-			logx.Info("LEADER", fmt.Sprintf("Filtering batch for slot %d", slot))
-			valids, errs := v.session.FilterValid(batch)
-			if len(errs) > 0 {
-				logx.Warn("LEADER", fmt.Sprintf("Invalid transactions: %v", errs))
+			for _, r := range batch {
+				tx, err := utils.ParseTx(r)
+				if err != nil {
+					logx.Error("LEADER", fmt.Sprintf("Failed to parse transaction: %v", err))
+					continue
+				}
+				v.pendingTxs = append(v.pendingTxs, tx)
 			}
-			v.pendingValidTxs = append(v.pendingValidTxs, valids...)
 
-			recordTxs := v.peekPendingValidTxs(v.BatchSize)
+			recordTxs := v.peekPendingTxs(v.BatchSize)
 			if recordTxs == nil {
 				logx.Info("LEADER", fmt.Sprintf("No valid transactions for slot %d", slot))
 				continue
@@ -316,7 +305,7 @@ func (v *Validator) leaderBatchLoop() {
 				logx.Warn("LEADER", fmt.Sprintf("Record error: %v", err))
 				continue
 			}
-			v.dropPendingValidTxs(len(recordTxs))
+			v.dropPendingTxs(len(recordTxs))
 			logx.Info("LEADER", fmt.Sprintf("Recorded %d tx (slot=%d, entry=%x...)", len(recordTxs), slot, entry.Hash[:6]))
 		}
 	}

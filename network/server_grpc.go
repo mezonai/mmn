@@ -176,7 +176,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, err := s.ledger.GetTxByHash(in.TxHash)
+	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
 	if err != nil {
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
@@ -186,6 +186,11 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Amount:    tx.Amount,
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+		Slot:      txMeta.Slot,
+		Blockhash: txMeta.BlockHash,
+		Status:    txMeta.Status,
+		ErrMsg:    txMeta.Error,
 	}
 	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
 }
@@ -476,10 +481,24 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, err := s.ledger.GetTxByHash(txHash)
+			tx, _, err := s.ledger.GetTxByHash(txHash)
+
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
+			senderAcc, err := s.ledger.GetAccount(tx.Sender)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
+			}
+			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
+			}
+			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			txStatus := info.Status
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
@@ -487,7 +506,17 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Amount:    tx.Amount,
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
-				Status:    pb.TransactionData_CONFIRMED,
+				Status:    txStatus,
+				SenderAccount: &pb.AccountData{
+					Address: senderAcc.Address,
+					Balance: senderAcc.Balance,
+					Nonce:   senderAcc.Nonce,
+				},
+				RecipientAccount: &pb.AccountData{
+					Address: recipientAcc.Address,
+					Balance: recipientAcc.Balance,
+					Nonce:   recipientAcc.Nonce,
+				},
 			})
 		}
 
