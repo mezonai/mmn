@@ -328,11 +328,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
 	)
-	p2pClient.SetOnSyncingStatusChanged(func(s bool) {
-		if !s {
-			val.Run()
-		}
-	})
+	val.Run()
 
 	return val, nil
 }

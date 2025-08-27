@@ -93,14 +93,10 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	ctx := context.Background()
-
 	for {
 		select {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
-			// Periodically re-request latest slot to refresh syncing status
-			_, _ = ln.RequestLatestSlotFromPeers(ctx)
 		case <-ln.ctx.Done():
 			return
 		}

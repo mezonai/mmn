@@ -53,9 +53,6 @@ type Libp2pNetwork struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	isSyncing              bool
-	onSyncingStatusChanged func(bool)
-
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
 }
@@ -139,27 +136,4 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
-}
-
-// IsSyncing returns current syncing status in a thread-safe way
-// IsSyncing method is defined in network.go
-
-// setSyncing updates syncing status and triggers callback if it changed
-func (ln *Libp2pNetwork) setSyncing(status bool) {
-	ln.mu.Lock()
-	changed := ln.isSyncing != status
-	ln.isSyncing = status
-	cb := ln.onSyncingStatusChanged
-	ln.mu.Unlock()
-
-	if changed && cb != nil {
-		cb(status)
-	}
-}
-
-// SetOnSyncingStatusChanged registers a callback invoked when syncing status changes
-func (ln *Libp2pNetwork) SetOnSyncingStatusChanged(cb func(bool)) {
-	ln.mu.Lock()
-	ln.onSyncingStatusChanged = cb
-	ln.mu.Unlock()
 }

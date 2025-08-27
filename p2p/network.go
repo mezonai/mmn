@@ -88,7 +88,6 @@ func NewNetWork(
 		syncRequests:       make(map[string]*SyncRequestTracker),
 		ctx:                ctx,
 		cancel:             cancel,
-		isSyncing:          true, // Start in syncing mode
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -223,10 +222,4 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
 	}
-}
-
-func (ln *Libp2pNetwork) IsSyncing() bool {
-	ln.mu.RLock()
-	defer ln.mu.RUnlock()
-	return ln.isSyncing
 }
