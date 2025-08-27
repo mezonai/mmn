@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/transaction"
 )
 
 func TestEventBus(t *testing.T) {
@@ -20,8 +20,8 @@ func TestEventBus(t *testing.T) {
 	}
 
 	// Test publishing event
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    100,
@@ -62,8 +62,8 @@ func TestEventBus(t *testing.T) {
 
 func TestBlockchainEvents(t *testing.T) {
 	// Test TransactionAddedToMempool
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    100,
@@ -119,8 +119,8 @@ func TestMultipleSubscribers(t *testing.T) {
 	}
 
 	// Test publishing event
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    100,
@@ -236,8 +236,8 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 }
 
 func TestTransactionAddedToMempool(t *testing.T) {
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender-address",
 		Recipient: "recipient-address",
 		Amount:    1000,

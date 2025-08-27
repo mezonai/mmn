@@ -277,5 +277,5 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "tx.proto",
+	Metadata: "proto/tx.proto",
 }
