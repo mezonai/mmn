@@ -37,8 +37,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Reset poh to sync poh clock with leader
-			logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-			recorder.Reset(blk.LastEntryHash(), blk.Slot)
+			if blk.Slot > bs.GetLatestSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
 
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,
