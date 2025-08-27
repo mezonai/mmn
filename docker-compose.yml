@@ -28,6 +28,8 @@ services:
     ports:
       - "8001:8001"
       - "9001:9001"
+    volumes:
+      - node1-snapshots:/data/snapshots
     networks:
       - mezon
     restart: unless-stopped
@@ -45,6 +47,8 @@ services:
     ports:
       - "8002:8002"
       - "9002:9002"
+    volumes:
+      - node2-snapshots:/data/snapshots
     networks:
       - mezon
     restart: unless-stopped
@@ -63,8 +67,16 @@ services:
     ports:
       - "8003:8003"
       - "9003:9003"
+    volumes:
+      - node3-snapshots:/data/snapshots
+      - node1-snapshots:/snapshots-source
     networks:
       - mezon
     restart: unless-stopped
 networks:
   mezon:
+
+volumes:
+  node1-snapshots:
+  node2-snapshots:
+  node3-snapshots:

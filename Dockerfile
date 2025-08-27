@@ -77,3 +77,6 @@ COPY libs/rocksdb /usr/local/include/rocksdb
 
 COPY --from=builder /app/mmn .
 COPY --from=builder /app/config/ /app/config/
+
+# Create data directory for snapshots
+RUN mkdir -p /data/snapshots

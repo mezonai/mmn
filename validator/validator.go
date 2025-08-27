@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/store"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
@@ -18,6 +19,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/snapshot"
 )
 
 const NoSlot = ^uint64(0)
@@ -355,4 +357,65 @@ func (v *Validator) roleMonitorLoop() {
 			}
 		}
 	}
+}
+
+// createSnapshot creates a snapshot for the given slot
+func (v *Validator) createSnapshot(slot uint64) error {
+	logx.Debug("OKE", "account store is nil")
+	// Get the real database provider from ledger's account store
+	accountStore := v.ledger.GetAccountStore()
+	if accountStore == nil {
+		return fmt.Errorf("account store is nil")
+	}
+
+	// Get the underlying database provider
+	dbProvider := accountStore.GetDatabaseProvider()
+	if dbProvider == nil {
+		return fmt.Errorf("database provider is nil")
+	}
+
+	// Compute real bank hash from actual database
+	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
+	if err != nil {
+		return fmt.Errorf("compute bank hash: %w", err)
+	}
+
+	// Get real leader schedule from validator's schedule
+	var leaderSchedule []poh.LeaderScheduleEntry
+	if v.Schedule != nil {
+		// Convert schedule to entries
+		leaderSchedule = v.convertScheduleToEntries(v.Schedule)
+	}
+
+	// Create snapshot with real database
+	// Use /data/snapshots for Docker volume persistence
+	snapshotDir := "/data/snapshots"
+	path, err := snapshot.WriteSnapshotWithDefaults(
+		snapshotDir,
+		dbProvider,
+		slot,
+		bankHash,
+		leaderSchedule,
+	)
+	if err != nil {
+		return fmt.Errorf("write snapshot: %w", err)
+	}
+
+	fmt.Printf("[SNAPSHOT] Created snapshot at %s (slot=%d)\n", path, slot)
+	return nil
+}
+
+// convertScheduleToEntries converts LeaderSchedule to LeaderScheduleEntry slice
+func (v *Validator) convertScheduleToEntries(schedule *poh.LeaderSchedule) []poh.LeaderScheduleEntry {
+	if schedule == nil {
+		return nil
+	}
+
+	realEntries := schedule.Entries()
+	if len(realEntries) == 0 {
+		return nil
+	}
+	out := make([]poh.LeaderScheduleEntry, len(realEntries))
+	copy(out, realEntries)
+	return out
 }

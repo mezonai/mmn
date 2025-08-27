@@ -447,3 +447,22 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 	}
 	return valid, errs
 }
+
+// GetAllAccounts returns all accounts from the ledger
+func (l *Ledger) GetAllAccounts() ([]*types.Account, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	// Get all accounts from account store
+	accounts, err := l.accountStore.GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all accounts: %w", err)
+	}
+
+	return accounts, nil
+}
+
+// GetAccountStore returns the account store for external access
+func (l *Ledger) GetAccountStore() store.AccountStore {
+	return l.accountStore
+}

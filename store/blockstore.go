@@ -279,9 +279,6 @@ func (s *GenericBlockStore) MustClose() {
 	}
 }
 
-// GetConfirmations calculates the number of confirmations for a transaction in a given block slot.
-// Confirmations = latestFinalized - blockSlot + 1 if the block is finalized,
-// otherwise returns 1 for confirmed but not finalized blocks.
 func (bs *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
@@ -292,9 +289,6 @@ func (bs *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
 	}
 	return 1 // Confirmed but not yet finalized
 }
-
-// GetTransactionBlockInfo searches all stored blocks for a transaction. It returns the containing slot, the whole block, whether the
-// block is finalized, and whether it was found.
 func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blk *block.Block, finalized bool, found bool) {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()

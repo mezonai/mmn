@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
@@ -89,7 +90,7 @@ func NewNetWork(
 		cancel:             cancel,
 	}
 
-	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
+	if err := ln.setUpSyncNode(ctx, bootstrapPeers); err != nil {
 		cancel()
 		h.Close()
 		return nil, fmt.Errorf("failed to setup handlers: %w", err)
@@ -106,14 +107,12 @@ func NewNetWork(
 
 	return ln, nil
 }
-
-func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
+func (ln *Libp2pNetwork) setUpSyncNode(ctx context.Context, bootstrapPeers []string) error {
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 
-	ln.SetupPubSubTopics(ctx)
-
+	ln.setUpSyncNodeTopics(ctx)
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
 		if bootstrapPeer == "" {
@@ -169,6 +168,11 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
 	return nil
 }
+
+// func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
+// 	ln.SetupPubSubTopics(ctx)
+// 	return nil
+// }
 
 // this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {

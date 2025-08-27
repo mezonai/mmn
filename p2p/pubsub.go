@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -13,6 +15,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 )
@@ -108,6 +111,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				}
 
 				logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
+
+				writeSnapshotIfDue(ld, vote.Slot)
 			}
 
 			return nil
@@ -178,8 +183,27 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 	go ln.startPeriodicSyncCheck(bs)
 
-	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
+}
+
+func (ln *Libp2pNetwork) setUpSyncNodeTopics(ctx context.Context) {
+	var err error
+
+	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
+		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
+				ln.handleBlockSyncRequestTopic(ctx, sub)
+			})
+
+		}
+	}
+	if ln.topicLatestSlot, err = ln.pubsub.Join(LatestSlotTopic); err == nil {
+		if sub, err := ln.topicLatestSlot.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("handleBlockSyncResponseTopic", func() {
+				ln.HandleLatestSlotTopic(ctx, sub)
+			})
+		}
+	}
 }
 
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
@@ -209,22 +233,6 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
-		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
-				ln.handleBlockSyncRequestTopic(ctx, sub)
-			})
-
-		}
-	}
-
-	if ln.topicLatestSlot, err = ln.pubsub.Join(LatestSlotTopic); err == nil {
-		if sub, err := ln.topicLatestSlot.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("handleBlockSyncResponseTopic", func() {
-				ln.HandleLatestSlotTopic(ctx, sub)
-			})
-		}
-	}
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
@@ -243,4 +251,35 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	if cbs.OnSyncResponseReceived != nil {
 		ln.onSyncResponseReceived = cbs.OnSyncResponseReceived
 	}
+}
+
+func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
+	if slot%RangeForSnapshot != 0 { // adjust interval as needed
+		return
+	}
+	accountStore := ld.GetAccountStore()
+	if accountStore == nil {
+		return
+	}
+	dbProvider := accountStore.GetDatabaseProvider()
+	if dbProvider == nil {
+		return
+	}
+	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
+		return
+	}
+	dir := "/data/snapshots"
+	path := filepath.Join(dir, fmt.Sprintf("snapshot-%d.json", slot))
+	if _, err := os.Stat(path); err == nil {
+		// already exists
+		return
+	}
+	saved, err := snapshot.WriteSnapshotWithDefaults(dir, dbProvider, slot, bankHash, nil)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
+		return
+	}
+	logx.Info("SNAPSHOT", fmt.Sprintf("Saved snapshot: %s", saved))
 }

@@ -99,10 +99,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 				logx.Info("NETWORK:SYNC BLOCK", "Created new tracker for request:", req.RequestID)
 			}
 
-			if !tracker.ActivatePeer(msg.ReceivedFrom, nil) {
-				continue
-			}
-
 			// Send blocks in a goroutine to avoid blocking
 			go func(request SyncRequest, peer peer.ID) {
 				ln.sendBlocksOverStream(request, peer)
@@ -149,6 +145,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		var blocks []*block.BroadcastedBlock
 		if err := decoder.Decode(&blocks); err != nil {
 			if errors.Is(err, io.EOF) {
+				logx.Info("NETWORK:SYNC BLOCK", "stream completed from ", remotePeer.String())
 				break
 			}
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
@@ -168,9 +165,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 			}
 		}
 
-		// stops stream if dulicated
 		if hasDuplicate {
-			logx.Info("NETWORK:SYNC BLOCK", "Closing stream due to duplicate blocks")
 			break
 		}
 
@@ -267,16 +262,11 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		ln.syncTrackerMu.Unlock()
 	}()
 
-	localLatestSlot := ln.blockStore.GetLatestSlot()
-	if localLatestSlot > 0 && req.FromSlot > localLatestSlot {
-		return
-	}
-
 	var batch []*block.Block
 	totalBlocksSent := 0
 
 	slot := req.FromSlot
-	for slot <= localLatestSlot && slot <= req.ToSlot {
+	for slot <= req.ToSlot {
 		blk := ln.GetBlock(slot)
 		if blk != nil {
 			batch = append(batch, blk)
@@ -302,12 +292,10 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		totalBlocksSent += len(batch)
 	}
 
-	if req.ToSlot < localLatestSlot {
+	// Continue chaining if we actually sent any blocks in this range
+	if totalBlocksSent > 0 {
 		nextFromSlot := req.ToSlot + 1
 		nextToSlot := nextFromSlot + BatchSize - 1
-		if nextToSlot > localLatestSlot {
-			nextToSlot = localLatestSlot
-		}
 
 		nextReq := SyncRequest{
 			RequestID: fmt.Sprintf("auto_sync_%d_%d_%s", nextFromSlot, nextToSlot, targetPeer.String()),

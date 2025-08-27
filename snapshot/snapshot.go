@@ -10,15 +10,25 @@ import (
 	"sort"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/types"
 )
 
 const accountPrefix = "account:"
 
+// EpochMetadata contains epoch-related information
+type EpochMetadata struct {
+	EpochNumber    uint64 `json:"epoch_number"`
+	EpochStartSlot uint64 `json:"epoch_start_slot"`
+	EpochEndSlot   uint64 `json:"epoch_end_slot"`
+	EpochDuration  uint64 `json:"epoch_duration"` // in slots
+}
+
 // SnapshotMeta holds snapshot header metadata
 type SnapshotMeta struct {
-	Slot     uint64   `json:"slot"`
-	BankHash [32]byte `json:"bank_hash"`
+	Slot           uint64                    `json:"slot"`
+	BankHash       [32]byte                  `json:"bank_hash"`
+	LeaderSchedule []poh.LeaderScheduleEntry `json:"leader_schedule"`
 }
 
 type SnapshotFile struct {
@@ -70,7 +80,7 @@ func ComputeFullBankHash(provider db.DatabaseProvider) ([32]byte, error) {
 }
 
 // WriteSnapshot writes a full snapshot of all accounts with given slot and bank hash
-func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte) (string, error) {
+func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
 	iterable, ok := provider.(db.IterableProvider)
 	if !ok {
 		return "", fmt.Errorf("provider does not support iteration")
@@ -90,7 +100,11 @@ func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHa
 	}
 
 	file := SnapshotFile{
-		Meta:     SnapshotMeta{Slot: slot, BankHash: bankHash},
+		Meta: SnapshotMeta{
+			Slot:           slot,
+			BankHash:       bankHash,
+			LeaderSchedule: leaderSchedule,
+		},
 		Accounts: accounts,
 	}
 
@@ -120,4 +134,9 @@ func ReadSnapshot(path string) (*SnapshotFile, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// WriteSnapshotWithDefaults writes a snapshot with default values for epoch and leader schedule
+func WriteSnapshotWithDefaults(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
+	return WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
 }
