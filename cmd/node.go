@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/store"
 	"log"
 	"net"
 	"os"
@@ -15,6 +12,10 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -98,7 +99,7 @@ func runNode() {
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
+		logx.Error("NODE", "Please run 'mmn init --data-dir', ", dataDir, ", 'first to initialize the node")
 		return
 	}
 

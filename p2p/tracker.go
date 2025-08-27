@@ -2,8 +2,9 @@ package p2p
 
 import (
 	"context"
-	"github.com/mezonai/mmn/store"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -134,7 +135,7 @@ func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
 	}
 
 	if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
 	}
 }
 

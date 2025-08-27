@@ -3,9 +3,10 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/mezonai/mmn/store"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
