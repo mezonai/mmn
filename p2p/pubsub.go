@@ -31,12 +31,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("invalid PoH")
 			}
 
-			// Verify block
-			if err := ld.VerifyBlock(blk); err != nil {
-				logx.Error("BLOCK", "Block verification failed: ", err)
-				return err
-			}
-
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
@@ -109,13 +103,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					logx.Error("NETWORK:SYNC BLOCK", "Invalid PoH for synced block: ", err)
 					continue
 				}
-
-				// Verify block
-				if err := ld.VerifyBlock(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Block verification failed for synced block: ", err)
-					continue
-				}
-
 				// Add to block store and publish transaction inclusion events
 				if err := bs.AddBlockPending(blk); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
