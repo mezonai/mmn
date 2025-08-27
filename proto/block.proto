@@ -8,7 +8,11 @@ message Entry {
   repeated bytes transactions = 3;
   repeated string tx_hashes = 4;
 }
-
+message AccountData {
+  string address = 1;
+  uint64 balance = 2;
+  uint64 nonce   = 3;
+} 
 message TransactionData {
   string tx_hash = 1;
   string sender    = 2; // sender address
@@ -23,6 +27,8 @@ message TransactionData {
     FAILED    = 3;
   }
   Status status = 7;
+  AccountData sender_account = 8;
+  AccountData recipient_account = 9;
 }
 
 
