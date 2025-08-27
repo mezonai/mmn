@@ -112,6 +112,9 @@ func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 	}
 	for _, entry := range b.Entries {
 		for _, tx := range entry.Transactions {
+			if !tx.Verify() {
+				return fmt.Errorf("verify fail: invalid tx signature")
+			}
 			if err := view.ApplyTx(tx); err != nil {
 				return fmt.Errorf("verify fail: %v", err)
 			}

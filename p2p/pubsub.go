@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
@@ -24,10 +25,33 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
+			// Check parent hash against block s-1 if present
+			prev := bs.Block(blk.Slot - 1)
+			if prev != nil {
+				if blk.PrevHash != prev.LastEntryHash() {
+					return fmt.Errorf("parent hash mismatch")
+				}
+			}
+
+			// Timestamp bounds: monotonic vs previous if present
+			if prev := bs.Block(blk.Slot - 1); prev != nil {
+				if blk.Timestamp < prev.Timestamp {
+					return fmt.Errorf("invalid timestamp: older than parent")
+				}
+			}
+
+			// Verify block signature using LeaderID as ed25519 public key
+			leaderPubKeyBytes, err := common.DecodeBase58ToBytes(blk.LeaderID)
+			if err != nil || len(leaderPubKeyBytes) != ed25519.PublicKeySize {
+				return fmt.Errorf("invalid leader public key")
+			}
+			if ok := blk.VerifySignature(ed25519.PublicKey(leaderPubKeyBytes)); !ok {
+				return fmt.Errorf("invalid block signature")
+			}
+
 			// Verify PoH
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
-				logx.Error("BLOCK", "Invalid PoH:", err)
 				return fmt.Errorf("invalid PoH")
 			}
 
@@ -101,6 +125,32 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 				// skip add pending if block already exists
 				if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+					continue
+				}
+
+				// Check parent hash against block s-1 if present
+				prev := bs.Block(blk.Slot - 1)
+				if prev != nil {
+					if blk.PrevHash != prev.LastEntryHash() {
+						logx.Error("NETWORK:SYNC BLOCK", "blk.PrevHash != prev.LastEntryHash()")
+						continue
+					}
+				}
+
+				// Timestamp monotonic vs previous if present
+				if prev := bs.Block(blk.Slot - 1); prev != nil {
+					if blk.Timestamp < prev.Timestamp {
+						logx.Error("NETWORK:SYNC BLOCK", "blk.PrevHash != prev.LastEntryHash()")
+						continue
+					}
+				}
+
+				// Verify block signature using LeaderID as ed25519 public key
+				leaderPubKeyBytes, err := common.DecodeBase58ToBytes(blk.LeaderID)
+				if err != nil || len(leaderPubKeyBytes) != ed25519.PublicKeySize {
+					continue
+				}
+				if ok := blk.VerifySignature(ed25519.PublicKey(leaderPubKeyBytes)); !ok {
 					continue
 				}
 

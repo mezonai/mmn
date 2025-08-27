@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/store"
 	"log"
 	"net"
 	"os"
@@ -15,6 +12,10 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
