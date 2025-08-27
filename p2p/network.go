@@ -169,10 +169,10 @@ func (ln *Libp2pNetwork) setUpSyncNode(ctx context.Context, bootstrapPeers []str
 	return nil
 }
 
-// func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
-// 	ln.SetupPubSubTopics(ctx)
-// 	return nil
-// }
+func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
+	ln.SetupPubSubTopics(ctx)
+	return nil
+}
 
 // this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {

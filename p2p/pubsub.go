@@ -159,6 +159,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
 			}
 
+			// Do not request latest slot here to avoid loops; handled after stream end
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
@@ -168,9 +169,28 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
 
 				ctx := context.Background()
-				if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
+				// Only request block sync if we are beyond ready threshold to avoid churn
+				if latestSlot-localLatestSlot > ReadyGapThreshold {
+					if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
+						logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
+					}
 				}
+			}
+
+			// mark ready when gap small enough, and enable full handlers once
+			gap := uint64(0)
+			if latestSlot > localLatestSlot {
+				gap = latestSlot - localLatestSlot
+			}
+			if gap <= ReadyGapThreshold && !ln.IsNodeReady() {
+				ln.enableFullModeOnce.Do(func() {
+					if err := ln.setupHandlers(ln.ctx, nil); err != nil {
+						logx.Error("NETWORK:READY", "Failed to setup handlers:", err.Error())
+						return
+					}
+					ln.setNodeReady()
+					logx.Info("NETWORK:READY", "Node is ready. Full handlers enabled.")
+				})
 			}
 			return nil
 		},
@@ -268,15 +288,24 @@ func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
 		return
 	}
 	dir := "/data/snapshots"
-	path := filepath.Join(dir, fmt.Sprintf("snapshot-%d.json", slot))
-	if _, err := os.Stat(path); err == nil {
-		// already exists
-		return
-	}
+	// Write a new snapshot for this slot to a slot-specific file
 	saved, err := snapshot.WriteSnapshotWithDefaults(dir, dbProvider, slot, bankHash, nil)
 	if err != nil {
 		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
 		return
 	}
-	logx.Info("SNAPSHOT", fmt.Sprintf("Saved snapshot: %s", saved))
+
+	// Atomically update latest snapshot pointer
+	latest := filepath.Join(dir, "snapshot-latest.json")
+	tmpLatest := latest + ".tmp"
+	if err := os.Rename(saved, tmpLatest); err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to move snapshot to temp latest: %v", err))
+		return
+	}
+	if err := os.Rename(tmpLatest, latest); err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to finalize latest snapshot: %v", err))
+		return
+	}
+
+	logx.Info("SNAPSHOT", fmt.Sprintf("Updated latest snapshot: %s (slot %d)", latest, slot))
 }

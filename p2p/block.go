@@ -195,6 +195,11 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		delete(ln.syncRequests, syncRequest.RequestID)
 	}
 	ln.syncTrackerMu.Unlock()
+
+	// Stream finished: now request latest slot once to decide next action
+	if _, err := ln.RequestLatestSlotFromPeers(context.Background()); err != nil {
+		logx.Warn("NETWORK:LATEST SLOT", "Failed to request latest slot after stream end:", err)
+	}
 }
 
 func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {

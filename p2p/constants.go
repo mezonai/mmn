@@ -15,8 +15,9 @@ const (
 )
 
 var (
-	ConnCount        int32  = 0
-	MaxPeers         int32  = 50
-	BatchSize        uint64 = 10 // for test only, should be 1000
-	RangeForSnapshot uint64 = 50
+	ConnCount         int32  = 0
+	MaxPeers          int32  = 50
+	BatchSize         uint64 = 10 // for test only, should be 1000
+	RangeForSnapshot  uint64 = 50
+	ReadyGapThreshold uint64 = 5
 )

@@ -3,9 +3,11 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/mezonai/mmn/store"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -51,6 +53,19 @@ type Libp2pNetwork struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// readiness control
+	enableFullModeOnce sync.Once
+	ready              atomic.Bool
+}
+
+// IsNodeReady returns whether the node has caught up sufficiently and enabled full pubsub handlers
+func (ln *Libp2pNetwork) IsNodeReady() bool {
+	return ln.ready.Load()
+}
+
+func (ln *Libp2pNetwork) setNodeReady() {
+	ln.ready.Store(true)
 }
 
 type PeerInfo struct {
