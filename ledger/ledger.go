@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -123,7 +124,7 @@ func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
 func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -183,7 +184,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 	}
 
-	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
 	return nil
 }
 

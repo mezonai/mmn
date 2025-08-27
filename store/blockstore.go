@@ -245,18 +245,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Update latest finalized
-	s.latestFinalized = slot
-
-	// Store updated metadata
-	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
-	metaValue := make([]byte, 8)
-	binary.BigEndian.PutUint64(metaValue, slot)
-
-	if err := s.provider.Put(metaKey, metaValue); err != nil {
-		return fmt.Errorf("failed to update latest finalized: %w", err)
-	}
-
 	// Publish transaction finalization events if event router is provided
 	if s.eventRouter != nil && blk != nil {
 		blockHashHex := blk.HashString()
@@ -271,6 +259,20 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
 			}
+		}
+	}
+
+	// Update latest finalized
+	if slot > s.latestFinalized {
+		s.latestFinalized = slot
+
+		// Store updated metadata
+		metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
+		metaValue := make([]byte, 8)
+		binary.BigEndian.PutUint64(metaValue, slot)
+
+		if err := s.provider.Put(metaKey, metaValue); err != nil {
+			return fmt.Errorf("failed to update latest finalized: %w", err)
 		}
 	}
 

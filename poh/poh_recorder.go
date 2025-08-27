@@ -16,7 +16,6 @@ type PohRecorder struct {
 	ticksPerSlot uint64
 	tickHeight   uint64
 	entries      []Entry
-	tickHash     map[uint64][32]byte
 	mu           sync.Mutex
 }
 
@@ -29,7 +28,6 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 		entries:        []Entry{},
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
-		tickHash:       make(map[uint64][32]byte),
 	}
 }
 
@@ -38,33 +36,20 @@ func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	defer r.mu.Unlock()
 	r.tickHeight = slot * r.ticksPerSlot
 	r.poh.Reset(lastHash)
-	r.entries = make([]Entry, 0) //TODO: need re-calculate entries base on last hash
+	r.entries = make([]Entry, 0)
 }
 
-func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
-	v, ok := p.tickHash[h]
-	return v, ok && h <= p.tickHeight
-}
-
-func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
+// Assume fromSlot is the last seen slot, toSlot is the target slot
+// Simulate the poh clock from fromSlot to toSlot
+func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uint64) [32]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.tickHeight >= target {
-		if h, ok := r.HashAtHeight(target); ok {
-			return h, nil
-		}
-		return [32]byte{}, fmt.Errorf("hash for tick %d pruned", target)
-	}
+	fromTick := fromSlot * r.ticksPerSlot
+	toTick := toSlot * r.ticksPerSlot
+	r.poh.TickFastForward(seenHash, fromTick, toTick)
 
-	var lastHash [32]byte
-	for r.tickHeight < target {
-		lastHash = r.poh.RecordTick().Hash
-		r.tickHash[r.tickHeight] = lastHash
-		r.tickHeight++
-		fmt.Printf("FastForward: %d\n", r.tickHeight)
-	}
-	return lastHash, nil
+	return r.poh.Hash
 }
 
 func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
@@ -97,7 +82,6 @@ func (r *PohRecorder) Tick() *Entry {
 	}
 
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
-	r.tickHash[r.tickHeight] = pohEntry.Hash
 
 	r.tickHeight++
 	return &entry
