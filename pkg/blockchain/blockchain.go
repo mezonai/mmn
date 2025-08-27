@@ -30,7 +30,7 @@ type Block struct {
 // CalculateHash computes a SHA‑256 hash based on the block's data.
 // The difficulty is now incorporated in the record to be hashed.
 func CalculateHash(b *Block) string {
-	record := fmt.Sprintf("%d%d%s%s%s%s%s%s%d%d",
+	record := fmt.Sprintf("%d%d%s%s%s%s%s%s%d%d%s",
 		b.Index,
 		b.Timestamp,
 		b.PrevHash,

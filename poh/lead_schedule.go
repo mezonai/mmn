@@ -82,3 +82,15 @@ func (ls *LeaderSchedule) Validate() error {
 	}
 	return nil
 }
+
+// Entries returns a copy of the underlying schedule entries.
+// It preserves immutability of the internal slice while allowing callers
+// to consume the real, validated schedule ranges.
+func (ls *LeaderSchedule) Entries() []LeaderScheduleEntry {
+	if len(ls.entries) == 0 {
+		return nil
+	}
+	out := make([]LeaderScheduleEntry, len(ls.entries))
+	copy(out, ls.entries)
+	return out
+}

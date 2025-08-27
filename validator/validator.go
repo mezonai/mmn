@@ -6,13 +6,20 @@ import (
 	"fmt"
 	"time"
 
-	"mmn/block"
-	"mmn/blockstore"
-	"mmn/consensus"
-	"mmn/interfaces"
-	"mmn/ledger"
-	"mmn/mempool"
-	"mmn/poh"
+	"github.com/mezonai/mmn/store"
+
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/transaction"
+
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/p2p"
+	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/snapshot"
 )
 
 const NoSlot = ^uint64(0)
@@ -34,15 +41,17 @@ type Validator struct {
 	leaderTimeoutLoopInterval time.Duration
 	BatchSize                 int
 
-	netClient  interfaces.Broadcaster
-	blockStore *blockstore.BlockStore
-	ledger     *ledger.Ledger
-	session    *ledger.Session
-	collector  *consensus.Collector
+	netClient   interfaces.Broadcaster
+	blockStore  store.BlockStore
+	ledger      *ledger.Ledger
+	session     *ledger.Session
+	lastSession *ledger.Session
+	collector   *consensus.Collector
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
+	pendingValidTxs   []*transaction.Transaction
 	stopCh            chan struct{}
 }
 
@@ -60,8 +69,8 @@ func NewValidator(
 	leaderTimeout time.Duration,
 	leaderTimeoutLoopInterval time.Duration,
 	batchSize int,
-	netClient interfaces.Broadcaster,
-	blockStore *blockstore.BlockStore,
+	p2pClient *p2p.Libp2pNetwork,
+	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
 ) *Validator {
@@ -78,20 +87,23 @@ func NewValidator(
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
-		netClient:                 netClient,
+		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		session:                   ledger.NewSession(),
+		lastSession:               ledger.NewSession(),
 		lastSlot:                  0,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
+		pendingValidTxs:           make([]*transaction.Transaction, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry
 	return v
 }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
+	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
 	v.leaderStartAtSlot = currentSlot
 	if currentSlot == 0 {
 		return
@@ -102,21 +114,21 @@ func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	defer ticker.Stop()
 	defer deadline.Stop()
 
-	var seed blockstore.SlotBoundary
+	var seed store.SlotBoundary
 
 waitLoop:
 	for {
 		select {
 		case <-ticker.C:
 			if v.blockStore.HasCompleteBlock(prevSlot) {
-				fmt.Printf("Found complete block for slot %d\n", prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("Found complete block for slot %d", prevSlot))
 				seed, _ = v.blockStore.LastEntryInfoAtSlot(prevSlot)
 				break waitLoop
 			} else {
-				fmt.Printf("No complete block for slot %d\n", prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
 			}
 		case <-deadline.C:
-			fmt.Printf("Meet at deadline %d\n", prevSlot)
+			logx.Info("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
 			seed = v.fastForwardTicks(prevSlot)
 			break waitLoop
 		case <-v.stopCh:
@@ -127,18 +139,22 @@ waitLoop:
 	v.Recorder.Reset(seed.Hash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
+	v.lastSession = v.ledger.NewSession()
+	v.pendingValidTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 }
 
 func (v *Validator) onLeaderSlotEnd() {
+	logx.Info("LEADER", "onLeaderSlotEnd")
 	v.leaderStartAtSlot = NoSlot
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.session = v.ledger.NewSession()
+	v.lastSession = v.ledger.NewSession()
 }
 
-func (v *Validator) fastForwardTicks(prevSlot uint64) blockstore.SlotBoundary {
-	target := prevSlot*v.TicksPerSlot + v.TicksPerSlot - 1
+func (v *Validator) fastForwardTicks(prevSlot uint64) store.SlotBoundary {
+	target := prevSlot * v.TicksPerSlot
 	hash, _ := v.Recorder.FastForward(target)
-	return blockstore.SlotBoundary{
+	return store.SlotBoundary{
 		Slot: prevSlot,
 		Hash: hash,
 	}
@@ -151,43 +167,48 @@ func (v *Validator) IsLeader(slot uint64) bool {
 }
 
 func (v *Validator) IsFollower(slot uint64) bool {
-	return v.IsLeader(slot)
+	return !v.IsLeader(slot)
 }
 
 // handleEntry buffers entries and assembles a block at slot boundary.
-func (v *Validator) handleEntry(e poh.Entry) {
+func (v *Validator) handleEntry(entries []poh.Entry) {
 	currentSlot := v.Recorder.CurrentSlot()
 
 	// When slot advances, assemble block for lastSlot if we were leader
 	if currentSlot > v.lastSlot && v.IsLeader(v.lastSlot) {
+
+		// Buffer entries
+		v.collectedEntries = append(v.collectedEntries, entries...)
+
 		// Retrieve previous block hash from blockStore
-		var hash [32]byte
-		if v.lastSlot == 0 {
-			hash = v.blockStore.SeedHash
-		} else {
-			entry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-			hash = entry.Hash
-		}
+		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
+		prevHash := lastEntry.Hash
 
 		blk := block.AssembleBlock(
 			v.lastSlot,
-			hash,
+			prevHash,
 			v.Pubkey,
 			v.collectedEntries,
 		)
 
 		if err := v.ledger.VerifyBlock(blk); err != nil {
-			fmt.Printf("[LEADER] sanity verify fail: %v\n", err)
+			logx.Error("VALIDATOR", fmt.Sprintf("Sanity verify fail: %v", err))
+			v.session = v.lastSession.CopyWithOverlayClone()
 			return
 		}
 
 		blk.Sign(v.PrivKey)
-		fmt.Printf("Leader assembled block: slot=%d, entries=%d\n", v.lastSlot, len(v.collectedEntries))
+		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
 		// Persist then broadcast
-		v.blockStore.AddBlockPending(blk)
+		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+		if err := v.blockStore.AddBlockPending(blk); err != nil {
+			logx.Error("VALIDATOR", fmt.Sprintf("Add block pending error: %v", err))
+			return
+		}
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-			fmt.Println("Failed to broadcast block:", err)
+			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
+			return
 		}
 
 		// Self-vote
@@ -202,7 +223,10 @@ func (v *Validator) handleEntry(e poh.Entry) {
 			fmt.Printf("[LEADER] Add vote error: %v\n", err)
 		} else if committed && needApply {
 			fmt.Printf("[LEADER] slot %d committed, processing apply block! votes=%d\n", vote.Slot, len(v.collector.VotesForSlot(vote.Slot)))
-			if err := v.ledger.ApplyBlock(v.blockStore.Block(vote.Slot)); err != nil {
+			block := v.blockStore.Block(vote.Slot)
+			if block == nil {
+				fmt.Printf("[LEADER] Block not found for slot %d\n", vote.Slot)
+			} else if err := v.ledger.ApplyBlock(block); err != nil {
 				fmt.Printf("[LEADER] Apply block error: %v\n", err)
 			}
 			if err := v.blockStore.MarkFinalized(vote.Slot); err != nil {
@@ -219,24 +243,51 @@ func (v *Validator) handleEntry(e poh.Entry) {
 
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-		v.session = v.ledger.NewSession() // reset session
-	}
-
-	// Buffer entries only if leader of current slot
-	if v.IsLeader(currentSlot) {
-		fmt.Printf("Adding entry %x for slot %d\n", e.Hash, currentSlot)
-		v.collectedEntries = append(v.collectedEntries, e)
+		v.lastSession = v.session.CopyWithOverlayClone()
+	} else if v.IsLeader(currentSlot) {
+		// Buffer entries only if leader of current slot
+		v.collectedEntries = append(v.collectedEntries, entries...)
+		fmt.Printf("Adding %d entries for slot %d\n", len(entries), currentSlot)
 	}
 
 	// Update lastSlot
 	v.lastSlot = currentSlot
 }
 
+func (v *Validator) peekPendingValidTxs(size int) []*transaction.Transaction {
+	if len(v.pendingValidTxs) == 0 {
+		return nil
+	}
+	if len(v.pendingValidTxs) < size {
+		size = len(v.pendingValidTxs)
+	}
+
+	result := make([]*transaction.Transaction, size)
+	copy(result, v.pendingValidTxs[:size])
+
+	return result
+}
+
+func (v *Validator) dropPendingValidTxs(size int) {
+	if size >= len(v.pendingValidTxs) {
+		v.pendingValidTxs = v.pendingValidTxs[:0]
+		return
+	}
+
+	copy(v.pendingValidTxs, v.pendingValidTxs[size:])
+	v.pendingValidTxs = v.pendingValidTxs[:len(v.pendingValidTxs)-size]
+}
+
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
-	go v.leaderBatchLoop()
-	go v.roleMonitorLoop()
+	exception.SafeGoWithPanic("roleMonitorLoop", func() {
+		v.roleMonitorLoop()
+	})
+
+	exception.SafeGoWithPanic("leaderBatchLoop", func() {
+		v.leaderBatchLoop()
+	})
 }
 
 func (v *Validator) leaderBatchLoop() {
@@ -254,7 +305,7 @@ func (v *Validator) leaderBatchLoop() {
 
 			fmt.Println("[LEADER] Pulling batch")
 			batch := v.Mempool.PullBatch(v.BatchSize)
-			if len(batch) == 0 {
+			if len(batch) == 0 && len(v.pendingValidTxs) == 0 {
 				fmt.Println("[LEADER] No batch")
 				continue
 			}
@@ -263,16 +314,22 @@ func (v *Validator) leaderBatchLoop() {
 			valids, errs := v.session.FilterValid(batch)
 			if len(errs) > 0 {
 				fmt.Println("[LEADER] Invalid transactions:", errs)
+			}
+			v.pendingValidTxs = append(v.pendingValidTxs, valids...)
+
+			recordTxs := v.peekPendingValidTxs(v.BatchSize)
+			if recordTxs == nil {
+				fmt.Println("[LEADER] No valid transactions")
 				continue
 			}
-
 			fmt.Println("[LEADER] Recording batch")
-			entry, err := v.Recorder.RecordTxs(valids)
+			entry, err := v.Recorder.RecordTxs(recordTxs)
 			if err != nil {
 				fmt.Println("[LEADER] Record error:", err)
 				continue
 			}
-			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(valids), slot, entry.Hash[:6])
+			v.dropPendingValidTxs(len(recordTxs))
+			fmt.Printf("[LEADER] Recorded %d tx (slot=%d, entry=%x...)\n", len(recordTxs), slot, entry.Hash[:6])
 		}
 	}
 }
@@ -288,16 +345,77 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
-				fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
+				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
-				fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
+				// fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot != NoSlot {
 					v.onLeaderSlotEnd()
 				}
 			}
 		}
 	}
+}
+
+// createSnapshot creates a snapshot for the given slot
+func (v *Validator) createSnapshot(slot uint64) error {
+	logx.Debug("OKE", "account store is nil")
+	// Get the real database provider from ledger's account store
+	accountStore := v.ledger.GetAccountStore()
+	if accountStore == nil {
+		return fmt.Errorf("account store is nil")
+	}
+
+	// Get the underlying database provider
+	dbProvider := accountStore.GetDatabaseProvider()
+	if dbProvider == nil {
+		return fmt.Errorf("database provider is nil")
+	}
+
+	// Compute real bank hash from actual database
+	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
+	if err != nil {
+		return fmt.Errorf("compute bank hash: %w", err)
+	}
+
+	// Get real leader schedule from validator's schedule
+	var leaderSchedule []poh.LeaderScheduleEntry
+	if v.Schedule != nil {
+		// Convert schedule to entries
+		leaderSchedule = v.convertScheduleToEntries(v.Schedule)
+	}
+
+	// Create snapshot with real database
+	// Use /data/snapshots for Docker volume persistence
+	snapshotDir := "/data/snapshots"
+	path, err := snapshot.WriteSnapshotWithDefaults(
+		snapshotDir,
+		dbProvider,
+		slot,
+		bankHash,
+		leaderSchedule,
+	)
+	if err != nil {
+		return fmt.Errorf("write snapshot: %w", err)
+	}
+
+	fmt.Printf("[SNAPSHOT] Created snapshot at %s (slot=%d)\n", path, slot)
+	return nil
+}
+
+// convertScheduleToEntries converts LeaderSchedule to LeaderScheduleEntry slice
+func (v *Validator) convertScheduleToEntries(schedule *poh.LeaderSchedule) []poh.LeaderScheduleEntry {
+	if schedule == nil {
+		return nil
+	}
+
+	realEntries := schedule.Entries()
+	if len(realEntries) == 0 {
+		return nil
+	}
+	out := make([]poh.LeaderScheduleEntry, len(realEntries))
+	copy(out, realEntries)
+	return out
 }

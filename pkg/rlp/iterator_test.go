@@ -19,7 +19,7 @@ package rlp
 import (
 	"testing"
 
-	"mmn/pkg/common/hexutil"
+	"github.com/mezonai/mmn/pkg/common/hexutil"
 )
 
 // TestIterator tests some basic things about the ListIterator. A more

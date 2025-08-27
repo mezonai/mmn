@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mmn/ledger"
-	"mmn/mempool"
-	"mmn/types"
-	"mmn/utils"
 	"net/http"
 	"strconv"
+
+	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 )
 
 type TxReq struct {
@@ -67,9 +68,16 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid tx", http.StatusBadRequest)
 		return
 	}
-	_, ok := s.Mempool.AddTx(tx, true)
-	if !ok {
-		http.Error(w, "Mempool full", http.StatusServiceUnavailable)
+
+	// Verify transaction signature
+	if !tx.Verify() {
+		http.Error(w, "Invalid signature", http.StatusBadRequest)
+		return
+	}
+
+	_, err = s.Mempool.AddTx(tx, true)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to add transaction to mempool: %v", err), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
@@ -99,10 +107,10 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 
 	result := struct {
 		Total uint32
-		Txs   []types.TxRecord
+		Txs   []*transaction.Transaction
 	}{
 		Total: 0,
-		Txs:   make([]types.TxRecord, 0),
+		Txs:   make([]*transaction.Transaction, 0),
 	}
 	total, txs := s.Ledger.GetTxs(addr, uint32(limit), uint32(offset), uint32(filter))
 	result.Total = total
@@ -119,7 +127,10 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account := s.Ledger.GetAccount(addr)
+	account, err := s.Ledger.GetAccount(addr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to get account: %v", err), http.StatusInternalServerError)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(account)
 }

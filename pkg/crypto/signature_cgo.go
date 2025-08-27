@@ -24,8 +24,8 @@ import (
 	"errors"
 	"fmt"
 
-	"mmn/pkg/common/math"
-	"mmn/pkg/crypto/secp256k1"
+	"github.com/mezonai/mmn/pkg/common/math"
+	"github.com/mezonai/mmn/pkg/crypto/secp256k1"
 )
 
 // Ecrecover returns the uncompressed public key that created the given signature.

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"mmn/pkg/common"
-	"mmn/pkg/crypto"
-	"mmn/pkg/rlp"
 	"time"
+
+	"github.com/mezonai/mmn/pkg/common"
+	"github.com/mezonai/mmn/pkg/crypto"
+	"github.com/mezonai/mmn/pkg/rlp"
 )
 
 // Transaction represents a simple transaction.

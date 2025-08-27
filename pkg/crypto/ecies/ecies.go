@@ -41,7 +41,7 @@ import (
 	"io"
 	"math/big"
 
-	"mmn/pkg/crypto"
+	"github.com/mezonai/mmn/pkg/crypto"
 )
 
 var (

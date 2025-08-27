@@ -1,0 +1,39 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/proto;proto";
+
+// Empty message for health check requests
+message Empty {
+}
+
+// Health check response message
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;
+  }
+  
+  ServingStatus status = 1;
+  string node_id = 2;           // ID of the responding node
+  uint64 timestamp = 3;         // Timestamp of the response
+  uint64 current_slot = 4;      // Current slot of the node
+  uint64 block_height = 5;      // Current block height
+  uint64 mempool_size = 6;      // Number of transactions in mempool
+  bool is_leader = 7;           // Whether the node is a leader
+  bool is_follower = 8;         // Whether the node is a follower
+  string version = 9;           // Version of the node
+  uint64 uptime = 10;           // Uptime in seconds
+  string error_message = 11;    // Error message if any
+}
+
+// Service to check the health of the node
+service HealthService {
+  // Basic health check
+  rpc Check(Empty) returns (HealthCheckResponse);
+  
+  // Stream continuous health status
+  rpc Watch(Empty) returns (stream HealthCheckResponse);
+}

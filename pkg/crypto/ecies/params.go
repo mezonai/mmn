@@ -43,7 +43,7 @@ import (
 	"fmt"
 	"hash"
 
-	ethcrypto "mmn/pkg/crypto"
+	ethcrypto "github.com/mezonai/mmn/pkg/crypto"
 )
 
 var (

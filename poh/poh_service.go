@@ -3,12 +3,14 @@ package poh
 import (
 	"fmt"
 	"time"
+
+	"github.com/mezonai/mmn/exception"
 )
 
 type PohService struct {
 	Recorder     *PohRecorder
 	TickInterval time.Duration
-	OnEntry      func(entry Entry)
+	OnEntry      func(entry []Entry)
 	stopCh       chan struct{}
 }
 
@@ -21,7 +23,9 @@ func NewPohService(recorder *PohRecorder, interval time.Duration) *PohService {
 }
 
 func (s *PohService) Start() {
-	go s.tickAndFlush()
+	exception.SafeGoWithPanic("stickAndFlush", func() {
+		s.tickAndFlush()
+	})
 }
 
 func (s *PohService) Stop() {
@@ -39,10 +43,8 @@ func (s *PohService) tickAndFlush() {
 			if tickEntry := s.Recorder.Tick(); tickEntry != nil {
 				entries = append(entries, *tickEntry)
 			}
-			for _, entry := range entries {
-				if s.OnEntry != nil {
-					s.OnEntry(entry)
-				}
+			if len(entries) > 0 && s.OnEntry != nil {
+				s.OnEntry(entries)
 			}
 		case <-s.stopCh:
 			fmt.Println("Ticking and flushing stop")

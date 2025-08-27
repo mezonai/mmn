@@ -20,7 +20,8 @@ package common
 import (
 	"encoding/hex"
 	"errors"
-	"mmn/pkg/common/hexutil"
+
+	"github.com/mezonai/mmn/pkg/common/hexutil"
 )
 
 // FromHex returns the bytes represented by the hexadecimal string s.

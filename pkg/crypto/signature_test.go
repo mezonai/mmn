@@ -22,9 +22,9 @@ import (
 	"reflect"
 	"testing"
 
-	"mmn/pkg/common"
-	"mmn/pkg/common/hexutil"
-	"mmn/pkg/common/math"
+	"github.com/mezonai/mmn/pkg/common"
+	"github.com/mezonai/mmn/pkg/common/hexutil"
+	"github.com/mezonai/mmn/pkg/common/math"
 )
 
 var (

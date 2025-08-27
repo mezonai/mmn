@@ -39,7 +39,7 @@ import (
 	"math/big"
 	"testing"
 
-	"mmn/pkg/crypto"
+	"github.com/mezonai/mmn/pkg/crypto"
 )
 
 func TestKDF(t *testing.T) {

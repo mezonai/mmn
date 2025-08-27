@@ -1,6 +1,6 @@
 package storage
 
-import "mmn/pkg/blockchain"
+import "github.com/mezonai/mmn/pkg/blockchain"
 
 type DB struct {
 	bc     blockchain.Blockchain

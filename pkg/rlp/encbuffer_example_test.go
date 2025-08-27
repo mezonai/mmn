@@ -19,7 +19,8 @@ package rlp_test
 import (
 	"bytes"
 	"fmt"
-	"mmn/pkg/rlp"
+
+	"github.com/mezonai/mmn/pkg/rlp"
 )
 
 func ExampleEncoderBuffer() {

@@ -8,6 +8,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -15,12 +16,13 @@ import (
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-// Requires gRPC-Go v1.32.0 or later.
-const _ = grpc.SupportPackageIsVersion7
+// Requires gRPC-Go v1.64.0 or later.
+const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_GetAccount_FullMethodName   = "/mmn.AccountService/GetAccount"
-	AccountService_GetTxHistory_FullMethodName = "/mmn.AccountService/GetTxHistory"
+	AccountService_GetAccount_FullMethodName      = "/mmn.AccountService/GetAccount"
+	AccountService_GetTxHistory_FullMethodName    = "/mmn.AccountService/GetTxHistory"
+	AccountService_GetCurrentNonce_FullMethodName = "/mmn.AccountService/GetCurrentNonce"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -29,6 +31,7 @@ const (
 type AccountServiceClient interface {
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error)
 	GetTxHistory(ctx context.Context, in *GetTxHistoryRequest, opts ...grpc.CallOption) (*GetTxHistoryResponse, error)
+	GetCurrentNonce(ctx context.Context, in *GetCurrentNonceRequest, opts ...grpc.CallOption) (*GetCurrentNonceResponse, error)
 }
 
 type accountServiceClient struct {
@@ -40,8 +43,9 @@ func NewAccountServiceClient(cc grpc.ClientConnInterface) AccountServiceClient {
 }
 
 func (c *accountServiceClient) GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetAccountResponse)
-	err := c.cc.Invoke(ctx, AccountService_GetAccount_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, AccountService_GetAccount_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -49,8 +53,19 @@ func (c *accountServiceClient) GetAccount(ctx context.Context, in *GetAccountReq
 }
 
 func (c *accountServiceClient) GetTxHistory(ctx context.Context, in *GetTxHistoryRequest, opts ...grpc.CallOption) (*GetTxHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTxHistoryResponse)
-	err := c.cc.Invoke(ctx, AccountService_GetTxHistory_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, AccountService_GetTxHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *accountServiceClient) GetCurrentNonce(ctx context.Context, in *GetCurrentNonceRequest, opts ...grpc.CallOption) (*GetCurrentNonceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCurrentNonceResponse)
+	err := c.cc.Invoke(ctx, AccountService_GetCurrentNonce_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -59,16 +74,20 @@ func (c *accountServiceClient) GetTxHistory(ctx context.Context, in *GetTxHistor
 
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
-// for forward compatibility
+// for forward compatibility.
 type AccountServiceServer interface {
 	GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error)
 	GetTxHistory(context.Context, *GetTxHistoryRequest) (*GetTxHistoryResponse, error)
+	GetCurrentNonce(context.Context, *GetCurrentNonceRequest) (*GetCurrentNonceResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
-// UnimplementedAccountServiceServer must be embedded to have forward compatible implementations.
-type UnimplementedAccountServiceServer struct {
-}
+// UnimplementedAccountServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAccountServiceServer struct{}
 
 func (UnimplementedAccountServiceServer) GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAccount not implemented")
@@ -76,7 +95,11 @@ func (UnimplementedAccountServiceServer) GetAccount(context.Context, *GetAccount
 func (UnimplementedAccountServiceServer) GetTxHistory(context.Context, *GetTxHistoryRequest) (*GetTxHistoryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTxHistory not implemented")
 }
+func (UnimplementedAccountServiceServer) GetCurrentNonce(context.Context, *GetCurrentNonceRequest) (*GetCurrentNonceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCurrentNonce not implemented")
+}
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
+func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
 
 // UnsafeAccountServiceServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to AccountServiceServer will
@@ -86,6 +109,13 @@ type UnsafeAccountServiceServer interface {
 }
 
 func RegisterAccountServiceServer(s grpc.ServiceRegistrar, srv AccountServiceServer) {
+	// If the following call pancis, it indicates UnimplementedAccountServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
 	s.RegisterService(&AccountService_ServiceDesc, srv)
 }
 
@@ -125,6 +155,24 @@ func _AccountService_GetTxHistory_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_GetCurrentNonce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCurrentNonceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).GetCurrentNonce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_GetCurrentNonce_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).GetCurrentNonce(ctx, req.(*GetCurrentNonceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -139,6 +187,10 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTxHistory",
 			Handler:    _AccountService_GetTxHistory_Handler,
+		},
+		{
+			MethodName: "GetCurrentNonce",
+			Handler:    _AccountService_GetCurrentNonce_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

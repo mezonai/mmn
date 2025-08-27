@@ -27,7 +27,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const pathOfPackageRLP = "mmn/pkg/rlp"
+const pathOfPackageRLP = "github.com/mezonai/mmn/pkg/rlp"
 
 func main() {
 	var (
