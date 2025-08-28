@@ -11,11 +11,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/outbound"
 	"github.com/mr-tron/base58"
 
 	_ "github.com/lib/pq"
+	mmnClient "github.com/mezonai/mmn/client"
 )
 
 type pgStore struct {
@@ -23,7 +22,7 @@ type pgStore struct {
 	aead cipher.AEAD
 }
 
-func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (outbound.WalletManager, error) {
+func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (mmnClient.WalletManager, error) {
 	mk, err := base64.StdEncoding.DecodeString(base64MasterKey)
 	if err != nil {
 		return nil, fmt.Errorf("master-key decode: %w", err)
@@ -64,7 +63,7 @@ func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
 		Scan(&addr, &enc)
 	if errors.Is(err, sql.ErrNoRows) {
 		fmt.Printf("LoadKey ErrNoRows %d %s %s %v\n", uid, addr, enc, err)
-		return "", nil, domain.ErrKeyNotFound
+		return "", nil, mmnClient.ErrKeyNotFound
 	}
 	if err != nil {
 		fmt.Printf("LoadKey Err %d %s %s %v\n", uid, addr, enc, err)

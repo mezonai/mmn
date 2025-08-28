@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/holiman/uint256"
-	mmnpb "github.com/mezonai/mmn/proto"
-	"github.com/mezonai/mmn/utils"
 	"github.com/mr-tron/base58"
 )
 
@@ -15,8 +13,28 @@ const addressDecodedExpectedLength = 32
 var (
 	ErrInvalidAddress = errors.New("domain: invalid address format")
 	ErrInvalidAmount  = errors.New("domain: amount must be > 0")
+	ErrKeyNotFound    = errors.New("keystore: not found")
 )
 
+// ----- Account -----
+type Account struct {
+	Address string
+	Balance *uint256.Int
+	Nonce   uint64
+}
+
+func ValidateAddress(addr string) error {
+	decoded, err := base58.Decode(addr)
+	if err != nil {
+		return ErrInvalidAddress
+	}
+	if len(decoded) != addressDecodedExpectedLength {
+		return ErrInvalidAddress
+	}
+	return nil
+}
+
+// ----- Tx -----
 const (
 	TxTypeTransfer = 0
 )
@@ -29,22 +47,6 @@ type Tx struct {
 	Timestamp uint64       `json:"timestamp"`
 	TextData  string       `json:"text_data"`
 	Nonce     uint64       `json:"nonce"`
-}
-
-type SignedTx struct {
-	Tx  *Tx
-	Sig string
-}
-
-func ValidateAddress(addr string) error {
-	decoded, err := base58.Decode(addr)
-	if err != nil {
-		return ErrInvalidAddress
-	}
-	if len(decoded) != addressDecodedExpectedLength {
-		return ErrInvalidAddress
-	}
-	return nil
 }
 
 func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string) (*Tx, error) {
@@ -69,23 +71,52 @@ func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, 
 	}, nil
 }
 
-func ToProtoTx(tx *Tx) *mmnpb.TxMsg {
-	amount := utils.Uint256ToString(tx.Amount)
-
-	return &mmnpb.TxMsg{
-		Type:      int32(tx.Type),
-		Sender:    tx.Sender,
-		Recipient: tx.Recipient,
-		Amount:    amount,
-		Nonce:     tx.Nonce,
-		TextData:  tx.TextData,
-		Timestamp: tx.Timestamp,
-	}
+type SignedTx struct {
+	Tx  *Tx
+	Sig string
 }
 
-func ToProtoSigTx(tx *SignedTx) *mmnpb.SignedTxMsg {
-	return &mmnpb.SignedTxMsg{
-		TxMsg:     ToProtoTx(tx.Tx),
-		Signature: tx.Sig,
-	}
+type AddTxResponse struct {
+	Ok     bool   `json:"ok"`
+	TxHash string `json:"tx_hash"`
+	Error  string `json:"error"`
+}
+
+type TxMeta_Status int32
+
+const (
+	TxMeta_Status_PENDING   TxMeta_Status = 0
+	TxMeta_Status_CONFIRMED TxMeta_Status = 1
+	TxMeta_Status_FINALIZED TxMeta_Status = 2
+	TxMeta_Status_FAILED    TxMeta_Status = 3
+)
+
+type TxMetaResponse struct {
+	Sender    string
+	Recipient string
+	Amount    *uint256.Int
+	Nonce     uint64
+	Timestamp uint64
+	Status    TxMeta_Status
+}
+
+type TxHistoryResponse struct {
+	Total uint32
+	Txs   []*TxMetaResponse
+}
+
+const (
+	UNLOCK_ITEM_STATUS_PENDING = 0
+	UNLOCK_ITEM_STATUS_SUCCESS = 1
+	UNLOCK_ITEM_STATUS_FAILED  = 2
+)
+
+// TxInfo represents transaction information returned by GetTxByHash
+type TxInfo struct {
+	Sender    string       `json:"sender"`
+	Recipient string       `json:"recipient"`
+	Amount    *uint256.Int `json:"amount"`
+	Timestamp uint64       `json:"timestamp"`
+	TextData  string       `json:"text_data"`
+	Nonce     uint64       `json:"nonce,omitempty"`
 }

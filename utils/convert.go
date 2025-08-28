@@ -192,3 +192,15 @@ func Uint256ToString(value *uint256.Int) string {
 	}
 	return value.String()
 }
+
+// Uint256FromString converts a string to *uint256.Int, returning 0 if empty
+func Uint256FromString(value string) *uint256.Int {
+	if value == "" {
+		return uint256.NewInt(0)
+	}
+	amount, err := uint256.FromDecimal(value)
+	if err != nil {
+		return nil
+	}
+	return amount
+}
