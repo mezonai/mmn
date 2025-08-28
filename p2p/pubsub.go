@@ -208,9 +208,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	// Attach snapshot announce callback to trigger UDP download and set ready when completed
 	ln.SetCallbacks(Callbacks{
 		OnSnapshotAnnounce: func(ann SnapshotAnnounce) error {
-			// Skip processing our own snapshot announcement
-			if ann.PeerID == ln.selfPubKey || ann.UDPAddr == ln.getAnnounceUDPAddr() {
+			// Skip self announces
+			if ann.PeerID == ln.selfPubKey {
 				logx.Info("SNAPSHOT:DOWNLOAD", "skip self announce", ann.UDPAddr)
+				return nil
+			}
+			// Ensure UDP addr non-empty and valid
+			if ann.UDPAddr == ":9100" || ann.UDPAddr == "" {
+				logx.Error("SNAPSHOT:DOWNLOAD", "invalid announce UDP addr, skip", ann.UDPAddr)
 				return nil
 			}
 			accountStore := ld.GetAccountStore()
@@ -237,8 +242,40 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					}
 					if st.Status == snapshot.TransferStatusComplete {
 						logx.Info("SNAPSHOT:DOWNLOAD", "completed ", ann.UDPAddr)
-						// Log readiness line without actually enabling, per request
-						logx.Info("NETWORK:READY", "Node is ready after snapshot")
+						// After snapshot load, apply leader schedule (if present), reset recorder, mark ready, and request block sync
+						ln.enableFullModeOnce.Do(func() {
+							if err := ln.setupHandlers(ln.ctx, nil); err != nil {
+								logx.Error("NETWORK:READY", "Failed to setup handlers:", err.Error())
+								return
+							}
+							// Apply leader schedule from snapshot if available
+							path := "/data/snapshots/snapshot-latest.json"
+							if snap, err := snapshot.ReadSnapshot(path); err == nil && snap != nil {
+								if len(snap.Meta.LeaderSchedule) > 0 {
+									if ls, err := poh.NewLeaderSchedule(snap.Meta.LeaderSchedule); err == nil {
+										if ln.applyLeaderSchedule != nil {
+											ln.applyLeaderSchedule(ls)
+											logx.Info("SNAPSHOT:DOWNLOAD", "Applied leader schedule from snapshot")
+										}
+										if recorder != nil {
+											recorder.SetLeaderSchedule(ls)
+										}
+									}
+								}
+							}
+							// reset recorder to the snapshot slot boundary
+							if recorder != nil {
+								var zero [32]byte
+								recorder.Reset(zero, ann.Slot)
+							}
+							ln.setNodeReady()
+							logx.Info("NETWORK:READY", "Node is ready after snapshot")
+						})
+						// Trigger block sync from the announced slot + 1
+						ctx := context.Background()
+						if err := ln.RequestBlockSync(ctx, ann.Slot+1); err != nil {
+							logx.Error("NETWORK:SYNC BLOCK", "Failed to request block sync after snapshot:", err)
+						}
 						break
 					}
 					if st.Status == snapshot.TransferStatusFailed || st.Status == snapshot.TransferStatusCancelled {
@@ -469,6 +506,10 @@ func (ln *Libp2pNetwork) getAnnounceUDPAddr() string {
 		}
 	}
 
+	if ip == "" {
+		logx.Error("SNAPSHOT:GOSSIP", "no valid non-loopback IP found; skip announce")
+		return ""
+	}
 	addr := fmt.Sprintf("%s:%d", ip, 9100)
 	logx.Info("SNAPSHOT:GOSSIP", "announce UDP addr", addr)
 	return addr
@@ -507,6 +548,10 @@ func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
 					ChunkSize: 16384,
 					CreatedAt: time.Now().Unix(),
 					PeerID:    ln.selfPubKey,
+				}
+				if ann.UDPAddr == "" {
+					// skip announce if no valid addr
+					continue
 				}
 				data, _ := json.Marshal(ann)
 				if err := ln.topicSnapshotAnnounce.Publish(ln.ctx, data); err == nil {

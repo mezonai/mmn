@@ -3,16 +3,22 @@ package snapshot
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
+	"strconv"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/types"
 )
 
 // TransferProtocol defines the protocol used for snapshot transfer
@@ -37,6 +43,7 @@ type SnapshotTransferRequest struct {
 	Slot         uint64 `json:"slot"`
 	ChunkSize    int    `json:"chunk_size"`
 	ReceiverPort int    `json:"receiver_port"`
+	Token        string `json:"token,omitempty"`
 }
 
 // SnapshotChunk represents a chunk of snapshot data for UDP transfer
@@ -157,8 +164,9 @@ func (sd *SnapshotDownloader) requestSnapshotTransferUDP(task *DownloadTask) err
 	req := SnapshotTransferRequest{
 		PeerID:       task.PeerID,
 		Slot:         task.Slot,
-		ChunkSize:    task.ChunkSize,
+		ChunkSize:    resolveChunkSize(task.ChunkSize),
 		ReceiverPort: localAddr.Port,
+		Token:        os.Getenv("SNAPSHOT_TOKEN"),
 	}
 
 	data, err := json.Marshal(req)
@@ -177,6 +185,18 @@ func (sd *SnapshotDownloader) requestSnapshotTransferUDP(task *DownloadTask) err
 
 	sd.updateTaskStatus(task, TransferStatusActive)
 	return nil
+}
+
+func resolveChunkSize(def int) int {
+	if def > 0 {
+		return def
+	}
+	if v := os.Getenv("SNAPSHOT_CHUNK_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 16 * 1024
 }
 
 // receiveUDPChunks receives UDP chunks for the task
@@ -289,21 +309,15 @@ func (sd *SnapshotDownloader) verifyAndLoadSnapshot(task *DownloadTask) error {
 		return fmt.Errorf("failed to read snapshot: %w", err)
 	}
 
-	// Verify bank hash
-	computedHash, err := ComputeFullBankHash(sd.provider)
-	if err != nil {
-		return fmt.Errorf("failed to compute bank hash: %w", err)
-	}
-
+	// Verify bank hash from snapshot content (deterministic, DB-independent)
+	computedHash := computeBankHashFromAccounts(snapshotFile.Accounts)
 	if computedHash != snapshotFile.Meta.BankHash {
 		return fmt.Errorf("bank hash mismatch")
 	}
 
 	// Load accounts into database
-	for _, account := range snapshotFile.Accounts {
-		// Store account in database
-		// This depends on your account storage implementation
-		logx.Info("SNAPSHOT DOWNLOAD", "Loading account:", account.Address)
+	if err := sd.storeAccountsBatch(snapshotFile.Accounts); err != nil {
+		return fmt.Errorf("failed to store accounts: %w", err)
 	}
 
 	logx.Info("SNAPSHOT DOWNLOAD", "Snapshot verified and loaded successfully")
@@ -329,6 +343,53 @@ func generateDownloadTaskID(peerID string, slot uint64) string {
 	data := fmt.Sprintf("download-%s-%d-%d", peerID, slot, time.Now().UnixNano())
 	hash := sha256.Sum256([]byte(data))
 	return fmt.Sprintf("%x", hash[:8])
+}
+
+// computeBankHashFromAccounts computes a bank hash deterministically from the provided accounts
+func computeBankHashFromAccounts(accounts []types.Account) [32]byte {
+	type item struct {
+		addr string
+		acc  types.Account
+	}
+	items := make([]item, 0, len(accounts))
+	for _, a := range accounts {
+		items = append(items, item{addr: a.Address, acc: a})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].addr < items[j].addr })
+
+	h := sha256.New()
+	buf := make([]byte, 8)
+	for _, it := range items {
+		addr := it.addr
+		acc := it.acc
+		binary.BigEndian.PutUint64(buf, uint64(len(addr)))
+		h.Write(buf)
+		h.Write([]byte(addr))
+		binary.BigEndian.PutUint64(buf, acc.Balance)
+		h.Write(buf)
+		binary.BigEndian.PutUint64(buf, acc.Nonce)
+		h.Write(buf)
+	}
+	var out [32]byte
+	copy(out[:], h.Sum(nil))
+	return out
+}
+
+// storeAccountsBatch writes accounts to the underlying DB using a batch for efficiency
+func (sd *SnapshotDownloader) storeAccountsBatch(accounts []types.Account) error {
+	batch := sd.provider.Batch()
+	for _, account := range accounts {
+		data, err := json.Marshal(account)
+		if err != nil {
+			return fmt.Errorf("marshal account %s: %w", account.Address, err)
+		}
+		key := []byte(store.PrefixAccount + account.Address)
+		batch.Put(key, data)
+	}
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("batch write accounts: %w", err)
+	}
+	return nil
 }
 
 // GetActiveDownloads returns all active download tasks

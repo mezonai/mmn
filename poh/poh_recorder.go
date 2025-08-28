@@ -41,6 +41,13 @@ func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.entries = make([]Entry, 0) //TODO: need re-calculate entries base on last hash
 }
 
+// SetLeaderSchedule updates the in-memory leader schedule used by the recorder
+func (r *PohRecorder) SetLeaderSchedule(schedule *LeaderSchedule) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.leaderSchedule = schedule
+}
+
 func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
 	v, ok := p.tickHash[h]
 	return v, ok && h <= p.tickHeight

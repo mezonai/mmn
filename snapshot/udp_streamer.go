@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/mezonai/mmn/db"
@@ -38,6 +39,12 @@ func StartSnapshotUDPStreamer(provider db.DatabaseProvider, snapshotDir string, 
 			if err := json.Unmarshal(buf[:n], &req); err != nil {
 				continue
 			}
+			// simple ACL/token check
+			expected := os.Getenv("SNAPSHOT_TOKEN")
+			if expected != "" && req.Token != expected {
+				logx.Error("SNAPSHOT:STREAMER", "unauthorized snapshot request")
+				continue
+			}
 			// Determine receiver address
 			receiver := &net.UDPAddr{IP: remote.IP, Port: req.ReceiverPort}
 			// Stream current latest snapshot file
@@ -50,7 +57,14 @@ func StartSnapshotUDPStreamer(provider db.DatabaseProvider, snapshotDir string, 
 			// compute total chunks
 			chunkSize := req.ChunkSize
 			if chunkSize <= 0 {
-				chunkSize = 16 * 1024
+				if v := os.Getenv("SNAPSHOT_CHUNK_SIZE"); v != "" {
+					if n, err := strconv.Atoi(v); err == nil && n > 0 {
+						chunkSize = n
+					}
+				}
+				if chunkSize <= 0 {
+					chunkSize = 16 * 1024
+				}
 			}
 			file, err := os.Open(path)
 			if err != nil {

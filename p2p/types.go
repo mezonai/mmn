@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -60,6 +61,9 @@ type Libp2pNetwork struct {
 	// readiness control
 	enableFullModeOnce sync.Once
 	ready              atomic.Bool
+
+	// runtime callback to apply leader schedule without import cycles
+	applyLeaderSchedule func(*poh.LeaderSchedule)
 }
 
 // IsNodeReady returns whether the node has caught up sufficiently and enabled full pubsub handlers
@@ -69,6 +73,11 @@ func (ln *Libp2pNetwork) IsNodeReady() bool {
 
 func (ln *Libp2pNetwork) setNodeReady() {
 	ln.ready.Store(true)
+}
+
+// SetApplyLeaderSchedule sets a callback for applying leader schedules at runtime
+func (ln *Libp2pNetwork) SetApplyLeaderSchedule(fn func(*poh.LeaderSchedule)) {
+	ln.applyLeaderSchedule = fn
 }
 
 type PeerInfo struct {

@@ -104,6 +104,14 @@ func NewValidator(
 	return v
 }
 
+// SetLeaderSchedule allows updating the leader schedule at runtime (e.g., from snapshot)
+func (v *Validator) SetLeaderSchedule(schedule *poh.LeaderSchedule) {
+	v.Schedule = schedule
+	if v.Recorder != nil {
+		v.Recorder.SetLeaderSchedule(schedule)
+	}
+}
+
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
 	v.leaderStartAtSlot = currentSlot
@@ -388,11 +396,32 @@ func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
 		return
 	}
 
-	// Atomically update latest snapshot pointer
+	// Atomically update latest snapshot pointer (write temp latest then rename)
 	latest := filepath.Join(dir, "snapshot-latest.json")
 	tmpLatest := latest + ".tmp"
-	if err := os.Rename(saved, tmpLatest); err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to move snapshot to temp latest: %v", err))
+	data, err := os.ReadFile(saved)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to read saved snapshot: %v", err))
+		return
+	}
+	// durable write
+	f, err := os.Create(tmpLatest)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to create temp latest snapshot: %v", err))
+		return
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write temp latest snapshot: %v", err))
+		return
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to fsync temp latest snapshot: %v", err))
+		return
+	}
+	if err := f.Close(); err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to close temp latest snapshot: %v", err))
 		return
 	}
 	if err := os.Rename(tmpLatest, latest); err != nil {

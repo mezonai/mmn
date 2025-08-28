@@ -375,6 +375,14 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	)
 	_ = grpcSrv // Keep server running
 
+	// provide a runtime hook for applying snapshot leader schedule without import cycles
+	p2pClient.SetApplyLeaderSchedule(func(ls *poh.LeaderSchedule) {
+		if ls == nil || val == nil {
+			return
+		}
+		val.SetLeaderSchedule(ls)
+	})
+
 	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
