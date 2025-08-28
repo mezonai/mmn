@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
 	mmnClient "github.com/mezonai/mmn/client"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
@@ -147,7 +148,7 @@ func getFaucetAccount() (string, ed25519.PrivateKey) {
 }
 
 // seedAccountFromFaucet sends initial tokens from faucet to a given address
-func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *TestService, toAddress string, amount uint64) (string, error) {
+func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *TestService, toAddress string, amount *uint256.Int) (string, error) {
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 
 	// Get faucet account info
@@ -183,7 +184,7 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *TestServi
 		return "", fmt.Errorf("failed to get updated account: %w", err)
 	}
 
-	if updatedAccount.Balance < amount {
+	if updatedAccount.Balance.Cmp(amount) < 0 {
 		return "", fmt.Errorf("account balance (%d) is less than seed amount (%d)", updatedAccount.Balance, amount)
 	}
 
@@ -215,7 +216,7 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.TxService.SendTokenWithoutDatabase(ctx, account.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", mmnClient.TxTypeTransfer)
+	txHash, err := service.TxService.SendTokenWithoutDatabase(ctx, account.Nonce+1, faucetPublicKey, toAddress, faucetSeed, uint256.NewInt(1), "Integration test transfer", mmnClient.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestSendToken_Integration_RealMainnet(t *testing.T) {
 	// Test data
 	fromUID := uint64(1)
 	toUID := uint64(2)
-	amount := uint64(100) // Send minimal amount for testing
+	amount := uint256.NewInt(100) // Send minimal amount for testing
 	textData := "Integration test transfer"
 
 	// get amount from faucet account
@@ -250,7 +251,7 @@ func TestSendToken_Integration_RealMainnet(t *testing.T) {
 		t.Fatalf("Failed to get account address %s: %v", fromAccount.Address, err)
 	}
 	fmt.Printf("fromAddr: %s\n", fromAccount.Address)
-	seedAmount := uint64(10000)
+	seedAmount := uint256.NewInt(10000)
 	_, err = seedAccountFromFaucet(t, ctx, service, fromAccount.Address, seedAmount)
 	if err != nil {
 		t.Fatalf("Failed to seed from account %s: %v", fromAccount.Address, err)
@@ -292,7 +293,7 @@ func TestSendToken_Integration_ExistingUsers(t *testing.T) {
 	// Test data
 	fromUID := uint64(1)
 	toUID := uint64(2)
-	amount := uint64(5)
+	amount := uint256.NewInt(5)
 	textData := "Transfer between existing users"
 
 	t.Logf("Sending tokens between existing users: %d -> %d", fromUID, toUID)
@@ -395,12 +396,12 @@ func TestSendToken_Integration_MultipleTransactions(t *testing.T) {
 
 	// Send multiple transactions to test nonce increment
 	transactions := []struct {
-		amount   uint64
+		amount   *uint256.Int
 		textData string
 	}{
-		{1, "First transaction"},
-		{2, "Second transaction"},
-		{3, "Third transaction"},
+		{uint256.NewInt(1), "First transaction"},
+		{uint256.NewInt(2), "Second transaction"},
+		{uint256.NewInt(3), "Third transaction"},
 	}
 
 	var txHashes []string
@@ -442,21 +443,11 @@ func TestSendToken_Integration_ErrorCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("InvalidAmount", func(t *testing.T) {
-		_, err := service.TxService.SendToken(ctx, 0, uint64(1), uint64(2), 0, "invalid amount")
+		_, err := service.TxService.SendToken(ctx, 0, uint64(1), uint64(2), uint256.NewInt(0), "invalid amount")
 		if err == nil {
 			t.Fatal("Expected error for zero amount")
 		}
 		t.Logf("Correctly rejected zero amount: %v", err)
-	})
-
-	t.Run("LargeAmount", func(t *testing.T) {
-		// Test with very large amount (should fail if insufficient balance)
-		_, err := service.TxService.SendToken(ctx, 0, uint64(1), uint64(2), ^uint64(0), "large amount")
-		if err == nil {
-			t.Log("Large amount transaction succeeded (user might have sufficient balance)")
-		} else {
-			t.Logf("Large amount transaction failed as expected: %v", err)
-		}
 	})
 }
 
@@ -497,7 +488,7 @@ func TestGetTxByHash_Integration(t *testing.T) {
 		t.Fatalf("GetAccountByAddress failed: %v", err)
 	}
 	fmt.Printf("faucetAccount.Nonce: %d\n", faucetAccount.Nonce)
-	txHash, err := service.TxService.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", mmnClient.TxTypeTransfer)
+	txHash, err := service.TxService.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, uint256.NewInt(1), "GetTxByHash test transfer", mmnClient.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("Failed to create test transaction: %v", err)
 	}
@@ -520,7 +511,7 @@ func TestGetTxByHash_Integration(t *testing.T) {
 	if txInfo.Recipient != toAddress {
 		t.Errorf("Expected recipient %s, got %s", toAddress, txInfo.Recipient)
 	}
-	if txInfo.Amount != 1 {
+	if txInfo.Amount.Cmp(uint256.NewInt(1)) != 0 {
 		t.Errorf("Expected amount 1, got %d", txInfo.Amount)
 	}
 	if txInfo.TextData != "GetTxByHash test transfer" {
@@ -561,8 +552,8 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get account address %d: %v", toUID, err)
 	}
-	seedAmount := uint64(25)
-	transferAmount := uint64(25)
+	seedAmount := uint256.NewInt(25)
+	transferAmount := uint256.NewInt(25)
 	fromUID := uint64(2)
 	fromAddr, err := svc.TxService.GetAccountAddress(fromUID)
 	if err != nil {
@@ -611,7 +602,7 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 }
 
 // testGetBalanceUpdatedCorrectly verifies that balances are updated correctly after the transfer
-func testGetBalanceUpdatedCorrectly(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, initialFromAccount, initialToAccount mmnClient.Account, transferAmount uint64) {
+func testGetBalanceUpdatedCorrectly(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, initialFromAccount, initialToAccount mmnClient.Account, transferAmount *uint256.Int) {
 	// Get updated balances after transfer
 	updatedFromAccount, err := svc.GetAccountByAddress(ctx, fromAddr)
 	if err != nil {
@@ -627,21 +618,21 @@ func testGetBalanceUpdatedCorrectly(t *testing.T, ctx context.Context, svc *serv
 	t.Logf("Updated state - To account (%s): balance=%d, nonce=%d", toAddr[:16], updatedToAccount.Balance, updatedToAccount.Nonce)
 
 	// Verify balances are updated correctly
-	expectedFromBalance := initialFromAccount.Balance - transferAmount
-	if updatedFromAccount.Balance != expectedFromBalance {
+	expectedFromBalance := new(uint256.Int).Sub(initialFromAccount.Balance, transferAmount)
+	if updatedFromAccount.Balance.Cmp(expectedFromBalance) != 0 {
 		t.Errorf("From account balance incorrect: expected %d, got %d",
 			expectedFromBalance, updatedFromAccount.Balance)
 	}
 
-	expectedToBalance := initialToAccount.Balance + transferAmount
-	if updatedToAccount.Balance != expectedToBalance {
+	expectedToBalance := new(uint256.Int).Add(initialToAccount.Balance, transferAmount)
+	if updatedToAccount.Balance.Cmp(expectedToBalance) != 0 {
 		t.Errorf("To account balance incorrect: expected %d, got %d",
 			expectedToBalance, updatedToAccount.Balance)
 	}
 }
 
 // testListTransactionsByAddress verifies transaction listing by address with filters
-func testListTransactionsByAddress(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, transferAmount uint64, transferTxHash string) {
+func testListTransactionsByAddress(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, transferAmount *uint256.Int, transferTxHash string) {
 	// Test listing transactions for from address
 	t.Run("FromAddress_AllTransactions", func(t *testing.T) {
 		transactions, err := svc.ListTransactionsByAddress(ctx, fromAddr, 10, 1, 0) // filter=0 (all)

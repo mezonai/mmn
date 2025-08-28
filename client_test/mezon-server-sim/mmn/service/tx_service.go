@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/holiman/uint256"
 	mmnClient "github.com/mezonai/mmn/client"
 	mmnpb "github.com/mezonai/mmn/proto"
 )
@@ -42,7 +43,7 @@ func (s *TxService) GetAccountAddress(uid uint64) (string, error) {
 }
 
 // SendToken forward 1 transfer token transaction to main-net.
-func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID uint64, amount uint64, textData string) (string, error) {
+func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID uint64, amount *uint256.Int, textData string) (string, error) {
 	// Validate sender, recipient exists in database
 	var count int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE id IN ($1, $2)", fromUID, toUID).Scan(&count)
@@ -109,7 +110,7 @@ func (s *TxService) GetAccountByAddress(ctx context.Context, addr string) (mmnCl
 
 func (s *TxService) GiveCoffee(ctx context.Context, nonce uint64, fromUID, toUID uint64) (string, error) {
 	// Test data
-	amount := uint64(1)
+	amount := uint256.NewInt(1)
 	textData := "give coffee"
 
 	// Act
@@ -133,7 +134,7 @@ func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID
 	}
 
 	// Test data
-	amount := uint64(1)
+	amount := uint256.NewInt(1)
 	textData := "unlock item"
 
 	// Act
@@ -170,7 +171,7 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 			Id:            strconv.FormatUint(tx.Nonce, 10),
 			CreateTime:    uint64(tx.Timestamp),
 			UserId:        strconv.FormatUint(uid, 10),
-			Value:         int32(tx.Amount),
+			Value:         tx.Amount,
 			TransactionId: strconv.FormatUint(tx.Nonce, 10),
 		}
 	}
@@ -181,7 +182,7 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 	}, nil
 }
 
-func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount uint64, textData string, transferType int) (string, error) {
+func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount *uint256.Int, textData string, transferType int) (string, error) {
 	unsigned, err := mmnClient.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
 	if err != nil {
 		return "", err
@@ -218,7 +219,7 @@ func (s *TxService) ListFaucetTransactions(ctx context.Context, addr string, lim
 			Id:            strconv.FormatUint(tx.Nonce, 10),
 			CreateTime:    uint64(tx.Timestamp),
 			UserId:        "faucet",
-			Value:         int32(tx.Amount),
+			Value:         tx.Amount,
 			TransactionId: strconv.FormatUint(tx.Nonce, 10),
 		}
 	}
