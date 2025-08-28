@@ -234,11 +234,15 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 		}
 	}
 
+	currentLatestSlot := s.GetLatestSlot()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Update latest finalized
-	s.latestFinalized = slot
+	if currentLatestSlot <= slot {
+		s.latestFinalized = slot
+	}
 
 	// Store updated metadata
 	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)

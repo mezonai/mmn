@@ -120,8 +120,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		return
 	}
 
-	logx.Info("NETWORK:SYNC BLOCK", "Received stream for request:", syncRequest.RequestID, "from peer:", remotePeer.String())
-
 	// check request id actived
 	ln.syncTrackerMu.Lock()
 	tracker, exists := ln.syncRequests[syncRequest.RequestID]
@@ -186,6 +184,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 				}
 			}
 		}
+
 	}
 
 	// Close all peer streams and remove tracker
@@ -195,11 +194,8 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		delete(ln.syncRequests, syncRequest.RequestID)
 	}
 	ln.syncTrackerMu.Unlock()
-
-	// Stream finished: now request latest slot once to decide next action
-	if _, err := ln.RequestLatestSlotFromPeers(context.Background()); err != nil {
-		logx.Warn("NETWORK:LATEST SLOT", "Failed to request latest slot after stream end:", err)
-	}
+	// check to sync
+	ln.CheckSyncCompletion(syncRequest.ToSlot)
 }
 
 func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
@@ -308,9 +304,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			ToSlot:    nextToSlot,
 		}
 
-		go func() {
-			ln.sendBlocksOverStream(nextReq, targetPeer)
-		}()
+		ln.sendBlocksOverStream(nextReq, targetPeer)
 	}
 }
 
@@ -462,4 +456,16 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 		}
 	}
 	return nil
+}
+
+func (ln *Libp2pNetwork) CheckSyncCompletion(toSlot uint64) {
+	localLatestSlot := ln.blockStore.GetLatestSlot()
+	if localLatestSlot >= toSlot {
+		go func() {
+			ctx := context.Background()
+			if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
+				logx.Warn("NETWORK:SYNC BLOCK", "Failed to check if more sync needed:", err)
+			}
+		}()
+	}
 }

@@ -18,7 +18,7 @@ type Store interface {
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
 	GetLatestSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
-	MarkFinalized(slot uint64) error
+	MarkFinalized(slot uint64, ignoreVote bool) error
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 	Close() error

@@ -125,22 +125,3 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 
 	return nil
 }
-
-func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
-	var fromSlot uint64 = 0
-
-	localLatestSlot := ln.blockStore.GetLatestSlot()
-	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + BatchSize
-		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
-	}
-
-	latestSlot, err := ln.RequestLatestSlotFromPeers(ctx)
-	if err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
-	} else if latestSlot > fromSlot {
-		fromSlot = latestSlot + BatchSize
-	}
-
-	return ln.RequestBlockSync(ctx, fromSlot)
-}

@@ -101,11 +101,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				if block == nil {
 					return fmt.Errorf("block not found for slot %d", vote.Slot)
 				}
+
 				if err := ld.ApplyBlock(block); err != nil {
 					return fmt.Errorf("apply block error: %w", err)
 				}
 
-				// Mark block as finalized and publish transaction finalization events
 				if err := bs.MarkFinalized(vote.Slot); err != nil {
 					return fmt.Errorf("mark block as finalized error: %w", err)
 				}
@@ -151,9 +151,17 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
+				if err := bs.AddBlockPending(blk); err != nil {
+					continue
+				}
+
 				if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to apply block: ", err.Error())
 					continue
+				}
+
+				if err := bs.MarkFinalized(blk.Slot); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to finalize synced block:", err)
 				}
 
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
@@ -181,6 +189,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			gap := uint64(0)
 			if latestSlot > localLatestSlot {
 				gap = latestSlot - localLatestSlot
+				logx.Info("NETWORK:SYNC BLOCK", "Gap Detetced ", gap)
+
 			}
 			if gap <= ReadyGapThreshold && !ln.IsNodeReady() {
 				ln.enableFullModeOnce.Do(func() {
