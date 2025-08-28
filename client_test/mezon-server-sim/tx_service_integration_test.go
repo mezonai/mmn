@@ -75,13 +75,14 @@ func setupIntegrationTest(t *testing.T) (*TestService, func()) {
 		INSERT INTO users (id, username) VALUES (0, 'mezon_test_user_0'), (1, 'mezon_test_user_1'), (2, 'mezon_test_user_2') ON CONFLICT (id) DO NOTHING;
 		CREATE TABLE IF NOT EXISTS unlocked_items (
 			id SERIAL PRIMARY KEY,
-			user_id bigint NOT NULL,
-			item_id bigint NOT NULL,
-			item_type VARCHAR(255),
-			status smallint DEFAULT 0 NOT NULL,
-			tx_hash VARCHAR(1024),
-			create_time timestamp with time zone DEFAULT now() NOT NULL,
-			update_time timestamp with time zone DEFAULT now() NOT NULL
+			user_id int8 NOT NULL,
+			item_id int8 NOT NULL,
+			item_type int2 DEFAULT 0 NOT NULL,
+			status int2 DEFAULT 0 NOT NULL,
+			create_time timestamptz DEFAULT now() NOT NULL,
+			update_time timestamptz DEFAULT now() NOT NULL,
+			tx_hash varchar NULL,
+			CONSTRAINT unlocked_items_user_id_item_id_key UNIQUE (user_id, item_id)
 		);
 	`)
 	if err != nil {
