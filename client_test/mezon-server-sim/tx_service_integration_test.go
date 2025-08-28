@@ -11,12 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
-	pb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
+	mmnClient "github.com/mezonai/mmn/client"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
+	mmnpb "github.com/mezonai/mmn/proto"
 	"github.com/mr-tron/base58"
 
 	_ "github.com/lib/pq"
@@ -26,12 +24,17 @@ import (
 
 // Test configuration - set these via environment variables
 const (
-	defaultMainnetEndpoints = "localhost:9001,localhost:9002,localhost:9003" // Your local mainnet gRPC endpoint
+	defaultMainnetEndpoints = "localhost:9001" // Your local mainnet gRPC endpoint
 	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
 	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
 )
 
-func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
+type TestService struct {
+	TxService      *service.TxService
+	AccountService *service.AccountService
+}
+
+func setupIntegrationTest(t *testing.T) (*TestService, func()) {
 	t.Helper()
 
 	// Get config from environment or use defaults
@@ -68,7 +71,7 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 		CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY
 		);
-		INSERT INTO users (id) VALUES (0), (1), (2) ON CONFLICT (id) DO NOTHING;
+		INSERT INTO users (id, username) VALUES (0, 'mezon_test_user_0'), (1, 'mezon_test_user_1'), (2, 'mezon_test_user_2') ON CONFLICT (id) DO NOTHING;
 		CREATE TABLE IF NOT EXISTS unlocked_items (
 			id SERIAL PRIMARY KEY,
 			user_id bigint NOT NULL,
@@ -91,27 +94,28 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 	}
 
 	// Setup mainnet client
-	config := mezoncfg.MmnConfig{
-		Endpoints: endpoint,
-		Timeout:   30000,
-		ChainID:   "1",
-		MasterKey: masterKey,
+	config := mmnClient.Config{
+		Endpoint: endpoint,
 	}
 
-	mainnetClient, err := blockchain.NewGRPCClient(config)
+	mainnetClient, err := mmnClient.NewClient(config)
 	if err != nil {
 		t.Fatalf("Failed to create mainnet client: %v", err)
 	}
 
 	// Create TxService with real implementations
-	service := service.NewTxService(mainnetClient, walletManager, db)
+	txService := service.NewTxService(mainnetClient, walletManager, db)
+	accountService := service.NewAccountService(mainnetClient, walletManager, db)
 
 	// Cleanup function
 	cleanup := func() {
 		db.Close()
 	}
 
-	return service, cleanup
+	return &TestService{
+		TxService:      txService,
+		AccountService: accountService,
+	}, cleanup
 }
 
 func getEnvOrDefault(key, defaultValue string) string {
@@ -141,18 +145,18 @@ func getFaucetAccount() (string, ed25519.PrivateKey) {
 }
 
 // seedAccountFromFaucet sends initial tokens from faucet to a given address
-func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.TxService, toAddress string, amount uint64) (string, error) {
+func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *TestService, toAddress string, amount uint64) (string, error) {
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 
 	// Get faucet account info
-	faucetAccount, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	faucetAccount, err := service.AccountService.GetAccountByAddress(ctx, faucetPublicKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to get faucet account: %w", err)
 	}
 
 	// Send tokens from faucet to recipient
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(
+	txHash, err := service.TxService.SendTokenWithoutDatabase(
 		ctx,
 		faucetAccount.Nonce+1,
 		faucetPublicKey,
@@ -160,7 +164,7 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 		faucetSeed,
 		amount,
 		"Seed amount from faucet",
-		domain.TxTypeTransfer,
+		mmnClient.TxTypeTransfer,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to send tokens from faucet: %w", err)
@@ -172,7 +176,7 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 	time.Sleep(5 * time.Second)
 
 	// Verify the account now has enough balance
-	updatedAccount, err := service.GetAccountByAddress(ctx, toAddress)
+	updatedAccount, err := service.AccountService.GetAccountByAddress(ctx, toAddress)
 	if err != nil {
 		return "", fmt.Errorf("failed to get updated account: %w", err)
 	}
@@ -193,14 +197,14 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 	ctx := context.Background()
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
-	fmt.Println("faucetPublicKey1", faucetPublicKey)
+	fmt.Println("faucetPublicKey", faucetPublicKey)
 	// Convert previously hex-formatted recipient to base58
 	hexRecipient := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
 	recBytes, _ := hex.DecodeString(hexRecipient)
 	toAddress := base58.Encode(recBytes)
 
 	// Check balance of toAddress
-	account, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	account, err := service.AccountService.GetAccountByAddress(ctx, faucetPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to get account balance: %v", err)
 	}
@@ -209,7 +213,7 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetSeed := faucetPrivateKey.Seed()
-	txHash, err := service.SendTokenWithoutDatabase(ctx, account.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", domain.TxTypeTransfer)
+	txHash, err := service.TxService.SendTokenWithoutDatabase(ctx, account.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "Integration test transfer", mmnClient.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("SendTokenWithoutDatabase failed: %v", err)
 	}
@@ -217,7 +221,7 @@ func TestSendToken_Integration_Faucet(t *testing.T) {
 	t.Logf("Transaction successful! Hash: %s", txHash)
 
 	time.Sleep(5 * time.Second)
-	toAccount, err := service.GetAccountByAddress(ctx, toAddress)
+	toAccount, err := service.AccountService.GetAccountByAddress(ctx, toAddress)
 	if err != nil {
 		t.Fatalf("Failed to get account balance: %v", err)
 	}
@@ -239,33 +243,29 @@ func TestSendToken_Integration_RealMainnet(t *testing.T) {
 	textData := "Integration test transfer"
 
 	// get amount from faucet account
-	fromAddr, err := service.GetAccountAddress(fromUID)
+	fromAccount, err := service.AccountService.GetAccount(ctx, fromUID)
 	if err != nil {
-		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+		t.Fatalf("Failed to get account address %s: %v", fromAccount.Address, err)
 	}
-	fmt.Printf("fromAddr: %s\n", fromAddr)
+	fmt.Printf("fromAddr: %s\n", fromAccount.Address)
 	seedAmount := uint64(10000)
-	_, err = seedAccountFromFaucet(t, ctx, service, fromAddr, seedAmount)
+	_, err = seedAccountFromFaucet(t, ctx, service, fromAccount.Address, seedAmount)
 	if err != nil {
-		t.Fatalf("Failed to seed from account %s: %v", fromAddr, err)
+		t.Fatalf("Failed to seed from account %s: %v", fromAccount.Address, err)
 	}
 
-	toAddr, err := service.GetAccountAddress(toUID)
+	toAccount, err := service.AccountService.GetAccount(ctx, toUID)
 	if err != nil {
-		t.Fatalf("Failed to get account address %s: %v", toAddr, err)
+		t.Fatalf("Failed to get account address %s: %v", toAccount.Address, err)
 	}
-	fmt.Printf("toAddr: %s\n", toAddr)
-	_, err = seedAccountFromFaucet(t, ctx, service, toAddr, seedAmount)
+	fmt.Printf("toAddr: %s\n", toAccount.Address)
+	_, err = seedAccountFromFaucet(t, ctx, service, toAccount.Address, seedAmount)
 	if err != nil {
-		t.Fatalf("Failed to seed to account %s: %v", toAddr, err)
+		t.Fatalf("Failed to seed to account %s: %v", toAccount.Address, err)
 	}
 
 	// Act: Send token
-	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
-	if err != nil {
-		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
-	}
-	txHash, err := service.SendToken(ctx, fromAccount.Nonce+1, fromUID, toUID, amount, textData)
+	txHash, err := service.TxService.SendToken(ctx, fromAccount.Nonce+1, fromUID, toUID, amount, textData)
 
 	// Assert
 	if err != nil {
@@ -295,15 +295,11 @@ func TestSendToken_Integration_ExistingUsers(t *testing.T) {
 	t.Logf("Sending tokens between existing users: %d -> %d", fromUID, toUID)
 
 	// Act
-	fromAddr, err := service.GetAccountAddress(fromUID)
+	fromAccount, err := service.AccountService.GetAccount(ctx, fromUID)
 	if err != nil {
-		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+		t.Fatalf("Failed to get account address %s: %v", fromAccount.Address, err)
 	}
-	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
-	if err != nil {
-		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
-	}
-	txHash, err := service.SendToken(ctx, fromAccount.Nonce+1, fromUID, toUID, amount, textData)
+	txHash, err := service.TxService.SendToken(ctx, fromAccount.Nonce+1, fromUID, toUID, amount, textData)
 
 	// Assert
 	if err != nil {
@@ -330,15 +326,12 @@ func TestGiveCoffee_Integration_ExistingUsers(t *testing.T) {
 	t.Logf("Give coffee between existing users: %d -> %d", fromUID, toUID)
 
 	// Act
-	fromAddr, err := service.GetAccountAddress(fromUID)
+	fromAccount, err := service.AccountService.GetAccount(ctx, fromUID)
 	if err != nil {
-		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
+		t.Fatalf("Failed to get account address %s: %v", fromAccount.Address, err)
 	}
-	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
-	if err != nil {
-		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
-	}
-	txHash, err := service.GiveCoffee(ctx, fromAccount.Nonce+1, fromUID, toUID)
+
+	txHash, err := service.TxService.GiveCoffee(ctx, fromAccount.Nonce+1, fromUID, toUID)
 	if err != nil {
 		t.Fatalf("GiveCoffee failed: %v", err)
 	}
@@ -365,12 +358,12 @@ func TestUnlockItem_Integration_ExistingUsers(t *testing.T) {
 	fromUID := uint64(1)
 	toUID := uint64(2)
 	itemUID := uint64(5)
-	itemType := "testing"
+	itemType := uint(1)
 
 	t.Logf("Sending tokens to unlock item: %d -> %d", fromUID, toUID)
 
 	// Act
-	txHash, err := service.UnlockItem(ctx, 0, fromUID, toUID, itemUID, itemType)
+	txHash, err := service.TxService.UnlockItem(ctx, 0, fromUID, toUID, itemUID, itemType)
 
 	// Assert
 	if err != nil {
@@ -405,19 +398,15 @@ func TestSendToken_Integration_MultipleTransactions(t *testing.T) {
 	}
 
 	var txHashes []string
-	fromAddr, err := service.GetAccountAddress(fromUID)
+	fromAccount, err := service.AccountService.GetAccount(ctx, fromUID)
 	if err != nil {
-		t.Fatalf("Failed to get account address %s: %v", fromAddr, err)
-	}
-	fromAccount, err := service.GetAccountByAddress(ctx, fromAddr)
-	if err != nil {
-		t.Fatalf("Failed to get from account %s: %v", fromAddr, err)
+		t.Fatalf("Failed to get account address %s: %v", fromAccount.Address, err)
 	}
 
 	for i, tx := range transactions {
 		t.Logf("Sending transaction %d: amount=%d", i+1, tx.amount)
 
-		txHash, err := service.SendToken(ctx, fromAccount.Nonce+1+uint64(i), fromUID, toUID, tx.amount, tx.textData)
+		txHash, err := service.TxService.SendToken(ctx, fromAccount.Nonce+1+uint64(i), fromUID, toUID, tx.amount, tx.textData)
 		if err != nil {
 			t.Fatalf("Transaction %d failed: %v", i+1, err)
 		}
@@ -447,7 +436,7 @@ func TestSendToken_Integration_ErrorCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("InvalidAmount", func(t *testing.T) {
-		_, err := service.SendToken(ctx, 0, uint64(1), uint64(2), 0, "invalid amount")
+		_, err := service.TxService.SendToken(ctx, 0, uint64(1), uint64(2), 0, "invalid amount")
 		if err == nil {
 			t.Fatal("Expected error for zero amount")
 		}
@@ -456,7 +445,7 @@ func TestSendToken_Integration_ErrorCases(t *testing.T) {
 
 	t.Run("LargeAmount", func(t *testing.T) {
 		// Test with very large amount (should fail if insufficient balance)
-		_, err := service.SendToken(ctx, 0, uint64(1), uint64(2), ^uint64(0), "large amount")
+		_, err := service.TxService.SendToken(ctx, 0, uint64(1), uint64(2), ^uint64(0), "large amount")
 		if err == nil {
 			t.Log("Large amount transaction succeeded (user might have sufficient balance)")
 		} else {
@@ -472,7 +461,7 @@ func Test_GetListFaucetTransactions(t *testing.T) {
 	ctx := context.Background()
 
 	faucetPublicKey, _ := getFaucetAccount()
-	txs, err := service.ListFaucetTransactions(ctx, faucetPublicKey, 10, 1, 0)
+	txs, err := service.TxService.ListFaucetTransactions(ctx, faucetPublicKey, 10, 1, 0)
 	if err != nil {
 		t.Fatalf("ListFaucetTransactions failed: %v", err)
 	}
@@ -490,19 +479,19 @@ func TestGetTxByHash_Integration(t *testing.T) {
 	// First, create a transaction to get a valid hash
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	toUID := uint64(1)
-	toAddress, err := service.GetAccountAddress(toUID)
+	toAddress, err := service.TxService.GetAccountAddress(toUID)
 	if err != nil {
 		t.Fatalf("Failed to get account address %s: %v", toAddress, err)
 	}
 
 	// Send a transaction to get a valid hash
 	faucetSeed := faucetPrivateKey.Seed()
-	faucetAccount, err := service.GetAccountByAddress(ctx, faucetPublicKey)
+	faucetAccount, err := service.AccountService.GetAccountByAddress(ctx, faucetPublicKey)
 	if err != nil {
 		t.Fatalf("GetAccountByAddress failed: %v", err)
 	}
 	fmt.Printf("faucetAccount.Nonce: %d\n", faucetAccount.Nonce)
-	txHash, err := service.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", domain.TxTypeTransfer)
+	txHash, err := service.TxService.SendTokenWithoutDatabase(ctx, faucetAccount.Nonce+1, faucetPublicKey, toAddress, faucetSeed, 1, "GetTxByHash test transfer", mmnClient.TxTypeTransfer)
 	if err != nil {
 		t.Fatalf("Failed to create test transaction: %v", err)
 	}
@@ -513,7 +502,7 @@ func TestGetTxByHash_Integration(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	// Test: Get transaction by hash
-	txInfo, err := service.GetTxByHash(ctx, txHash)
+	txInfo, err := service.TxService.GetTxByHash(ctx, txHash)
 	if err != nil {
 		t.Fatalf("GetTxByHash failed: %v", err)
 	}
@@ -545,7 +534,7 @@ func TestGetTxByHash_InvalidHash(t *testing.T) {
 
 	// Test with invalid hash
 	invalidHash := "invalid_hash_format"
-	_, err := service.GetTxByHash(ctx, invalidHash)
+	_, err := service.TxService.GetTxByHash(ctx, invalidHash)
 	if err == nil {
 		t.Fatal("Expected error for invalid hash format")
 	}
@@ -562,14 +551,14 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 
 	// Setup test data - transfer from one account to another
 	toUID := uint64(1)
-	toAddr, err := svc.GetAccountAddress(toUID)
+	toAddr, err := svc.TxService.GetAccountAddress(toUID)
 	if err != nil {
 		t.Fatalf("Failed to get account address %d: %v", toUID, err)
 	}
 	seedAmount := uint64(25)
 	transferAmount := uint64(25)
 	fromUID := uint64(2)
-	fromAddr, err := svc.GetAccountAddress(fromUID)
+	fromAddr, err := svc.TxService.GetAccountAddress(fromUID)
 	if err != nil {
 		t.Fatalf("Failed to get account address %d: %v", fromUID, err)
 	}
@@ -583,11 +572,11 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 	t.Logf("From account seeded successfully: %s", txHash[:16])
 
 	// Get initial balances after seeding
-	initialFromAccount, err := svc.GetAccountByAddress(ctx, fromAddr)
+	initialFromAccount, err := svc.AccountService.GetAccountByAddress(ctx, fromAddr)
 	if err != nil {
 		t.Fatalf("Failed to get initial from account: %v", err)
 	}
-	initialToAccount, err := svc.GetAccountByAddress(ctx, toAddr)
+	initialToAccount, err := svc.AccountService.GetAccountByAddress(ctx, toAddr)
 	if err != nil {
 		t.Fatalf("Failed to get initial to account: %v", err)
 	}
@@ -596,7 +585,7 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 
 	// Perform the transfer from account 1 to account 2
 	t.Logf("Performing transfer: %d tokens from %s to %s", transferAmount, fromAddr[:16], toAddr[:16])
-	transferTxHash, err := svc.SendToken(ctx, initialFromAccount.Nonce+1, fromUID, toUID, transferAmount, "Account to account transfer")
+	transferTxHash, err := svc.TxService.SendToken(ctx, initialFromAccount.Nonce+1, fromUID, toUID, transferAmount, "Account to account transfer")
 	if err != nil {
 		t.Fatalf("SendToken failed: %v", err)
 	}
@@ -607,16 +596,16 @@ func TestGetBalanceAndTransactions_Integration_CompleteFlow(t *testing.T) {
 
 	// Run child tests
 	t.Run("TestGetBalance_UpdatedCorrectly", func(t *testing.T) {
-		testGetBalanceUpdatedCorrectly(t, ctx, svc, fromAddr, toAddr, initialFromAccount, initialToAccount, transferAmount)
+		testGetBalanceUpdatedCorrectly(t, ctx, svc.TxService, fromAddr, toAddr, initialFromAccount, initialToAccount, transferAmount)
 	})
 
 	t.Run("TestListTransactions_ByAddress", func(t *testing.T) {
-		testListTransactionsByAddress(t, ctx, svc, fromAddr, toAddr, transferAmount, transferTxHash)
+		testListTransactionsByAddress(t, ctx, svc.TxService, fromAddr, toAddr, transferAmount, transferTxHash)
 	})
 }
 
 // testGetBalanceUpdatedCorrectly verifies that balances are updated correctly after the transfer
-func testGetBalanceUpdatedCorrectly(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, initialFromAccount, initialToAccount domain.Account, transferAmount uint64) {
+func testGetBalanceUpdatedCorrectly(t *testing.T, ctx context.Context, svc *service.TxService, fromAddr, toAddr string, initialFromAccount, initialToAccount mmnClient.Account, transferAmount uint64) {
 	// Get updated balances after transfer
 	updatedFromAccount, err := svc.GetAccountByAddress(ctx, fromAddr)
 	if err != nil {
@@ -710,13 +699,13 @@ func TestHealthCheck_Integration(t *testing.T) {
 			defer conn.Close()
 
 			// Create health service client
-			healthClient := pb.NewHealthServiceClient(conn)
+			healthClient := mmnpb.NewHealthServiceClient(conn)
 
 			// Test basic health check
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			resp, err := healthClient.Check(ctx, &pb.Empty{})
+			resp, err := healthClient.Check(ctx, &mmnpb.Empty{})
 			if err != nil {
 				t.Fatalf("Health check failed for %s: %v", ep, err)
 			}
@@ -742,65 +731,13 @@ func TestHealthCheck_Integration(t *testing.T) {
 				t.Fatalf("Expected non-empty node ID from %s", ep)
 			}
 
-			if resp.Status == pb.HealthCheckResponse_UNKNOWN {
+			if resp.Status == mmnpb.HealthCheckResponse_UNKNOWN {
 				t.Fatalf("Warning: Node %s returned UNKNOWN status", ep)
 			}
 
-			if resp.Status == pb.HealthCheckResponse_NOT_SERVING {
+			if resp.Status == mmnpb.HealthCheckResponse_NOT_SERVING {
 				t.Fatalf("Warning: Node %s is NOT_SERVING", ep)
 			}
 		}
 	})
-
-	// t.Run("HealthCheckStreaming", func(t *testing.T) {
-	// 	for i, ep := range endpoints {
-	// 		t.Logf("Testing streaming health check for endpoint %d: %s", i+1, ep)
-
-	// 		conn, err := grpc.NewClient(ep, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	// 		if err != nil {
-	// 			t.Logf("Failed to connect to %s: %v", ep, err)
-	// 			continue
-	// 		}
-	// 		defer conn.Close()
-
-	// 		healthClient := pb.NewHealthServiceClient(conn)
-
-	// 		req := &pb.HealthCheckRequest{
-	// 			NodeId:    fmt.Sprintf("test-client-stream-%d", i+1),
-	// 			Timestamp: uint64(time.Now().Unix()),
-	// 		}
-
-	// 		// Test streaming health check
-	// 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	// 		defer cancel()
-
-	// 		stream, err := healthClient.Watch(ctx, req)
-	// 		if err != nil {
-	// 			t.Logf("Streaming health check failed for %s: %v", ep, err)
-	// 			continue
-	// 		}
-
-	// 		// Receive a few health updates
-	// 		updateCount := 0
-	// 		maxUpdates := 3
-
-	// 		for updateCount < maxUpdates {
-	// 			resp, err := stream.Recv()
-	// 			if err != nil {
-	// 				t.Logf("Stream receive failed for %s: %v", ep, err)
-	// 				break
-	// 			}
-
-	// 			t.Logf("Health update %d from %s: Slot=%d, Status=%v",
-	// 				updateCount+1, ep, resp.CurrentSlot, resp.Status)
-
-	// 			updateCount++
-
-	// 			// Small delay to avoid overwhelming the stream
-	// 			time.Sleep(1 * time.Second)
-	// 		}
-
-	// 		t.Logf("Received %d health updates from %s", updateCount, ep)
-	// 	}
-	// })
 }

@@ -11,9 +11,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
+	mmnClient "github.com/mezonai/mmn/client"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 )
 
@@ -55,13 +54,12 @@ func main() {
 	}
 
 	// Setup MMN client configuration
-	config := mezoncfg.MmnConfig{
-		Endpoints: endpoint,
-		Timeout:  5000, // 5 seconds
+	config := mmnClient.Config{
+		Endpoint: endpoint,
 	}
 
 	// Create blockchain client
-	mainnetClient, err := blockchain.NewGRPCClient(config)
+	mainnetClient, err := mmnClient.NewClient(config)
 	if err != nil {
 		log.Fatalf("Failed to create blockchain client: %v", err)
 	}
