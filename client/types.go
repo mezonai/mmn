@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/holiman/uint256"
 	"github.com/mr-tron/base58"
 )
 
@@ -18,7 +19,7 @@ var (
 // ----- Account -----
 type Account struct {
 	Address string
-	Balance uint64
+	Balance *uint256.Int
 	Nonce   uint64
 }
 
@@ -39,23 +40,23 @@ const (
 )
 
 type Tx struct {
-	Type      int    `json:"type"`
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    uint64 `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce"`
+	Type      int          `json:"type"`
+	Sender    string       `json:"sender"`
+	Recipient string       `json:"recipient"`
+	Amount    *uint256.Int `json:"amount"`
+	Timestamp uint64       `json:"timestamp"`
+	TextData  string       `json:"text_data"`
+	Nonce     uint64       `json:"nonce"`
 }
 
-func BuildTransferTx(txType int, sender, recipient string, amount uint64, nonce uint64, ts uint64, textData string) (*Tx, error) {
+func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string) (*Tx, error) {
 	if err := ValidateAddress(sender); err != nil {
 		return nil, fmt.Errorf("from: %w", err)
 	}
 	if err := ValidateAddress(recipient); err != nil {
 		return nil, fmt.Errorf("recipient: %w", err)
 	}
-	if amount == 0 {
+	if amount == nil || amount.IsZero() {
 		return nil, ErrInvalidAmount
 	}
 
@@ -93,7 +94,7 @@ const (
 type TxMetaResponse struct {
 	Sender    string
 	Recipient string
-	Amount    uint64
+	Amount    *uint256.Int
 	Nonce     uint64
 	Timestamp uint64
 	Status    TxMeta_Status
@@ -112,10 +113,10 @@ const (
 
 // TxInfo represents transaction information returned by GetTxByHash
 type TxInfo struct {
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    uint64 `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce,omitempty"`
+	Sender    string       `json:"sender"`
+	Recipient string       `json:"recipient"`
+	Amount    *uint256.Int `json:"amount"`
+	Timestamp uint64       `json:"timestamp"`
+	TextData  string       `json:"text_data"`
+	Nonce     uint64       `json:"nonce,omitempty"`
 }

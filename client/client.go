@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/holiman/uint256"
 	mmnpb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/utils"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -70,7 +72,7 @@ func (c *MmnClient) AddTx(ctx context.Context, tx SignedTx) (AddTxResponse, erro
 func (c *MmnClient) GetAccount(ctx context.Context, addr string) (Account, error) {
 	res, err := c.accClient.GetAccount(ctx, &mmnpb.GetAccountRequest{Address: addr})
 	if err != nil {
-		return Account{Address: addr, Balance: 0, Nonce: 0}, err
+		return Account{Address: addr, Balance: uint256.NewInt(0), Nonce: 0}, err
 	}
 
 	return FromProtoAccount(res), nil
@@ -107,7 +109,7 @@ func (c *MmnClient) GetTxByHash(ctx context.Context, txHash string) (TxInfo, err
 	return TxInfo{
 		Sender:    res.Tx.Sender,
 		Recipient: res.Tx.Recipient,
-		Amount:    res.Tx.Amount,
+		Amount:    utils.Uint256FromString(res.Tx.Amount),
 		Timestamp: res.Tx.Timestamp,
 		TextData:  res.Tx.TextData,
 		Nonce:     res.Tx.Nonce,

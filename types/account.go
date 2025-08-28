@@ -1,8 +1,12 @@
 package types
 
+import (
+	"github.com/holiman/uint256"
+)
+
 type TxRecord struct {
 	Slot      uint64
-	Amount    uint64
+	Amount    *uint256.Int
 	Sender    string
 	Recipient string
 	Timestamp uint64
@@ -12,13 +16,13 @@ type TxRecord struct {
 }
 
 type Account struct {
-	Address string
-	Balance uint64
-	Nonce   uint64
-	History []string // tx hashes
+	Address string       `json:"address"`
+	Balance *uint256.Int `json:"balance"`
+	Nonce   uint64       `json:"nonce"`
+	History []string     `json:"history"` // tx hashes
 }
 
 type SnapshotAccount struct {
-	Balance uint64
-	Nonce   uint64
+	Balance *uint256.Int `json:"balance"`
+	Nonce   uint64       `json:"nonce"`
 }

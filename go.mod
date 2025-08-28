@@ -5,6 +5,7 @@ go 1.23.8
 toolchain go1.24.5
 
 require (
+	github.com/holiman/uint256 v1.3.2
 	github.com/lib/pq v1.10.9
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1

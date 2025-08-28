@@ -12,7 +12,7 @@ config:
   alloc: # support array
     addresses: 
       - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
-        amount: 2000000000
+        amount: 100000000000000000
   poh:
     hashes_per_tick: 10
     ticks_per_slot: 4
@@ -23,3 +23,5 @@ config:
     batch_size: 750
     leader_timeout: 50
     leader_timeout_loop_interval: 5
+  native_currency:
+    decimals: 6  
