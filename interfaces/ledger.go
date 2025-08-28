@@ -1,6 +1,7 @@
 package interfaces
 
 import (
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/types"
 )
@@ -12,7 +13,7 @@ type Ledger interface {
 	// GetAccount returns the account for the given address
 	GetAccount(addr string) (*types.Account, error)
 	// Balance returns the balance for the given address
-	Balance(addr string) (uint64, error)
+	Balance(addr string) (*uint256.Int, error)
 	// CreateAccountsFromGenesis creates an account from genesis block
 	CreateAccountsFromGenesis(addrs []config.Address) error
 }

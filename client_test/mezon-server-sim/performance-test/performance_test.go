@@ -11,15 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	mmnClient "github.com/mezonai/mmn/client"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 )
 
 const (
-	defaultMainnetEndpoints = "localhost:9001,localhost:9002,localhost:9003" // Your local mainnet gRPC endpoint
+	defaultMainnetEndpoints = "localhost:9001" // Your local mainnet gRPC endpoint
 	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
 	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
 )
@@ -89,14 +87,11 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 	}
 
 	// Setup mainnet client
-	config := mezoncfg.MmnConfig{
-		Endpoints: endpoint,
-		Timeout:   30000,
-		ChainID:   "1",
-		MasterKey: masterKey,
+	config := mmnClient.Config{
+		Endpoint: endpoint,
 	}
 
-	mainnetClient, err := blockchain.NewGRPCClient(config)
+	mainnetClient, err := mmnClient.NewClient(config)
 	if err != nil {
 		t.Fatalf("Failed to create mainnet client: %v", err)
 	}
@@ -203,7 +198,7 @@ func sendToken(t *testing.T, service *service.TxService, key int, wg *sync.WaitG
 	ctx := context.Background()
 	start := time.Now()
 	// _, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
-	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData, domain.TxTypeTransfer)
+	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData, mmnClient.TxTypeTransfer)
 	latency := time.Since(start)
 
 	mu.Lock()

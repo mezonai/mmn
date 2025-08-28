@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/common"
 )
 
@@ -15,19 +16,19 @@ const (
 )
 
 type Transaction struct {
-	Type      int32  `json:"type"`
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    uint64 `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce,omitempty"`
-	Signature string `json:"signature,omitempty"`
+	Type      int32       `json:"type"`
+	Sender    string      `json:"sender"`
+	Recipient string      `json:"recipient"`
+	Amount    *uint256.Int `json:"amount"`
+	Timestamp uint64      `json:"timestamp"`
+	TextData  string      `json:"text_data"`
+	Nonce     uint64      `json:"nonce,omitempty"`
+	Signature string      `json:"signature,omitempty"`
 }
 
 func (tx *Transaction) Serialize() []byte {
-	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce)
-	fmt.Println("Serialize metadata:", metadata)
+	amountStr := uint256ToString(tx.Amount)
+	metadata := fmt.Sprintf("%d|%s|%s|%s|%s|%d", tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce)
 	return []byte(metadata)
 }
 
@@ -59,4 +60,12 @@ func base58ToEd25519(addr string) (ed25519.PublicKey, error) {
 		return nil, fmt.Errorf("invalid pubkey")
 	}
 	return ed25519.PublicKey(b), nil
+}
+
+// uint256ToString converts a *uint256.Int to string, returning "0" if nil
+func uint256ToString(value *uint256.Int) string {
+	if value == nil {
+		return "0"
+	}
+	return value.String()
 }

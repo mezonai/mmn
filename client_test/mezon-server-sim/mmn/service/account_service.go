@@ -1,31 +1,41 @@
 package service
 
 import (
+	"context"
 	"database/sql"
 
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/outbound"
+	mmnClient "github.com/mezonai/mmn/client"
 )
 
 type AccountService struct {
-	bc outbound.MainnetClient
-	ks outbound.WalletManager
-	db *sql.DB
+	client mmnClient.MainnetClient
+	ks     mmnClient.WalletManager
+	db     *sql.DB
 }
 
-func NewAccountService(bc outbound.MainnetClient, ks outbound.WalletManager, db *sql.DB) *AccountService {
-	return &AccountService{bc: bc, ks: ks, db: db}
+func NewAccountService(client mmnClient.MainnetClient, ks mmnClient.WalletManager, db *sql.DB) *AccountService {
+	return &AccountService{client: client, ks: ks, db: db}
 }
 
-func (s *AccountService) GetAccount(uid uint64) (domain.Account, error) {
+func (s *AccountService) GetAccount(ctx context.Context, uid uint64) (mmnClient.Account, error) {
 	addr, _, err := s.ks.LoadKey(uid)
 	if err != nil {
-		return domain.Account{}, err
+		return mmnClient.Account{}, err
 	}
 
-	account, err := s.bc.GetAccount(addr)
+	account, err := s.client.GetAccount(ctx, addr)
 	if err != nil {
-		return domain.Account{}, err
+		return mmnClient.Account{}, err
 	}
+
+	return account, nil
+}
+
+func (s *AccountService) GetAccountByAddress(ctx context.Context, addr string) (mmnClient.Account, error) {
+	account, err := s.client.GetAccount(ctx, addr)
+	if err != nil {
+		return mmnClient.Account{}, err
+	}
+
 	return account, nil
 }

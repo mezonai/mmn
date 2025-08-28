@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	mmnpb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
+	mmnpb "github.com/mezonai/mmn/proto"
 )
 
 // Test processTransactionStatusInfo function with different status types

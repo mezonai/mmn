@@ -3,9 +3,10 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/mezonai/mmn/store"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -41,6 +42,7 @@ type Libp2pNetwork struct {
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
+	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 
 	syncStreams map[peer.ID]network.Stream
 	maxPeers    int
@@ -62,6 +64,9 @@ type Libp2pNetwork struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Add mutex for applyDataToBlock thread safety
+	applyBlockMu sync.Mutex
 }
 
 type PeerInfo struct {

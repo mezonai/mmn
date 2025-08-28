@@ -3,11 +3,13 @@ package poh
 import (
 	"crypto/sha256"
 	"fmt"
+
+	"github.com/mezonai/mmn/logx"
 )
 
 func VerifyEntries(prev [32]byte, entries []Entry) error {
-	fmt.Printf("VerifyEntries: prev hash: %x\n", prev)
-	fmt.Printf("VerifyEntries: verifying %d entries\n", len(entries))
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash: %x", prev))
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries", len(entries)))
 	cur := prev
 
 	for i, e := range entries {

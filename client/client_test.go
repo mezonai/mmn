@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
 	mmnpb "github.com/mezonai/mmn/proto"
 	"github.com/mr-tron/base58"
 )
@@ -105,15 +106,28 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey", faucetPublicKey)
-	toAddress := "PqbfV5pLGCBSkUcCgNL6L3JTQBwFEFtos3ADhT4FVPP" // dummy base58 for test
+	toAddress := "HTSs3Qztt9PwdsENiguF9GctKzmFg8FSrXnYprPKuerg" // dummy base58 for test
+
+	// Get current faucet account to get the next nonce
+	faucetAccount, err := client.GetAccount(ctx, faucetPublicKey)
+	if err != nil {
+		t.Fatalf("Failed to get faucet account: %v", err)
+	}
+	nextNonce := faucetAccount.Nonce + 1
+	t.Logf("Faucet account nonce: %d, using next nonce: %d", faucetAccount.Nonce, nextNonce)
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetPrivateKeySeed := faucetPrivateKey.Seed()
 	transferType := TxTypeTransfer
 	fromAddr := faucetPublicKey
+	fromAccount, err := client.GetAccount(ctx, fromAddr)
+	if err != nil {
+		t.Fatalf("Failed to get account: %v", err)
+	}
+
 	toAddr := toAddress
-	amount := uint64(1)
-	nonce := uint64(0)
+	amount := uint256.NewInt(1)
+	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
 	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
@@ -126,12 +140,11 @@ func TestClient_FaucetSendToken(t *testing.T) {
 		t.Fatalf("Failed to sign tx: %v", err)
 	}
 
-	if !Verify(unsigned, signedRaw.Sig, faucetPublicKey) {
+	if !Verify(unsigned, signedRaw.Sig) {
 		t.Fatalf("Self verify failed")
 	}
 
-	signTx := ToProtoSigTx(&signedRaw)
-	res, err := client.AddTx(ctx, signTx)
+	res, err := client.AddTx(ctx, signedRaw)
 	if err != nil {
 		t.Fatalf("Failed to add tx: %v", err)
 	}
@@ -144,7 +157,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 		t.Fatalf("Failed to get account balance: %v", err)
 	}
 
-	t.Logf("Account %s balance: %d tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
+	t.Logf("Account %s balance: %s tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
 }
 
 func TestClient_GetListTransactionsFaucet(t *testing.T) {

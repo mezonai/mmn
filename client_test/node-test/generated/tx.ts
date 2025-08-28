@@ -28,9 +28,9 @@ export interface TxMsg {
      */
     recipient: string;
     /**
-     * @generated from protobuf field: uint64 amount = 4
+     * @generated from protobuf field: string amount = 4
      */
-    amount: bigint;
+    amount: string;
     /**
      * @generated from protobuf field: uint64 timestamp = 5
      */
@@ -109,9 +109,9 @@ export interface TxInfo {
      */
     recipient: string;
     /**
-     * @generated from protobuf field: uint64 amount = 3
+     * @generated from protobuf field: string amount = 3
      */
-    amount: bigint;
+    amount: string;
     /**
      * @generated from protobuf field: uint64 timestamp = 4
      */
@@ -133,6 +133,10 @@ export interface GetTxByHashResponse {
      * @generated from protobuf field: mmn.TxInfo tx = 2
      */
     tx?: TxInfo;
+    /**
+     * @generated from protobuf field: uint32 decimals = 3
+     */
+    decimals: number; // Number of fractional digits for amount formatting
 }
 /**
  * Request to get transaction status
@@ -227,7 +231,7 @@ class TxMsg$Type extends MessageType<TxMsg> {
             { no: 1, name: "type", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
             { no: 2, name: "sender", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 3, name: "recipient", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 4, name: "amount", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 4, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 5, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 6, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 7, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
@@ -238,7 +242,7 @@ class TxMsg$Type extends MessageType<TxMsg> {
         message.type = 0;
         message.sender = "";
         message.recipient = "";
-        message.amount = 0n;
+        message.amount = "";
         message.timestamp = 0n;
         message.textData = "";
         message.nonce = 0n;
@@ -260,8 +264,8 @@ class TxMsg$Type extends MessageType<TxMsg> {
                 case /* string recipient */ 3:
                     message.recipient = reader.string();
                     break;
-                case /* uint64 amount */ 4:
-                    message.amount = reader.uint64().toBigInt();
+                case /* string amount */ 4:
+                    message.amount = reader.string();
                     break;
                 case /* uint64 timestamp */ 5:
                     message.timestamp = reader.uint64().toBigInt();
@@ -293,9 +297,9 @@ class TxMsg$Type extends MessageType<TxMsg> {
         /* string recipient = 3; */
         if (message.recipient !== "")
             writer.tag(3, WireType.LengthDelimited).string(message.recipient);
-        /* uint64 amount = 4; */
-        if (message.amount !== 0n)
-            writer.tag(4, WireType.Varint).uint64(message.amount);
+        /* string amount = 4; */
+        if (message.amount !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.amount);
         /* uint64 timestamp = 5; */
         if (message.timestamp !== 0n)
             writer.tag(5, WireType.Varint).uint64(message.timestamp);
@@ -540,7 +544,7 @@ class TxInfo$Type extends MessageType<TxInfo> {
         super("mmn.TxInfo", [
             { no: 1, name: "sender", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "recipient", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 3, name: "amount", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 3, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 4, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 5, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
@@ -549,7 +553,7 @@ class TxInfo$Type extends MessageType<TxInfo> {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.sender = "";
         message.recipient = "";
-        message.amount = 0n;
+        message.amount = "";
         message.timestamp = 0n;
         message.textData = "";
         if (value !== undefined)
@@ -567,8 +571,8 @@ class TxInfo$Type extends MessageType<TxInfo> {
                 case /* string recipient */ 2:
                     message.recipient = reader.string();
                     break;
-                case /* uint64 amount */ 3:
-                    message.amount = reader.uint64().toBigInt();
+                case /* string amount */ 3:
+                    message.amount = reader.string();
                     break;
                 case /* uint64 timestamp */ 4:
                     message.timestamp = reader.uint64().toBigInt();
@@ -594,9 +598,9 @@ class TxInfo$Type extends MessageType<TxInfo> {
         /* string recipient = 2; */
         if (message.recipient !== "")
             writer.tag(2, WireType.LengthDelimited).string(message.recipient);
-        /* uint64 amount = 3; */
-        if (message.amount !== 0n)
-            writer.tag(3, WireType.Varint).uint64(message.amount);
+        /* string amount = 3; */
+        if (message.amount !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.amount);
         /* uint64 timestamp = 4; */
         if (message.timestamp !== 0n)
             writer.tag(4, WireType.Varint).uint64(message.timestamp);
@@ -618,12 +622,14 @@ class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
     constructor() {
         super("mmn.GetTxByHashResponse", [
             { no: 1, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 2, name: "tx", kind: "message", T: () => TxInfo }
+            { no: 2, name: "tx", kind: "message", T: () => TxInfo },
+            { no: 3, name: "decimals", kind: "scalar", T: 13 /*ScalarType.UINT32*/ }
         ]);
     }
     create(value?: PartialMessage<GetTxByHashResponse>): GetTxByHashResponse {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.error = "";
+        message.decimals = 0;
         if (value !== undefined)
             reflectionMergePartial<GetTxByHashResponse>(this, message, value);
         return message;
@@ -638,6 +644,9 @@ class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
                     break;
                 case /* mmn.TxInfo tx */ 2:
                     message.tx = TxInfo.internalBinaryRead(reader, reader.uint32(), options, message.tx);
+                    break;
+                case /* uint32 decimals */ 3:
+                    message.decimals = reader.uint32();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -657,6 +666,9 @@ class GetTxByHashResponse$Type extends MessageType<GetTxByHashResponse> {
         /* mmn.TxInfo tx = 2; */
         if (message.tx)
             TxInfo.internalBinaryWrite(message.tx, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        /* uint32 decimals = 3; */
+        if (message.decimals !== 0)
+            writer.tag(3, WireType.Varint).uint32(message.decimals);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
