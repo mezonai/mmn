@@ -3,6 +3,8 @@ package consensus
 import (
 	"fmt"
 	"sync"
+
+	"github.com/mezonai/mmn/logx"
 )
 
 type Collector struct {
@@ -15,7 +17,7 @@ type Collector struct {
 func NewCollector(n int) *Collector {
 	f := n / 3
 	q := 2 * f
-	fmt.Printf("[collector] total=%d threshold=%d\n", n, q)
+	logx.Info("CONSENSUS", fmt.Sprintf("total=%d threshold=%d", n, q))
 	return &Collector{
 		votes:     make(map[uint64]map[string]*Vote),
 		total:     n,
@@ -42,7 +44,7 @@ func (c *Collector) AddVote(v *Vote) (bool, bool, error) {
 	slotVotes[v.VoterID] = v
 
 	count := len(slotVotes)
-	fmt.Printf("[collector] slot=%d votes=%d/%d\n", v.Slot, count, c.threshold)
+	logx.Info("CONSENSUS", fmt.Sprintf("slot=%d votes=%d/%d", v.Slot, count, c.threshold))
 	if count >= c.threshold {
 		// if count-1 >= c.threshold { error in case block receive at vote 3/2 => onVote 1/2 2/2 (but dont have block)
 		// 	return true, false, nil

@@ -32,20 +32,18 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("invalid PoH")
 			}
 
-			// Verify block
-			if err := ld.VerifyBlock(blk); err != nil {
-				logx.Error("BLOCK", "Block verification failed: ", err)
-				return err
-			}
-
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
 			}
 
 			// Reset poh to sync poh clock with leader
-			logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-			recorder.Reset(blk.LastEntryHash(), blk.Slot)
+			if blk.Slot > bs.GetLatestSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
 
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,
@@ -110,8 +108,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					logx.Error("NETWORK:SYNC BLOCK", "Invalid PoH for synced block: ", err)
 					continue
 				}
+				// Add to block store and publish transaction inclusion events
 				if err := bs.AddBlockPending(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
 					continue
 				}
 
