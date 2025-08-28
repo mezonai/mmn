@@ -24,6 +24,13 @@ type DatabaseProvider interface {
 	Batch() DatabaseBatch
 }
 
+// IterableProvider is an optional extension for providers that support prefix iteration
+// IteratePrefix iterates over keys starting with the given prefix and calls fn for each pair.
+// If fn returns false, iteration stops early.
+type IterableProvider interface {
+	IteratePrefix(prefix []byte, fn func(key, value []byte) bool) error
+}
+
 // DatabaseBatch provides atomic batch operations
 type DatabaseBatch interface {
 	// Put adds a key-value pair to the batch

@@ -87,6 +87,7 @@ func runNode() {
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -99,7 +100,7 @@ func runNode() {
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
+		logx.Error("NODE", "Please run 'mmn init --data-dir',", dataDir, ", first to initialize the node")
 		return
 	}
 
@@ -165,7 +166,15 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts, tms, as, eventRouter)
+	// Enable bank-hash persistence via StateMetaStore
+	provider := store.GetProviderFromAccountStore(as)
+	var ld *ledger.Ledger
+	if provider != nil {
+		stateMeta := store.NewGenericStateMetaStore(provider)
+		ld = ledger.NewLedgerWithStateMeta(ts, tms, as, eventRouter, stateMeta)
+	} else {
+		ld = ledger.NewLedger(ts, tms, as, eventRouter)
+	}
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
