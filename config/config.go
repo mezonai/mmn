@@ -3,46 +3,17 @@ package config
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
 	"log"
-	"mmn/poh"
 	"os"
+	"strings"
+
+	"github.com/mezonai/mmn/common"
+	"github.com/mezonai/mmn/poh"
 
 	"gopkg.in/yaml.v3"
 )
-
-// NodeConfig represents a node's configuration
-type NodeConfig struct {
-	PubKey      string `yaml:"pubkey"`
-	PrivKeyPath string `yaml:"privkey_path"`
-	ListenAddr  string `yaml:"listen_addr"`
-	GRPCAddr    string `yaml:"grpc_addr"`
-}
-
-// LeaderSchedule represents a leader schedule entry
-type LeaderSchedule struct {
-	StartSlot int    `yaml:"start_slot"`
-	EndSlot   int    `yaml:"end_slot"`
-	Leader    string `yaml:"leader"`
-}
-
-type Faucet struct {
-	Address string `yaml:"address"`
-	Amount  uint64 `yaml:"amount"`
-}
-
-// GenesisConfig holds the configuration from genesis.yml
-type GenesisConfig struct {
-	SelfNode       NodeConfig       `yaml:"self_node"`
-	PeerNodes      []NodeConfig     `yaml:"peer_nodes"`
-	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
-	Faucet         Faucet           `yaml:"faucet"`
-}
-
-// ConfigFile is the top-level structure for genesis.yml
-type ConfigFile struct {
-	Config GenesisConfig `yaml:"config"`
-}
 
 // LoadGenesisConfig reads and parses the genesis.yml file
 func LoadGenesisConfig(path string) (*GenesisConfig, error) {
@@ -61,24 +32,39 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		log.Printf("[config] Failed to decode YAML: %v", err)
 		return nil, err
 	}
-	log.Printf("[config] Successfully loaded config: SelfNode=%+v, PeerNodes=%d, LeaderSchedule=%d entries", cfgFile.Config.SelfNode, len(cfgFile.Config.PeerNodes), len(cfgFile.Config.LeaderSchedule))
+	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Alloc)
 	return &cfgFile.Config, nil
 }
 
-// LoadEd25519PrivKey loads an Ed25519 private key from a file (expects hex encoding)
+// LoadEd25519PrivKey loads an Ed25519 private key from a file (accepts base58 or hex)
 func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	key, err := hex.DecodeString(string(data))
-	if err != nil {
-		return nil, err
+	keyHex := strings.TrimSpace(string(data))
+	privBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(privBytes) == 0 {
+		// Fallback to hex
+		hb, herr := hex.DecodeString(keyHex)
+		if herr != nil {
+			return nil, fmt.Errorf("failed to decode private key as base58 or hex: %v | %v", err, herr)
+		}
+		privBytes = hb
 	}
-	if len(key) != ed25519.PrivateKeySize {
-		return nil, err
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		// 32-byte seed, generate full private key
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		// 64-byte full private key
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return nil, fmt.Errorf("invalid ed25519 private key length: %d, expected %d (seed) or %d (full key)", len(privBytes), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
-	return ed25519.PrivateKey(key), nil
+
+	return privKey, nil
 }
 
 // ConvertLeaderSchedule converts []config.LeaderSchedule to *poh.LeaderSchedule
@@ -96,4 +82,77 @@ func ConvertLeaderSchedule(entries []LeaderSchedule) *poh.LeaderSchedule {
 		log.Fatalf("Invalid leader schedule: %v", err)
 	}
 	return ls
+}
+
+type PohConfig struct {
+	HashesPerTick  uint64 `yaml:"hashes_per_tick"`
+	TicksPerSlot   uint64 `yaml:"ticks_per_slot"`
+	TickIntervalMs int    `yaml:"tick_interval_ms"`
+}
+
+type MempoolConfig struct {
+	MaxTxs int `yaml:"max_txs"`
+}
+
+type ValidatorConfig struct {
+	BatchSize                 int `yaml:"batch_size"`
+	LeaderTimeout             int `yaml:"leader_timeout"`
+	LeaderTimeoutLoopInterval int `yaml:"leader_timeout_loop_interval"`
+}
+
+// LoadPohConfig reads PoH config from genesis.yml file
+func LoadPohConfig(path string) (*PohConfig, error) {
+	genesisCfg, err := LoadGenesisConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	return &genesisCfg.Poh, nil
+}
+
+func LoadMempoolConfig(path string) (*MempoolConfig, error) {
+	genesisCfg, err := LoadGenesisConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	return &genesisCfg.Mempool, nil
+}
+
+func LoadValidatorConfig(path string) (*ValidatorConfig, error) {
+	genesisCfg, err := LoadGenesisConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	return &genesisCfg.Validator, nil
+}
+
+func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
+	data, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	keyHex := strings.TrimSpace(string(data))
+
+	privBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(privBytes) == 0 {
+		// Fallback to hex
+		hb, herr := hex.DecodeString(keyHex)
+		if herr != nil {
+			return "", fmt.Errorf("failed to decode private key (base58 and hex): %v | %v", err, herr)
+		}
+		privBytes = hb
+	}
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return "", fmt.Errorf("invalid ed25519 private key length: %d", len(privBytes))
+	}
+
+	pubKey := privKey.Public().(ed25519.PublicKey)
+
+	return common.EncodeBytesToBase58(pubKey), nil
 }

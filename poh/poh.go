@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/logx"
 )
 
 var LOW_POWER_MODE = ^uint64(0) // max uint64
@@ -40,7 +43,7 @@ func NewPoh(seed []byte, hashesPerTickOpt *uint64, autoHashInterval time.Duratio
 	}
 
 	return &Poh{
-		Hash:             sha256.Sum256(seed),
+		Hash:             sha256.Sum256(seed), //Poh recorder will reset the hash to the seed
 		NumHashes:        0,
 		HashesPerTick:    hashesPerTick,
 		RemainingHashes:  hashesPerTick,
@@ -54,7 +57,7 @@ func (p *Poh) Reset(seed [32]byte) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	fmt.Println("PoH Reset: seed", seed)
+	logx.Info("POH", fmt.Sprintf("PoH Reset: seed %x", seed))
 	p.Hash = seed
 	p.RemainingHashes = p.HashesPerTick
 	p.NumHashes = 0
@@ -112,24 +115,24 @@ func (p *Poh) Tick() *PohEntry {
 	return entry
 }
 
-func (p *Poh) RecordTick() *PohEntry {
-	remaining := p.HashesPerTick - p.NumHashes
-	for i := uint64(0); i < remaining; i++ {
+func (p *Poh) TickFastForward(seenHash [32]byte, fromTick uint64, toTick uint64) [32]byte {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.Hash = seenHash
+	numHashes := (toTick - fromTick) * p.HashesPerTick
+	for i := uint64(0); i < numHashes; i++ {
 		p.Hash = sha256.Sum256(p.Hash[:])
 	}
-	entry := &PohEntry{
-		Hash:      p.Hash,
-		NumHashes: remaining,
-		Tick:      true,
-	}
-
 	p.NumHashes = 0
 	p.RemainingHashes = p.HashesPerTick
-	return entry
+	return p.Hash
 }
 
 func (p *Poh) Run() {
-	go p.AutoHash()
+	exception.SafeGoWithPanic("AutoHash", func() {
+		p.AutoHash()
+	})
 }
 
 func (p *Poh) AutoHash() {
@@ -142,7 +145,7 @@ func (p *Poh) AutoHash() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
-			fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
+			// fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
 			if p.RemainingHashes > 1 {
 				p.hashOnce(p.Hash[:])
 			}

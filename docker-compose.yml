@@ -1,34 +1,78 @@
-version: '3.8'
+version: "3.8"
+
 services:
+  bootnode:
+    build:
+      context: .
+      args:
+        DATABASE: leveldb  #leveldb or leveldb
+    image: mmn-node:leveldb
+    container_name: bootnode
+    command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
+    ports:
+      - "9000:9000"
+    networks:
+      - mezon
+    restart: unless-stopped
   node1:
-    build: .
+    image: mmn-node:leveldb
     container_name: node1
-    command: ["./mmn", "-node=node1"]
+    command: >
+      sh -c '
+        rm -rf ./node-data/node1 &&
+        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key1.txt" &&
+        ./mmn node --database leveldb --data-dir "./node-data/node1" --listen-addr ":8001" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
+    depends_on:
+      - bootnode
     ports:
       - "8001:8001"
       - "9001:9001"
+    volumes:
+      - node_data:/app/node-data
     networks:
       - mezon
-
+    restart: unless-stopped
   node2:
-    build: .
+    image: mmn-node:leveldb
     container_name: node2
-    command: ["./mmn", "-node=node2"]
+    command: >
+      sh -c '
+        rm -rf ./node-data/node2 &&
+        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key2.txt" &&
+        ./mmn node --database leveldb --data-dir "./node-data/node2" --listen-addr ":8002" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
+    depends_on:
+      - bootnode
     ports:
       - "8002:8002"
       - "9002:9002"
+    volumes:
+      - node_data:/app/node-data
     networks:
       - mezon
+    restart: unless-stopped
 
   node3:
-    build: .
+    image: mmn-node:leveldb
     container_name: node3
-    command: ["./mmn", "-node=node3"]
+    command: >
+      sh -c '
+        rm -rf ./node-data/node3 &&
+        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "leveldb" --privkey-path "config/key3.txt" &&
+        ./mmn node --database leveldb --data-dir "./node-data/node3" --listen-addr ":8003" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
+    depends_on:
+      - bootnode
     ports:
       - "8003:8003"
-      - "9003:9003" 
+      - "9003:9003"
+    volumes:
+      - node_data:/app/node-data
     networks:
       - mezon
-
+    restart: unless-stopped
 networks:
   mezon:
+volumes:
+  node_data:

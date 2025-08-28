@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sync"
+
+	"github.com/mezonai/mmn/transaction"
 )
 
 type PohRecorder struct {
@@ -14,7 +16,6 @@ type PohRecorder struct {
 	ticksPerSlot uint64
 	tickHeight   uint64
 	entries      []Entry
-	tickHash     map[uint64][32]byte
 	mu           sync.Mutex
 }
 
@@ -27,57 +28,31 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 		entries:        []Entry{},
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
-		tickHash:       make(map[uint64][32]byte),
 	}
 }
 
 func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tickHeight = slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.entries = make([]Entry, 0)
+	r.tickHeight = slot * r.ticksPerSlot
 	r.poh.Reset(lastHash)
+	r.entries = make([]Entry, 0)
 }
 
-func (p *PohRecorder) HashAtHeight(h uint64) ([32]byte, bool) {
-	v, ok := p.tickHash[h]
-	return v, ok && h <= p.tickHeight
-}
-
-func (r *PohRecorder) FastForward(target uint64) ([32]byte, error) {
+// Assume fromSlot is the last seen slot, toSlot is the target slot
+// Simulate the poh clock from fromSlot to toSlot
+func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uint64) [32]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.tickHeight >= target {
-		if h, ok := r.HashAtHeight(target); ok {
-			return h, nil
-		}
-		return [32]byte{}, fmt.Errorf("hash for tick %d pruned", target)
-	}
+	fromTick := fromSlot * r.ticksPerSlot
+	toTick := toSlot * r.ticksPerSlot
+	r.poh.TickFastForward(seenHash, fromTick, toTick)
 
-	var lastHash [32]byte
-	for r.tickHeight < target {
-		lastHash = r.poh.RecordTick().Hash
-		r.tickHash[r.tickHeight] = lastHash
-		r.tickHeight++
-		fmt.Printf("FastForward: %d\n", r.tickHeight)
-	}
-	return lastHash, nil
+	return r.poh.Hash
 }
 
-func (r *PohRecorder) ReseedAtSlot(seedHash [32]byte, slot uint64) {
-	tick := slot*r.ticksPerSlot + r.ticksPerSlot - 1
-	r.ReseedAtTick(seedHash, tick)
-}
-
-func (r *PohRecorder) ReseedAtTick(seedHash [32]byte, tick uint64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.poh.Reset(seedHash)
-	r.tickHeight = tick
-}
-
-func (r *PohRecorder) RecordTxs(txs [][]byte) (*Entry, error) {
+func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -96,14 +71,13 @@ func (r *PohRecorder) Tick() *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	fmt.Println("Starting Tick")
+	// fmt.Println("Starting Tick")
 	pohEntry := r.poh.Tick()
 	if pohEntry == nil {
 		return nil
 	}
 
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
-	r.tickHash[r.tickHeight] = pohEntry.Hash
 
 	r.tickHeight++
 	return &entry
@@ -121,13 +95,15 @@ func (r *PohRecorder) DrainEntries() []Entry {
 func (r *PohRecorder) CurrentSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.tickHeight / r.ticksPerSlot
+
+	// +1 to make slot start from 1
+	return r.tickHeight/r.ticksPerSlot + 1
 }
 
-func HashTransactions(txs [][]byte) [32]byte {
+func HashTransactions(txs []*transaction.Transaction) [32]byte {
 	var all []byte
 	for _, tx := range txs {
-		all = append(all, tx...)
+		all = append(all, tx.Bytes()...)
 	}
 	return sha256.Sum256(all)
 }

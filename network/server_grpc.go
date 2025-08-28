@@ -4,16 +4,24 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"mmn/blockstore"
-	"mmn/consensus"
-	"mmn/ledger"
-	"mmn/mempool"
-	pb "mmn/proto"
-	"mmn/utils"
-	"mmn/validator"
 	"net"
+	"time"
+
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/store"
+
+	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/mempool"
+	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/utils"
+	"github.com/mezonai/mmn/validator"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type server struct {
@@ -21,206 +29,170 @@ type server struct {
 	pb.UnimplementedVoteServiceServer
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
+	pb.UnimplementedHealthServiceServer
 	pubKeys       map[string]ed25519.PublicKey
 	blockDir      string
 	ledger        *ledger.Ledger
 	voteCollector *consensus.Collector
-	grpcClient    *GRPCClient // to vote back
 	selfID        string
 	privKey       ed25519.PrivateKey
 	validator     *validator.Validator
-	blockStore    *blockstore.BlockStore
+	blockStore    store.BlockStore
 	mempool       *mempool.Mempool
+	eventRouter   *events.EventRouter // Event router for complex event logic
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	grpcClient *GRPCClient, selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore *blockstore.BlockStore, mempool *mempool.Mempool) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
 		blockDir:      blockDir,
 		ledger:        ld,
 		voteCollector: collector,
-		grpcClient:    grpcClient,
 		selfID:        selfID,
 		privKey:       priv,
 		blockStore:    blockStore,
 		validator:     validator,
 		mempool:       mempool,
+		eventRouter:   eventRouter,
 	}
+
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
-	lis, _ := net.Listen("tcp", addr)
-	go grpcSrv.Serve(lis)
-	fmt.Printf("[gRPC] server listening on %s", addr)
+	pb.RegisterHealthServiceServer(grpcSrv, s)
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		fmt.Printf("[gRPC] Failed to listen on %s: %v\n", addr, err)
+		return nil
+	}
+	exception.SafeGo("Grpc Server", func() {
+		grpcSrv.Serve(lis)
+	})
+	fmt.Printf("[gRPC] server listening on %s\n", addr)
 	return grpcSrv
 }
 
-func (s *server) Broadcast(ctx context.Context, pbBlk *pb.Block) (*pb.BroadcastResponse, error) {
-	// Convert pb.Block → block.Block
-	blk, err := utils.FromProtoBlock(pbBlk)
-	if err != nil {
-		fmt.Printf("[follower] Block conversion error: %v", err)
-		return &pb.BroadcastResponse{Ok: false, Error: "invalid block"}, nil
-	}
-	fmt.Printf("VerifySignature: leader ID: %s\n", blk.LeaderID)
-	pubKey, ok := s.pubKeys[blk.LeaderID]
-	if !ok {
-		fmt.Printf("[follower] Unknown leader: %s", blk.LeaderID)
-		return &pb.BroadcastResponse{Ok: false, Error: "unknown leader"}, nil
-	}
-	// Verify signature
-	fmt.Printf("VerifySignature: verifying signature for block %x\n", blk.Hash)
-	if !blk.VerifySignature(pubKey) {
-		fmt.Printf("[follower] Invalid signature for slot %d", blk.Slot)
-		return &pb.BroadcastResponse{Ok: false, Error: "bad signature"}, nil
-	}
-
-	// Verify PoH
-	fmt.Printf("VerifyPoH: verifying PoH for block %x\n", blk.Hash)
-	if err := blk.VerifyPoH(); err != nil {
-		fmt.Printf("[follower] Invalid PoH: %v", err)
-		return &pb.BroadcastResponse{Ok: false, Error: "invalid PoH"}, nil
-	}
-
-	// Verify block is valid
-	fmt.Printf("VerifyBlock: verifying block %x\n", blk.Hash)
-	if err := s.ledger.VerifyBlock(blk); err != nil {
-		fmt.Printf("[follower] Invalid block: %v", err)
-		return &pb.BroadcastResponse{Ok: false, Error: "invalid block"}, nil
-	}
-
-	// Persist block
-	if err := s.blockStore.AddBlockPending(blk); err != nil {
-		fmt.Printf("[follower] Store block error: %v", err)
-	} else {
-		fmt.Printf("[follower] Stored block slot=%d", blk.Slot)
-	}
-
-	// Reseed PoH for follower
-	if s.validator.IsFollower(blk.Slot) {
-		if blk.Slot > 0 && !s.blockStore.HasCompleteBlock(blk.Slot-1) {
-			fmt.Printf("Skip reseed slot %d - missing ancestor", blk.Slot)
-		} else {
-			fmt.Printf("Reseed at slot %d", blk.Slot)
-			seed := blk.LastEntryHash()
-			s.validator.Recorder.ReseedAtSlot(seed, blk.Slot)
-		}
-	}
-
-	// Broadcast vote
-	vote := &consensus.Vote{
-		Slot:      blk.Slot,
-		BlockHash: blk.Hash,
-		VoterID:   s.selfID,
-	}
-	vote.Sign(s.privKey)
-
-	// Add vote to collector for follower self-vote
-	fmt.Printf("[follower] Adding vote %d to collector for self-vote\n", vote.Slot)
-	if committed, needApply, err := s.voteCollector.AddVote(vote); err != nil {
-		fmt.Printf("[follower] Add vote error: %v", err)
-		return &pb.BroadcastResponse{Ok: false, Error: "add vote failed"}, nil
-	} else if committed && needApply {
-		// Replay transactions in block
-		if err := s.ledger.ApplyBlock(s.blockStore.Block(vote.Slot)); err != nil {
-			fmt.Printf("[follower] Apply block error: %v", err)
-			return &pb.BroadcastResponse{Ok: false, Error: "block apply failed"}, nil
-		}
-		// Mark block as finalized
-		if err := s.blockStore.MarkFinalized(vote.Slot); err != nil {
-			fmt.Printf("[follower] Mark block as finalized error: %v", err)
-			return &pb.BroadcastResponse{Ok: false, Error: "mark block as finalized failed"}, nil
-		}
-		fmt.Printf("[follower] slot %d finalized! votes=%d", vote.Slot, len(s.voteCollector.VotesForSlot(vote.Slot)))
-	}
-
-	if err := s.grpcClient.BroadcastVote(context.Background(), vote); err != nil {
-		fmt.Printf("[follower] Broadcast vote error: %v", err)
-		return &pb.BroadcastResponse{Ok: false, Error: "broadcast vote failed"}, nil
-	}
-
-	return &pb.BroadcastResponse{Ok: true}, nil
-}
-
-// Vote RPC handler
-func (s *server) Vote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse, error) {
-	// 1. Convert pb.Vote → consensus.Vote
-	var v consensus.Vote
-	v.Slot = in.Slot
-	copy(v.BlockHash[:], in.BlockHash)
-	v.VoterID = in.VoterId
-	v.Signature = in.Signature
-
-	// 2. Verify signature
-	pub, ok := s.pubKeys[v.VoterID]
-	if !ok {
-		return &pb.VoteResponse{Ok: false, Error: "unknown voter"}, nil
-	}
-	if !v.VerifySignature(pub) {
-		return &pb.VoteResponse{Ok: false, Error: "invalid signature"}, nil
-	}
-
-	// 3. Add to collector
-	fmt.Printf("[consensus] Adding vote %d to collector for peer vote\n", v.Slot)
-	committed, needApply, err := s.voteCollector.AddVote(&v)
-	if err != nil {
-		fmt.Printf("[consensus] Add vote error: %v\n", err)
-		return &pb.VoteResponse{Ok: false, Error: err.Error()}, nil
-	}
-	if committed && needApply {
-		fmt.Printf("[consensus] slot %d committed, processing apply block! votes=%d\n", v.Slot, len(s.voteCollector.VotesForSlot(v.Slot)))
-		// Replay transactions in block
-		if err := s.ledger.ApplyBlock(s.blockStore.Block(v.Slot)); err != nil {
-			fmt.Printf("[consensus] Apply block error: %v\n", err)
-			return &pb.VoteResponse{Ok: false, Error: "block apply failed"}, nil
-		}
-		// Mark block as finalized
-		if err := s.blockStore.MarkFinalized(v.Slot); err != nil {
-			fmt.Printf("[consensus] Mark block as finalized error: %v\n", err)
-			return &pb.VoteResponse{Ok: false, Error: "mark block as finalized failed"}, nil
-		}
-		fmt.Printf("[consensus] slot %d finalized!\n", v.Slot)
-	}
-
-	return &pb.VoteResponse{Ok: true}, nil
-}
-
-func (s *server) TxBroadcast(ctx context.Context, in *pb.SignedTxMsg) (*pb.TxResponse, error) {
-	fmt.Printf("[gRPC] received tx %+v\n", in.TxMsg)
-	tx, err := utils.FromProtoSignedTx(in)
-	if err != nil {
-		return &pb.TxResponse{Ok: false, Error: "invalid tx"}, nil
-	}
-	s.mempool.AddTx(tx, false)
-	return &pb.TxResponse{Ok: true}, nil
-}
-
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
-	fmt.Printf("[gRPC] received tx %+v\n", in.TxMsg)
+	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
+		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
-	txHash, ok := s.mempool.AddTx(tx, true)
-	if !ok {
-		return &pb.AddTxResponse{Ok: false, Error: "mempool full"}, nil
+
+	// Generate server-side timestamp for security
+	// Todo: remove from input and update client
+	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
+
+	txHash, err := s.mempool.AddTx(tx, true)
+	if err != nil {
+		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 	}
 	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
 }
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
 	addr := in.Address
-	acc := s.ledger.GetAccount(addr)
+	acc, err := s.ledger.GetAccount(addr)
+	if err != nil {
+		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
+	}
+	if acc == nil {
+		return &pb.GetAccountResponse{
+			Address: addr,
+			Balance: 0,
+			Nonce:   0,
+		}, nil
+	}
 	return &pb.GetAccountResponse{
 		Address: addr,
 		Balance: acc.Balance,
 		Nonce:   acc.Nonce,
 	}, nil
+}
+
+func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
+	addr := in.Address
+	tag := in.Tag
+	logx.Info("GRPC", fmt.Sprintf("GetCurrentNonce request for address: %s, tag: %s", addr, tag))
+
+	// Validate tag parameter
+	if tag != "latest" && tag != "pending" {
+		return &pb.GetCurrentNonceResponse{
+			Error: "invalid tag: must be 'latest' or 'pending'",
+		}, nil
+	}
+
+	// Get account from ledger
+	// TODO: verify this segment
+	acc, err := s.ledger.GetAccount(addr)
+	if err != nil {
+		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
+		return &pb.GetCurrentNonceResponse{
+			Address: addr,
+			Nonce:   0,
+			Tag:     tag,
+			Error:   err.Error(),
+		}, nil
+	}
+	if acc == nil {
+		logx.Warn("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
+		return &pb.GetCurrentNonceResponse{
+			Address: addr,
+			Nonce:   0,
+			Tag:     tag,
+		}, nil
+	}
+
+	var currentNonce uint64
+
+	if tag == "latest" {
+		// For "latest", return the current nonce from the most recent mined block
+		currentNonce = acc.Nonce
+		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
+	} else { // tag == "pending"
+		// For "pending", return the largest nonce among pending transactions or current ledger nonce
+		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
+		if largestPendingNonce == 0 {
+			// No pending transactions, use current ledger nonce
+			currentNonce = acc.Nonce
+		} else {
+			// Return the largest pending nonce as current
+			currentNonce = largestPendingNonce
+		}
+		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: largest pending: %d, current: %d", addr, largestPendingNonce, currentNonce))
+	}
+
+	return &pb.GetCurrentNonceResponse{
+		Address: addr,
+		Nonce:   currentNonce,
+		Tag:     tag,
+	}, nil
+}
+
+func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
+	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
+	if err != nil {
+		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
+	}
+	txInfo := &pb.TxInfo{
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    tx.Amount,
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+		Slot:      txMeta.Slot,
+		Blockhash: txMeta.BlockHash,
+		Status:    txMeta.Status,
+		ErrMsg:    txMeta.Error,
+	}
+	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
 }
 
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
@@ -241,4 +213,326 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		Total: total,
 		Txs:   txMetas,
 	}, nil
+}
+
+// GetTransactionStatus returns real-time status by checking mempool and blockstore.
+func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
+	txHash := in.TxHash
+
+	// 1) Check mempool
+	if s.mempool != nil {
+		data, ok := s.mempool.GetTransaction(txHash)
+		if ok {
+			// Parse tx to compute client-hash
+			tx, err := utils.ParseTx(data)
+			if err == nil {
+				if tx.Hash() == txHash {
+					return &pb.TransactionStatusInfo{
+						TxHash:        txHash,
+						Status:        pb.TransactionStatus_PENDING,
+						Confirmations: 0, // No confirmations for mempool transactions
+						Timestamp:     uint64(time.Now().Unix()),
+					}, nil
+				}
+			}
+		}
+	}
+
+	// 2) Search in stored blocks
+	if s.blockStore != nil {
+		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
+		if found {
+			confirmations := s.blockStore.GetConfirmations(slot)
+			status := pb.TransactionStatus_CONFIRMED
+			if confirmations > 1 {
+				status = pb.TransactionStatus_FINALIZED
+			}
+
+			return &pb.TransactionStatusInfo{
+				TxHash:        txHash,
+				Status:        status,
+				BlockSlot:     slot,
+				BlockHash:     blk.HashString(),
+				Confirmations: confirmations,
+				Timestamp:     uint64(time.Now().Unix()),
+			}, nil
+		}
+	}
+
+	// 3) Transaction not found anywhere -> return nil and error
+	return nil, fmt.Errorf("transaction not found: %s", txHash)
+}
+
+// SubscribeTransactionStatus streams transaction status updates using event-based system
+func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusInfo]) error {
+	// Subscribe to all blockchain events
+	subscriberID, eventChan := s.eventRouter.Subscribe()
+	defer s.eventRouter.Unsubscribe(subscriberID)
+
+	// Wait for events indefinitely (client keeps connection open)
+	for {
+		select {
+		case event := <-eventChan:
+			// Convert event to status update for the specific transaction
+			statusUpdate := s.convertEventToStatusUpdate(event, event.TxHash())
+			if statusUpdate != nil {
+				if err := stream.Send(statusUpdate); err != nil {
+					return err
+				}
+			}
+
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
+// convertEventToStatusUpdate converts blockchain events to transaction status updates
+func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash string) *pb.TransactionStatusInfo {
+	switch e := event.(type) {
+	case *events.TransactionAddedToMempool:
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_PENDING,
+			Confirmations: 0, // No confirmations for mempool transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+
+	case *events.TransactionIncludedInBlock:
+		// Transaction included in block = CONFIRMED status
+		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
+
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_CONFIRMED,
+			BlockSlot:     e.BlockSlot(),
+			BlockHash:     e.BlockHash(),
+			Confirmations: confirmations,
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+
+	case *events.TransactionFinalized:
+		// Transaction finalized = FINALIZED status
+		confirmations := s.blockStore.GetConfirmations(e.BlockSlot())
+
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_FINALIZED,
+			BlockSlot:     e.BlockSlot(),
+			BlockHash:     e.BlockHash(),
+			Confirmations: confirmations,
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+
+	case *events.TransactionFailed:
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        pb.TransactionStatus_FAILED,
+			ErrorMessage:  e.ErrorMessage(),
+			Confirmations: 0, // No confirmations for failed transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
+		}
+	}
+
+	return nil
+}
+
+// Health check methods
+func (s *server) Check(ctx context.Context, in *pb.Empty) (*pb.HealthCheckResponse, error) {
+	return s.performHealthCheck(ctx)
+}
+
+func (s *server) Watch(in *pb.Empty, stream pb.HealthService_WatchServer) error {
+	ticker := time.NewTicker(5 * time.Second) // Send health status every 5 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-ticker.C:
+			resp, err := s.performHealthCheck(stream.Context())
+			if err != nil {
+				return err
+			}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// performHealthCheck performs the actual health check logic
+func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckResponse, error) {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return nil, status.Errorf(codes.DeadlineExceeded, "health check timeout")
+	default:
+	}
+
+	// Get current node status
+	now := time.Now()
+
+	// Calculate uptime (assuming server started at some point)
+	// In a real implementation, you'd track server start time
+	uptime := uint64(now.Unix()) // Placeholder for actual uptime
+
+	// Get current slot and block height
+	currentSlot := uint64(0)
+	blockHeight := uint64(0)
+
+	if s.validator != nil && s.validator.Recorder != nil {
+		currentSlot = s.validator.Recorder.CurrentSlot()
+	}
+
+	if s.blockStore != nil {
+		// Get the latest finalized block height
+		// For now, we'll use a simple approach to get block height
+		// In a real implementation, you might want to track this separately
+		blockHeight = currentSlot // Use current slot as approximation
+	}
+
+	// Get mempool size
+	mempoolSize := uint64(0)
+	if s.mempool != nil {
+		mempoolSize = uint64(s.mempool.Size())
+	}
+
+	// Determine if node is leader or follower
+	isLeader := false
+	isFollower := false
+	if s.validator != nil {
+		isLeader = s.validator.IsLeader(currentSlot)
+		isFollower = s.validator.IsFollower(currentSlot)
+	}
+
+	// Check if core services are healthy
+	status := pb.HealthCheckResponse_SERVING
+
+	// Basic health checks
+	if s.ledger == nil {
+		status = pb.HealthCheckResponse_NOT_SERVING
+	}
+	if s.blockStore == nil {
+		status = pb.HealthCheckResponse_NOT_SERVING
+	}
+	if s.mempool == nil {
+		status = pb.HealthCheckResponse_NOT_SERVING
+	}
+
+	// Create response
+	resp := &pb.HealthCheckResponse{
+		Status:       status,
+		NodeId:       s.selfID,
+		Timestamp:    uint64(now.Unix()),
+		CurrentSlot:  currentSlot,
+		BlockHeight:  blockHeight,
+		MempoolSize:  mempoolSize,
+		IsLeader:     isLeader,
+		IsFollower:   isFollower,
+		Version:      "1.0.0", // You can make this configurable
+		Uptime:       uptime,
+		ErrorMessage: "",
+	}
+
+	// If there are any errors, set status accordingly
+	if status == pb.HealthCheckResponse_NOT_SERVING {
+		resp.ErrorMessage = "One or more core services are not available"
+	}
+
+	return resp, nil
+}
+
+// GetBlockNumber returns current block number
+func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.GetBlockNumberResponse, error) {
+	currentBlock := uint64(0)
+
+	if s.blockStore != nil {
+		currentBlock = s.blockStore.GetLatestSlot()
+	}
+
+	return &pb.GetBlockNumberResponse{
+		BlockNumber: currentBlock,
+	}, nil
+}
+
+// GetBlockByNumber retrieves a block by its number
+func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+
+	for _, num := range in.BlockNumbers {
+		block := s.blockStore.Block(num)
+		if block == nil {
+			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+		}
+
+		entries := make([]*pb.Entry, 0, len(block.Entries))
+		var allTxHashes []string
+
+		for _, entry := range block.Entries {
+			entries = append(entries, &pb.Entry{
+				NumHashes: entry.NumHashes,
+				Hash:      entry.Hash[:],
+				TxHashes:  entry.TxHashes,
+			})
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+
+		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
+		for _, txHash := range allTxHashes {
+			tx, _, err := s.ledger.GetTxByHash(txHash)
+
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			senderAcc, err := s.ledger.GetAccount(tx.Sender)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
+			}
+			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
+			}
+			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			txStatus := info.Status
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    tx.Amount,
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    txStatus,
+				SenderAccount: &pb.AccountData{
+					Address: senderAcc.Address,
+					Balance: senderAcc.Balance,
+					Nonce:   senderAcc.Nonce,
+				},
+				RecipientAccount: &pb.AccountData{
+					Address: recipientAcc.Address,
+					Balance: recipientAcc.Balance,
+					Nonce:   recipientAcc.Nonce,
+				},
+			})
+		}
+
+		pbBlock := &pb.Block{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			Entries:         entries,
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, pbBlock)
+	}
+
+	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
 }
