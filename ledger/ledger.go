@@ -12,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 )
@@ -26,14 +27,16 @@ type Ledger struct {
 	txMetaStore  store.TxMetaStore
 	accountStore store.AccountStore
 	eventRouter  *events.EventRouter
+	txTracker    interfaces.TransactionTrackerInterface
 }
 
-func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
+func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
 	return &Ledger{
 		txStore:      txStore,
 		txMetaStore:  txMetaStore,
 		accountStore: accountStore,
 		eventRouter:  eventRouter,
+		txTracker:    txTracker,
 	}
 }
 
@@ -142,19 +145,23 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			}
 
 			// try to apply tx
+			txHash := tx.Hash()
 			if err := applyTx(state, tx); err != nil {
 				// Publish specific transaction failure event
 				if l.eventRouter != nil {
-					txHash := tx.Hash()
 					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
 				}
-				fmt.Printf("Apply fail: %v\n", err)
+				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				state[tx.Sender].Nonce++
 				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
+				// Remove failed transaction from tracker
+				if l.txTracker != nil {
+					l.txTracker.RemoveTransaction(txHash)
+				}
 				continue
 			}
-			fmt.Printf("Applied tx %s\n", tx.Hash())
+			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			addHistory(state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
