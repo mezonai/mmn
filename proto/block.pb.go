@@ -21,58 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type TransactionData_Status int32
-
-const (
-	TransactionData_PENDING   TransactionData_Status = 0
-	TransactionData_CONFIRMED TransactionData_Status = 1
-	TransactionData_FINALIZED TransactionData_Status = 2
-	TransactionData_FAILED    TransactionData_Status = 3
-)
-
-// Enum value maps for TransactionData_Status.
-var (
-	TransactionData_Status_name = map[int32]string{
-		0: "PENDING",
-		1: "CONFIRMED",
-		2: "FINALIZED",
-		3: "FAILED",
-	}
-	TransactionData_Status_value = map[string]int32{
-		"PENDING":   0,
-		"CONFIRMED": 1,
-		"FINALIZED": 2,
-		"FAILED":    3,
-	}
-)
-
-func (x TransactionData_Status) Enum() *TransactionData_Status {
-	p := new(TransactionData_Status)
-	*p = x
-	return p
-}
-
-func (x TransactionData_Status) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (TransactionData_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_block_proto_enumTypes[0].Descriptor()
-}
-
-func (TransactionData_Status) Type() protoreflect.EnumType {
-	return &file_proto_block_proto_enumTypes[0]
-}
-
-func (x TransactionData_Status) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use TransactionData_Status.Descriptor instead.
-func (TransactionData_Status) EnumDescriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{1, 0}
-}
-
 type Entry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NumHashes     uint64                 `protobuf:"varint,1,opt,name=num_hashes,json=numHashes,proto3" json:"num_hashes,omitempty"`
@@ -141,22 +89,84 @@ func (x *Entry) GetTxHashes() []string {
 	return nil
 }
 
-type TransactionData struct {
+type AccountData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	Sender        string                 `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`       // sender address
-	Recipient     string                 `protobuf:"bytes,3,opt,name=recipient,proto3" json:"recipient,omitempty"` // recipient address
-	Amount        uint64                 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`      // amount
-	Nonce         uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`        // nonce
-	Timestamp     uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Status        TransactionData_Status `protobuf:"varint,7,opt,name=status,proto3,enum=mmn.TransactionData_Status" json:"status,omitempty"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Balance       uint64                 `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
+	Nonce         uint64                 `protobuf:"varint,3,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *AccountData) Reset() {
+	*x = AccountData{}
+	mi := &file_proto_block_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountData) ProtoMessage() {}
+
+func (x *AccountData) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_block_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountData.ProtoReflect.Descriptor instead.
+func (*AccountData) Descriptor() ([]byte, []int) {
+	return file_proto_block_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AccountData) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *AccountData) GetBalance() uint64 {
+	if x != nil {
+		return x.Balance
+	}
+	return 0
+}
+
+func (x *AccountData) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
+type TransactionData struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TxHash           string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	Sender           string                 `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`       // sender address
+	Recipient        string                 `protobuf:"bytes,3,opt,name=recipient,proto3" json:"recipient,omitempty"` // recipient address
+	Amount           uint64                 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`      // amount
+	Nonce            uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`        // nonce
+	Timestamp        uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Status           TransactionStatus      `protobuf:"varint,7,opt,name=status,proto3,enum=mmn.TransactionStatus" json:"status,omitempty"`
+	SenderAccount    *AccountData           `protobuf:"bytes,8,opt,name=sender_account,json=senderAccount,proto3" json:"sender_account,omitempty"`
+	RecipientAccount *AccountData           `protobuf:"bytes,9,opt,name=recipient_account,json=recipientAccount,proto3" json:"recipient_account,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
 func (x *TransactionData) Reset() {
 	*x = TransactionData{}
-	mi := &file_proto_block_proto_msgTypes[1]
+	mi := &file_proto_block_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -168,7 +178,7 @@ func (x *TransactionData) String() string {
 func (*TransactionData) ProtoMessage() {}
 
 func (x *TransactionData) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[1]
+	mi := &file_proto_block_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -181,7 +191,7 @@ func (x *TransactionData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionData.ProtoReflect.Descriptor instead.
 func (*TransactionData) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{1}
+	return file_proto_block_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *TransactionData) GetTxHash() string {
@@ -226,11 +236,25 @@ func (x *TransactionData) GetTimestamp() uint64 {
 	return 0
 }
 
-func (x *TransactionData) GetStatus() TransactionData_Status {
+func (x *TransactionData) GetStatus() TransactionStatus {
 	if x != nil {
 		return x.Status
 	}
-	return TransactionData_PENDING
+	return TransactionStatus_PENDING
+}
+
+func (x *TransactionData) GetSenderAccount() *AccountData {
+	if x != nil {
+		return x.SenderAccount
+	}
+	return nil
+}
+
+func (x *TransactionData) GetRecipientAccount() *AccountData {
+	if x != nil {
+		return x.RecipientAccount
+	}
+	return nil
 }
 
 type Block struct {
@@ -249,7 +273,7 @@ type Block struct {
 
 func (x *Block) Reset() {
 	*x = Block{}
-	mi := &file_proto_block_proto_msgTypes[2]
+	mi := &file_proto_block_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -261,7 +285,7 @@ func (x *Block) String() string {
 func (*Block) ProtoMessage() {}
 
 func (x *Block) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[2]
+	mi := &file_proto_block_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -274,7 +298,7 @@ func (x *Block) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Block.ProtoReflect.Descriptor instead.
 func (*Block) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{2}
+	return file_proto_block_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Block) GetSlot() uint64 {
@@ -343,7 +367,7 @@ type BroadcastResponse struct {
 
 func (x *BroadcastResponse) Reset() {
 	*x = BroadcastResponse{}
-	mi := &file_proto_block_proto_msgTypes[3]
+	mi := &file_proto_block_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -355,7 +379,7 @@ func (x *BroadcastResponse) String() string {
 func (*BroadcastResponse) ProtoMessage() {}
 
 func (x *BroadcastResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[3]
+	mi := &file_proto_block_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -368,7 +392,7 @@ func (x *BroadcastResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BroadcastResponse.ProtoReflect.Descriptor instead.
 func (*BroadcastResponse) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{3}
+	return file_proto_block_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *BroadcastResponse) GetOk() bool {
@@ -394,7 +418,7 @@ type SubscribeRequest struct {
 
 func (x *SubscribeRequest) Reset() {
 	*x = SubscribeRequest{}
-	mi := &file_proto_block_proto_msgTypes[4]
+	mi := &file_proto_block_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -406,7 +430,7 @@ func (x *SubscribeRequest) String() string {
 func (*SubscribeRequest) ProtoMessage() {}
 
 func (x *SubscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[4]
+	mi := &file_proto_block_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -419,7 +443,7 @@ func (x *SubscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeRequest) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{4}
+	return file_proto_block_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SubscribeRequest) GetFollowerId() string {
@@ -437,7 +461,7 @@ type EmptyParams struct {
 
 func (x *EmptyParams) Reset() {
 	*x = EmptyParams{}
-	mi := &file_proto_block_proto_msgTypes[5]
+	mi := &file_proto_block_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +473,7 @@ func (x *EmptyParams) String() string {
 func (*EmptyParams) ProtoMessage() {}
 
 func (x *EmptyParams) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[5]
+	mi := &file_proto_block_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +486,7 @@ func (x *EmptyParams) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmptyParams.ProtoReflect.Descriptor instead.
 func (*EmptyParams) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{5}
+	return file_proto_block_proto_rawDescGZIP(), []int{6}
 }
 
 type GetBlockByNumberRequest struct {
@@ -474,7 +498,7 @@ type GetBlockByNumberRequest struct {
 
 func (x *GetBlockByNumberRequest) Reset() {
 	*x = GetBlockByNumberRequest{}
-	mi := &file_proto_block_proto_msgTypes[6]
+	mi := &file_proto_block_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -486,7 +510,7 @@ func (x *GetBlockByNumberRequest) String() string {
 func (*GetBlockByNumberRequest) ProtoMessage() {}
 
 func (x *GetBlockByNumberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[6]
+	mi := &file_proto_block_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -499,7 +523,7 @@ func (x *GetBlockByNumberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBlockByNumberRequest.ProtoReflect.Descriptor instead.
 func (*GetBlockByNumberRequest) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{6}
+	return file_proto_block_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetBlockByNumberRequest) GetBlockNumbers() []uint64 {
@@ -518,7 +542,7 @@ type GetBlockNumberResponse struct {
 
 func (x *GetBlockNumberResponse) Reset() {
 	*x = GetBlockNumberResponse{}
-	mi := &file_proto_block_proto_msgTypes[7]
+	mi := &file_proto_block_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +554,7 @@ func (x *GetBlockNumberResponse) String() string {
 func (*GetBlockNumberResponse) ProtoMessage() {}
 
 func (x *GetBlockNumberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[7]
+	mi := &file_proto_block_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +567,7 @@ func (x *GetBlockNumberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBlockNumberResponse.ProtoReflect.Descriptor instead.
 func (*GetBlockNumberResponse) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{7}
+	return file_proto_block_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetBlockNumberResponse) GetBlockNumber() uint64 {
@@ -563,7 +587,7 @@ type GetBlockByNumberResponse struct {
 
 func (x *GetBlockByNumberResponse) Reset() {
 	*x = GetBlockByNumberResponse{}
-	mi := &file_proto_block_proto_msgTypes[8]
+	mi := &file_proto_block_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -575,7 +599,7 @@ func (x *GetBlockByNumberResponse) String() string {
 func (*GetBlockByNumberResponse) ProtoMessage() {}
 
 func (x *GetBlockByNumberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_block_proto_msgTypes[8]
+	mi := &file_proto_block_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -588,7 +612,7 @@ func (x *GetBlockByNumberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBlockByNumberResponse.ProtoReflect.Descriptor instead.
 func (*GetBlockByNumberResponse) Descriptor() ([]byte, []int) {
-	return file_proto_block_proto_rawDescGZIP(), []int{8}
+	return file_proto_block_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetBlockByNumberResponse) GetBlocks() []*Block {
@@ -609,27 +633,27 @@ var File_proto_block_proto protoreflect.FileDescriptor
 
 const file_proto_block_proto_rawDesc = "" +
 	"\n" +
-	"\x11proto/block.proto\x12\x03mmn\"{\n" +
+	"\x11proto/block.proto\x12\x03mmn\x1a\x0eproto/tx.proto\"{\n" +
 	"\x05Entry\x12\x1d\n" +
 	"\n" +
 	"num_hashes\x18\x01 \x01(\x04R\tnumHashes\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\fR\x04hash\x12\"\n" +
 	"\ftransactions\x18\x03 \x03(\fR\ftransactions\x12\x1b\n" +
-	"\ttx_hashes\x18\x04 \x03(\tR\btxHashes\"\xa2\x02\n" +
+	"\ttx_hashes\x18\x04 \x03(\tR\btxHashes\"W\n" +
+	"\vAccountData\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n" +
+	"\abalance\x18\x02 \x01(\x04R\abalance\x12\x14\n" +
+	"\x05nonce\x18\x03 \x01(\x04R\x05nonce\"\xd4\x02\n" +
 	"\x0fTransactionData\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x03 \x01(\tR\trecipient\x12\x16\n" +
 	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12\x1c\n" +
-	"\ttimestamp\x18\x06 \x01(\x04R\ttimestamp\x123\n" +
-	"\x06status\x18\a \x01(\x0e2\x1b.mmn.TransactionData.StatusR\x06status\"?\n" +
-	"\x06Status\x12\v\n" +
-	"\aPENDING\x10\x00\x12\r\n" +
-	"\tCONFIRMED\x10\x01\x12\r\n" +
-	"\tFINALIZED\x10\x02\x12\n" +
-	"\n" +
-	"\x06FAILED\x10\x03\"\x8c\x02\n" +
+	"\ttimestamp\x18\x06 \x01(\x04R\ttimestamp\x12.\n" +
+	"\x06status\x18\a \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x127\n" +
+	"\x0esender_account\x18\b \x01(\v2\x10.mmn.AccountDataR\rsenderAccount\x12=\n" +
+	"\x11recipient_account\x18\t \x01(\v2\x10.mmn.AccountDataR\x10recipientAccount\"\x8c\x02\n" +
 	"\x05Block\x12\x12\n" +
 	"\x04slot\x18\x01 \x01(\x04R\x04slot\x12\x1b\n" +
 	"\tprev_hash\x18\x02 \x01(\fR\bprevHash\x12$\n" +
@@ -675,11 +699,10 @@ func file_proto_block_proto_rawDescGZIP() []byte {
 	return file_proto_block_proto_rawDescData
 }
 
-var file_proto_block_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_block_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_proto_block_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_proto_block_proto_goTypes = []any{
-	(TransactionData_Status)(0),      // 0: mmn.TransactionData.Status
-	(*Entry)(nil),                    // 1: mmn.Entry
+	(*Entry)(nil),                    // 0: mmn.Entry
+	(*AccountData)(nil),              // 1: mmn.AccountData
 	(*TransactionData)(nil),          // 2: mmn.TransactionData
 	(*Block)(nil),                    // 3: mmn.Block
 	(*BroadcastResponse)(nil),        // 4: mmn.BroadcastResponse
@@ -688,25 +711,28 @@ var file_proto_block_proto_goTypes = []any{
 	(*GetBlockByNumberRequest)(nil),  // 7: mmn.GetBlockByNumberRequest
 	(*GetBlockNumberResponse)(nil),   // 8: mmn.GetBlockNumberResponse
 	(*GetBlockByNumberResponse)(nil), // 9: mmn.GetBlockByNumberResponse
+	(TransactionStatus)(0),           // 10: mmn.TransactionStatus
 }
 var file_proto_block_proto_depIdxs = []int32{
-	0, // 0: mmn.TransactionData.status:type_name -> mmn.TransactionData.Status
-	1, // 1: mmn.Block.entries:type_name -> mmn.Entry
-	2, // 2: mmn.Block.transaction_data:type_name -> mmn.TransactionData
-	3, // 3: mmn.GetBlockByNumberResponse.blocks:type_name -> mmn.Block
-	3, // 4: mmn.BlockService.Broadcast:input_type -> mmn.Block
-	5, // 5: mmn.BlockService.Subscribe:input_type -> mmn.SubscribeRequest
-	6, // 6: mmn.BlockService.GetBlockNumber:input_type -> mmn.EmptyParams
-	7, // 7: mmn.BlockService.GetBlockByNumber:input_type -> mmn.GetBlockByNumberRequest
-	4, // 8: mmn.BlockService.Broadcast:output_type -> mmn.BroadcastResponse
-	3, // 9: mmn.BlockService.Subscribe:output_type -> mmn.Block
-	8, // 10: mmn.BlockService.GetBlockNumber:output_type -> mmn.GetBlockNumberResponse
-	9, // 11: mmn.BlockService.GetBlockByNumber:output_type -> mmn.GetBlockByNumberResponse
-	8, // [8:12] is the sub-list for method output_type
-	4, // [4:8] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	10, // 0: mmn.TransactionData.status:type_name -> mmn.TransactionStatus
+	1,  // 1: mmn.TransactionData.sender_account:type_name -> mmn.AccountData
+	1,  // 2: mmn.TransactionData.recipient_account:type_name -> mmn.AccountData
+	0,  // 3: mmn.Block.entries:type_name -> mmn.Entry
+	2,  // 4: mmn.Block.transaction_data:type_name -> mmn.TransactionData
+	3,  // 5: mmn.GetBlockByNumberResponse.blocks:type_name -> mmn.Block
+	3,  // 6: mmn.BlockService.Broadcast:input_type -> mmn.Block
+	5,  // 7: mmn.BlockService.Subscribe:input_type -> mmn.SubscribeRequest
+	6,  // 8: mmn.BlockService.GetBlockNumber:input_type -> mmn.EmptyParams
+	7,  // 9: mmn.BlockService.GetBlockByNumber:input_type -> mmn.GetBlockByNumberRequest
+	4,  // 10: mmn.BlockService.Broadcast:output_type -> mmn.BroadcastResponse
+	3,  // 11: mmn.BlockService.Subscribe:output_type -> mmn.Block
+	8,  // 12: mmn.BlockService.GetBlockNumber:output_type -> mmn.GetBlockNumberResponse
+	9,  // 13: mmn.BlockService.GetBlockByNumber:output_type -> mmn.GetBlockByNumberResponse
+	10, // [10:14] is the sub-list for method output_type
+	6,  // [6:10] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_proto_block_proto_init() }
@@ -714,19 +740,19 @@ func file_proto_block_proto_init() {
 	if File_proto_block_proto != nil {
 		return
 	}
+	file_proto_tx_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_block_proto_rawDesc), len(file_proto_block_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   9,
+			NumEnums:      0,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_proto_block_proto_goTypes,
 		DependencyIndexes: file_proto_block_proto_depIdxs,
-		EnumInfos:         file_proto_block_proto_enumTypes,
 		MessageInfos:      file_proto_block_proto_msgTypes,
 	}.Build()
 	File_proto_block_proto = out.File

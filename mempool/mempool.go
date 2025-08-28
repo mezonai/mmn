@@ -63,14 +63,14 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.mu.RLock()
 	if _, exists := mp.txsBuf[txHash]; exists {
 		mp.mu.RUnlock()
-		fmt.Println("Dropping duplicate tx", txHash)
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
 	// Check if mempool is full
 	if len(mp.txsBuf) >= mp.max {
 		mp.mu.RUnlock()
-		fmt.Println("Dropping full mempool")
+		logx.Error("MEMPOOL", "Dropping full mempool")
 		return "", fmt.Errorf("mempool full")
 	}
 	mp.mu.RUnlock()
@@ -81,22 +81,22 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.txsBuf[txHash]; exists {
-		fmt.Println("Dropping duplicate tx (double-check)", txHash)
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
 	if len(mp.txsBuf) >= mp.max {
-		fmt.Println("Dropping full mempool (double-check)")
+		logx.Error("MEMPOOL", "Dropping full mempool (double-check)")
 		return "", fmt.Errorf("mempool full")
 	}
 
 	// Validate transaction INSIDE the write lock
 	if err := mp.validateTransaction(tx); err != nil {
-		fmt.Printf("Dropping invalid tx %s: %v\n", txHash, err)
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
 		return "", err
 	}
 
-	fmt.Println("Adding tx", tx)
+	logx.Info("MEMPOOL", fmt.Sprintf("Adding tx %+v", tx))
 
 	// Determine if transaction is ready or pending
 	mp.processTransactionToQueue(tx)
@@ -118,12 +118,12 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := mp.broadcaster.TxBroadcast(ctx, tx); err != nil {
-				fmt.Printf("Broadcast error: %v\n", err)
+				logx.Error("MEMPOOL", fmt.Sprintf("Broadcast error: %v", err))
 			}
 		}()
 	}
 
-	fmt.Println("Added tx", txHash)
+	logx.Info("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
 	return txHash, nil
 }
 
@@ -131,7 +131,7 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	txHash := tx.Hash()
 	account, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil {
-		fmt.Printf("could not get account: %v", err)
+		logx.Error("MEMPOOL", fmt.Sprintf("could not get account: %v", err))
 		return // Handle error appropriately based on context
 	}
 	currentNonce := account.Nonce
@@ -140,7 +140,8 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	if isReady {
 		// Add to ready queue for immediate processing
 		mp.readyQueue = append(mp.readyQueue, tx)
-		fmt.Printf("Added ready tx %s (sender: %s, nonce: %d)\n", txHash, tx.Sender[:8], tx.Nonce)
+		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
+			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
 	} else {
 		// Add to pending transactions
 		if mp.pendingTxs[tx.Sender] == nil {
@@ -150,8 +151,8 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 			Tx:        tx,
 			Timestamp: time.Now(),
 		}
-		fmt.Printf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)\n",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1)
+		logx.Info("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
+			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
 	}
 }
 
@@ -248,7 +249,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 
 	// 9. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
-		fmt.Printf("Dropping tx %s due to insufficient balance: %s\n", tx.Hash(), err.Error())
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
 		return err
 	}
 
@@ -270,24 +271,24 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	for processedCount < batchSize {
 		readyTxs := mp.findReadyTransactions(batchSize - processedCount)
 		if len(readyTxs) == 0 {
-			fmt.Printf("No more ready transactions found, processed %d\n", processedCount)
+			logx.Info("MEMPOOL", fmt.Sprintf("No more ready transactions found, processed %d", processedCount))
 			break // No more ready transactions
 		}
 
-		fmt.Printf("Found %d ready transactions\n", len(readyTxs))
+		logx.Info("MEMPOOL", fmt.Sprintf("Found %d ready transactions", len(readyTxs)))
 		for _, tx := range readyTxs {
 			batch = append(batch, tx.Bytes())
 			mp.removeTransaction(tx)
 			processedCount++
 
-			fmt.Printf("Processed tx %s (sender: %s, nonce: %d)\n",
-				tx.Hash(), tx.Sender[:8], tx.Nonce)
+			logx.Info("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
+				tx.Hash(), tx.Sender[:8], tx.Nonce))
 		}
 		// Check if any pending transactions became ready after processing
 		mp.promotePendingTransactions(readyTxs)
 	}
 
-	fmt.Printf("PullBatch returning %d transactions\n", len(batch))
+	logx.Info("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
 	return batch
 }
 
@@ -295,7 +296,7 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 	for _, tx := range readyTxs {
 		account, err := mp.ledger.GetAccount(tx.Sender)
 		if err != nil {
-			fmt.Printf("Error getting account for sender %s: %v\n", tx.Sender, err)
+			logx.Error("MEMPOOL", fmt.Sprintf("Error getting account for sender %s: %v", tx.Sender, err))
 			return
 		}
 		currentNonce := account.Nonce
@@ -312,8 +313,8 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 					delete(mp.pendingTxs, tx.Sender)
 				}
 
-				fmt.Printf("Promoted pending tx for sender %s with nonce %d\n",
-					tx.Sender[:8], expectedNonce)
+				logx.Info("MEMPOOL", fmt.Sprintf("Promoted pending tx for sender %s with nonce %d",
+					tx.Sender[:8], expectedNonce))
 			}
 		}
 	}
@@ -377,7 +378,7 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transactio
 
 		account, err := mp.ledger.GetAccount(sender)
 		if err != nil {
-			fmt.Printf("Error getting account for sender %s: %v\n", sender, err)
+			logx.Error("MEMPOOL", fmt.Sprintf("Error getting account for sender %s: %v", sender, err))
 			continue
 		}
 		currentNonce := account.Nonce
@@ -422,8 +423,8 @@ func (mp *Mempool) cleanupStaleTransactions() {
 				// Remove stale transaction
 				mp.removeTransaction(pendingTx.Tx)
 				delete(pendingMap, nonce)
-				fmt.Printf("Removed stale transaction (sender: %s, nonce: %d)\n",
-					sender[:8], nonce)
+				logx.Info("MEMPOOL", fmt.Sprintf("Removed stale transaction (sender: %s, nonce: %d)",
+					sender[:8], nonce))
 			}
 		}
 		if len(pendingMap) == 0 {
