@@ -7,6 +7,12 @@ import (
 	"time"
 
 	clt "github.com/mezonai/mmn/client"
+	mmnpb "github.com/mezonai/mmn/proto"
+)
+
+// Global nonce management
+var (
+	faucetNonce uint64
 )
 
 func defaultClient() (*clt.MmnClient, error) {
@@ -29,12 +35,20 @@ func TransferTokens(endpoint, faucetAddress, toAddress string, amount uint64, fa
 	}
 
 	// Get faucet account info to initialize nonce if needed
-	faucetAccount, err := client.GetAccount(ctx, faucetAddress)
-	if err != nil {
-		return fmt.Errorf("failed to get faucet account: %w", err)
+	if faucetNonce == 0 {
+		var faucetAccount *mmnpb.GetAccountResponse
+		faucetAccount, err = client.GetAccount(ctx, faucetAddress)
+		if err != nil {
+			return fmt.Errorf("failed to get faucet account: %w", err)
+		}
+		faucetNonce = faucetAccount.Nonce
+		fmt.Printf("Faucet account - Balance: %d, Initial Nonce: %d\n", faucetAccount.Balance, faucetAccount.Nonce)
 	}
 
-	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransfer, faucetAddress, toAddress, amount, faucetAccount.Nonce+1, uint64(time.Now().Unix()), "Migration transfer")
+	// Increment nonce for this transaction
+	faucetNonce++
+
+	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransfer, faucetAddress, toAddress, amount, faucetNonce, uint64(time.Now().Unix()), "Migration transfer")
 	if err != nil {
 		fmt.Printf("Failed to build transfer tx: %v\n", err)
 		return err
