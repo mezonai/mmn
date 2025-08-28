@@ -30,17 +30,20 @@ type Libp2pNetwork struct {
 
 	blockStore store.BlockStore
 
-	topicBlocks       *pubsub.Topic
-	topicVotes        *pubsub.Topic
-	topicTxs          *pubsub.Topic
-	topicBlockSyncReq *pubsub.Topic
-	topicLatestSlot   *pubsub.Topic
+	topicBlocks           *pubsub.Topic
+	topicVotes            *pubsub.Topic
+	topicTxs              *pubsub.Topic
+	topicBlockSyncReq     *pubsub.Topic
+	topicLatestSlot       *pubsub.Topic
+	topicSnapshotAnnounce *pubsub.Topic
+	topicSnapshotRequest  *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
+	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	syncStreams map[peer.ID]network.Stream
 	maxPeers    int
@@ -97,6 +100,24 @@ type TxMessage struct {
 	Data []byte `json:"data"`
 }
 
+// Snapshot gossip messages
+type SnapshotAnnounce struct {
+	Slot      uint64 `json:"slot"`
+	BankHash  string `json:"bank_hash"`
+	Size      int64  `json:"size"`
+	UDPAddr   string `json:"udp_addr"`
+	ChunkSize int    `json:"chunk_size"`
+	CreatedAt int64  `json:"created_at"`
+	PeerID    string `json:"peer_id"`
+}
+
+type SnapshotRequest struct {
+	PeerID       string `json:"peer_id"`
+	WantSlot     uint64 `json:"want_slot"`
+	ReceiverAddr string `json:"receiver_addr"` // host:port UDP
+	ChunkSize    int    `json:"chunk_size"`
+}
+
 type SyncRequest struct {
 	RequestID string                `json:"request_id"`
 	FromSlot  uint64                `json:"from_slot"`
@@ -147,4 +168,5 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+	OnSnapshotAnnounce     func(SnapshotAnnounce) error
 }

@@ -8,6 +8,8 @@ const (
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
 	TopicTxs               = "transactions"
+	TopicSnapshotAnnounce  = "snapshot/announce"
+	TopicSnapshotRequest   = "snapshot/request"
 	BlockSyncRequestTopic  = "block-sync/request"
 	BlockSyncResponseTopic = "block-sync/response"
 	LatestSlotTopic        = "latest-slot/request"

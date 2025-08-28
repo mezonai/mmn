@@ -4,8 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/logx"
@@ -19,7 +22,6 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
-	"github.com/mezonai/mmn/snapshot"
 )
 
 const NoSlot = ^uint64(0)
@@ -211,6 +213,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			return
 		}
 
+		writeSnapshotIfDue(v.ledger, currentSlot)
+
 		// Self-vote
 		vote := &consensus.Vote{
 			Slot:      blk.Slot,
@@ -359,63 +363,42 @@ func (v *Validator) roleMonitorLoop() {
 	}
 }
 
-// createSnapshot creates a snapshot for the given slot
-func (v *Validator) createSnapshot(slot uint64) error {
-	logx.Debug("OKE", "account store is nil")
-	// Get the real database provider from ledger's account store
-	accountStore := v.ledger.GetAccountStore()
-	if accountStore == nil {
-		return fmt.Errorf("account store is nil")
+func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
+	if slot%p2p.RangeForSnapshot != 0 { // adjust interval as needed
+		return
 	}
-
-	// Get the underlying database provider
+	accountStore := ld.GetAccountStore()
+	if accountStore == nil {
+		return
+	}
 	dbProvider := accountStore.GetDatabaseProvider()
 	if dbProvider == nil {
-		return fmt.Errorf("database provider is nil")
+		return
 	}
-
-	// Compute real bank hash from actual database
 	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
 	if err != nil {
-		return fmt.Errorf("compute bank hash: %w", err)
+		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
+		return
 	}
-
-	// Get real leader schedule from validator's schedule
-	var leaderSchedule []poh.LeaderScheduleEntry
-	if v.Schedule != nil {
-		// Convert schedule to entries
-		leaderSchedule = v.convertScheduleToEntries(v.Schedule)
-	}
-
-	// Create snapshot with real database
-	// Use /data/snapshots for Docker volume persistence
-	snapshotDir := "/data/snapshots"
-	path, err := snapshot.WriteSnapshotWithDefaults(
-		snapshotDir,
-		dbProvider,
-		slot,
-		bankHash,
-		leaderSchedule,
-	)
+	dir := "/data/snapshots"
+	// Write a new snapshot for this slot to a slot-specific file
+	saved, err := snapshot.WriteSnapshotWithDefaults(dir, dbProvider, slot, bankHash, nil)
 	if err != nil {
-		return fmt.Errorf("write snapshot: %w", err)
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
+		return
 	}
 
-	fmt.Printf("[SNAPSHOT] Created snapshot at %s (slot=%d)\n", path, slot)
-	return nil
-}
-
-// convertScheduleToEntries converts LeaderSchedule to LeaderScheduleEntry slice
-func (v *Validator) convertScheduleToEntries(schedule *poh.LeaderSchedule) []poh.LeaderScheduleEntry {
-	if schedule == nil {
-		return nil
+	// Atomically update latest snapshot pointer
+	latest := filepath.Join(dir, "snapshot-latest.json")
+	tmpLatest := latest + ".tmp"
+	if err := os.Rename(saved, tmpLatest); err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to move snapshot to temp latest: %v", err))
+		return
+	}
+	if err := os.Rename(tmpLatest, latest); err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to finalize latest snapshot: %v", err))
+		return
 	}
 
-	realEntries := schedule.Entries()
-	if len(realEntries) == 0 {
-		return nil
-	}
-	out := make([]poh.LeaderScheduleEntry, len(realEntries))
-	copy(out, realEntries)
-	return out
+	logx.Info("SNAPSHOT", fmt.Sprintf("Updated latest snapshot: %s (slot %d)", latest, slot))
 }
