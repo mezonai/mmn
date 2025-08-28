@@ -121,14 +121,15 @@ func maskPassword(dbURL string) string {
 func createUnlockedItemsTable(db *sql.DB) error {
 	query := `
 		CREATE TABLE IF NOT EXISTS unlocked_items (
-	 		id SERIAL PRIMARY KEY,
-	 		item_id BIGINT NOT NULL,
-	 		user_id BIGINT NOT NULL,
-	 		tx_hash TEXT UNIQUE NOT NULL,
-	 		item_type VARCHAR(50) NOT NULL,
-	 		status INT NOT NULL,
-	 		created_at TIMESTAMPTZ DEFAULT now(),
-	 		updated_at TIMESTAMPTZ DEFAULT now()
+			id SERIAL PRIMARY KEY,
+			user_id int8 NOT NULL,
+			item_id int8 NOT NULL,
+			item_type int2 DEFAULT 0 NOT NULL,
+			status int2 DEFAULT 0 NOT NULL,
+			create_time timestamptz DEFAULT now() NOT NULL,
+			update_time timestamptz DEFAULT now() NOT NULL,
+			tx_hash varchar NULL,
+			CONSTRAINT unlocked_items_user_id_item_id_key UNIQUE (user_id, item_id)
 		);
 	`
 

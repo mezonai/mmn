@@ -110,6 +110,7 @@ func (c *MmnClient) GetTxByHash(ctx context.Context, txHash string) (TxInfo, err
 		Amount:    res.Tx.Amount,
 		Timestamp: res.Tx.Timestamp,
 		TextData:  res.Tx.TextData,
+		Nonce:     res.Tx.Nonce,
 	}, nil
 }
 

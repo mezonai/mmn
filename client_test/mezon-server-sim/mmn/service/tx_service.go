@@ -330,10 +330,10 @@ func (s *TxService) processTransactionStatusInfo(ctx context.Context, update *mm
 
 // InsertUnlockItem updates transaction status in the database
 func (s *TxService) insertUnlockItem(ctx context.Context, itemId, userId uint64, itemType uint, txHash string) error {
-	query := `INSERT INTO unlocked_items (id, user_id, item_id, item_type, tx_hash, status) VALUES ($1, $2, $3, $4, $5, $6);
+	query := `INSERT INTO unlocked_items (user_id, item_id, item_type, tx_hash, status) VALUES ($1, $2, $3, $4, $5);
 	`
 
-	_, err := s.db.ExecContext(ctx, query, itemId, userId, itemId, itemType, txHash, mmnClient.UNLOCK_ITEM_STATUS_PENDING)
+	_, err := s.db.ExecContext(ctx, query, userId, itemId, itemType, txHash, mmnClient.UNLOCK_ITEM_STATUS_PENDING)
 	if err != nil {
 		return fmt.Errorf("failed to insert unlocked item in database: %w", err)
 	}

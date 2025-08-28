@@ -69,7 +69,8 @@ func setupIntegrationTest(t *testing.T) (*TestService, func()) {
 			updated_at   TIMESTAMPTZ DEFAULT now()
 		);
 		CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY
+			id INTEGER PRIMARY KEY,
+			username VARCHAR(255) NOT NULL
 		);
 		INSERT INTO users (id, username) VALUES (0, 'mezon_test_user_0'), (1, 'mezon_test_user_1'), (2, 'mezon_test_user_2') ON CONFLICT (id) DO NOTHING;
 		CREATE TABLE IF NOT EXISTS unlocked_items (
@@ -284,6 +285,7 @@ func TestSendToken_Integration_ExistingUsers(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
+	time.Sleep(3 * time.Second)
 	ctx := context.Background()
 
 	// Test data
@@ -317,6 +319,7 @@ func TestGiveCoffee_Integration_ExistingUsers(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
+	time.Sleep(3 * time.Second)
 	ctx := context.Background()
 
 	// Test data
@@ -352,12 +355,13 @@ func TestUnlockItem_Integration_ExistingUsers(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
+	time.Sleep(3 * time.Second)
 	ctx := context.Background()
 
 	// Test data
 	fromUID := uint64(1)
 	toUID := uint64(2)
-	itemUID := uint64(5)
+	itemUID := uint64(time.Now().Second())
 	itemType := uint(1)
 
 	t.Logf("Sending tokens to unlock item: %d -> %d", fromUID, toUID)
@@ -382,6 +386,7 @@ func TestSendToken_Integration_MultipleTransactions(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
+	time.Sleep(3 * time.Second)
 	ctx := context.Background()
 
 	fromUID := uint64(1)

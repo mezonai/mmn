@@ -112,12 +112,10 @@ const (
 
 // TxInfo represents transaction information returned by GetTxByHash
 type TxInfo struct {
-	Type      int32  `json:"type"`
 	Sender    string `json:"sender"`
 	Recipient string `json:"recipient"`
 	Amount    uint64 `json:"amount"`
 	Timestamp uint64 `json:"timestamp"`
 	TextData  string `json:"text_data"`
 	Nonce     uint64 `json:"nonce,omitempty"`
-	Signature string `json:"signature,omitempty"`
 }
