@@ -179,14 +179,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 				break
 			}
 		}
-
-		if len(filtered) > 0 && ln.onBlockReceived != nil {
-			for _, blk := range filtered {
-				if blk != nil {
-					ln.onBlockReceived(blk)
-				}
-			}
-		}
 	}
 
 	// Close all peer streams and remove tracker
