@@ -174,7 +174,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			localLatestSlot := bs.GetLatestSlot()
 			if latestSlot > localLatestSlot {
 				fromSlot := localLatestSlot + 1
-				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
 
 				ctx := context.Background()
 				// Only request block sync if we are beyond ready threshold to avoid churn
@@ -189,8 +188,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			gap := uint64(0)
 			if latestSlot > localLatestSlot {
 				gap = latestSlot - localLatestSlot
-				logx.Info("NETWORK:SYNC BLOCK", "Gap Detetced ", gap)
-
 			}
 			if gap <= ReadyGapThreshold && !ln.IsNodeReady() {
 				ln.enableFullModeOnce.Do(func() {
