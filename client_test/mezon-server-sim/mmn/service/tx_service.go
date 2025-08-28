@@ -9,27 +9,41 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/api"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/crypto"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/outbound"
-	mmnpb "github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/proto"
+	"github.com/holiman/uint256"
+	mmnClient "github.com/mezonai/mmn/client"
+	mmnpb "github.com/mezonai/mmn/proto"
 )
 
 // -------- TxService --------
 
 type TxService struct {
-	bc outbound.MainnetClient
-	ks outbound.WalletManager
-	db *sql.DB
+	client mmnClient.MainnetClient
+	ks     mmnClient.WalletManager
+	db     *sql.DB
 }
 
-func NewTxService(bc outbound.MainnetClient, ks outbound.WalletManager, db *sql.DB) *TxService {
-	return &TxService{bc: bc, ks: ks, db: db}
+func NewTxService(client mmnClient.MainnetClient, ks mmnClient.WalletManager, db *sql.DB) *TxService {
+	return &TxService{client: client, ks: ks, db: db}
+}
+
+func (s *TxService) GetAccountAddress(uid uint64) (string, error) {
+	addr, _, err := s.ks.LoadKey(uid)
+	if err != nil {
+		if !errors.Is(err, mmnClient.ErrKeyNotFound) {
+			fmt.Printf("SendToken LoadKey Err %d %v\n", uid, err)
+			return "", err
+		}
+		fmt.Printf("SendToken CreateKey %d\n", uid)
+		if addr, _, err = s.ks.CreateKey(uid); err != nil {
+			return "", err
+		}
+	}
+
+	return addr, nil
 }
 
 // SendToken forward 1 transfer token transaction to main-net.
-func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID uint64, amount uint64, textData string) (string, error) {
+func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID uint64, amount *uint256.Int, textData string) (string, error) {
 	// Validate sender, recipient exists in database
 	var count int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE id IN ($1, $2)", fromUID, toUID).Scan(&count)
@@ -43,7 +57,7 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 	fromAddr, fromPriv, err := s.ks.LoadKey(fromUID)
 	if err != nil {
 		// TODO: temporary fix for integration test
-		if !errors.Is(err, domain.ErrKeyNotFound) {
+		if !errors.Is(err, mmnClient.ErrKeyNotFound) {
 			fmt.Printf("SendToken LoadKey Err %d %s %s %v\n", fromUID, fromAddr, fromPriv, err)
 			return "", err
 		}
@@ -54,7 +68,7 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 	}
 	toAddr, _, err := s.ks.LoadKey(toUID)
 	if err != nil {
-		if !errors.Is(err, domain.ErrKeyNotFound) {
+		if !errors.Is(err, mmnClient.ErrKeyNotFound) {
 			return "", err
 		}
 		fmt.Printf("SendToken CreateKey %d\n", toUID)
@@ -66,22 +80,22 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 	if err != nil {
 		return "", err
 	}
-	unsigned, err := domain.BuildTransferTx(domain.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
+	unsigned, err := mmnClient.BuildTransferTx(mmnClient.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
 	if err != nil {
 		return "", err
 	}
 
-	signedRaw, err := crypto.SignTx(unsigned, fromPriv)
+	signedRaw, err := mmnClient.SignTx(unsigned, fromPriv)
 	if err != nil {
 		return "", err
 	}
 
 	//Self verify
-	if !crypto.Verify(unsigned, signedRaw.Sig) {
+	if !mmnClient.Verify(unsigned, signedRaw.Sig) {
 		return "", errors.New("self verify failed")
 	}
 
-	res, err := s.bc.AddTx(signedRaw)
+	res, err := s.client.AddTx(ctx, signedRaw)
 	if err != nil {
 		return "", err
 	}
@@ -90,17 +104,17 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 }
 
 // GetAccountByAddress gets account information by address
-func (s *TxService) GetAccountByAddress(ctx context.Context, addr string) (domain.Account, error) {
-	return s.bc.GetAccount(addr)
+func (s *TxService) GetAccountByAddress(ctx context.Context, addr string) (mmnClient.Account, error) {
+	return s.client.GetAccount(ctx, addr)
 }
 
 func (s *TxService) GiveCoffee(ctx context.Context, nonce uint64, fromUID, toUID uint64) (string, error) {
 	// Test data
-	amount := uint64(1)
+	amount := uint256.NewInt(1)
 	textData := "give coffee"
 
 	// Act
-	TxHash, err := s.SendToken(ctx, 0, fromUID, toUID, amount, textData)
+	TxHash, err := s.SendToken(ctx, nonce, fromUID, toUID, amount, textData)
 
 	if err != nil {
 		return "", err
@@ -109,7 +123,7 @@ func (s *TxService) GiveCoffee(ctx context.Context, nonce uint64, fromUID, toUID
 	return TxHash, nil
 }
 
-func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID, itemUID uint64, itemType string) (string, error) {
+func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID, itemUID uint64, itemType uint) (string, error) {
 	addr, _, err := s.ks.LoadKey(fromUID)
 	if err != nil {
 		return "", err
@@ -120,7 +134,7 @@ func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID
 	}
 
 	// Test data
-	amount := uint64(1)
+	amount := uint256.NewInt(1)
 	textData := "unlock item"
 
 	// Act
@@ -139,52 +153,52 @@ func (s *TxService) UnlockItem(ctx context.Context, nonce uint64, fromUID, toUID
 	return TxHash, nil
 }
 
-func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, page, filter int) (*api.WalletLedgerList, error) {
+func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, page, filter int) (*WalletLedgerList, error) {
 	addr, _, err := s.ks.LoadKey(uid)
 	if err != nil {
 		return nil, err
 	}
 
 	offset := (page - 1) * limit
-	history, err := s.bc.GetTxHistory(addr, limit, offset, filter)
+	history, err := s.client.GetTxHistory(ctx, addr, limit, offset, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	txs := make([]*api.WalletLedger, len(history.Txs))
+	txs := make([]*WalletLedger, len(history.Txs))
 	for i, tx := range history.Txs {
-		txs[i] = &api.WalletLedger{
+		txs[i] = &WalletLedger{
 			Id:            strconv.FormatUint(tx.Nonce, 10),
 			CreateTime:    uint64(tx.Timestamp),
 			UserId:        strconv.FormatUint(uid, 10),
-			Value:         int32(tx.Amount),
+			Value:         tx.Amount,
 			TransactionId: strconv.FormatUint(tx.Nonce, 10),
 		}
 	}
 
-	return &api.WalletLedgerList{
+	return &WalletLedgerList{
 		Count:        int32(history.Total),
 		WalletLedger: txs,
 	}, nil
 }
 
-func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount uint64, textData string, transferType int) (string, error) {
-	unsigned, err := domain.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
+func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount *uint256.Int, textData string, transferType int) (string, error) {
+	unsigned, err := mmnClient.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
 	if err != nil {
 		return "", err
 	}
 
-	signedRaw, err := crypto.SignTx(unsigned, fromPriv)
+	signedRaw, err := mmnClient.SignTx(unsigned, fromPriv)
 	if err != nil {
 		return "", err
 	}
 
 	//Self verify
-	if !crypto.Verify(unsigned, signedRaw.Sig) {
+	if !mmnClient.Verify(unsigned, signedRaw.Sig) {
 		return "", errors.New("self verify failed")
 	}
 
-	res, err := s.bc.AddTx(signedRaw)
+	res, err := s.client.AddTx(ctx, signedRaw)
 	if err != nil {
 		return "", err
 	}
@@ -192,26 +206,25 @@ func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, 
 	return res.TxHash, nil
 }
 
-func (s *TxService) ListFaucetTransactions(ctx context.Context, limit, page, filter int) (*api.WalletLedgerList, error) {
+func (s *TxService) ListFaucetTransactions(ctx context.Context, addr string, limit, page, filter int) (*WalletLedgerList, error) {
 	offset := (page - 1) * limit
-	addr := "0d1dfad29c20c13dccff213f52d2f98a395a0224b5159628d2bdb077cf4026a7"
-	history, err := s.bc.GetTxHistory(addr, limit, offset, filter)
+	history, err := s.client.GetTxHistory(ctx, addr, limit, offset, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	txs := make([]*api.WalletLedger, len(history.Txs))
+	txs := make([]*WalletLedger, len(history.Txs))
 	for i, tx := range history.Txs {
-		txs[i] = &api.WalletLedger{
+		txs[i] = &WalletLedger{
 			Id:            strconv.FormatUint(tx.Nonce, 10),
 			CreateTime:    uint64(tx.Timestamp),
 			UserId:        "faucet",
-			Value:         int32(tx.Amount),
+			Value:         tx.Amount,
 			TransactionId: strconv.FormatUint(tx.Nonce, 10),
 		}
 	}
 
-	return &api.WalletLedgerList{
+	return &WalletLedgerList{
 		Count:        int32(history.Total),
 		WalletLedger: txs,
 	}, nil
@@ -221,7 +234,7 @@ func (s *TxService) ListFaucetTransactions(ctx context.Context, limit, page, fil
 // and processes them with custom business logic including database updates
 func (s *TxService) SubscribeTransactionStatus(ctx context.Context) error {
 	// Subscribe to transaction status updates
-	stream, err := s.bc.SubscribeTransactionStatus(ctx)
+	stream, err := s.client.SubscribeTransactionStatus(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to transaction status: %w", err)
 	}
@@ -270,13 +283,13 @@ func (s *TxService) processTransactionStatusInfo(ctx context.Context, update *mm
 		var status int32
 		switch update.Status {
 		case mmnpb.TransactionStatus_PENDING:
-			status = domain.UNLOCK_ITEM_STATUS_PENDING
+			status = mmnClient.UNLOCK_ITEM_STATUS_PENDING
 		case mmnpb.TransactionStatus_CONFIRMED:
-			status = domain.UNLOCK_ITEM_STATUS_SUCCESS
+			status = mmnClient.UNLOCK_ITEM_STATUS_SUCCESS
 		case mmnpb.TransactionStatus_FINALIZED:
-			status = domain.UNLOCK_ITEM_STATUS_SUCCESS
+			status = mmnClient.UNLOCK_ITEM_STATUS_SUCCESS
 		case mmnpb.TransactionStatus_FAILED:
-			status = domain.UNLOCK_ITEM_STATUS_FAILED
+			status = mmnClient.UNLOCK_ITEM_STATUS_FAILED
 		default:
 			return fmt.Errorf("unknown transaction status: %v", update.Status)
 		}
@@ -317,11 +330,11 @@ func (s *TxService) processTransactionStatusInfo(ctx context.Context, update *mm
 }
 
 // InsertUnlockItem updates transaction status in the database
-func (s *TxService) insertUnlockItem(ctx context.Context, itemId, userId uint64, itemType, txHash string) error {
+func (s *TxService) insertUnlockItem(ctx context.Context, itemId, userId uint64, itemType uint, txHash string) error {
 	query := `INSERT INTO unlocked_items (user_id, item_id, item_type, tx_hash, status) VALUES ($1, $2, $3, $4, $5);
 	`
 
-	_, err := s.db.ExecContext(ctx, query, userId, itemId, itemType, txHash, domain.UNLOCK_ITEM_STATUS_PENDING)
+	_, err := s.db.ExecContext(ctx, query, userId, itemId, itemType, txHash, mmnClient.UNLOCK_ITEM_STATUS_PENDING)
 	if err != nil {
 		return fmt.Errorf("failed to insert unlocked item in database: %w", err)
 	}
@@ -386,16 +399,17 @@ func (s *TxService) handleFailedTransaction(ctx context.Context, update *mmnpb.T
 }
 
 // GetTxByHash retrieves transaction information by its hash
-func (s *TxService) GetTxByHash(ctx context.Context, txHash string) (domain.TxInfo, error) {
-	return s.bc.GetTxByHash(txHash)
+func (s *TxService) GetTxByHash(ctx context.Context, txHash string) (mmnClient.TxInfo, error) {
+	return s.client.GetTxByHash(ctx, txHash)
 }
 
 // ListTransactionsByAddress gets transaction history for a specific address
-func (s *TxService) ListTransactionsByAddress(ctx context.Context, addr string, limit, page, filter int) (*domain.TxHistoryResponse, error) {
+func (s *TxService) ListTransactionsByAddress(ctx context.Context, addr string, limit, page, filter int) (*mmnClient.TxHistoryResponse, error) {
 	offset := (page - 1) * limit
-	history, err := s.bc.GetTxHistory(addr, limit, offset, filter)
+	history, err := s.client.GetTxHistory(ctx, addr, limit, offset, filter)
 	if err != nil {
 		return nil, err
 	}
+
 	return &history, nil
 }

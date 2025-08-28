@@ -129,13 +129,14 @@ func runNode() {
 	eventRouter := events.NewEventRouter(eventBus)
 
 	// Initialize db store inside directory
-	as, ts, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
+	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
 	}
 	defer bs.MustClose()
 	defer ts.MustClose()
+	defer tms.MustClose()
 	defer as.MustClose()
 
 	// Handle optional p2p-port: use random free port if not specified
@@ -170,9 +171,9 @@ func runNode() {
 	var ld *ledger.Ledger
 	if provider != nil {
 		stateMeta := store.NewGenericStateMetaStore(provider)
-		ld = ledger.NewLedgerWithStateMeta(ts, as, eventRouter, stateMeta)
+		ld = ledger.NewLedgerWithStateMeta(ts, tms, as, eventRouter, stateMeta)
 	} else {
-		ld = ledger.NewLedger(ts, as, eventRouter)
+		ld = ledger.NewLedger(ts, tms, as, eventRouter)
 	}
 
 	// Initialize PoH components
@@ -235,11 +236,11 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 }
 
 // initializeDBStore initializes the block storage backend using the factory pattern
-func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.BlockStore, error) {
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
 	// Create data folder if not exist
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create db store directory:", err.Error())
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Create store configuration with StoreType
@@ -251,7 +252,7 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 
 	// Validate the configuration (this will check if the backend is supported)
 	if err := storeCfg.Validate(); err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
 	}
 
 	// Use the factory pattern to create the store

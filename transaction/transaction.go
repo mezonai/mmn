@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/common"
 )
 
 const (
@@ -13,28 +16,28 @@ const (
 )
 
 type Transaction struct {
-	Type      int32  `json:"type"`
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    uint64 `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce,omitempty"`
-	Signature string `json:"signature,omitempty"`
+	Type      int32       `json:"type"`
+	Sender    string      `json:"sender"`
+	Recipient string      `json:"recipient"`
+	Amount    *uint256.Int `json:"amount"`
+	Timestamp uint64      `json:"timestamp"`
+	TextData  string      `json:"text_data"`
+	Nonce     uint64      `json:"nonce,omitempty"`
+	Signature string      `json:"signature,omitempty"`
 }
 
 func (tx *Transaction) Serialize() []byte {
-	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce)
-	fmt.Println("Serialize metadata:", metadata)
+	amountStr := uint256ToString(tx.Amount)
+	metadata := fmt.Sprintf("%d|%s|%s|%s|%s|%d", tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce)
 	return []byte(metadata)
 }
 
 func (tx *Transaction) Verify() bool {
-	pub, err := hexToEd25519(tx.Sender)
+	pub, err := base58ToEd25519(tx.Sender)
 	if err != nil {
 		return false
 	}
-	signature, err := hex.DecodeString(tx.Signature)
+	signature, err := common.DecodeBase58ToBytes(tx.Signature)
 	if err != nil {
 		return false
 	}
@@ -51,10 +54,18 @@ func (tx *Transaction) Hash() string {
 	return hex.EncodeToString(sum256[:])
 }
 
-func hexToEd25519(hexstr string) (ed25519.PublicKey, error) {
-	b, err := hex.DecodeString(hexstr)
+func base58ToEd25519(addr string) (ed25519.PublicKey, error) {
+	b, err := common.DecodeBase58ToBytes(addr)
 	if err != nil || len(b) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("invalid pubkey")
 	}
 	return ed25519.PublicKey(b), nil
+}
+
+// uint256ToString converts a *uint256.Int to string, returning "0" if nil
+func uint256ToString(value *uint256.Int) string {
+	if value == nil {
+		return "0"
+	}
+	return value.String()
 }

@@ -38,6 +38,7 @@ type BlockStore interface {
 	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
+	IsApplied(slot uint64) bool
 }
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
@@ -219,6 +220,13 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	return nil
 }
 
+func (s *GenericBlockStore) IsApplied(slot uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.latestFinalized >= slot
+}
+
 // MarkFinalized marks a block as finalized and updates metadata
 func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	if !s.HasCompleteBlock(slot) {
@@ -237,18 +245,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Update latest finalized
-	s.latestFinalized = slot
-
-	// Store updated metadata
-	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
-	metaValue := make([]byte, 8)
-	binary.BigEndian.PutUint64(metaValue, slot)
-
-	if err := s.provider.Put(metaKey, metaValue); err != nil {
-		return fmt.Errorf("failed to update latest finalized: %w", err)
-	}
-
 	// Publish transaction finalization events if event router is provided
 	if s.eventRouter != nil && blk != nil {
 		blockHashHex := blk.HashString()
@@ -263,6 +259,20 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
 			}
+		}
+	}
+
+	// Update latest finalized
+	if slot > s.latestFinalized {
+		s.latestFinalized = slot
+
+		// Store updated metadata
+		metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
+		metaValue := make([]byte, 8)
+		binary.BigEndian.PutUint64(metaValue, slot)
+
+		if err := s.provider.Put(metaKey, metaValue); err != nil {
+			return fmt.Errorf("failed to update latest finalized: %w", err)
 		}
 	}
 
