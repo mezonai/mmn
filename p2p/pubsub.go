@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -207,7 +208,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	// Attach snapshot announce callback to trigger UDP download and set ready when completed
 	ln.SetCallbacks(Callbacks{
 		OnSnapshotAnnounce: func(ann SnapshotAnnounce) error {
-			if ln.IsNodeReady() {
+			// Skip processing our own snapshot announcement
+			if ann.PeerID == ln.selfPubKey || ann.UDPAddr == ln.getAnnounceUDPAddr() {
+				logx.Info("SNAPSHOT:DOWNLOAD", "skip self announce", ann.UDPAddr)
 				return nil
 			}
 			accountStore := ld.GetAccountStore()
@@ -355,7 +358,7 @@ func (ln *Libp2pNetwork) handleSnapshotAnnounce(ctx context.Context, sub *pubsub
 			continue
 		}
 		localSlot := ln.blockStore.GetLatestSlot()
-		if ann.Slot > localSlot && !ln.IsNodeReady() {
+		if ann.Slot > localSlot {
 			logx.Info("SNAPSHOT:GOSSIP", "Announce received slot=", ann.Slot, " udp=", ann.UDPAddr)
 			if ln.onSnapshotAnnounce != nil {
 				_ = ln.onSnapshotAnnounce(ann)
@@ -439,18 +442,33 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 
 // getAnnounceUDPAddr builds an ip:port string for the UDP snapshot streamer
 func (ln *Libp2pNetwork) getAnnounceUDPAddr() string {
-	ip := "127.0.0.1"
+	// Optional override via environment variable
+	if host := os.Getenv("SNAPSHOT_ANNOUNCE_HOST"); host != "" {
+		addr := fmt.Sprintf("%s:%d", host, 9100)
+		logx.Info("SNAPSHOT:GOSSIP", "announce UDP addr (env override)", addr)
+		return addr
+	}
+
+	ip := ""
+	// Track a non-loopback fallback if present
 	for _, maddr := range ln.host.Addrs() {
 		str := maddr.String()
 		// naive extract /ip4/x.x.x.x
 		if strings.HasPrefix(str, "/ip4/") {
 			parts := strings.Split(str, "/")
 			if len(parts) >= 3 {
-				ip = parts[2]
-				break
+				cand := parts[2]
+				parsed := net.ParseIP(cand)
+				if parsed != nil {
+					if !parsed.IsUnspecified() && !parsed.IsLoopback() {
+						ip = cand
+						break
+					}
+				}
 			}
 		}
 	}
+
 	addr := fmt.Sprintf("%s:%d", ip, 9100)
 	logx.Info("SNAPSHOT:GOSSIP", "announce UDP addr", addr)
 	return addr
