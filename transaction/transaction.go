@@ -29,7 +29,6 @@ type Transaction struct {
 func (tx *Transaction) Serialize() []byte {
 	amountStr := uint256ToString(tx.Amount)
 	metadata := fmt.Sprintf("%d|%s|%s|%s|%s|%d", tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce)
-	fmt.Println("Serialize metadata:", metadata)
 	return []byte(metadata)
 }
 

@@ -1,19 +1,21 @@
 package ledger
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/utils"
 )
 
 var (
@@ -23,13 +25,15 @@ var (
 type Ledger struct {
 	mu           sync.RWMutex
 	txStore      store.TxStore
+	txMetaStore  store.TxMetaStore
 	accountStore store.AccountStore
 	eventRouter  *events.EventRouter
 }
 
-func NewLedger(txStore store.TxStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
+func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter) *Ledger {
 	return &Ledger{
 		txStore:      txStore,
+		txMetaStore:  txMetaStore,
 		accountStore: accountStore,
 		eventRouter:  eventRouter,
 	}
@@ -102,35 +106,17 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) VerifyBlock(b *block.BroadcastedBlock) error {
-	l.mu.RLock()
-	base := l.accountStore
-	l.mu.RUnlock()
-
-	view := &LedgerView{
-		base:    base,
-		overlay: make(map[string]*types.SnapshotAccount),
-	}
-	for _, entry := range b.Entries {
-		for _, tx := range entry.Transactions {
-			if err := view.ApplyTx(tx); err != nil {
-				return fmt.Errorf("verify fail: %v", err)
-			}
-		}
-	}
-	return nil
-}
-
 func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	fmt.Printf("[ledger] Applying block %d\n", b.Slot)
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
 			return err
 		}
+		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
 		for _, tx := range txs {
 			// load account state
@@ -165,9 +151,13 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
 				}
-				return fmt.Errorf("apply fail: %v", err)
+				fmt.Printf("Apply fail: %v\n", err)
+				state[tx.Sender].Nonce++
+				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
+				continue
 			}
 			fmt.Printf("Applied tx %s\n", tx.Hash())
+			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			addHistory(state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
 				addHistory(state[tx.Recipient], tx)
@@ -182,22 +172,13 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				return err
 			}
 		}
+		if len(txMetas) > 0 {
+			l.txMetaStore.StoreBatch(txMetas)
+		}
 	}
 
-	fmt.Printf("[ledger] Block %d applied\n", b.Slot)
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
 	return nil
-}
-
-func (l *Ledger) NewSession() *Session {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return &Session{
-		ledger: l,
-		view: &LedgerView{
-			base:    l.accountStore,
-			overlay: make(map[string]*types.SnapshotAccount),
-		},
-	}
 }
 
 // GetAccount returns account with addr (nil if not exist)
@@ -237,12 +218,13 @@ func addHistory(acc *types.Account, tx *transaction.Transaction) {
 	acc.History = append(acc.History, tx.Hash())
 }
 
-func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, error) {
+func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error) {
 	tx, err := l.txStore.GetByHash(hash)
+	txMeta, err := l.txMetaStore.GetByHash(hash)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return tx, nil
+	return tx, txMeta, nil
 }
 
 func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {

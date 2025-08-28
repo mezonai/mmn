@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/consensus"
@@ -78,7 +79,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
-	fmt.Printf("[gRPC] received tx %+v\n", in.TxMsg)
+	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
 		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
@@ -123,7 +124,7 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
 	addr := in.Address
 	tag := in.Tag
-	fmt.Printf("[gRPC] GetCurrentNonce request for address: %s, tag: %s\n", addr, tag)
+	logx.Info("GRPC", fmt.Sprintf("GetCurrentNonce request for address: %s, tag: %s", addr, tag))
 
 	// Validate tag parameter
 	if tag != "latest" && tag != "pending" {
@@ -136,7 +137,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 	// TODO: verify this segment
 	acc, err := s.ledger.GetAccount(addr)
 	if err != nil {
-		fmt.Printf("[gRPC] Failed to get account for address %s: %v\n", addr, err)
+		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
 		return &pb.GetCurrentNonceResponse{
 			Address: addr,
 			Nonce:   0,
@@ -145,7 +146,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 		}, nil
 	}
 	if acc == nil {
-		fmt.Printf("[gRPC] Account not found for address: %s\n", addr)
+		logx.Warn("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
 		return &pb.GetCurrentNonceResponse{
 			Address: addr,
 			Nonce:   0,
@@ -158,7 +159,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 	if tag == "latest" {
 		// For "latest", return the current nonce from the most recent mined block
 		currentNonce = acc.Nonce
-		fmt.Printf("[gRPC] Latest current nonce for %s: %d\n", addr, currentNonce)
+		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
 	} else { // tag == "pending"
 		// For "pending", return the largest nonce among pending transactions or current ledger nonce
 		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
@@ -169,7 +170,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 			// Return the largest pending nonce as current
 			currentNonce = largestPendingNonce
 		}
-		fmt.Printf("[gRPC] Pending current nonce for %s: largest pending: %d, current: %d\n", addr, largestPendingNonce, currentNonce)
+		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: largest pending: %d, current: %d", addr, largestPendingNonce, currentNonce))
 	}
 
 	return &pb.GetCurrentNonceResponse{
@@ -180,7 +181,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, err := s.ledger.GetTxByHash(in.TxHash)
+	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
 	if err != nil {
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
@@ -192,6 +193,11 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Amount:    amount,
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+		Slot:      txMeta.Slot,
+		Blockhash: txMeta.BlockHash,
+		Status:    txMeta.Status,
+		ErrMsg:    txMeta.Error,
 	}
 	return &pb.GetTxByHashResponse{
 		Tx:          txInfo,
@@ -488,20 +494,44 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, err := s.ledger.GetTxByHash(txHash)
+			tx, _, err := s.ledger.GetTxByHash(txHash)
+
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
-			amount := utils.Uint256ToString(tx.Amount)
 			
+			senderAcc, err := s.ledger.GetAccount(tx.Sender)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
+			}
+			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
+			}
+			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
+			if err != nil {
+				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			}
+			
+			txStatus := info.Status
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
 				Recipient: tx.Recipient,
-				Amount:    amount,
+				Amount:    utils.Uint256ToString(tx.Amount),
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
-				Status:    pb.TransactionData_CONFIRMED,
+				Status:    txStatus,
+				SenderAccount: &pb.AccountData{
+					Address: senderAcc.Address,
+					Balance: utils.Uint256ToString(senderAcc.Balance),
+					Nonce:   senderAcc.Nonce,
+				},
+				RecipientAccount: &pb.AccountData{
+					Address: recipientAcc.Address,
+					Balance: utils.Uint256ToString(recipientAcc.Balance),
+					Nonce:   recipientAcc.Nonce,
+				},
 			})
 		}
 
