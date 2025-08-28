@@ -110,16 +110,18 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					logx.Error("NETWORK:SYNC BLOCK", "Invalid PoH for synced block: ", err)
 					continue
 				}
-
-				// Verify block
-				if err := ld.VerifyBlock(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Block verification failed for synced block: ", err)
+				if err := bs.AddBlockPending(blk); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
 					continue
 				}
 
 				if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to apply block: ", err.Error())
 					continue
+				}
+
+				if err := bs.MarkFinalized(blk.Slot); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to finalize synced block:", err)
 				}
 
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
