@@ -4,19 +4,21 @@ import (
 	"context"
 	"crypto/ed25519"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/snapshot"
+	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
-	"github.com/multiformats/go-multiaddr"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	ma "github.com/multiformats/go-multiaddr"
 )
 
 type Libp2pNetwork struct {
@@ -36,6 +38,8 @@ type Libp2pNetwork struct {
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
+	topicSnapshotAnnounce  *pubsub.Topic
+	topicSnapshotRequest   *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
@@ -43,6 +47,7 @@ type Libp2pNetwork struct {
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
+	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	syncStreams map[peer.ID]network.Stream
 	maxPeers    int
@@ -67,6 +72,33 @@ type Libp2pNetwork struct {
 
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
+
+	enableFullModeOnce sync.Once
+	ready              atomic.Bool
+
+	// runtime callback to apply leader schedule without import cycles
+	applyLeaderSchedule func(*poh.LeaderSchedule)
+
+	// Snapshot downloader for syncing snapshots from peers
+	snapshotDownloader *snapshot.SnapshotDownloader
+}
+
+// Snapshot gossip messages
+type SnapshotAnnounce struct {
+	Slot      uint64 `json:"slot"`
+	BankHash  string `json:"bank_hash"`
+	Size      int64  `json:"size"`
+	UDPAddr   string `json:"udp_addr"`
+	ChunkSize int    `json:"chunk_size"`
+	CreatedAt int64  `json:"created_at"`
+	PeerID    string `json:"peer_id"`
+}
+
+type SnapshotRequest struct {
+	PeerID       string `json:"peer_id"`
+	WantSlot     uint64 `json:"want_slot"`
+	ReceiverAddr string `json:"receiver_addr"` // host:port UDP
+	ChunkSize    int    `json:"chunk_size"`
 }
 
 type PeerInfo struct {
@@ -99,10 +131,10 @@ type TxMessage struct {
 }
 
 type SyncRequest struct {
-	RequestID string                `json:"request_id"`
-	FromSlot  uint64                `json:"from_slot"`
-	ToSlot    uint64                `json:"to_slot"`
-	Addrs     []multiaddr.Multiaddr `json:"addrs"`
+	RequestID string         `json:"request_id"`
+	FromSlot  uint64         `json:"from_slot"`
+	ToSlot    uint64         `json:"to_slot"`
+	Addrs     []ma.Multiaddr `json:"addrs"`
 }
 
 type SyncResponse struct {
@@ -110,8 +142,8 @@ type SyncResponse struct {
 }
 
 type LatestSlotRequest struct {
-	RequesterID string                `json:"requester_id"`
-	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+	RequesterID string         `json:"requester_id"`
+	Addrs       []ma.Multiaddr `json:"addrs"`
 }
 
 type LatestSlotResponse struct {
@@ -151,9 +183,9 @@ type Callbacks struct {
 }
 
 type CheckpointHashRequest struct {
-	RequesterID string                `json:"requester_id"`
-	Checkpoint  uint64                `json:"checkpoint"`
-	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+	RequesterID string         `json:"requester_id"`
+	Checkpoint  uint64         `json:"checkpoint"`
+	Addrs       []ma.Multiaddr `json:"addrs"`
 }
 
 type CheckpointHashResponse struct {

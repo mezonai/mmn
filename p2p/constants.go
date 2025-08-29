@@ -13,12 +13,16 @@ const (
 	BlockSyncResponseTopic = "block-sync/response"
 	LatestSlotTopic        = "latest-slot/request"
 	CheckpointRequestTopic = "checkpoint/request"
+	TopicSnapshotAnnounce  = "snapshot/announce"
+	TopicSnapshotRequest   = "snapshot/request"
 	AdvertiseName          = "mmn"
 )
 
 var (
-	ConnCount    int32  = 0
-	MaxPeers     int32  = 50
-	BatchSize    uint64 = 10 // for test only, should be 1000
-	MaxScanRange uint64 = 100
+	ConnCount         int32  = 0
+	MaxPeers          int32  = 50
+	BatchSize         uint64 = 10 // for test only, should be 1000
+	MaxScanRange      uint64 = 100
+	RangeForSnapshot  uint64 = 50
+	ReadyGapThreshold uint64 = 5
 )

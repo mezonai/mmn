@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/store"
@@ -28,6 +29,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/validator"
 
 	"github.com/spf13/cobra"
@@ -89,6 +91,7 @@ func runNode() {
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -169,7 +172,15 @@ func runNode() {
 
 	txTracker := transaction.NewTransactionTracker()
 
-	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
+	provider := store.GetProviderFromAccountStore(as)
+	var ld *ledger.Ledger
+	if provider != nil {
+		stateMeta := store.NewGenericStateMetaStore(provider)
+		ld = ledger.NewLedgerWithStateMeta(ts, tms, as, eventRouter, txTracker, stateMeta)
+	} else {
+		ld = ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
+
+	}
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
@@ -346,6 +357,39 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
 	if err != nil {
 		log.Fatalf("Failed to load private key for gRPC server: %v", err)
+	}
+
+	// Handle snapshot directory and UDP streamer based on node type
+	snapshotDir := "/data/snapshots"
+
+	// Check if this is a bootstrap node (no bootstrap addresses)
+	isBootstrapNode := len(nodeConfig.BootStrapAddresses) == 0
+
+	if isBootstrapNode {
+		// Bootstrap node: Only for bootstrapping, no snapshot handling
+		// This prevents unnecessary snapshot operations on bootstrap node
+		log.Printf("Bootstrap node detected - no snapshot handling needed")
+	} else {
+		// Regular node: Create snapshot directory and start UDP streamer for peer-to-peer sync
+		// This allows regular nodes to sync snapshots directly with each other
+		if err := os.MkdirAll(snapshotDir, 0755); err != nil {
+			log.Printf("Warning: Failed to create snapshot directory: %v", err)
+		} else {
+			log.Printf("Snapshot directory created successfully (regular node)")
+		}
+
+		// Get database provider from store
+		var dbProvider db.DatabaseProvider
+		if accountStore, ok := bs.(store.AccountStore); ok {
+			dbProvider = accountStore.GetDatabaseProvider()
+		}
+
+		// Start UDP streamer for peer-to-peer snapshot sync (not through bootnode)
+		if err := snapshot.StartSnapshotUDPStreamer(dbProvider, snapshotDir, ":0"); err != nil {
+			log.Printf("Warning: Failed to start snapshot UDP streamer: %v", err)
+		} else {
+			log.Printf("Snapshot UDP streamer started successfully (peer-to-peer sync)")
+		}
 	}
 
 	// Start gRPC server

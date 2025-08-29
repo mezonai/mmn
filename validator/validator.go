@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/logx"
@@ -99,9 +100,27 @@ func NewValidator(
 	return v
 }
 
+// SetLeaderSchedule allows updating the leader schedule at runtime (e.g., from snapshot)
+func (v *Validator) SetLeaderSchedule(schedule *poh.LeaderSchedule) {
+	v.Schedule = schedule
+	if v.Recorder != nil {
+		v.Recorder.SetLeaderSchedule(schedule)
+	}
+}
+
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
+	v.leaderStartAtSlot = currentSlot
+	if currentSlot == 0 {
+		return
+	}
 	prevSlot := currentSlot - 1
+
+	// Check if we have the previous block before proceeding
+	if !v.blockStore.HasCompleteBlock(prevSlot) {
+		logx.Info("LEADER", fmt.Sprintf("Previous block for slot %d not available yet, waiting", prevSlot))
+		return
+	}
 	ticker := time.NewTicker(v.leaderTimeoutLoopInterval)
 	deadline := time.NewTimer(v.leaderTimeout)
 	defer ticker.Stop()
@@ -198,6 +217,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			return
 		}
 
+		writeSnapshotIfDue(v.ledger, currentSlot)
+
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	} else if v.IsLeader(currentSlot) {
@@ -246,6 +267,16 @@ func (v *Validator) dropPendingTxs(size int) {
 
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
+
+	logx.Info("VALIDATOR", "Waiting for network to be ready before starting...")
+	for {
+		if v.netClient != nil {
+			if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && ready.IsNodeReady() {
+				break
+			}
+		}
+	}
+	logx.Info("VALIDATOR", "Network is ready, starting validator loops")
 
 	exception.SafeGoWithPanic("roleMonitorLoop", func() {
 		v.roleMonitorLoop()
@@ -349,4 +380,32 @@ func (v *Validator) mempoolCleanupLoop() {
 			v.Mempool.PeriodicCleanup()
 		}
 	}
+}
+
+func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
+	if slot%p2p.RangeForSnapshot != 0 { // adjust interval as needed
+		return
+	}
+	accountStore := ld.GetAccountStore()
+	if accountStore == nil {
+		return
+	}
+	dbProvider := accountStore.GetDatabaseProvider()
+	if dbProvider == nil {
+		return
+	}
+	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
+		return
+	}
+	dir := "/data/snapshots"
+	// Write snapshot and cleanup old ones, keep only the latest
+	saved, err := snapshot.WriteSnapshotAndCleanup(dir, dbProvider, slot, bankHash, nil)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
+		return
+	}
+
+	logx.Info("SNAPSHOT", fmt.Sprintf("Created snapshot: %s (slot %d)", saved, slot))
 }

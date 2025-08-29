@@ -16,7 +16,7 @@ import (
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()
 
-	logx.Info("NETWORK CONNECTED AND REQYEST NODE INFO TO JOIN", bootstrapPeer)
+	logx.Info("NETWORK CONNECTED AND REQUEST NODE INFO TO JOIN", bootstrapPeer)
 
 	if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
 		if err := ln.host.Connect(ctx, *info); err != nil {
@@ -149,23 +149,4 @@ func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64
 	}
 	logx.Info("NETWORK:SYNC BLOCK", "Published single-slot sync request:", requestID, "slot", slot)
 	return nil
-}
-
-func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
-	var fromSlot uint64 = 0
-
-	localLatestSlot := ln.blockStore.GetLatestSlot()
-	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + BatchSize
-		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
-	}
-
-	latestSlot, err := ln.RequestLatestSlotFromPeers(ctx)
-	if err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
-	} else if latestSlot > fromSlot {
-		fromSlot = latestSlot + BatchSize
-	}
-
-	return ln.RequestBlockSync(ctx, fromSlot)
 }

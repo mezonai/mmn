@@ -32,6 +32,11 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 				continue
 			}
 
+			if msg.ReceivedFrom == ln.host.ID() {
+				logx.Debug("NETWORK:BLOCK", "Skipping block message from self")
+				continue
+			}
+
 			var blk *block.BroadcastedBlock
 			if err := json.Unmarshal(msg.Data, &blk); err != nil {
 				logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)
@@ -144,6 +149,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		var blocks []*block.BroadcastedBlock
 		if err := decoder.Decode(&blocks); err != nil {
 			if errors.Is(err, io.EOF) {
+				logx.Info("NETWORK:SYNC BLOCK", "stream completed from ", remotePeer.String())
 				break
 			}
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
@@ -188,6 +194,9 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		delete(ln.syncRequests, syncRequest.RequestID)
 	}
 	ln.syncTrackerMu.Unlock()
+
+	// check to sync
+	ln.CheckSyncCompletion(syncRequest.ToSlot)
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks)
 }
@@ -463,4 +472,16 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 		}
 	}
 	return nil
+}
+
+func (ln *Libp2pNetwork) CheckSyncCompletion(toSlot uint64) {
+	localLatestSlot := ln.blockStore.GetLatestSlot()
+	if localLatestSlot >= toSlot {
+		go func() {
+			ctx := context.Background()
+			if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
+				logx.Warn("NETWORK:SYNC BLOCK", "Failed to check if more sync needed:", err)
+			}
+		}()
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/store"
 	"github.com/spf13/cobra"
 )
 
@@ -194,7 +195,16 @@ func initializeNode() {
 	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts, tms, as, nil, nil)
+
+	provider := store.GetProviderFromAccountStore(as)
+	var ld *ledger.Ledger
+	if provider != nil {
+		stateMeta := store.NewGenericStateMetaStore(provider)
+		ld = ledger.NewLedgerWithStateMeta(ts, tms, as, nil, nil, stateMeta)
+	} else {
+		ld = ledger.NewLedger(ts, tms, as, nil, nil)
+
+	}
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)

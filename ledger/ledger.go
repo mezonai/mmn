@@ -24,12 +24,14 @@ var (
 )
 
 type Ledger struct {
-	mu           sync.RWMutex
-	txStore      store.TxStore
-	txMetaStore  store.TxMetaStore
-	accountStore store.AccountStore
-	eventRouter  *events.EventRouter
-	txTracker    interfaces.TransactionTrackerInterface
+	mu               sync.RWMutex
+	txStore          store.TxStore
+	txMetaStore      store.TxMetaStore
+	accountStore     store.AccountStore
+	eventRouter      *events.EventRouter
+	txTracker        interfaces.TransactionTrackerInterface
+	stateMeta        store.StateMetaStore
+	expectedBankHash map[uint64][32]byte
 }
 
 func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
@@ -39,6 +41,19 @@ func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStor
 		accountStore: accountStore,
 		eventRouter:  eventRouter,
 		txTracker:    txTracker,
+	}
+}
+
+// NewLedgerWithStateMeta creates a new Ledger with additional stateMeta and expectedBankHash fields
+func NewLedgerWithStateMeta(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, stateMeta store.StateMetaStore) *Ledger {
+	return &Ledger{
+		txStore:          txStore,
+		txMetaStore:      txMetaStore,
+		accountStore:     accountStore,
+		eventRouter:      eventRouter,
+		txTracker:        txTracker,
+		stateMeta:        stateMeta,
+		expectedBankHash: make(map[uint64][32]byte),
 	}
 }
 
@@ -384,4 +399,8 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 		valid = append(valid, tx)
 	}
 	return valid, errs
+}
+
+func (l *Ledger) GetAccountStore() store.AccountStore {
+	return l.accountStore
 }

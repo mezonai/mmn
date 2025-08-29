@@ -16,6 +16,35 @@ type RedisProvider struct {
 	ctx    context.Context
 }
 
+// IteratePrefix implements IterableProvider for Redis using SCAN
+func (p *RedisProvider) IteratePrefix(prefix []byte, fn func(key, value []byte) bool) error {
+	pattern := string(prefix) + "*"
+	var cursor uint64
+	for {
+		keys, newCursor, err := p.client.Scan(p.ctx, cursor, pattern, 1000).Result()
+		if err != nil {
+			return err
+		}
+		cursor = newCursor
+		for _, k := range keys {
+			val, err := p.client.Get(p.ctx, k).Bytes()
+			if err != nil {
+				if err == redis.Nil {
+					continue
+				}
+				return err
+			}
+			if !fn([]byte(k), val) {
+				return nil
+			}
+		}
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}
+
 // convertKeyToHumanReadable converts binary keys to human-readable format for Redis
 func convertKeyToHumanReadable(key []byte) string {
 	keyStr := string(key)
