@@ -39,9 +39,10 @@ type Mempool struct {
 	pendingTxs  map[string]map[uint64]*PendingTransaction // sender -> nonce -> pending tx
 	readyQueue  []*transaction.Transaction                // ready-to-process transactions
 	eventRouter *events.EventRouter                       // Event router for transaction status updates
+	txTracker   interfaces.TransactionTrackerInterface    // Transaction state tracker
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
@@ -53,6 +54,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		pendingTxs:  make(map[string]map[uint64]*PendingTransaction),
 		readyQueue:  make([]*transaction.Transaction, 0),
 		eventRouter: eventRouter,
+		txTracker:   txTracker,
 	}
 }
 
@@ -279,11 +281,18 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 		logx.Info("MEMPOOL", fmt.Sprintf("Found %d ready transactions", len(readyTxs)))
 		for _, tx := range readyTxs {
 			batch = append(batch, tx.Bytes())
+			txHash := tx.Hash()
+
+			// Track transaction as processing when pulled from mempool
+			if mp.txTracker != nil {
+				mp.txTracker.TrackProcessingTransaction(tx)
+			}
+
 			mp.removeTransaction(tx)
 			processedCount++
 
 			logx.Info("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
-				tx.Hash(), tx.Sender[:8], tx.Nonce))
+				txHash, tx.Sender[:8], tx.Nonce))
 		}
 		// Check if any pending transactions became ready after processing
 		mp.promotePendingTransactions(readyTxs)
@@ -569,15 +578,23 @@ func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
 
+	var largestNonce uint64 = 0
+	// Check in pending map
 	pendingMap, exists := mp.pendingTxs[sender]
-	if !exists || len(pendingMap) == 0 {
-		return 0
+	if exists && len(pendingMap) > 0 {
+		for nonce := range pendingMap {
+			if nonce > largestNonce {
+				largestNonce = nonce
+			}
+		}
 	}
 
-	var largestNonce uint64 = 0
-	for nonce := range pendingMap {
-		if nonce > largestNonce {
-			largestNonce = nonce
+	// Check in ready queue
+	for _, tx := range mp.readyQueue {
+		if tx.Sender == sender {
+			if tx.Nonce > largestNonce {
+				largestNonce = tx.Nonce
+			}
 		}
 	}
 

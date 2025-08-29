@@ -156,7 +156,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       const fundingNonce = currentFaucetNonce + 1;
       
       console.log(`Funding sender ${sender.publicKeyHex.substring(0, 8)}... with nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 3000);
+      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 3000, 'Parallel Transfers Across 3 Nodes with Consensus Verification');
       if (!fundResponse.ok) {
         console.warn('Funding failed, this might be due to mempool being full or nonce conflicts:', fundResponse.error);
         console.warn('Faucet current nonce:', currentFaucetNonce, 'Used nonce:', fundingNonce);
@@ -272,7 +272,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       const recipients = [generateTestAccount(), generateTestAccount(), generateTestAccount()];
 
       // Fund sender
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 2000);
+      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 2000, 'Concurrent Same-Sender Transactions to Different Nodes');
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial funding consensus
@@ -335,7 +335,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender through node1
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 1000, 'Network Partition Recovery Simulation');
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial consensus
@@ -381,7 +381,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
           const currentFaucetNonce = await getCurrentNonce(nodeClients[i].client, faucetPublicKeyBase58, 'pending');
           const fundingNonce = currentFaucetNonce + 1;
           console.log(`Node ${i + 1}: Using nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
-          fundResponse = await fundAccount(nodeClients[i].client, sender.publicKeyHex, 1000);
+          fundResponse = await fundAccount(nodeClients[i].client, sender.publicKeyHex, 1000, 'Node Failure Resilience');
           if (fundResponse.ok) break;
         } catch (error) {
           console.warn(`Node ${i + 1} failed during funding:`, error);

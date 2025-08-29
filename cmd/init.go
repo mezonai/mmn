@@ -194,7 +194,7 @@ func initializeNode() {
 	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts, tms, as, nil)
+	ld := ledger.NewLedger(ts, tms, as, nil, nil)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
