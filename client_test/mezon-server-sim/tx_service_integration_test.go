@@ -748,7 +748,7 @@ func TestGetAccountByAddress(t *testing.T) {
 	ctx := context.Background()
 
 	// Get updated balances after transfer
-	acc, err := svc.GetAccountByAddress(ctx, "2e569886f40b7324282e55d725f724573176f2d196bb1f9b52cd8bee6d924588")
+	acc, err := svc.AccountService.GetAccountByAddress(ctx, "2e569886f40b7324282e55d725f724573176f2d196bb1f9b52cd8bee6d924588")
 	if err != nil {
 		fmt.Printf("Failed to get updated from account: %v", err)
 	}

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/holiman/uint256"
 	clt "github.com/mezonai/mmn/client"
-	mmnpb "github.com/mezonai/mmn/proto"
 )
 
 // Global nonce management
@@ -26,7 +26,7 @@ func defaultClient() (*clt.MmnClient, error) {
 }
 
 // TransferTokens transfers tokens from faucet to a user wallet with retry mechanism
-func TransferTokens(endpoint, faucetAddress, toAddress string, amount uint64, faucetPrivateKey ed25519.PrivateKey) error {
+func TransferTokens(endpoint, faucetAddress, toAddress string, amount *uint256.Int, faucetPrivateKey ed25519.PrivateKey) error {
 	ctx := context.Background()
 	client, err := defaultClient()
 	if err != nil {
@@ -36,7 +36,7 @@ func TransferTokens(endpoint, faucetAddress, toAddress string, amount uint64, fa
 
 	// Get faucet account info to initialize nonce if needed
 	if faucetNonce == 0 {
-		var faucetAccount *mmnpb.GetAccountResponse
+		var faucetAccount clt.Account
 		faucetAccount, err = client.GetAccount(ctx, faucetAddress)
 		if err != nil {
 			return fmt.Errorf("failed to get faucet account: %w", err)
@@ -61,13 +61,12 @@ func TransferTokens(endpoint, faucetAddress, toAddress string, amount uint64, fa
 		return err
 	}
 
-	if !clt.Verify(unsigned, signedRaw.Sig, faucetAddress) {
+	if !clt.Verify(unsigned, signedRaw.Sig) {
 		fmt.Printf("Self verify failed\n")
 		return err
 	}
 
-	signTx := clt.ToProtoSigTx(&signedRaw)
-	res, err := client.AddTx(ctx, signTx)
+	res, err := client.AddTx(ctx, signedRaw)
 	if err != nil {
 		fmt.Printf("Failed to add tx: %v\n", err)
 		return err

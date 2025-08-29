@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/utils"
 )
 
 // parseLogLevel converts string log level to LogLevel enum
@@ -84,7 +85,7 @@ func main() {
 	for _, user := range users {
 		userID := user["id"].(int)
 		name := user["name"].(string)
-		balance := user["balance"].(uint64)
+		balance := user["balance"].(int64)
 		processed++
 		LogUserProcessing(userID, name)
 		LogDebug("Progress: %d/%d users processed", processed, len(users))
@@ -121,7 +122,7 @@ func main() {
 			LogDebug("💾 Saved wallet to database for user %d", userID)
 
 			// Transfer tokens from faucet to user wallet
-			err = TransferTokens(config.MMNEndpoint, faucetAddress, address, balance, faucetPrivateKey) // Transfer 1000 tokens
+			err = TransferTokens(config.MMNEndpoint, faucetAddress, address, utils.ToBigNumber(balance), faucetPrivateKey) // Transfer 1000 tokens
 			if err != nil {
 				LogError("❌ Failed to transfer tokens to user %d: %v", userID, err)
 				// Continue even if transfer fails, wallet is already created

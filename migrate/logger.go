@@ -38,9 +38,9 @@ func (l LogLevel) String() string {
 
 // Logger provides structured logging functionality
 type Logger struct {
-	level    LogLevel
-	logger   *log.Logger
-	enabled  bool
+	level   LogLevel
+	logger  *log.Logger
+	enabled bool
 }
 
 // Global logger instance
@@ -157,7 +157,7 @@ func LogWalletCreated(userID int, address string) {
 	LogInfo("💰 Wallet created for user %d - Address: %s", userID, address)
 }
 
-func LogTokenTransfer(fromAddr, toAddr string, amount uint64) {
+func LogTokenTransfer(fromAddr, toAddr string, amount int64) {
 	LogInfo("💸 Token transfer: %s → %s (amount: %d)", fromAddr, toAddr, amount)
 }
 

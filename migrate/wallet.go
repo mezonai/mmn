@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+
+	mmnClient "github.com/mezonai/mmn/client"
+	"github.com/mr-tron/base58"
 )
 
 var ErrKeyNotFound = errors.New("keystore: not found")
@@ -30,18 +32,19 @@ func GetFaucetAccount() (string, ed25519.PrivateKey) {
 	faucetPrivateKeyHex := "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 	faucetPrivateKeyDer, err := hex.DecodeString(faucetPrivateKeyHex)
 	if err != nil {
-		log.Fatalf("Failed to decode faucet private key: %v", err)
+		fmt.Println("err", err)
+		panic(err)
 	}
 
 	// Extract the last 32 bytes as the Ed25519 seed
 	faucetSeed := faucetPrivateKeyDer[len(faucetPrivateKeyDer)-32:]
 	faucetPrivateKey := ed25519.NewKeyFromSeed(faucetSeed)
 	faucetPublicKey := faucetPrivateKey.Public().(ed25519.PublicKey)
-	faucetPublicKeyHex := hex.EncodeToString(faucetPublicKey[:])
-	return faucetPublicKeyHex, faucetPrivateKey
+	faucetPublicKeyBase58 := base58.Encode(faucetPublicKey[:])
+	return faucetPublicKeyBase58, faucetPrivateKey
 }
 
-func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (WalletManager, error) {
+func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (mmnClient.WalletManager, error) {
 	mk, err := base64.StdEncoding.DecodeString(base64MasterKey)
 	if err != nil {
 		return nil, fmt.Errorf("master-key decode: %w", err)
@@ -82,7 +85,7 @@ func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
 		Scan(&addr, &enc)
 	if errors.Is(err, sql.ErrNoRows) {
 		fmt.Printf("LoadKey ErrNoRows %d %s %s %v\n", uid, addr, enc, err)
-		return "", nil, ErrKeyNotFound
+		return "", nil, mmnClient.ErrKeyNotFound
 	}
 	if err != nil {
 		fmt.Printf("LoadKey Err %d %s %s %v\n", uid, addr, enc, err)
@@ -107,8 +110,8 @@ func (p *pgStore) CreateKey(uid uint64) (string, []byte, error) {
 	privKey := ed25519.NewKeyFromSeed(seed)
 	pubKey := privKey.Public().(ed25519.PublicKey)
 
-	// Address is hex-encoded public key (for Verify to work)
-	addr := hex.EncodeToString(pubKey)
+	// Address is base58-encoded public key (to match node format)
+	addr := base58.Encode(pubKey)
 
 	// Store the seed (not the full private key) for SignTx compatibility
 	enc, err := p.encrypt(seed)
@@ -117,7 +120,7 @@ func (p *pgStore) CreateKey(uid uint64) (string, []byte, error) {
 	}
 
 	_, err = p.db.Exec(
-		`INSERT INTO mmn_user_keys (user_id, address, enc_privkey) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET address = EXCLUDED.address, enc_privkey = EXCLUDED.enc_privkey, updated_at = now()`,
+		`INSERT INTO mmn_user_keys(user_id,address,enc_privkey) VALUES($1,$2,$3)`,
 		uid, addr, enc,
 	)
 	fmt.Printf("CreateKey done %d %s\n", uid, addr)
