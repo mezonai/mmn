@@ -8,7 +8,9 @@ import (
 	"github.com/mr-tron/base58"
 )
 
+const NATIVE_DECIMAL = 6
 const addressDecodedExpectedLength = 32
+const TxTypeTransfer = 0
 
 var (
 	ErrInvalidAddress = errors.New("domain: invalid address format")
@@ -35,10 +37,6 @@ func ValidateAddress(addr string) error {
 }
 
 // ----- Tx -----
-const (
-	TxTypeTransfer = 0
-)
-
 type Tx struct {
 	Type      int          `json:"type"`
 	Sender    string       `json:"sender"`
@@ -104,12 +102,6 @@ type TxHistoryResponse struct {
 	Total uint32
 	Txs   []*TxMetaResponse
 }
-
-const (
-	UNLOCK_ITEM_STATUS_PENDING = 0
-	UNLOCK_ITEM_STATUS_SUCCESS = 1
-	UNLOCK_ITEM_STATUS_FAILED  = 2
-)
 
 // TxInfo represents transaction information returned by GetTxByHash
 type TxInfo struct {
