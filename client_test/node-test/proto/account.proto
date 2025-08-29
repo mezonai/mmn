@@ -9,8 +9,9 @@ message GetAccountRequest {
 
 message GetAccountResponse {
   string address = 1;
-  uint64 balance = 2;
+  string balance = 2;
   uint64 nonce   = 3;
+  uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
 message GetTxHistoryRequest {
@@ -23,7 +24,7 @@ message GetTxHistoryRequest {
 message TxMeta {
   string sender    = 1; // sender address
   string recipient = 2; // recipient address
-  uint64 amount    = 3; // amount
+  string amount    = 3; // amount
   uint64 nonce     = 4; // nonce
   uint64 timestamp = 5;
   enum Status {
@@ -38,6 +39,7 @@ message TxMeta {
 message GetTxHistoryResponse {
   uint32 total = 1;
   repeated TxMeta txs = 2;
+  uint32 decimals = 3; // Number of fractional digits for amount formatting
 }
 
 message GetCurrentNonceRequest {

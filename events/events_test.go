@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mezonai/mmn/types"
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/transaction"
 )
 
 func TestEventBus(t *testing.T) {
@@ -20,11 +21,11 @@ func TestEventBus(t *testing.T) {
 	}
 
 	// Test publishing event
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
@@ -62,11 +63,11 @@ func TestEventBus(t *testing.T) {
 
 func TestBlockchainEvents(t *testing.T) {
 	// Test TransactionAddedToMempool
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
@@ -119,11 +120,11 @@ func TestMultipleSubscribers(t *testing.T) {
 	}
 
 	// Test publishing event
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
@@ -236,11 +237,11 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 }
 
 func TestTransactionAddedToMempool(t *testing.T) {
-	tx := &types.Transaction{
-		Type:      types.TxTypeTransfer,
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender-address",
 		Recipient: "recipient-address",
-		Amount:    1000,
+		Amount:    uint256.NewInt(1000),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 	

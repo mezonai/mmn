@@ -79,7 +79,7 @@ type TxMsg struct {
 	Type          int32                  `protobuf:"varint,1,opt,name=type,proto3" json:"type,omitempty"`
 	Sender        string                 `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
 	Recipient     string                 `protobuf:"bytes,3,opt,name=recipient,proto3" json:"recipient,omitempty"`
-	Amount        uint64                 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Amount        string                 `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
 	Timestamp     uint64                 `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	TextData      string                 `protobuf:"bytes,6,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
 	Nonce         uint64                 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
@@ -138,11 +138,11 @@ func (x *TxMsg) GetRecipient() string {
 	return ""
 }
 
-func (x *TxMsg) GetAmount() uint64 {
+func (x *TxMsg) GetAmount() string {
 	if x != nil {
 		return x.Amount
 	}
-	return 0
+	return ""
 }
 
 func (x *TxMsg) GetTimestamp() uint64 {
@@ -378,9 +378,14 @@ type TxInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sender        string                 `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
 	Recipient     string                 `protobuf:"bytes,2,opt,name=recipient,proto3" json:"recipient,omitempty"`
-	Amount        uint64                 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	Amount        string                 `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
 	Timestamp     uint64                 `protobuf:"varint,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	TextData      string                 `protobuf:"bytes,5,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
+	Nonce         uint64                 `protobuf:"varint,6,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Slot          uint64                 `protobuf:"varint,7,opt,name=slot,proto3" json:"slot,omitempty"`
+	Blockhash     string                 `protobuf:"bytes,8,opt,name=blockhash,proto3" json:"blockhash,omitempty"`
+	Status        int32                  `protobuf:"varint,9,opt,name=status,proto3" json:"status,omitempty"`
+	ErrMsg        string                 `protobuf:"bytes,10,opt,name=err_msg,json=errMsg,proto3" json:"err_msg,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -429,11 +434,11 @@ func (x *TxInfo) GetRecipient() string {
 	return ""
 }
 
-func (x *TxInfo) GetAmount() uint64 {
+func (x *TxInfo) GetAmount() string {
 	if x != nil {
 		return x.Amount
 	}
-	return 0
+	return ""
 }
 
 func (x *TxInfo) GetTimestamp() uint64 {
@@ -450,10 +455,46 @@ func (x *TxInfo) GetTextData() string {
 	return ""
 }
 
+func (x *TxInfo) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
+func (x *TxInfo) GetSlot() uint64 {
+	if x != nil {
+		return x.Slot
+	}
+	return 0
+}
+
+func (x *TxInfo) GetBlockhash() string {
+	if x != nil {
+		return x.Blockhash
+	}
+	return ""
+}
+
+func (x *TxInfo) GetStatus() int32 {
+	if x != nil {
+		return x.Status
+	}
+	return 0
+}
+
+func (x *TxInfo) GetErrMsg() string {
+	if x != nil {
+		return x.ErrMsg
+	}
+	return ""
+}
+
 type GetTxByHashResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Error         string                 `protobuf:"bytes,1,opt,name=error,proto3" json:"error,omitempty"`
 	Tx            *TxInfo                `protobuf:"bytes,2,opt,name=tx,proto3" json:"tx,omitempty"`
+	Decimals      uint32                 `protobuf:"varint,3,opt,name=decimals,proto3" json:"decimals,omitempty"` // Number of fractional digits for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -500,6 +541,13 @@ func (x *GetTxByHashResponse) GetTx() *TxInfo {
 		return x.Tx
 	}
 	return nil
+}
+
+func (x *GetTxByHashResponse) GetDecimals() uint32 {
+	if x != nil {
+		return x.Decimals
+	}
+	return 0
 }
 
 // Request to get transaction status
@@ -686,7 +734,7 @@ const file_tx_proto_rawDesc = "" +
 	"\x04type\x18\x01 \x01(\x05R\x04type\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x03 \x01(\tR\trecipient\x12\x16\n" +
-	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12\x1c\n" +
+	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x04R\ttimestamp\x12\x1b\n" +
 	"\ttext_data\x18\x06 \x01(\tR\btextData\x12\x14\n" +
 	"\x05nonce\x18\a \x01(\x04R\x05nonce\"N\n" +
@@ -703,16 +751,23 @@ const file_tx_proto_rawDesc = "" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\"-\n" +
 	"\x12GetTxByHashRequest\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x91\x01\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x8a\x02\n" +
 	"\x06TxInfo\x12\x16\n" +
 	"\x06sender\x18\x01 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12\x1c\n" +
+	"\x06amount\x18\x03 \x01(\tR\x06amount\x12\x1c\n" +
 	"\ttimestamp\x18\x04 \x01(\x04R\ttimestamp\x12\x1b\n" +
-	"\ttext_data\x18\x05 \x01(\tR\btextData\"H\n" +
+	"\ttext_data\x18\x05 \x01(\tR\btextData\x12\x14\n" +
+	"\x05nonce\x18\x06 \x01(\x04R\x05nonce\x12\x12\n" +
+	"\x04slot\x18\a \x01(\x04R\x04slot\x12\x1c\n" +
+	"\tblockhash\x18\b \x01(\tR\tblockhash\x12\x16\n" +
+	"\x06status\x18\t \x01(\x05R\x06status\x12\x17\n" +
+	"\aerr_msg\x18\n" +
+	" \x01(\tR\x06errMsg\"d\n" +
 	"\x13GetTxByHashResponse\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1b\n" +
-	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\"6\n" +
+	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\x12\x1a\n" +
+	"\bdecimals\x18\x03 \x01(\rR\bdecimals\"6\n" +
 	"\x1bGetTransactionStatusRequest\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x87\x02\n" +
 	"\x15TransactionStatusInfo\x12\x17\n" +

@@ -11,15 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mezoncfg"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/blockchain"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/adapter/keystore"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/domain"
+	"github.com/holiman/uint256"
+	mmnClient "github.com/mezonai/mmn/client"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
 )
 
 const (
-	defaultMainnetEndpoints = "localhost:9001,localhost:9002,localhost:9003" // Your local mainnet gRPC endpoint
+	defaultMainnetEndpoints = "localhost:9001" // Your local mainnet gRPC endpoint
 	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
 	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
 )
@@ -89,14 +88,11 @@ func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
 	}
 
 	// Setup mainnet client
-	config := mezoncfg.MmnConfig{
-		Endpoints: endpoint,
-		Timeout:   30000,
-		ChainID:   "1",
-		MasterKey: masterKey,
+	config := mmnClient.Config{
+		Endpoint: endpoint,
 	}
 
-	mainnetClient, err := blockchain.NewGRPCClient(config)
+	mainnetClient, err := mmnClient.NewClient(config)
 	if err != nil {
 		t.Fatalf("Failed to create mainnet client: %v", err)
 	}
@@ -197,13 +193,13 @@ func sendToken(t *testing.T, service *service.TxService, key int, wg *sync.WaitG
 	fromAddr := "0b341da31ed91c8aa159d1dfeff1761795c84f70d00bddff2fa58147e6e3b493"
 	toAddr := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
 	fromPriv := []byte{216, 225, 123, 4, 170, 149, 32, 216, 126, 223, 75, 46, 184, 101, 133, 247, 98, 166, 96, 57, 12, 104, 188, 249, 247, 23, 108, 201, 37, 25, 40, 231}
-	amount := uint64(1) // Send minimal amount for testing
+	amount := uint256.NewInt(1) // Send minimal amount for testing
 	textData := fmt.Sprintf("Integration test transfer %d", key)
 
 	ctx := context.Background()
 	start := time.Now()
 	// _, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
-	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData, domain.TxTypeTransfer)
+	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData, mmnClient.TxTypeTransfer)
 	latency := time.Since(start)
 
 	mu.Lock()
