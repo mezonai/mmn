@@ -54,11 +54,27 @@ MSYS_NO_PATHCONV=1 go run main.go node \
 
 Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
 
-# run with docker
-## run nodes
+# Run with docker
+## Build and run nodes
 
-docker compose build
-docker compose up
+  ```
+  docker compose build
+  docker compose up
+  ```
+
+## Build & run with LevelDB
+
+-Use direct command
+  ```
+  DB_VENDOR=leveldb docker compose up -d --build
+  ```
+-Use .env file
+  - Create `.env` file in the root directory of source
+    ```
+    DB_VENDOR=leveldb
+    ```
+  - Run `docker compose up -d --build` to build and run nodes
+
 
 # Build
 go build -o bin/mmn ./cmd

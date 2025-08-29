@@ -1,5 +1,12 @@
 FROM golang:1.23-bookworm AS builder
 
+# Build argument for database selection
+ARG DB_VENDOR=rocksdb
+RUN echo "DB IS $DB_VENDOR"
+RUN if [ "$DB_VENDOR" != "rocksdb" ] && [ "$DB_VENDOR" != "leveldb" ]; then \
+        echo "ERROR: Invalid DB_VENDOR=$DB_VENDOR. Must be rocksdb or leveldb." && exit 1; \
+    fi
+
 # Install necessary libraries to build RocksDB
 RUN apt-get update && apt-get install -y \
   build-essential \
@@ -46,11 +53,8 @@ RUN go mod download
 # Copy the rest of the source code
 COPY . .
 
-# Build argument for database selection
-ARG DATABASE=rocksdb
-
 # Build binary with appropriate tags
-RUN if [ "$DATABASE" = "rocksdb" ]; then \
+RUN if [ "$DB_VENDOR" = "rocksdb" ]; then \
         go build -tags rocksdb -o mmn .; \
     else \
         go build -o mmn .; \
