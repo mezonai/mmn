@@ -19,6 +19,7 @@ message TxMsg {
   uint64 timestamp = 5;
   string text_data = 6;
   uint64 nonce = 7;
+  string extra_info = 8;
 }
 
 message SignedTxMsg {

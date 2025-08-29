@@ -105,19 +105,19 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
-			Address:      addr,
-			Balance:      "0",
-			Nonce:        0,
-			Decimals:     uint32(config.GetDecimalsFactor()),
+			Address:  addr,
+			Balance:  "0",
+			Nonce:    0,
+			Decimals: uint32(config.GetDecimalsFactor()),
 		}, nil
 	}
 	balance := utils.Uint256ToString(acc.Balance)
-	
+
 	return &pb.GetAccountResponse{
-		Address:      addr,
-		Balance:      balance,
-		Nonce:        acc.Nonce,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Address:  addr,
+		Balance:  balance,
+		Nonce:    acc.Nonce,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -186,7 +186,7 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
-	
+
 	txInfo := &pb.TxInfo{
 		Sender:    tx.Sender,
 		Recipient: tx.Recipient,
@@ -200,8 +200,8 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		ErrMsg:    txMeta.Error,
 	}
 	return &pb.GetTxByHashResponse{
-		Tx:          txInfo,
-		Decimals:    uint32(config.GetDecimalsFactor()),
+		Tx:       txInfo,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -211,7 +211,7 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 	txMetas := make([]*pb.TxMeta, len(txs))
 	for i, tx := range txs {
 		amount := utils.Uint256ToString(tx.Amount)
-		
+
 		txMetas[i] = &pb.TxMeta{
 			Sender:    tx.Sender,
 			Recipient: tx.Recipient,
@@ -219,12 +219,13 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 			Nonce:     tx.Nonce,
 			Timestamp: tx.Timestamp,
 			Status:    pb.TxMeta_CONFIRMED,
+			ExtraInfo: tx.ExtraInfo,
 		}
 	}
 	return &pb.GetTxHistoryResponse{
-		Total:        total,
-		Txs:          txMetas,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Total:    total,
+		Txs:      txMetas,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -499,7 +500,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
-			
+
 			senderAcc, err := s.ledger.GetAccount(tx.Sender)
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
@@ -512,7 +513,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
-			
+
 			txStatus := info.Status
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
@@ -550,7 +551,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	}
 
 	return &pb.GetBlockByNumberResponse{
-		Blocks:       blocks,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Blocks:   blocks,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }

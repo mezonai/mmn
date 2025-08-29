@@ -16,19 +16,23 @@ const (
 )
 
 type Transaction struct {
-	Type      int32       `json:"type"`
-	Sender    string      `json:"sender"`
-	Recipient string      `json:"recipient"`
+	Type      int32        `json:"type"`
+	Sender    string       `json:"sender"`
+	Recipient string       `json:"recipient"`
 	Amount    *uint256.Int `json:"amount"`
-	Timestamp uint64      `json:"timestamp"`
-	TextData  string      `json:"text_data"`
-	Nonce     uint64      `json:"nonce,omitempty"`
-	Signature string      `json:"signature,omitempty"`
+	Timestamp uint64       `json:"timestamp"`
+	TextData  string       `json:"text_data"`
+	Nonce     uint64       `json:"nonce,omitempty"`
+	Signature string       `json:"signature,omitempty"`
+	ExtraInfo string       `json:"extra_info,omitempty"`
 }
 
 func (tx *Transaction) Serialize() []byte {
 	amountStr := uint256ToString(tx.Amount)
-	metadata := fmt.Sprintf("%d|%s|%s|%s|%s|%d", tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce)
+	metadata := fmt.Sprintf(
+		"%d|%s|%s|%s|%s|%d|%s",
+		tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce, tx.ExtraInfo,
+	)
 	return []byte(metadata)
 }
 

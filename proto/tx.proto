@@ -19,6 +19,7 @@ message TxMsg {
   uint64 timestamp = 5;
   string text_data = 6;
   uint64 nonce = 7;
+  string extra_info = 8;
 }
 
 message SignedTxMsg {
@@ -52,6 +53,7 @@ message TxInfo {
   string blockhash = 8;
   int32 status = 9;
   string err_msg = 10;
+  string extra_info = 11;
 }
 
 message GetTxByHashResponse {

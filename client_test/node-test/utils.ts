@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-import { GrpcClient } from './grpc_client';
+import {GrpcClient} from './grpc_client';
 
 // Faucet keypair from genesis configuration
 export const faucetPrivateKeyHex =
@@ -28,6 +28,7 @@ export interface Tx {
   timestamp: number;// Should remove or not
   text_data: string;
   nonce: number;
+  extra_info: string
   signature: string;
 }
 
@@ -77,7 +78,8 @@ export function buildTx(
   amount: number,
   text_data: string,
   nonce: number,
-  type: number
+  type: number,
+  extra_info?: string
 ): Tx {
   return {
     type,
@@ -87,13 +89,14 @@ export function buildTx(
     timestamp: Date.now(),
     text_data,
     nonce,
+    extra_info: extra_info || "",
     signature: '',
   };
 }
 
 // Serialize transaction for signing
 export function serializeTx(tx: Tx): Buffer {
-  const data = `${tx.type}|${tx.sender}|${tx.recipient}|${tx.amount}|${tx.text_data}|${tx.nonce}`;
+  const data = `${tx.type}|${tx.sender}|${tx.recipient}|${tx.amount}|${tx.text_data}|${tx.nonce}|${tx.extra_info}`;
   return Buffer.from(data, 'utf8');
 }
 
@@ -122,6 +125,7 @@ export async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
       timestamp: tx.timestamp,
       text_data: tx.text_data,
       nonce: tx.nonce,
+      extra_info: tx.extra_info
     }, tx.signature);
     
     return {
@@ -162,7 +166,7 @@ fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, ma
       console.log(`Fund transaction response (attempt ${attempt}):`, response);
       // If successful, wait and verify the balance was updated
       if (response.ok) {
-        await waitForTransaction(800); // ~ 2 slots
+        await waitForTransaction(8000); // ~ 2 slots
         try {
           const balance = await getAccountBalance(grpcClient, recipientAddress);
           console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);

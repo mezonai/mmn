@@ -83,6 +83,7 @@ type TxMsg struct {
 	Timestamp     uint64                 `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	TextData      string                 `protobuf:"bytes,6,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
 	Nonce         uint64                 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	ExtraInfo     string                 `protobuf:"bytes,8,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -164,6 +165,13 @@ func (x *TxMsg) GetNonce() uint64 {
 		return x.Nonce
 	}
 	return 0
+}
+
+func (x *TxMsg) GetExtraInfo() string {
+	if x != nil {
+		return x.ExtraInfo
+	}
+	return ""
 }
 
 type SignedTxMsg struct {
@@ -386,6 +394,7 @@ type TxInfo struct {
 	Blockhash     string                 `protobuf:"bytes,8,opt,name=blockhash,proto3" json:"blockhash,omitempty"`
 	Status        int32                  `protobuf:"varint,9,opt,name=status,proto3" json:"status,omitempty"`
 	ErrMsg        string                 `protobuf:"bytes,10,opt,name=err_msg,json=errMsg,proto3" json:"err_msg,omitempty"`
+	ExtraInfo     string                 `protobuf:"bytes,11,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -486,6 +495,13 @@ func (x *TxInfo) GetStatus() int32 {
 func (x *TxInfo) GetErrMsg() string {
 	if x != nil {
 		return x.ErrMsg
+	}
+	return ""
+}
+
+func (x *TxInfo) GetExtraInfo() string {
+	if x != nil {
+		return x.ExtraInfo
 	}
 	return ""
 }
@@ -729,7 +745,7 @@ var File_tx_proto protoreflect.FileDescriptor
 
 const file_tx_proto_rawDesc = "" +
 	"\n" +
-	"\btx.proto\x12\x03mmn\"\xba\x01\n" +
+	"\btx.proto\x12\x03mmn\"\xd9\x01\n" +
 	"\x05TxMsg\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\x05R\x04type\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
@@ -737,7 +753,9 @@ const file_tx_proto_rawDesc = "" +
 	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x04R\ttimestamp\x12\x1b\n" +
 	"\ttext_data\x18\x06 \x01(\tR\btextData\x12\x14\n" +
-	"\x05nonce\x18\a \x01(\x04R\x05nonce\"N\n" +
+	"\x05nonce\x18\a \x01(\x04R\x05nonce\x12\x1d\n" +
+	"\n" +
+	"extra_info\x18\b \x01(\tR\textraInfo\"N\n" +
 	"\vSignedTxMsg\x12!\n" +
 	"\x06tx_msg\x18\x01 \x01(\v2\n" +
 	".mmn.TxMsgR\x05txMsg\x12\x1c\n" +
@@ -751,7 +769,7 @@ const file_tx_proto_rawDesc = "" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\"-\n" +
 	"\x12GetTxByHashRequest\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\x8a\x02\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"\xa9\x02\n" +
 	"\x06TxInfo\x12\x16\n" +
 	"\x06sender\x18\x01 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
@@ -763,7 +781,9 @@ const file_tx_proto_rawDesc = "" +
 	"\tblockhash\x18\b \x01(\tR\tblockhash\x12\x16\n" +
 	"\x06status\x18\t \x01(\x05R\x06status\x12\x17\n" +
 	"\aerr_msg\x18\n" +
-	" \x01(\tR\x06errMsg\"d\n" +
+	" \x01(\tR\x06errMsg\x12\x1d\n" +
+	"\n" +
+	"extra_info\x18\v \x01(\tR\textraInfo\"d\n" +
 	"\x13GetTxByHashResponse\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1b\n" +
 	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\x12\x1a\n" +

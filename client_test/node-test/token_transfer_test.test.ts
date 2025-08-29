@@ -1,17 +1,17 @@
-import { TransactionStatus } from './generated/tx';
-import { GrpcClient } from './grpc_client';
-import { TransactionTracker } from './transaction_tracker';
+import {TransactionStatus} from './generated/tx';
+import {GrpcClient} from './grpc_client';
+import {TransactionTracker} from './transaction_tracker';
 import {
-  faucetPublicKeyBase58,
-  TxTypeTransfer,
-  generateTestAccount,
-  waitForTransaction,
-  getAccountBalance,
   buildTx,
-  signTx,
-  sendTxViaGrpc,
+  faucetPublicKeyBase58,
   fundAccount,
-  getCurrentNonce
+  generateTestAccount,
+  getAccountBalance,
+  getCurrentNonce,
+  sendTxViaGrpc,
+  signTx,
+  TxTypeTransfer,
+  waitForTransaction
 } from './utils';
 
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
@@ -22,7 +22,12 @@ async function verifyTransactionHistory(
   address: string,
   expectedCount: number,
   expectedTxHashes?: string[],
-  expectedTransactions?: Array<{ sender: string; recipient: string; amount: number }>
+  expectedTransactions?: Array<{
+    sender: string;
+    recipient: string;
+    amount: number;
+    extraInfo?: string
+  }>
 ): Promise<boolean> {
   try {
     const history = await grpcClient.getTxHistory(address, 20, 0, 0);
@@ -63,6 +68,12 @@ async function verifyTransactionHistory(
           Math.abs(parseFloat(actual.amount) - expected.amount) > 0.001
         ) {
           console.warn(`Transaction ${i + 1} details don't match expected values`);
+          return false;
+        }
+
+        // Verify extra info match.
+        if (!expected.extraInfo) expected.extraInfo = "";
+        if (actual.extraInfo !== expected.extraInfo) {
           return false;
         }
       }
@@ -117,7 +128,8 @@ describe('Token Transfer Tests', () => {
       console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
 
       // Perform transfer
-      const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 100, 'Valid transfer', senderNextNonce, TxTypeTransfer);
+      const extraInfo = JSON.stringify({ type: "bribe" })
+      const transferTx = buildTx(sender.publicKeyHex, recipient.publicKeyHex, 100, 'Valid transfer', senderNextNonce, TxTypeTransfer, extraInfo);
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const transferResponse = await sendTxViaGrpc(grpcClient, transferTx);
@@ -137,7 +149,7 @@ describe('Token Transfer Tests', () => {
       // Verify transaction history with detailed verification
       const expectedTransactions = [
         { sender: faucetPublicKeyBase58, recipient: sender.publicKeyHex, amount: 1000 }, // funding
-        { sender: sender.publicKeyHex, recipient: recipient.publicKeyHex, amount: 100 }, // transfer
+        { sender: sender.publicKeyHex, recipient: recipient.publicKeyHex, amount: 100, extraInfo }, // transfer
       ];
       const senderHasHistory = await verifyTransactionHistory(
         grpcClient,
@@ -151,7 +163,7 @@ describe('Token Transfer Tests', () => {
         recipient.publicKeyHex,
         1,
         transferResponse.tx_hash ? [transferResponse.tx_hash] : undefined,
-        [{ sender: sender.publicKeyHex, recipient: recipient.publicKeyHex, amount: 100 }]
+        [{ sender: sender.publicKeyHex, recipient: recipient.publicKeyHex, amount: 100, extraInfo }]
       );
 
       expect(senderHasHistory).toBe(true);
