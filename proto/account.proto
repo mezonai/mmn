@@ -67,7 +67,7 @@ message GetAccountByAddressResponse {
 // Account data structure
 message AccountData {
   string address = 1;
-  uint64 balance = 2;
+  string balance = 2;
   uint64 nonce   = 3;
 }
 

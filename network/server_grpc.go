@@ -310,7 +310,7 @@ func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTr
 			TxHash:        txHash,
 			Sender:        tx.Sender,
 			Recipient:     tx.Recipient,
-			Amount:        tx.Amount,
+			Amount:        utils.Uint256ToString(tx.Amount),
 			Nonce:         tx.Nonce,
 			Timestamp:     tx.Timestamp,
 			Status:        pb.TransactionStatus_PENDING,
@@ -601,6 +601,6 @@ func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAdd
 		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
     }
     return &pb.GetAccountByAddressResponse{
-        Account: &pb.AccountData{Address: acc.Address, Balance: acc.Balance, Nonce: acc.Nonce},
+        Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
     }, nil
 }
