@@ -290,6 +290,56 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 	return nil, fmt.Errorf("transaction not found: %s", txHash)
 }
 
+// GetPendingTransactions returns all pending transactions from mempool with total count
+// Uses GetOrderedTransactions to get all transactions in FIFO order
+func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
+	if s.mempool == nil {
+		return &pb.GetPendingTransactionsResponse{
+			TotalCount: 0,
+			PendingTxs: []*pb.TransactionData{},
+			Error:       "mempool not available",
+		}, nil
+	}
+
+	// Get all ordered transaction hashes from mempool
+	orderedTxHashes := s.mempool.GetOrderedTransactions()
+	totalCount := uint64(len(orderedTxHashes))
+
+	// Convert transaction hashes to detailed transaction info
+	var pendingTxs []*pb.TransactionData
+	for _, txHash := range orderedTxHashes {
+		// Get transaction data from mempool
+		txData, exists := s.mempool.GetTransaction(txHash)
+		if !exists {
+			continue // Skip if transaction not found
+		}
+
+		// Parse transaction to get details
+		tx, err := utils.ParseTx(txData)
+		if err != nil {
+			continue // Skip if parsing fails
+		}
+		// Create pending transaction info
+		pendingTx := &pb.TransactionData{
+			TxHash:        txHash,
+			Sender:        tx.Sender,
+			Recipient:     tx.Recipient,
+			Amount:        utils.Uint256ToString(tx.Amount),
+			Nonce:         tx.Nonce,
+			Timestamp:     tx.Timestamp,
+			Status:        pb.TransactionStatus_PENDING,
+		}
+		
+		pendingTxs = append(pendingTxs, pendingTx)
+	}
+
+	return &pb.GetPendingTransactionsResponse{
+		TotalCount: totalCount,
+		PendingTxs: pendingTxs,
+		Error:       "",
+	}, nil
+}
+
 // SubscribeTransactionStatus streams transaction status updates using event-based system
 func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusInfo]) error {
 	// Subscribe to all blockchain events
@@ -514,14 +564,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
 
-			senderAcc, err := s.ledger.GetAccount(tx.Sender)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
-			}
-			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
-			}
+
 			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
@@ -536,16 +579,6 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
 				Status:    txStatus,
-				SenderAccount: &pb.AccountData{
-					Address: senderAcc.Address,
-					Balance: utils.Uint256ToString(senderAcc.Balance),
-					Nonce:   senderAcc.Nonce,
-				},
-				RecipientAccount: &pb.AccountData{
-					Address: recipientAcc.Address,
-					Balance: utils.Uint256ToString(recipientAcc.Balance),
-					Nonce:   recipientAcc.Nonce,
-				},
 			})
 		}
 
@@ -567,4 +600,22 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		Blocks:   blocks,
 		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
+}
+
+// GetAccountByAddress is a convenience RPC under AccountService to fetch account info
+func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
+    if in == nil || in.Address == "" {
+        return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
+    }
+
+    acc, err := s.ledger.GetAccount(in.Address)
+    if err != nil {
+        return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
+    }
+    if acc == nil {
+		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
+    }
+    return &pb.GetAccountByAddressResponse{
+        Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
+    }, nil
 }
