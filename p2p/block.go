@@ -310,9 +310,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			ToSlot:    nextToSlot,
 		}
 
-		go func() {
-			ln.sendBlocksOverStream(nextReq, targetPeer)
-		}()
+		ln.sendBlocksOverStream(nextReq, targetPeer)
 	}
 }
 
