@@ -1,7 +1,7 @@
 syntax = "proto3";
 package mmn;
 option go_package = "mmn/proto;proto";
-import "proto/tx.proto";
+import "tx.proto";
 
 message Entry {
   uint64 num_hashes = 1;
@@ -44,7 +44,8 @@ message GetBlockNumberResponse {
 
 message GetBlockByNumberResponse {
   repeated Block blocks = 1;   
-  string error = 3; 
+  string error = 3;
+  uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
 service BlockService {

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/transaction"
 )
 
@@ -24,7 +25,7 @@ func TestEventBus(t *testing.T) {
 		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
@@ -66,7 +67,7 @@ func TestBlockchainEvents(t *testing.T) {
 		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
@@ -123,7 +124,7 @@ func TestMultipleSubscribers(t *testing.T) {
 		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
-		Amount:    100,
+		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
@@ -240,7 +241,7 @@ func TestTransactionAddedToMempool(t *testing.T) {
 		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender-address",
 		Recipient: "recipient-address",
-		Amount:    1000,
+		Amount:    uint256.NewInt(1000),
 		Timestamp: uint64(time.Now().Unix()),
 	}
 	
