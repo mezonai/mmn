@@ -13,6 +13,7 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/transaction"
@@ -181,6 +182,85 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
+		}
+	}
+
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
+	return nil
+}
+
+func (l *Ledger) ApplyBlockToBatch(batch db.DatabaseBatch, b *block.Block) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+
+	for _, entry := range b.Entries {
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+		txMetas := make([]*types.TransactionMeta, 0, len(txs))
+
+		for _, tx := range txs {
+			sender, err := l.accountStore.GetByAddr(tx.Sender)
+			if err != nil {
+				return err
+			}
+			if sender == nil {
+				if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
+					return err
+				}
+			}
+
+			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
+			if err != nil {
+				return err
+			}
+			if recipient == nil {
+				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
+					return err
+				}
+			}
+
+			state := map[string]*types.Account{
+				sender.Address:    sender,
+				recipient.Address: recipient,
+			}
+
+			if err := applyTx(state, tx); err != nil {
+				if l.eventRouter != nil {
+					txHash := tx.Hash()
+					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
+
+				fmt.Printf("Apply fail: %v\n", err)
+				state[tx.Sender].Nonce++
+				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
+				continue
+			}
+
+			fmt.Printf("Applied tx %s\n", tx.Hash())
+			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
+			addHistory(state[tx.Sender], tx)
+
+			if tx.Recipient != tx.Sender {
+				addHistory(state[tx.Recipient], tx)
+			}
+
+			if err := l.accountStore.StoreToBatch(batch, []*types.Account{sender, recipient}); err != nil {
+				if l.eventRouter != nil {
+					event := events.NewTransactionFailed("", fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
+				return err
+			}
+		}
+
+		if len(txMetas) > 0 {
+			if err := l.txMetaStore.StoreToBatch(batch, txMetas); err != nil {
+				return err
+			}
 		}
 	}
 

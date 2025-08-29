@@ -39,6 +39,8 @@ type BlockStore interface {
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
+	PrepareMarkFinalizedToBatch(batch db.DatabaseBatch, slot uint64) error
+	CompleteMarkFinalized(slot uint64, block *block.Block) error
 }
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
@@ -168,13 +170,10 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		return fmt.Errorf("block cannot be nil")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	key := slotToBlockKey(b.Slot)
+	blockKey := slotToBlockKey(b.Slot)
 
 	// Check if block already exists
-	exists, err := s.provider.Has(key)
+	exists, err := s.provider.Has(blockKey)
 	if err != nil {
 		return fmt.Errorf("failed to check block existence: %w", err)
 	}
@@ -184,22 +183,30 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	// Store block
-	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
+	blockValue, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
-	if err := s.provider.Put(key, value); err != nil {
-		return fmt.Errorf("failed to store block: %w", err)
-	}
 
-	// Store block tsx
-	// TODO: storing block & its tsx should be atomic operation. Consider use batch or db transaction (if supported)
+	// Create atomic batch for block and transactions
+	batch := s.provider.Batch()
+
+	// Add block to batch
+	batch.Put(blockKey, blockValue)
+
 	txs := make([]*transaction.Transaction, 0)
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
 	}
-	if err := s.txStore.StoreBatch(txs); err != nil {
-		return fmt.Errorf("failed to store txs: %w", err)
+
+	// Store transactions in the same batch
+	if err := s.txStore.StoreToBatch(batch, txs); err != nil {
+		return fmt.Errorf("failed to store transactions: %w", err)
+	}
+
+	// Atomic write of block and all transactions
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to store block and transactions atomically: %w", err)
 	}
 
 	// Publish transaction inclusion events if event router is provided
@@ -331,17 +338,62 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 
 		// Search through all entries in the block
 		for _, entry := range blockData.Entries {
-			for _, tx := range entry.TxHashes {
-				tx, err := bs.txStore.GetByHash(tx)
-				if err != nil {
-					logx.Warn("BLOCKSTORE", "Failed to get transaction for transaction search", "slot", s, "error", err)
-					continue
-				}
-				if tx.Hash() == clientHashHex {
+			for _, txHash := range entry.TxHashes {
+				if txHash == clientHashHex {
 					return s, &blockData, blockData.Status == block.BlockFinalized, true
 				}
 			}
 		}
 	}
 	return 0, nil, false, false
+}
+
+func (s *GenericBlockStore) PrepareMarkFinalizedToBatch(batch db.DatabaseBatch, slot uint64) error {
+	if !s.HasCompleteBlock(slot) {
+		return fmt.Errorf("block at slot %d does not exist", slot)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if slot <= s.latestFinalized {
+		return fmt.Errorf("slot %d is already finalized", slot)
+	}
+
+	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
+	metaValue := make([]byte, 8)
+	binary.BigEndian.PutUint64(metaValue, slot)
+	batch.Put(metaKey, metaValue)
+
+	return nil
+}
+
+func (s *GenericBlockStore) CompleteMarkFinalized(slot uint64, blk *block.Block) error {
+	s.mu.Lock()
+
+	if slot <= s.latestFinalized {
+		return fmt.Errorf("slot %d is already finalized", slot)
+	}
+
+	s.latestFinalized = slot
+
+	s.mu.Unlock()
+
+	if s.eventRouter != nil && blk != nil {
+		blockHashHex := blk.HashString()
+		for _, entry := range blk.Entries {
+			txs, err := s.txStore.GetBatch(entry.TxHashes)
+			if err != nil {
+				logx.Warn("BLOCKSTORE", "Failed to get transactions for finalization event", "slot", slot, "error", err)
+				continue
+			}
+			for _, tx := range txs {
+				event := events.NewTransactionFinalized(tx.Hash(), slot, blockHashHex)
+				s.eventRouter.PublishTransactionEvent(event)
+			}
+		}
+	}
+
+	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
+	return nil
 }

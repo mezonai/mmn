@@ -12,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
@@ -156,29 +157,34 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 }
 
 func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
-	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
 
 	logx.Info("VOTE", "Block committed: slot=", vote.Slot)
-	// check block apply or not if apply log and return
 	if bs.IsApplied(vote.Slot) {
 		logx.Info("VOTE", "Block already applied: slot=", vote.Slot)
 		return nil
 	}
-	// Apply block to ledger
 	block := bs.Block(vote.Slot)
 	if block == nil {
-		// missing block how to handle
 		return fmt.Errorf("block not found for slot %d", vote.Slot)
 	}
-	if err := ld.ApplyBlock(block); err != nil {
-		return fmt.Errorf("apply block error: %w", err)
+
+	err := ln.txManager.WithBatch(func(batch db.DatabaseBatch) error {
+		if err := ld.ApplyBlockToBatch(batch, block); err != nil {
+			return fmt.Errorf("apply block error: %w", err)
+		}
+		if err := bs.PrepareMarkFinalizedToBatch(batch, vote.Slot); err != nil {
+			return fmt.Errorf("prepare mark finalized error: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
-	// Mark block as finalized
-	if err := bs.MarkFinalized(vote.Slot); err != nil {
-		return fmt.Errorf("mark block as finalized error: %w", err)
+	if err := bs.CompleteMarkFinalized(vote.Slot, block); err != nil {
+		return fmt.Errorf("complete mark finalized error: %w", err)
 	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)

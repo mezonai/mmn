@@ -3,10 +3,11 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
-	"sync"
 )
 
 type AccountStore interface {
@@ -14,6 +15,7 @@ type AccountStore interface {
 	StoreBatch(accounts []*types.Account) error
 	GetByAddr(addr string) (*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
+	StoreToBatch(batch db.DatabaseBatch, accounts []*types.Account) error
 	MustClose()
 }
 
@@ -101,6 +103,17 @@ func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {
 	defer as.mu.RUnlock()
 
 	return as.dbProvider.Has(as.getDbKey(addr))
+}
+
+func (as *GenericAccountStore) StoreToBatch(batch db.DatabaseBatch, accounts []*types.Account) error {
+	for _, account := range accounts {
+		accountData, err := json.Marshal(account)
+		if err != nil {
+			return fmt.Errorf("failed to marshal account: %w", err)
+		}
+		batch.Put(as.getDbKey(account.Address), accountData)
+	}
+	return nil
 }
 
 func (as *GenericAccountStore) MustClose() {
