@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 
@@ -107,16 +108,20 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
-			Address: addr,
-			Balance: 0,
-			Nonce:   0,
+			Address:  addr,
+			Balance:  "0",
+			Nonce:    0,
+			Decimals: uint32(config.GetDecimalsFactor()),
 		}, nil
 	}
-	logx.Info("GRPC", fmt.Sprintf("GetAccount response for address: %s, nonce: %d, balance: %d", addr, acc.Nonce, acc.Balance))
+	balance := utils.Uint256ToString(acc.Balance)
+	logx.Info("GRPC", fmt.Sprintf("GetAccount response for address: %s, nonce: %d, balance: %s", addr, acc.Nonce, balance))
+
 	return &pb.GetAccountResponse{
-		Address: addr,
-		Balance: acc.Balance,
-		Nonce:   acc.Nonce,
+		Address:  addr,
+		Balance:  balance,
+		Nonce:    acc.Nonce,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -194,10 +199,12 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 	if err != nil {
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
+	amount := utils.Uint256ToString(tx.Amount)
+
 	txInfo := &pb.TxInfo{
 		Sender:    tx.Sender,
 		Recipient: tx.Recipient,
-		Amount:    tx.Amount,
+		Amount:    amount,
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
 		Nonce:     tx.Nonce,
@@ -206,7 +213,10 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Status:    txMeta.Status,
 		ErrMsg:    txMeta.Error,
 	}
-	return &pb.GetTxByHashResponse{Tx: txInfo}, nil
+	return &pb.GetTxByHashResponse{
+		Tx:       txInfo,
+		Decimals: uint32(config.GetDecimalsFactor()),
+	}, nil
 }
 
 func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
@@ -214,18 +224,21 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
 	txMetas := make([]*pb.TxMeta, len(txs))
 	for i, tx := range txs {
+		amount := utils.Uint256ToString(tx.Amount)
+
 		txMetas[i] = &pb.TxMeta{
 			Sender:    tx.Sender,
 			Recipient: tx.Recipient,
-			Amount:    tx.Amount,
+			Amount:    amount,
 			Nonce:     tx.Nonce,
 			Timestamp: tx.Timestamp,
 			Status:    pb.TxMeta_CONFIRMED,
 		}
 	}
 	return &pb.GetTxHistoryResponse{
-		Total: total,
-		Txs:   txMetas,
+		Total:    total,
+		Txs:      txMetas,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -500,6 +513,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
+
 			senderAcc, err := s.ledger.GetAccount(tx.Sender)
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
@@ -512,23 +526,24 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
+
 			txStatus := info.Status
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
 				Recipient: tx.Recipient,
-				Amount:    tx.Amount,
+				Amount:    utils.Uint256ToString(tx.Amount),
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
 				Status:    txStatus,
 				SenderAccount: &pb.AccountData{
 					Address: senderAcc.Address,
-					Balance: senderAcc.Balance,
+					Balance: utils.Uint256ToString(senderAcc.Balance),
 					Nonce:   senderAcc.Nonce,
 				},
 				RecipientAccount: &pb.AccountData{
 					Address: recipientAcc.Address,
-					Balance: recipientAcc.Balance,
+					Balance: utils.Uint256ToString(recipientAcc.Balance),
 					Nonce:   recipientAcc.Nonce,
 				},
 			})
@@ -548,5 +563,8 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		blocks = append(blocks, pbBlock)
 	}
 
-	return &pb.GetBlockByNumberResponse{Blocks: blocks}, nil
+	return &pb.GetBlockByNumberResponse{
+		Blocks:   blocks,
+		Decimals: uint32(config.GetDecimalsFactor()),
+	}, nil
 }

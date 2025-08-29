@@ -51,7 +51,7 @@ export class GrpcClient {
       type: txMsg.type,
       sender: txMsg.sender,
       recipient: txMsg.recipient,
-      amount: BigInt(txMsg.amount),
+      amount: txMsg.amount.toString(),
       timestamp: BigInt(txMsg.timestamp),
       textData: txMsg.text_data,
       nonce: BigInt(txMsg.nonce),

@@ -15,7 +15,7 @@ message TxMsg {
   int32 type = 1;
   string sender = 2;
   string recipient = 3;
-  uint64 amount = 4;
+  string amount = 4;
   uint64 timestamp = 5;
   string text_data = 6;
   uint64 nonce = 7;
@@ -44,7 +44,7 @@ message GetTxByHashRequest {
 message TxInfo {
   string sender = 1;
   string recipient = 2;
-  uint64 amount = 3;
+  string amount = 3;
   uint64 timestamp = 4;
   string text_data = 5;
   uint64 nonce = 6;
@@ -57,6 +57,7 @@ message TxInfo {
 message GetTxByHashResponse {
   string error = 1;
   TxInfo tx = 2;
+  uint32 decimals = 3; // Number of fractional digits for amount formatting
 }
 
 // Request to get transaction status

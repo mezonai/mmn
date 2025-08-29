@@ -10,6 +10,12 @@ import (
 
 var ErrUnsupportedKey = errors.New("crypto: unsupported private key length")
 
+func Serialize(tx *Tx) []byte {
+	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce)
+	fmt.Println("Serialize metadata:", metadata)
+	return []byte(metadata)
+}
+
 func SignTx(tx *Tx, privKey []byte) (SignedTx, error) {
 	switch l := len(privKey); l {
 	case ed25519.SeedSize:
@@ -27,14 +33,9 @@ func SignTx(tx *Tx, privKey []byte) (SignedTx, error) {
 	}, nil
 }
 
-func Serialize(tx *Tx) []byte {
-	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce)
-	return []byte(metadata)
-}
-
-func Verify(tx *Tx, sig string, pubKeyBase58 string) bool {
-	decoded, err := base58.Decode(pubKeyBase58)
-	if err != nil || len(decoded) != ed25519.PublicKeySize {
+func Verify(tx *Tx, sig string) bool {
+	decoded, err := base58.Decode(tx.Sender)
+	if err != nil {
 		return false
 	}
 	pubKey := ed25519.PublicKey(decoded)

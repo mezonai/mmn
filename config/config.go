@@ -15,6 +15,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Global decimals (raw, from genesis)
+var globalDecimalsFactor uint8
+
+func GetDecimalsFactor() uint8 {
+	return globalDecimalsFactor
+}
+
 // LoadGenesisConfig reads and parses the genesis.yml file
 func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 	log.Printf("[config] LoadGenesisConfig called with path: %s", path)
@@ -33,6 +40,12 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 		return nil, err
 	}
 	log.Printf("[config] Successfully loaded config: LeaderSchedule=%d entries, Faucet=%+v", len(cfgFile.Config.LeaderSchedule), cfgFile.Config.Alloc)
+
+	// Set global decimals from genesis config (0 is allowed)
+	decimals := cfgFile.Config.NativeCurrency.Decimals
+	globalDecimalsFactor = decimals
+	log.Printf("[config] Decimals set from genesis: decimals=%d", globalDecimalsFactor)
+
 	return &cfgFile.Config, nil
 }
 

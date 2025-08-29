@@ -53,16 +53,17 @@ go run example_tx_status_subscriber.go
 The function works with the `unlocked_items` table for unlock transactions:
 
 ```sql
-CREATE TABLE unlocked_items (
-    id SERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    item_id BIGINT NOT NULL,
-    item_type VARCHAR(50) NOT NULL,
-    tx_hash VARCHAR(64) NOT NULL,
-    status INTEGER NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+    CREATE TABLE IF NOT EXISTS unlocked_items (
+        id SERIAL PRIMARY KEY,
+        user_id int8 NOT NULL,
+        item_id int8 NOT NULL,
+        item_type int2 DEFAULT 0 NOT NULL,
+        status int2 DEFAULT 0 NOT NULL,
+        create_time timestamptz DEFAULT now() NOT NULL,
+        update_time timestamptz DEFAULT now() NOT NULL,
+        tx_hash varchar NULL,
+        CONSTRAINT unlocked_items_user_id_item_id_key UNIQUE (user_id, item_id)
+    );
 ```
 
 **Recommended Index for Performance:**
