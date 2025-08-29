@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/mezonai/mmn/snapshot"
@@ -389,45 +387,12 @@ func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
 		return
 	}
 	dir := "/data/snapshots"
-	// Write a new snapshot for this slot to a slot-specific file
-	saved, err := snapshot.WriteSnapshotWithDefaults(dir, dbProvider, slot, bankHash, nil)
+	// Write snapshot and cleanup old ones, keep only the latest
+	saved, err := snapshot.WriteSnapshotAndCleanup(dir, dbProvider, slot, bankHash, nil)
 	if err != nil {
 		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
 		return
 	}
 
-	// Atomically update latest snapshot pointer (write temp latest then rename)
-	latest := filepath.Join(dir, "snapshot-latest.json")
-	tmpLatest := latest + ".tmp"
-	data, err := os.ReadFile(saved)
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to read saved snapshot: %v", err))
-		return
-	}
-	// durable write
-	f, err := os.Create(tmpLatest)
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to create temp latest snapshot: %v", err))
-		return
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write temp latest snapshot: %v", err))
-		return
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to fsync temp latest snapshot: %v", err))
-		return
-	}
-	if err := f.Close(); err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to close temp latest snapshot: %v", err))
-		return
-	}
-	if err := os.Rename(tmpLatest, latest); err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to finalize latest snapshot: %v", err))
-		return
-	}
-
-	logx.Info("SNAPSHOT", fmt.Sprintf("Updated latest snapshot: %s (slot %d)", latest, slot))
+	logx.Info("SNAPSHOT", fmt.Sprintf("Created snapshot: %s (slot %d)", saved, slot))
 }

@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/types"
 )
@@ -139,4 +141,46 @@ func ReadSnapshot(path string) (*SnapshotFile, error) {
 // WriteSnapshotWithDefaults writes a snapshot with default values for epoch and leader schedule
 func WriteSnapshotWithDefaults(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
 	return WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
+}
+
+// WriteSnapshotAndCleanup writes snapshot and keeps only the latest one
+func WriteSnapshotAndCleanup(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
+	// Write new snapshot
+	path, err := WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
+	if err != nil {
+		return "", err
+	}
+
+	// Clean up old snapshots, keep only the latest
+	if err := cleanupOldSnapshots(dir, path); err != nil {
+		logx.Error("SNAPSHOT", "Failed to cleanup old snapshots:", err)
+		// Don't return error, snapshot was written successfully
+	}
+
+	return path, nil
+}
+
+// cleanupOldSnapshots removes all snapshot files except the latest one
+func cleanupOldSnapshots(dir, latestPath string) error {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read snapshot dir: %w", err)
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+
+		filePath := filepath.Join(dir, file.Name())
+		if filePath != latestPath {
+			if err := os.Remove(filePath); err != nil {
+				logx.Error("SNAPSHOT", "Failed to remove old snapshot:", filePath, err)
+			} else {
+				logx.Info("SNAPSHOT", "Removed old snapshot:", filePath)
+			}
+		}
+	}
+
+	return nil
 }

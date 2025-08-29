@@ -208,6 +208,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	// Attach snapshot announce callback to trigger UDP download and set ready when completed
 	ln.SetCallbacks(Callbacks{
 		OnSnapshotAnnounce: func(ann SnapshotAnnounce) error {
+			logx.Info("SNAPSHOT:DEBUG", "Received snapshot announce from:", ann.PeerID, "UDP:", ann.UDPAddr, "Slot:", ann.Slot)
+
 			// Skip self announces
 			if ann.PeerID == ln.selfPubKey {
 				logx.Info("SNAPSHOT:DOWNLOAD", "skip self announce", ann.UDPAddr)
@@ -229,11 +231,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			down := snapshot.NewSnapshotDownloader(provider, "/data/snapshots")
 			logx.Info("SNAPSHOT:DOWNLOAD", "start", ann.UDPAddr)
 			go func() {
+				logx.Info("SNAPSHOT:DEBUG", "Starting download from peer:", ann.PeerID, "UDP:", ann.UDPAddr, "Slot:", ann.Slot)
 				task, err := down.DownloadSnapshotFromPeer(ln.ctx, ann.UDPAddr, ann.PeerID, ann.Slot, ann.ChunkSize)
 				if err != nil {
 					logx.Error("SNAPSHOT:DOWNLOAD", "start failed:", err)
 					return
 				}
+				logx.Info("SNAPSHOT:DEBUG", "Download task created:", task.ID)
 				for {
 					time.Sleep(2 * time.Second)
 					st, ok := down.GetDownloadStatus(task.ID)
