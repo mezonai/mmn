@@ -276,7 +276,7 @@ func (sd *SnapshotDownloader) receiveUDPChunks(task *DownloadTask) error {
 // assembleAndVerifySnapshot assembles snapshot from chunks and verifies it
 func (sd *SnapshotDownloader) assembleAndVerifySnapshot(task *DownloadTask) error {
 	// Create snapshot file
-	snapshotPath := filepath.Join(sd.snapshotDir, fmt.Sprintf("snapshot-%s.json", task.SessionID))
+	snapshotPath := filepath.Join(sd.snapshotDir, "snapshot-latest.json")
 	file, err := os.Create(snapshotPath)
 	if err != nil {
 		return fmt.Errorf("failed to create snapshot file: %w", err)
@@ -301,7 +301,7 @@ func (sd *SnapshotDownloader) assembleAndVerifySnapshot(task *DownloadTask) erro
 
 // verifyAndLoadSnapshot verifies and loads a downloaded snapshot
 func (sd *SnapshotDownloader) verifyAndLoadSnapshot(task *DownloadTask) error {
-	snapshotPath := filepath.Join(sd.snapshotDir, fmt.Sprintf("snapshot-%s.json", task.SessionID))
+	snapshotPath := filepath.Join(sd.snapshotDir, "snapshot-latest.json")
 
 	// Read and verify snapshot
 	snapshotFile, err := ReadSnapshot(snapshotPath)

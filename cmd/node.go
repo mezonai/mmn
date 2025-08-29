@@ -175,8 +175,8 @@ func runNode() {
 		ld = ledger.NewLedger(ts, as, eventRouter)
 	}
 
-	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	// Initialize PoH components but DON'T start the service yet
+	_, pohService, recorder, err := initializePoHWithoutStarting(cfg, pubKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
@@ -186,9 +186,27 @@ func runNode() {
 	if err != nil {
 		log.Fatalf("load private key: %v", err)
 	}
-	libP2pClient, collector, mp := syncNode(nodeConfig, bs, privKey, genesisPath, eventRouter, ld, recorder)
-	startNode(ctx, sigCh, cancel, cfg, nodeConfig, libP2pClient, ld, collector, bs, mp, eventRouter, privKey, genesisPath, pohService, recorder)
 
+	// Initialize network and other components first
+	libP2pClient, collector, mp := syncNode(nodeConfig, bs, privKey, genesisPath, eventRouter, ld, recorder)
+
+	// Wait for network to be ready
+	logx.Info("NODE", "Waiting for network to be ready...")
+	for !libP2pClient.IsNodeReady() {
+		time.Sleep(100 * time.Millisecond)
+	}
+	logx.Info("NODE", "Network is ready")
+
+	// Now start PoH service after network is ready
+	logx.Info("NODE", "Starting PoH service...")
+	pohService.Start()
+
+	// Wait for PoH to stabilize (give it a few ticks)
+	time.Sleep(500 * time.Millisecond)
+
+	// Finally start validator
+	logx.Info("NODE", "Starting validator...")
+	startNode(ctx, sigCh, cancel, cfg, nodeConfig, libP2pClient, ld, collector, bs, mp, eventRouter, privKey, genesisPath, pohService, recorder)
 }
 
 func syncNode(nodeConfig config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, eventRouter *events.EventRouter, ld *ledger.Ledger, recorder *poh.PohRecorder) (*p2p.Libp2pNetwork, *consensus.Collector, *mempool.Mempool) {
@@ -204,7 +222,7 @@ func syncNode(nodeConfig config.NodeConfig, bs store.BlockStore, privKey ed25519
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
+	collector := consensus.NewCollector(1) // TODO: every epoch need have a fixed number
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 	return libP2pClient, collector, mp
@@ -265,8 +283,8 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 	return store.CreateStore(storeCfg, eventRouter)
 }
 
-// initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+// initializePoHWithoutStarting initializes Proof of History components without starting the service
+func initializePoHWithoutStarting(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -287,7 +305,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
-	pohService.Start()
+	// Note: Don't call pohService.Start() here - it will be called later
 
 	return pohEngine, pohService, recorder, nil
 }

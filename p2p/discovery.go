@@ -16,7 +16,7 @@ import (
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()
 
-	logx.Info("NETWORK CONNECTED AND REQYEST NODE INFO TO JOIN", bootstrapPeer)
+	logx.Info("NETWORK CONNECTED AND REQUEST NODE INFO TO JOIN", bootstrapPeer)
 
 	if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
 		if err := ln.host.Connect(ctx, *info); err != nil {

@@ -117,6 +117,13 @@ func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 		return
 	}
 	prevSlot := currentSlot - 1
+
+	// Check if we have the previous block before proceeding
+	if !v.blockStore.HasCompleteBlock(prevSlot) {
+		logx.Info("LEADER", fmt.Sprintf("Previous block for slot %d not available yet, waiting", prevSlot))
+		return
+	}
+
 	ticker := time.NewTicker(v.leaderTimeoutLoopInterval)
 	deadline := time.NewTimer(v.leaderTimeout)
 	defer ticker.Stop()
@@ -180,6 +187,13 @@ func (v *Validator) IsFollower(slot uint64) bool {
 
 // handleEntry buffers entries and assembles a block at slot boundary.
 func (v *Validator) handleEntry(entries []poh.Entry) {
+	// Check if network is ready before processing
+	if v.netClient != nil {
+		if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
+			return // Skip processing if network not ready
+		}
+	}
+
 	currentSlot := v.Recorder.CurrentSlot()
 
 	// When slot advances, assemble block for lastSlot if we were leader
@@ -207,6 +221,15 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 		blk.Sign(v.PrivKey)
 		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
+
+		// Check if block already exists before trying to add it
+		if v.blockStore.HasCompleteBlock(v.lastSlot) {
+			logx.Info("VALIDATOR", fmt.Sprintf("Block at slot %d already exists, skipping", v.lastSlot))
+			// Reset buffer and continue
+			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+			v.lastSession = v.session.CopyWithOverlayClone()
+			return
+		}
 
 		// Persist then broadcast
 		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
@@ -291,6 +314,18 @@ func (v *Validator) dropPendingValidTxs(size int) {
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
+	// Wait for network to be ready before starting validator loops
+	logx.Info("VALIDATOR", "Waiting for network to be ready before starting...")
+	for {
+		if v.netClient != nil {
+			if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && ready.IsNodeReady() {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	logx.Info("VALIDATOR", "Network is ready, starting validator loops")
+
 	exception.SafeGoWithPanic("roleMonitorLoop", func() {
 		v.roleMonitorLoop()
 	})
@@ -308,6 +343,13 @@ func (v *Validator) leaderBatchLoop() {
 		case <-v.stopCh:
 			return
 		case <-batchTicker.C:
+			// Check if network is ready before processing
+			if v.netClient != nil {
+				if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
+					continue // Skip processing if network not ready
+				}
+			}
+
 			slot := v.Recorder.CurrentSlot()
 			if !v.IsLeader(slot) {
 				continue
@@ -353,6 +395,13 @@ func (v *Validator) roleMonitorLoop() {
 		case <-v.stopCh:
 			return
 		case <-ticker.C:
+			// Check if network is ready before processing
+			if v.netClient != nil {
+				if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
+					continue // Skip processing if network not ready
+				}
+			}
+
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
 				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))

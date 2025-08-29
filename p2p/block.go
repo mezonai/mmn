@@ -153,36 +153,38 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		batchCount++
 		totalBlocks += len(blocks)
 
-		hasDuplicate := false
+		// Filter out duplicate blocks instead of stopping entirely
+		var nonDuplicateBlocks []*block.BroadcastedBlock
 		for _, blk := range blocks {
 			if blk != nil {
-				if existingBlock := ln.blockStore.Block(blk.Slot); existingBlock != nil {
-					hasDuplicate = true
-					break
+				if existingBlock := ln.blockStore.Block(blk.Slot); existingBlock == nil {
+					nonDuplicateBlocks = append(nonDuplicateBlocks, blk)
+				} else {
+					logx.Info("NETWORK:SYNC BLOCK", "Skipping duplicate block at slot", blk.Slot)
 				}
 			}
 		}
 
-		if hasDuplicate {
-			break
-		}
-
-		if ln.onSyncResponseReceived != nil {
-			if err := ln.onSyncResponseReceived(blocks); err != nil {
-				logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
-			} else {
-				logx.Info("NETWORK:SYNC BLOCK", "Sync response callback completed successfully for batch ", batchCount)
-				tracker.CloseAllOtherPeers()
-				break
-			}
-		}
-
-		if len(blocks) > 0 && ln.onBlockReceived != nil {
-			for _, blk := range blocks {
-				if blk != nil {
-					ln.onBlockReceived(blk)
+		// Continue processing if we have non-duplicate blocks
+		if len(nonDuplicateBlocks) > 0 {
+			if ln.onSyncResponseReceived != nil {
+				if err := ln.onSyncResponseReceived(nonDuplicateBlocks); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
+					continue // Continue to next batch instead of breaking
+				} else {
+					logx.Info("NETWORK:SYNC BLOCK", "Sync response callback completed successfully for batch", batchCount, "processed", len(nonDuplicateBlocks), "blocks")
 				}
 			}
+
+			if len(nonDuplicateBlocks) > 0 && ln.onBlockReceived != nil {
+				for _, blk := range nonDuplicateBlocks {
+					if blk != nil {
+						ln.onBlockReceived(blk)
+					}
+				}
+			}
+		} else {
+			logx.Info("NETWORK:SYNC BLOCK", "All blocks in batch were duplicates, continuing to next batch")
 		}
 
 	}
@@ -265,12 +267,19 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 
 	var batch []*block.Block
 	totalBlocksSent := 0
+	consecutiveMissingBlocks := 0
 
 	slot := req.FromSlot
 	for slot <= req.ToSlot {
 		blk := ln.GetBlock(slot)
+
 		if blk != nil {
 			batch = append(batch, blk)
+			logx.Info("NETWORK:SYNC BLOCK", "Block Hash: ", blk.Hash)
+			consecutiveMissingBlocks = 0 // Reset counter when we find a block
+		} else {
+			consecutiveMissingBlocks++
+			logx.Info("NETWORK:SYNC BLOCK", "Missing block at slot", slot, "consecutive missing:", consecutiveMissingBlocks)
 		}
 
 		if len(batch) >= int(BatchSize) {
@@ -279,6 +288,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 				return
 			}
 			totalBlocksSent += len(batch)
+			logx.Info("NETWORK:SYNC BLOCK", "Sent batch with", len(batch), "blocks")
 			batch = batch[:0]
 		}
 
@@ -291,7 +301,10 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			return
 		}
 		totalBlocksSent += len(batch)
+		logx.Info("NETWORK:SYNC BLOCK", "Sent final batch with", len(batch), "blocks")
 	}
+
+	logx.Info("NETWORK:SYNC BLOCK", "Completed sync request", req.RequestID, "sent", totalBlocksSent, "blocks for range", req.FromSlot, "to", req.ToSlot)
 
 	// Continue chaining if we actually sent any blocks in this range
 	if totalBlocksSent > 0 {
@@ -304,7 +317,10 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			ToSlot:    nextToSlot,
 		}
 
+		logx.Info("NETWORK:SYNC BLOCK", "Continuing with next sync request:", nextReq.RequestID, "for range", nextFromSlot, "to", nextToSlot)
 		ln.sendBlocksOverStream(nextReq, targetPeer)
+	} else {
+		logx.Info("NETWORK:SYNC BLOCK", "No blocks sent in range", req.FromSlot, "to", req.ToSlot, "stopping sync chain")
 	}
 }
 

@@ -173,34 +173,34 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
-			localLatestSlot := bs.GetLatestSlot()
-			if latestSlot > localLatestSlot {
-				fromSlot := localLatestSlot + 1
+			// localLatestSlot := bs.GetLatestSlot()
+			// if latestSlot > localLatestSlot {
+			// 	fromSlot := localLatestSlot + 1
 
-				ctx := context.Background()
-				// Only request block sync if we are beyond ready threshold to avoid churn
-				if latestSlot-localLatestSlot > ReadyGapThreshold {
-					if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-						logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
-					}
-				}
-			}
+			// 	ctx := context.Background()
+			// 	// Only request block sync if we are beyond ready threshold to avoid churn
+			// 	if latestSlot-localLatestSlot > ReadyGapThreshold {
+			// 		if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
+			// 			logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
+			// 		}
+			// 	}
+			// }
 
-			// mark ready when gap small enough, and enable full handlers once
-			gap := uint64(0)
-			if latestSlot > localLatestSlot {
-				gap = latestSlot - localLatestSlot
-			}
-			if gap <= ReadyGapThreshold && !ln.IsNodeReady() {
-				ln.enableFullModeOnce.Do(func() {
-					if err := ln.setupHandlers(ln.ctx, nil); err != nil {
-						logx.Error("NETWORK:READY", "Failed to setup handlers:", err.Error())
-						return
-					}
-					ln.setNodeReady()
-					logx.Info("NETWORK:READY", "Node is ready. Full handlers enabled.")
-				})
-			}
+			// // mark ready when gap small enough, and enable full handlers once
+			// gap := uint64(0)
+			// if latestSlot > localLatestSlot {
+			// 	gap = latestSlot - localLatestSlot
+			// }
+			// if gap <= ReadyGapThreshold && !ln.IsNodeReady() {
+			// 	ln.enableFullModeOnce.Do(func() {
+			// 		if err := ln.setupHandlers(ln.ctx, nil); err != nil {
+			// 			logx.Error("NETWORK:READY", "Failed to setup handlers:", err.Error())
+			// 			return
+			// 		}
+			// 		ln.setNodeReady()
+			// 		logx.Info("NETWORK:READY", "Node is ready. Full handlers enabled.")
+			// 	})
+			// }
 			return nil
 		},
 	})
@@ -305,7 +305,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		}
 	}
 
-	go ln.startInitialSync(bs)
+	// go ln.startInitialSync(bs)
 
 	go ln.startPeriodicSyncCheck(bs)
 
@@ -537,6 +537,7 @@ func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
 				fi, err := os.Stat(path)
 				if err != nil {
 					logx.Info("SNAPSHOT:GOSSIP", "no snapshot-latest.json")
+					ln.setNodeReady()
 					continue
 				}
 				snap, err := snapshot.ReadSnapshot(path)
