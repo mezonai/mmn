@@ -2,8 +2,9 @@ package p2p
 
 import (
 	"context"
-	"github.com/mezonai/mmn/store"
 	"time"
+
+	"github.com/mezonai/mmn/store"
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -22,8 +23,8 @@ func NewSyncRequestTracker(requestID string, fromSlot, toSlot uint64) *SyncReque
 }
 
 func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	t.AllPeers[peerID] = stream
 
 	if t.IsActive {
@@ -37,8 +38,8 @@ func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream)
 }
 
 func (t *SyncRequestTracker) CloseRequest() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	if t.ActiveStream != nil {
 		t.ActiveStream.Close()
@@ -50,8 +51,8 @@ func (t *SyncRequestTracker) CloseRequest() {
 
 // CloseAllOtherPeers closes all peer streams except the active one
 func (t *SyncRequestTracker) CloseAllOtherPeers() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	for peerID, stream := range t.AllPeers {
 		if peerID != t.ActivePeer && stream != nil {
@@ -64,8 +65,8 @@ func (t *SyncRequestTracker) CloseAllOtherPeers() {
 
 // CloseAllPeers closes all peer streams including the active one
 func (t *SyncRequestTracker) CloseAllPeers() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	// Close active stream
 	if t.ActiveStream != nil {
@@ -96,6 +97,13 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 		select {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
+			// probe checkpoint every tick
+			latest := bs.GetLatestSlot()
+			if latest >= MaxScanRange {
+				checkpoint := (latest / MaxScanRange) * MaxScanRange
+				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
+				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
+			}
 		case <-ln.ctx.Done():
 			return
 		}
@@ -110,6 +118,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 		select {
 		case <-ticker.C:
 			ln.CleanupExpiredRequests()
+			ln.cleanupOldMissingBlocksTracker()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
@@ -126,16 +135,14 @@ func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
 	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
 	}
-
-	var fromSlot uint64 = 0
-	localLatestSlot := bs.GetLatestSlot()
-	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + 1
+	// sync from 0
+	if err := ln.RequestBlockSync(ctx, 0); err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
 	}
 
-	if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: %v", err)
-	}
+	// wait for sync all blocks end before start scan
+	time.Sleep(15 * time.Second)
+	ln.scanMissingBlocks(bs)
 }
 
 func (ln *Libp2pNetwork) cleanupOldSyncRequests() {

@@ -25,15 +25,17 @@ type Libp2pNetwork struct {
 	selfPubKey  string
 	selfPrivKey ed25519.PrivateKey
 	peers       map[peer.ID]*PeerInfo
-	mu          sync.RWMutex
+	// Track bootstrap peers so we can exclude them from certain requests
+	bootstrapPeerIDs map[peer.ID]struct{}
 
 	blockStore store.BlockStore
 
-	topicBlocks       *pubsub.Topic
-	topicVotes        *pubsub.Topic
-	topicTxs          *pubsub.Topic
-	topicBlockSyncReq *pubsub.Topic
-	topicLatestSlot   *pubsub.Topic
+	topicBlocks            *pubsub.Topic
+	topicVotes             *pubsub.Topic
+	topicTxs               *pubsub.Topic
+	topicBlockSyncReq      *pubsub.Topic
+	topicLatestSlot        *pubsub.Topic
+	topicCheckpointRequest *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
@@ -50,6 +52,15 @@ type Libp2pNetwork struct {
 
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
+
+	missingBlocksTracker map[uint64]*MissingBlockInfo
+	missingBlocksMu      sync.RWMutex
+
+	lastScannedSlot uint64
+	scanMu          sync.RWMutex
+
+	recentlyRequestedSlots map[uint64]time.Time
+	recentlyRequestedMu    sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -128,7 +139,7 @@ type SyncRequestTracker struct {
 	IsActive     bool
 	StartTime    time.Time
 	AllPeers     map[peer.ID]network.Stream
-	mu           sync.RWMutex
+	mutex        sync.RWMutex
 }
 
 type Callbacks struct {
@@ -137,4 +148,25 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+}
+
+type CheckpointHashRequest struct {
+	RequesterID string                `json:"requester_id"`
+	Checkpoint  uint64                `json:"checkpoint"`
+	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+}
+
+type CheckpointHashResponse struct {
+	Checkpoint uint64   `json:"checkpoint"`
+	Slot       uint64   `json:"slot"`
+	BlockHash  [32]byte `json:"block_hash"`
+	PeerID     string   `json:"peer_id"`
+}
+
+type MissingBlockInfo struct {
+	Slot       uint64    `json:"slot"`
+	FirstSeen  time.Time `json:"first_seen"`
+	LastRetry  time.Time `json:"last_retry"`
+	RetryCount int       `json:"retry_count"`
+	MaxRetries int       `json:"max_retries"`
 }
