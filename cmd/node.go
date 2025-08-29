@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -165,7 +167,9 @@ func runNode() {
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts, tms, as, eventRouter)
+	txTracker := transaction.NewTransactionTracker()
+
+	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
 
 	// Initialize PoH components
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
@@ -186,7 +190,7 @@ func runNode() {
 	}
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -202,7 +206,7 @@ func runNode() {
 	}
 
 	// Start services
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter)
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -292,13 +296,13 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, eventRouter *events.EventRouter) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker)
 	return mp, nil
 }
 
@@ -336,7 +340,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -357,6 +361,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		bs,
 		mp,
 		eventRouter,
+		txTracker,
 	)
 	_ = grpcSrv // Keep server running
 

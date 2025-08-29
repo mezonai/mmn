@@ -14,6 +14,7 @@ import (
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
@@ -40,12 +41,13 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    store.BlockStore
 	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter // Event router for complex event logic
+	eventRouter   *events.EventRouter                    // Event router for complex event logic
+	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -58,6 +60,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		validator:     validator,
 		mempool:       mempool,
 		eventRouter:   eventRouter,
+		txTracker:     txTracker,
 	}
 
 	grpcSrv := grpc.NewServer()
@@ -105,19 +108,20 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
-			Address:      addr,
-			Balance:      "0",
-			Nonce:        0,
-			Decimals:     uint32(config.GetDecimalsFactor()),
+			Address:  addr,
+			Balance:  "0",
+			Nonce:    0,
+			Decimals: uint32(config.GetDecimalsFactor()),
 		}, nil
 	}
 	balance := utils.Uint256ToString(acc.Balance)
-	
+	logx.Info("GRPC", fmt.Sprintf("GetAccount response for address: %s, nonce: %d, balance: %s", addr, acc.Nonce, balance))
+
 	return &pb.GetAccountResponse{
-		Address:      addr,
-		Balance:      balance,
-		Nonce:        acc.Nonce,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Address:  addr,
+		Balance:  balance,
+		Nonce:    acc.Nonce,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -161,16 +165,26 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 		currentNonce = acc.Nonce
 		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
 	} else { // tag == "pending"
-		// For "pending", return the largest nonce among pending transactions or current ledger nonce
+		// For "pending", return the largest nonce among pending transactions, processing transactions, or current ledger nonce
+		ledgerNonce := acc.Nonce
 		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
-		if largestPendingNonce == 0 {
-			// No pending transactions, use current ledger nonce
-			currentNonce = acc.Nonce
-		} else {
-			// Return the largest pending nonce as current
+
+		var largestProcessingNonce uint64
+		if s.txTracker != nil {
+			largestProcessingNonce = s.txTracker.GetLargestProcessingNonce(addr)
+		}
+
+		// Find the maximum nonce across all sources
+		currentNonce = ledgerNonce
+		if largestPendingNonce > currentNonce {
 			currentNonce = largestPendingNonce
 		}
-		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: largest pending: %d, current: %d", addr, largestPendingNonce, currentNonce))
+		if largestProcessingNonce > currentNonce {
+			currentNonce = largestProcessingNonce
+		}
+
+		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
+			addr, ledgerNonce, largestPendingNonce, largestProcessingNonce, currentNonce))
 	}
 
 	return &pb.GetCurrentNonceResponse{
@@ -186,7 +200,7 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
-	
+
 	txInfo := &pb.TxInfo{
 		Sender:    tx.Sender,
 		Recipient: tx.Recipient,
@@ -200,8 +214,8 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		ErrMsg:    txMeta.Error,
 	}
 	return &pb.GetTxByHashResponse{
-		Tx:          txInfo,
-		Decimals:    uint32(config.GetDecimalsFactor()),
+		Tx:       txInfo,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -211,7 +225,7 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 	txMetas := make([]*pb.TxMeta, len(txs))
 	for i, tx := range txs {
 		amount := utils.Uint256ToString(tx.Amount)
-		
+
 		txMetas[i] = &pb.TxMeta{
 			Sender:    tx.Sender,
 			Recipient: tx.Recipient,
@@ -222,9 +236,9 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 		}
 	}
 	return &pb.GetTxHistoryResponse{
-		Total:        total,
-		Txs:          txMetas,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Total:    total,
+		Txs:      txMetas,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
@@ -550,11 +564,12 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
 
+
 			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
-			
+
 			txStatus := info.Status
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
@@ -582,8 +597,8 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	}
 
 	return &pb.GetBlockByNumberResponse{
-		Blocks:       blocks,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Blocks:   blocks,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 

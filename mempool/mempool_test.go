@@ -234,7 +234,7 @@ func TestNewMempool(t *testing.T) {
 	mockLedger := NewMockLedger()
 	maxSize := 100
 
-	mempool := NewMempool(maxSize, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(maxSize, mockBroadcaster, mockLedger, nil, nil)
 
 	if mempool == nil {
 		t.Fatal("NewMempool returned nil")
@@ -267,7 +267,7 @@ func TestMempool_AddTx_Success(t *testing.T) {
 	// Set up sender account with sufficient balance and correct nonce
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 
@@ -295,7 +295,7 @@ func TestMempool_AddTx_WithBroadcast(t *testing.T) {
 
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 
@@ -332,7 +332,7 @@ func TestMempool_AddTx_Duplicate(t *testing.T) {
 
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 
@@ -377,7 +377,7 @@ func TestMempool_AddTx_FullMempool(t *testing.T) {
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 0)
 	mockLedger.SetNonce(sender3Addr, 0)
-	mempool := NewMempool(2, mockBroadcaster, mockLedger, nil) // Small size for testing
+	mempool := NewMempool(2, mockBroadcaster, mockLedger, nil, nil) // Small size for testing
 
 	// Add first transaction
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -412,7 +412,7 @@ func TestMempool_AddTx_FullMempool(t *testing.T) {
 func TestMempool_PullBatch_Empty(t *testing.T) {
 	mockBroadcaster := &MockBroadcaster{}
 	mockLedger := NewMockLedger()
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	batch := mempool.PullBatch(5)
 
@@ -440,7 +440,7 @@ func TestMempool_PullBatch_Partial(t *testing.T) {
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 1)
 	mockLedger.SetNonce(sender3Addr, 2)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Add 3 transactions
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -500,7 +500,7 @@ func TestMempool_PullBatch_All(t *testing.T) {
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 1)
 	mockLedger.SetNonce(sender3Addr, 2)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Add 3 transactions
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -546,7 +546,7 @@ func TestMempool_Size(t *testing.T) {
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 1)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Initial size should be 0
 	if mempool.Size() != 0 {
@@ -592,7 +592,7 @@ func TestMempool_ConcurrentAccess(t *testing.T) {
 		mockLedger.SetBalance(senderAddr, 10000)
 		mockLedger.SetNonce(senderAddr, 0) // Each sender starts with nonce 0
 	}
-	mempool := NewMempool(100, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(100, mockBroadcaster, mockLedger, nil, nil)
 
 	// Test concurrent AddTx operations
 	done := make(chan bool, 10)
@@ -628,7 +628,7 @@ func TestMempool_DifferentTransactionTypes(t *testing.T) {
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 1)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Test transfer transaction
 	txTransfer := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -670,7 +670,7 @@ func TestMempool_FIFOOrder(t *testing.T) {
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 1)
 	mockLedger.SetNonce(sender3Addr, 2)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Add transactions in specific order
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -725,7 +725,7 @@ func TestMempool_PullBatchFIFOOrder(t *testing.T) {
 	mockLedger.SetNonce(sender2Addr, 1)
 	mockLedger.SetNonce(sender3Addr, 2)
 	mockLedger.SetNonce(sender4Addr, 3)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Add transactions in specific order
 	tx1 := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -790,7 +790,7 @@ func TestMempool_HasTransaction(t *testing.T) {
 
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 	hash, err := mempool.AddTx(tx, false)
@@ -818,7 +818,7 @@ func TestMempool_GetTransaction(t *testing.T) {
 
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
 	hash, err := mempool.AddTx(tx, false)
@@ -857,7 +857,7 @@ func TestMempool_GetTransactionCount(t *testing.T) {
 	mockLedger.SetBalance(sender2Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
 	mockLedger.SetNonce(sender2Addr, 1)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Initial count should be 0
 	if mempool.GetTransactionCount() != 0 {
@@ -890,7 +890,7 @@ func TestMempool_GetOrderedTransactions(t *testing.T) {
 	mockLedger := NewMockLedger()
 	// Set initial nonce to 0 for the test account
 	mockLedger.SetNonce(testPublicKeyHex, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Add transactions with sequential nonces
 	tx1 := createTestTx(0, "", "recipient1", 100, 1)
@@ -956,7 +956,7 @@ func TestMempool_ConcurrentReadAccess(t *testing.T) {
 		mockLedger.SetBalance(senderAddr, 1000)
 		mockLedger.SetNonce(senderAddr, 0)
 	}
-	mempool := NewMempool(100, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(100, mockBroadcaster, mockLedger, nil, nil)
 
 	// Add some transactions first
 	for i := 0; i < 5; i++ {
@@ -1009,7 +1009,7 @@ func TestMempool_ConcurrentReadWriteAccess(t *testing.T) {
 		mockLedger.SetBalance(senderAddr, 1000)
 		mockLedger.SetNonce(senderAddr, 0) // Each sender starts with nonce 0
 	}
-	mempool := NewMempool(100, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(100, mockBroadcaster, mockLedger, nil, nil)
 
 	// Test concurrent read and write operations
 	done := make(chan bool, 20)
@@ -1059,7 +1059,7 @@ func TestMempool_BroadcastWithoutBlocking(t *testing.T) {
 
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil)
+	mempool := NewMempool(10, mockBroadcaster, mockLedger, nil, nil)
 
 	// Test that broadcasting doesn't block other operations
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -1100,7 +1100,7 @@ func TestMempool_RaceConditionHandling(t *testing.T) {
 
 	mockLedger.SetBalance(sender1Addr, 1000)
 	mockLedger.SetNonce(sender1Addr, 0)
-	mempool := NewMempool(2, mockBroadcaster, mockLedger, nil) // Small size to trigger race conditions
+	mempool := NewMempool(2, mockBroadcaster, mockLedger, nil, nil) // Small size to trigger race conditions
 
 	// Test race condition where multiple goroutines try to add the same transaction
 	tx := createTestTx(0, "sender1", "recipient1", 100, 1)
@@ -1141,7 +1141,7 @@ func TestMempool_RaceConditionHandling(t *testing.T) {
 func TestMempool_StaleTimeout(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test senders
 	_, senderAddr1 := getOrCreateKeyPair("stale_sender1")
@@ -1262,7 +1262,7 @@ func TestMempool_StaleTimeout(t *testing.T) {
 func TestMempool_MaxFutureNonce(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create a test sender
 	_, senderAddr := getOrCreateKeyPair("future_nonce_sender")
@@ -1344,7 +1344,7 @@ func TestMempool_MaxFutureNonce(t *testing.T) {
 func TestMempool_MaxPendingPerSender(t *testing.T) {
 	mockLedger := NewMockLedger()
 	mockBroadcaster := &MockBroadcaster{}
-	mempool := NewMempool(200, mockBroadcaster, mockLedger, nil) // Large mempool for this test
+	mempool := NewMempool(200, mockBroadcaster, mockLedger, nil, nil) // Large mempool for this test
 
 	// Create a test sender
 	_, senderAddr := getOrCreateKeyPair("pending_sender")
@@ -1455,7 +1455,7 @@ func TestMempool_MaxMempoolSize(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
 	// Create mempool with small size for testing
-	mempool := NewMempool(5, broadcaster, ledger, nil)
+	mempool := NewMempool(5, broadcaster, ledger, nil, nil)
 
 	// Fill mempool to capacity
 	for i := 0; i < 5; i++ {
@@ -1519,7 +1519,7 @@ func TestMempool_MaxMempoolSize(t *testing.T) {
 func TestMempool_PeriodicCleanup(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test senders
 	_, senderAddr1 := getOrCreateKeyPair("cleanup_test_sender1")
@@ -1568,7 +1568,7 @@ func TestMempool_PeriodicCleanup(t *testing.T) {
 func TestMempool_TransactionPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("promotion_sender")
@@ -1673,7 +1673,7 @@ func TestMempool_TransactionPromotion(t *testing.T) {
 func TestMempool_ChainPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("chain_sender")
@@ -1742,7 +1742,7 @@ func TestMempool_ChainPromotion(t *testing.T) {
 func TestMempool_MultiSenderPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create two test senders
 	_, senderAddr1 := getOrCreateKeyPair("multi_sender1")
@@ -1843,7 +1843,7 @@ func TestMempool_MultiSenderPromotion(t *testing.T) {
 func TestMempool_BalanceValidation(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender with limited balance
 	_, senderAddr := getOrCreateKeyPair("balance_sender")
@@ -1905,7 +1905,7 @@ func TestMempool_BalanceValidation(t *testing.T) {
 func TestMempool_BalanceValidationWithProcessing(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("processing_sender")
@@ -1966,7 +1966,7 @@ func TestMempool_BalanceValidationWithProcessing(t *testing.T) {
 func TestMempool_BalanceValidationEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Test 1: Zero balance account
 	_, zeroAddr := getOrCreateKeyPair("zero_balance")
@@ -2034,7 +2034,7 @@ func TestMempool_BalanceValidationEdgeCases(t *testing.T) {
 func TestMempool_DuplicateNonceDetection(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("duplicate_sender")
@@ -2085,7 +2085,7 @@ func TestMempool_DuplicateNonceDetection(t *testing.T) {
 func TestMempool_DuplicateNonceAcrossSenders(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create two test senders
 	_, sender1Addr := getOrCreateKeyPair("dup_sender1")
@@ -2139,7 +2139,7 @@ func TestMempool_DuplicateNonceAcrossSenders(t *testing.T) {
 func TestMempool_DuplicateNonceWithPromotion(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("promo_dup_sender")
@@ -2191,7 +2191,7 @@ func TestMempool_DuplicateNonceWithPromotion(t *testing.T) {
 func TestMempool_DuplicateNonceEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("edge_dup_sender")
@@ -2267,7 +2267,7 @@ func TestMempool_DuplicateNonceEdgeCases(t *testing.T) {
 func TestMempool_ValidationEdgeCases(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("edge_sender")
@@ -2354,7 +2354,7 @@ func TestMempool_ValidationEdgeCases(t *testing.T) {
 func TestMempool_ValidationMalformedData(t *testing.T) {
 	ledger := NewMockLedger()
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, ledger, nil)
+	mempool := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	// Create test sender
 	_, senderAddr := getOrCreateKeyPair("malformed_sender")
@@ -2437,7 +2437,7 @@ func TestMempool_ValidationMalformedData(t *testing.T) {
 func TestMempool_ValidationSystemEdgeCases(t *testing.T) {
 	// Test 1: Mempool with nil ledger
 	broadcaster := &MockBroadcaster{}
-	mempool := NewMempool(100, broadcaster, nil, nil) // nil ledger
+	mempool := NewMempool(100, broadcaster, nil, nil, nil) // nil ledger
 
 	tx := createTestTx(0, "sender", "recipient", 100, 1)
 	_, err := mempool.AddTx(tx, false)
@@ -2450,7 +2450,7 @@ func TestMempool_ValidationSystemEdgeCases(t *testing.T) {
 
 	// Test 2: Concurrent access to validation (basic test)
 	ledger := NewMockLedger()
-	mempool2 := NewMempool(100, broadcaster, ledger, nil)
+	mempool2 := NewMempool(100, broadcaster, ledger, nil, nil)
 
 	_, senderAddr := getOrCreateKeyPair("concurrent_sender")
 	ledger.SetBalance(senderAddr, 10000)
@@ -2486,7 +2486,7 @@ func TestMempool_ValidationSystemEdgeCases(t *testing.T) {
 
 	// Test 3: Memory pressure simulation (add many transactions)
 	ledger2 := NewMockLedger()
-	mempool3 := NewMempool(1000, broadcaster, ledger2, nil)
+	mempool3 := NewMempool(1000, broadcaster, ledger2, nil, nil)
 
 	// Create many senders to avoid nonce conflicts
 	for i := 0; i < 100; i++ {
