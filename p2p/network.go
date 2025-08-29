@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
@@ -30,8 +31,8 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	txManager *db.DBTxManager,
 ) (*Libp2pNetwork, error) {
-
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ed25519 private key: %w", err)
@@ -93,6 +94,7 @@ func NewNetWork(
 		recentlyRequestedSlots: make(map[uint64]time.Time),
 		ctx:                    ctx,
 		cancel:                 cancel,
+		txManager:              txManager,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {

@@ -2,8 +2,9 @@ package db
 
 import (
 	"fmt"
-	"github.com/syndtr/goleveldb/leveldb"
 	"sync"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // LevelDBProvider implements DatabaseProvider for LevelDB

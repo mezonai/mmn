@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -67,6 +68,8 @@ type Libp2pNetwork struct {
 
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
+
+	txManager *db.DBTxManager
 }
 
 type PeerInfo struct {

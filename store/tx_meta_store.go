@@ -18,6 +18,7 @@ type TxMetaStore interface {
 	StoreBatch(txMetas []*types.TransactionMeta) error
 	GetByHash(txHash string) (*types.TransactionMeta, error)
 	GetBatch(txHashes []string) (map[string]*types.TransactionMeta, error)
+	StoreToBatch(batch db.DatabaseBatch, txMetas []*types.TransactionMeta) error
 	MustClose()
 }
 
@@ -105,6 +106,19 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 	}
 
 	return txMetas, nil
+}
+
+// StoreToBatch stores a batch of transaction metas in the database using an existing batch
+func (tms *GenericTxMetaStore) StoreToBatch(batch db.DatabaseBatch, txMetas []*types.TransactionMeta) error {
+	for _, txMeta := range txMetas {
+		data, err := json.Marshal(txMeta)
+		if err != nil {
+			return fmt.Errorf("failed to marshal transaction meta: %w", err)
+		}
+		batch.Put(tms.getDbKey(txMeta.TxHash), data)
+	}
+
+	return nil
 }
 
 // MustClose closes the transaction meta store and related resources

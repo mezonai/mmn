@@ -3,10 +3,11 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/db"
-	"github.com/mezonai/mmn/logx"
 	"log"
 	"sync"
+
+	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/mezonai/mmn/transaction"
 )
@@ -15,6 +16,7 @@ import (
 type TxStore interface {
 	Store(tx *transaction.Transaction) error
 	StoreBatch(txs []*transaction.Transaction) error
+	StoreToBatch(batch db.DatabaseBatch, txs []*transaction.Transaction) error
 	GetByHash(txHash string) (*transaction.Transaction, error)
 	GetBatch(txHashes []string) ([]*transaction.Transaction, error)
 	MustClose()
@@ -60,6 +62,20 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 	err := batch.Write()
 	if err != nil {
 		return fmt.Errorf("failed to write transaction to database: %w", err)
+	}
+
+	return nil
+}
+
+// StoreToBatch stores a transaction to a batch
+func (ts *GenericTxStore) StoreToBatch(batch db.DatabaseBatch, txs []*transaction.Transaction) error {
+	for _, tx := range txs {
+		txData, err := json.Marshal(tx)
+		if err != nil {
+			return fmt.Errorf("failed to marshal transaction: %w", err)
+		}
+
+		batch.Put(ts.getDbKey(tx.Hash()), txData)
 	}
 
 	return nil

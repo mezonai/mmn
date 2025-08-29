@@ -183,7 +183,7 @@ func initializeNode() {
 
 	// Initialize db store inside directory
 	dbStoreDir := filepath.Join(initDataDir, "store")
-	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, initDatabase, nil)
+	as, ts, tms, bs, _, err := initializeDBStore(dbStoreDir, initDatabase, nil)
 	if err != nil {
 		logx.Error("INIT", "Failed to initialize db store:", err.Error())
 		return
