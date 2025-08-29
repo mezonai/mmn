@@ -92,7 +92,7 @@ func NewValidator(
 		ledger:                    ledger,
 		session:                   ledger.NewSession(),
 		lastSession:               ledger.NewSession(),
-		lastSlot:                  0,
+		lastSlot:                  1,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
