@@ -220,6 +220,21 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Error("SNAPSHOT:DOWNLOAD", "invalid announce UDP addr, skip", ann.UDPAddr)
 				return nil
 			}
+			// Skip if local is already at or ahead of announced slot
+			localSlot := ln.blockStore.GetLatestSlot()
+			if ann.Slot <= localSlot {
+				logx.Info("SNAPSHOT:DOWNLOAD", "skip announce; local at/above slot", "local=", localSlot, "ann=", ann.Slot)
+				return nil
+			}
+			// Skip if we already have a snapshot >= announced slot
+			if fi, err := os.Stat("/data/snapshots/snapshot-latest.json"); err == nil && fi.Size() > 0 {
+				if snap, err := snapshot.ReadSnapshot("/data/snapshots/snapshot-latest.json"); err == nil && snap != nil {
+					if snap.Meta.Slot >= ann.Slot {
+						logx.Info("SNAPSHOT:DOWNLOAD", "skip announce; local snapshot up-to-date", "snap=", snap.Meta.Slot, "ann=", ann.Slot)
+						return nil
+					}
+				}
+			}
 			accountStore := ld.GetAccountStore()
 			if accountStore == nil {
 				return nil
@@ -537,7 +552,15 @@ func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
 				fi, err := os.Stat(path)
 				if err != nil {
 					logx.Info("SNAPSHOT:GOSSIP", "no snapshot-latest.json")
-					ln.setNodeReady()
+					// Enable full pubsub handlers when no snapshot present so node can follow leader via pubsub
+					ln.enableFullModeOnce.Do(func() {
+						if err := ln.setupHandlers(ln.ctx, nil); err != nil {
+							logx.Error("NETWORK:READY", "Failed to setup handlers:", err.Error())
+							return
+						}
+						ln.setNodeReady()
+						logx.Info("NETWORK:READY", "Node is ready (no snapshot)")
+					})
 					continue
 				}
 				snap, err := snapshot.ReadSnapshot(path)

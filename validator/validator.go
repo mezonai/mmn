@@ -322,7 +322,6 @@ func (v *Validator) Run() {
 				break
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
 	logx.Info("VALIDATOR", "Network is ready, starting validator loops")
 
@@ -395,17 +394,11 @@ func (v *Validator) roleMonitorLoop() {
 		case <-v.stopCh:
 			return
 		case <-ticker.C:
-			// Check if network is ready before processing
-			if v.netClient != nil {
-				if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
-					continue // Skip processing if network not ready
-				}
-			}
-
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
 				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
+					logx.Info("onLeaderSlotStart", slot)
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
