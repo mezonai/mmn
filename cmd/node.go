@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/store"
@@ -195,7 +196,7 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
+	collector := consensus.NewCollector(1) // TODO: every epoch need have a fixed number
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
@@ -206,7 +207,7 @@ func runNode() {
 	}
 
 	// Start services
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(ctx, cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -252,6 +253,16 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 
 	// Use the factory pattern to create the store
 	return store.CreateStore(storeCfg, eventRouter)
+}
+
+// getDBProvider extracts database provider from block store
+func getDBProvider(bs store.BlockStore) (db.DatabaseProvider, error) {
+	// Get database provider from block store
+	provider := bs.GetProvider()
+	if provider == nil {
+		return nil, fmt.Errorf("block store does not have a database provider")
+	}
+	return provider, nil
 }
 
 // initializePoH initializes Proof of History components
@@ -339,7 +350,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(ctx context.Context, cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
@@ -365,7 +376,16 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	)
 	_ = grpcSrv // Keep server running
 
+	// provide a runtime hook for applying snapshot leader schedule without import cycles
+	// p2pClient.SetApplyLeaderSchedule(func(ls *poh.LeaderSchedule) {
+	// 	if ls == nil || val == nil {
+	// 		return
+	// 	}
+	// 	val.SetLeaderSchedule(ls)
+	// })
+
 	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
 	apiSrv.Start()
+
 }

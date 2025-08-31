@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/logx"
@@ -99,6 +100,14 @@ func NewValidator(
 	return v
 }
 
+// SetLeaderSchedule allows updating the leader schedule at runtime (e.g., from snapshot)
+func (v *Validator) SetLeaderSchedule(schedule *poh.LeaderSchedule) {
+	v.Schedule = schedule
+	if v.Recorder != nil {
+		v.Recorder.SetLeaderSchedule(schedule)
+	}
+}
+
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
 	prevSlot := currentSlot - 1
@@ -168,6 +177,12 @@ func (v *Validator) ReadyToStart(slot uint64) bool {
 
 // handleEntry buffers entries and assembles a block at slot boundary.
 func (v *Validator) handleEntry(entries []poh.Entry) {
+	// Check if network is ready before processing
+	if v.netClient != nil {
+		if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
+			return // Skip processing if network not ready
+		}
+	}
 	currentSlot := v.Recorder.CurrentSlot()
 
 	// When slot advances, assemble block for lastSlot if we were leader
@@ -192,6 +207,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 		// Persist then broadcast
 		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+
+		writeSnapshotIfDue(v.ledger, currentSlot)
 
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
@@ -349,4 +366,32 @@ func (v *Validator) mempoolCleanupLoop() {
 			v.Mempool.PeriodicCleanup()
 		}
 	}
+}
+
+func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
+	if slot%p2p.RangeForSnapshot != 0 { // adjust interval as needed
+		return
+	}
+	accountStore := ld.GetAccountStore()
+	if accountStore == nil {
+		return
+	}
+	dbProvider := accountStore.GetDatabaseProvider()
+	if dbProvider == nil {
+		return
+	}
+	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
+		return
+	}
+	dir := "/data/snapshots"
+	// Write snapshot and cleanup old ones, keep only the latest
+	saved, err := snapshot.WriteSnapshotAndCleanup(dir, dbProvider, slot, bankHash, nil)
+	if err != nil {
+		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
+		return
+	}
+
+	logx.Info("SNAPSHOT", fmt.Sprintf("Created snapshot: %s (slot %d)", saved, slot))
 }

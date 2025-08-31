@@ -24,6 +24,15 @@ type DatabaseProvider interface {
 	Batch() DatabaseBatch
 }
 
+// IterableProvider extends DatabaseProvider with iteration capabilities
+type IterableProvider interface {
+	DatabaseProvider
+
+	// IteratePrefix iterates over all key-value pairs with the given prefix
+	// The callback function should return false to stop iteration
+	IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error
+}
+
 // DatabaseBatch provides atomic batch operations
 type DatabaseBatch interface {
 	// Put adds a key-value pair to the batch

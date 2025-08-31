@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -36,6 +38,8 @@ type Libp2pNetwork struct {
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
+	topicSnapshotAnnounce  *pubsub.Topic
+	topicSnapshotRequest   *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
@@ -43,6 +47,7 @@ type Libp2pNetwork struct {
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
+	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	syncStreams map[peer.ID]network.Stream
 	maxPeers    int
@@ -67,6 +72,13 @@ type Libp2pNetwork struct {
 
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
+
+	// runtime callback to apply leader schedule without import cycles
+	applyLeaderSchedule func(*poh.LeaderSchedule)
+
+	// readiness control
+	enableFullModeOnce sync.Once
+	ready              atomic.Bool
 }
 
 type PeerInfo struct {
@@ -119,6 +131,12 @@ type LatestSlotResponse struct {
 	PeerID     string `json:"peer_id"`
 }
 
+type SnapshotSyncRequest struct {
+	RequesterID string `json:"requester_id"`
+	RequestTime int64  `json:"request_time"`
+	Slot        uint64 `json:"slot"`
+}
+
 type SyncRequestInfo struct {
 	RequestID string
 	FromSlot  uint64
@@ -148,6 +166,7 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+	OnSnapshotAnnounce     func(SnapshotAnnounce) error
 }
 
 type CheckpointHashRequest struct {
@@ -169,4 +188,22 @@ type MissingBlockInfo struct {
 	LastRetry  time.Time `json:"last_retry"`
 	RetryCount int       `json:"retry_count"`
 	MaxRetries int       `json:"max_retries"`
+}
+
+// Snapshot gossip messages
+type SnapshotAnnounce struct {
+	Slot      uint64 `json:"slot"`
+	BankHash  string `json:"bank_hash"`
+	Size      int64  `json:"size"`
+	UDPAddr   string `json:"udp_addr"`
+	ChunkSize int    `json:"chunk_size"`
+	CreatedAt int64  `json:"created_at"`
+	PeerID    string `json:"peer_id"`
+}
+
+type SnapshotRequest struct {
+	PeerID       string `json:"peer_id"`
+	WantSlot     uint64 `json:"want_slot"`
+	ReceiverAddr string `json:"receiver_addr"` // host:port UDP
+	ChunkSize    int    `json:"chunk_size"`
 }

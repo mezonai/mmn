@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
@@ -231,4 +232,18 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
 	}
+}
+
+// SetApplyLeaderSchedule sets a callback for applying leader schedules at runtime
+func (ln *Libp2pNetwork) SetApplyLeaderSchedule(fn func(*poh.LeaderSchedule)) {
+	ln.applyLeaderSchedule = fn
+}
+
+// IsNodeReady returns whether the node has caught up sufficiently and enabled full pubsub handlers
+func (ln *Libp2pNetwork) IsNodeReady() bool {
+	return ln.ready.Load()
+}
+
+func (ln *Libp2pNetwork) setNodeReady() {
+	ln.ready.Store(true)
 }
