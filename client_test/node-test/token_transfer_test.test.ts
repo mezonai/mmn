@@ -115,7 +115,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Valid Transfer Transaction');
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender balance before transfer
@@ -175,7 +175,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Transfer with Text Data');
       if (!fundResponse.ok) {
         console.log('Fund response error:', fundResponse.error || 'Unknown error');
       }
@@ -211,7 +211,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 500);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 500, 'Transfer Full Balance');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
@@ -243,7 +243,7 @@ describe('Token Transfer Tests', () => {
       const account2 = generateTestAccount();
       const account3 = generateTestAccount();
 
-      const fundResponse = await fundAccount(grpcClient, account1.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, account1.publicKeyHex, 1000, 'Transfer Between Multiple Accounts');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for account1 before first transfer
@@ -283,7 +283,7 @@ describe('Token Transfer Tests', () => {
       const sender = generateTestAccount();
       const recipient = generateTestAccount();
 
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 50);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 50, 'Transfer with Insufficient Balance');
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender has the expected balance before attempting transfer
@@ -317,7 +317,7 @@ describe('Token Transfer Tests', () => {
       const wrongSigner = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Transfer with Invalid Signature');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
@@ -346,7 +346,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Transfer with Zero Amount');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
@@ -394,7 +394,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Duplicate Transfer Transaction');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before first transfer
@@ -442,7 +442,7 @@ describe('Token Transfer Tests', () => {
       const recipient3 = generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Multiple Sequential Transfers');
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender account was created and funded properly
@@ -519,7 +519,7 @@ describe('Token Transfer Tests', () => {
       const account = generateTestAccount();
 
       // Fund account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, account.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, account.publicKeyHex, 1000, 'Transfer to Self');
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial balance
@@ -567,7 +567,7 @@ describe('Token Transfer Tests', () => {
       const largeAmount = 999999;
 
       // Fund sender account with large amount using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, largeAmount);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, largeAmount, 'Large Amount Transfer');
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender has the large amount
@@ -607,7 +607,7 @@ describe('Token Transfer Tests', () => {
       const victim2 = generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000, 'Double Spending Attack Simulation');
 
       // Check if funding was successful
       const attackerBalance = await getAccountBalance(grpcClient, attacker.publicKeyHex);
@@ -690,7 +690,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Replay Attack Simulation');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before first transaction
@@ -764,7 +764,7 @@ describe('Token Transfer Tests', () => {
       const victim = generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000, 'Nonce Manipulation Attack Prevention');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for attacker
@@ -818,7 +818,7 @@ describe('Token Transfer Tests', () => {
       const recipient3 = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Concurrent Transactions with Different Nonces');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender and create transactions with sequential nonces
@@ -905,7 +905,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Strict Nonce Sequence Validation');
       expect(fundResponse.ok).toBe(true);
 
       // Test strict nonce sequence using GetCurrentNonce
@@ -957,10 +957,10 @@ describe('Token Transfer Tests', () => {
       const target = generateTestAccount();
 
       // Fund both accounts
-      const fundVictim = await fundAccount(grpcClient, victim.publicKeyHex, 1000);
+      const fundVictim = await fundAccount(grpcClient, victim.publicKeyHex, 1000, 'Front-Running Attack Simulation');
       expect(fundVictim.ok).toBe(true);
 
-      const fundAttacker = await fundAccount(grpcClient, attacker.publicKeyHex, 1000);
+      const fundAttacker = await fundAccount(grpcClient, attacker.publicKeyHex, 1000, 'Front-Running Attack Simulation');
       expect(fundAttacker.ok).toBe(true);
 
       // Get current nonces for both accounts
@@ -1005,7 +1005,7 @@ describe('Token Transfer Tests', () => {
       const victim = generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000, 'Integer Overflow Attack Prevention');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for attacker
@@ -1039,7 +1039,7 @@ describe('Token Transfer Tests', () => {
       const target = generateTestAccount();
 
       // Fund victim account
-      const fundResponse = await fundAccount(grpcClient, victim.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, victim.publicKeyHex, 1000, 'Signature Forgery Attack Prevention');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for victim account
@@ -1073,7 +1073,7 @@ describe('Token Transfer Tests', () => {
       const victim2 = generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, attacker.publicKeyHex, 1000, 'Race Condition Attack Simulation');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for attacker and create transactions with sequential nonces
@@ -1127,7 +1127,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Edge Case Nonce Security Tests');
       expect(fundResponse.ok).toBe(true);
 
       // Test 1: Negative nonce
@@ -1239,7 +1239,7 @@ describe('Token Transfer Tests', () => {
       const recipient = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000);
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Nonce Overflow and Underflow Protection');
       expect(fundResponse.ok).toBe(true);
 
       // Test potential integer overflow scenarios

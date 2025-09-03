@@ -14,6 +14,7 @@ import (
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
@@ -40,12 +41,13 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    store.BlockStore
 	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter // Event router for complex event logic
+	eventRouter   *events.EventRouter                    // Event router for complex event logic
+	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -58,6 +60,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		validator:     validator,
 		mempool:       mempool,
 		eventRouter:   eventRouter,
+		txTracker:     txTracker,
 	}
 
 	grpcSrv := grpc.NewServer()
@@ -112,6 +115,7 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 		}, nil
 	}
 	balance := utils.Uint256ToString(acc.Balance)
+	logx.Info("GRPC", fmt.Sprintf("GetAccount response for address: %s, nonce: %d, balance: %s", addr, acc.Nonce, balance))
 
 	return &pb.GetAccountResponse{
 		Address:  addr,
@@ -161,16 +165,26 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 		currentNonce = acc.Nonce
 		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
 	} else { // tag == "pending"
-		// For "pending", return the largest nonce among pending transactions or current ledger nonce
+		// For "pending", return the largest nonce among pending transactions, processing transactions, or current ledger nonce
+		ledgerNonce := acc.Nonce
 		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
-		if largestPendingNonce == 0 {
-			// No pending transactions, use current ledger nonce
-			currentNonce = acc.Nonce
-		} else {
-			// Return the largest pending nonce as current
+
+		var largestProcessingNonce uint64
+		if s.txTracker != nil {
+			largestProcessingNonce = s.txTracker.GetLargestProcessingNonce(addr)
+		}
+
+		// Find the maximum nonce across all sources
+		currentNonce = ledgerNonce
+		if largestPendingNonce > currentNonce {
 			currentNonce = largestPendingNonce
 		}
-		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: largest pending: %d, current: %d", addr, largestPendingNonce, currentNonce))
+		if largestProcessingNonce > currentNonce {
+			currentNonce = largestProcessingNonce
+		}
+
+		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
+			addr, ledgerNonce, largestPendingNonce, largestProcessingNonce, currentNonce))
 	}
 
 	return &pb.GetCurrentNonceResponse{
@@ -275,6 +289,56 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 
 	// 3) Transaction not found anywhere -> return nil and error
 	return nil, fmt.Errorf("transaction not found: %s", txHash)
+}
+
+// GetPendingTransactions returns all pending transactions from mempool with total count
+// Uses GetOrderedTransactions to get all transactions in FIFO order
+func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
+	if s.mempool == nil {
+		return &pb.GetPendingTransactionsResponse{
+			TotalCount: 0,
+			PendingTxs: []*pb.TransactionData{},
+			Error:      "mempool not available",
+		}, nil
+	}
+
+	// Get all ordered transaction hashes from mempool
+	orderedTxHashes := s.mempool.GetOrderedTransactions()
+	totalCount := uint64(len(orderedTxHashes))
+
+	// Convert transaction hashes to detailed transaction info
+	var pendingTxs []*pb.TransactionData
+	for _, txHash := range orderedTxHashes {
+		// Get transaction data from mempool
+		txData, exists := s.mempool.GetTransaction(txHash)
+		if !exists {
+			continue // Skip if transaction not found
+		}
+
+		// Parse transaction to get details
+		tx, err := utils.ParseTx(txData)
+		if err != nil {
+			continue // Skip if parsing fails
+		}
+		// Create pending transaction info
+		pendingTx := &pb.TransactionData{
+			TxHash:    txHash,
+			Sender:    tx.Sender,
+			Recipient: tx.Recipient,
+			Amount:    utils.Uint256ToString(tx.Amount),
+			Nonce:     tx.Nonce,
+			Timestamp: tx.Timestamp,
+			Status:    pb.TransactionStatus_PENDING,
+		}
+
+		pendingTxs = append(pendingTxs, pendingTx)
+	}
+
+	return &pb.GetPendingTransactionsResponse{
+		TotalCount: totalCount,
+		PendingTxs: pendingTxs,
+		Error:      "",
+	}, nil
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system
@@ -501,14 +565,6 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
 
-			senderAcc, err := s.ledger.GetAccount(tx.Sender)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
-			}
-			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
-			}
 			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
@@ -523,16 +579,6 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
 				Status:    txStatus,
-				SenderAccount: &pb.AccountData{
-					Address: senderAcc.Address,
-					Balance: utils.Uint256ToString(senderAcc.Balance),
-					Nonce:   senderAcc.Nonce,
-				},
-				RecipientAccount: &pb.AccountData{
-					Address: recipientAcc.Address,
-					Balance: utils.Uint256ToString(recipientAcc.Balance),
-					Nonce:   recipientAcc.Nonce,
-				},
 			})
 		}
 
@@ -553,5 +599,23 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	return &pb.GetBlockByNumberResponse{
 		Blocks:   blocks,
 		Decimals: uint32(config.GetDecimalsFactor()),
+	}, nil
+}
+
+// GetAccountByAddress is a convenience RPC under AccountService to fetch account info
+func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
+	if in == nil || in.Address == "" {
+		return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
+	}
+
+	acc, err := s.ledger.GetAccount(in.Address)
+	if err != nil {
+		return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
+	}
+	if acc == nil {
+		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
+	}
+	return &pb.GetAccountByAddressResponse{
+		Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
 	}, nil
 }

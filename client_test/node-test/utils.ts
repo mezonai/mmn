@@ -145,9 +145,7 @@ export async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
 }
 
 // Fund account with tokens (with retry logic for multi-threaded usage)
-export async function 
-
-fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, maxRetries: number = 5) {
+export async function fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, testNote: string, maxRetries: number = 5) {
   let lastError: any;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -158,7 +156,7 @@ fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, ma
       
       console.log(`Fund transaction attempt ${attempt}: Using nonce ${nextNonce} (current nonce from gRPC: ${currentNonceValue})`);
       
-      const fundTx = buildTx(faucetPublicKeyBase58, recipientAddress, amount, 'Funding account', nextNonce, TxTypeTransfer);
+      const fundTx = buildTx(faucetPublicKeyBase58, recipientAddress, amount, `Funding account for ${testNote}`, nextNonce, TxTypeTransfer);
       fundTx.signature = signTx(fundTx, faucetPrivateKey);
       
       const response = await sendTxViaGrpc(grpcClient, fundTx);

@@ -24,6 +24,7 @@ const (
 	TxService_GetTxByHash_FullMethodName                = "/mmn.TxService/GetTxByHash"
 	TxService_GetTransactionStatus_FullMethodName       = "/mmn.TxService/GetTransactionStatus"
 	TxService_SubscribeTransactionStatus_FullMethodName = "/mmn.TxService/SubscribeTransactionStatus"
+	TxService_GetPendingTransactions_FullMethodName     = "/mmn.TxService/GetPendingTransactions"
 )
 
 // TxServiceClient is the client API for TxService service.
@@ -37,6 +38,8 @@ type TxServiceClient interface {
 	GetTransactionStatus(ctx context.Context, in *GetTransactionStatusRequest, opts ...grpc.CallOption) (*TransactionStatusInfo, error)
 	// Subscribe to status updates for all transactions
 	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusInfo], error)
+	// Get all pending transactions from mempool
+	GetPendingTransactions(ctx context.Context, in *GetPendingTransactionsRequest, opts ...grpc.CallOption) (*GetPendingTransactionsResponse, error)
 }
 
 type txServiceClient struct {
@@ -106,6 +109,16 @@ func (c *txServiceClient) SubscribeTransactionStatus(ctx context.Context, in *Su
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TxService_SubscribeTransactionStatusClient = grpc.ServerStreamingClient[TransactionStatusInfo]
 
+func (c *txServiceClient) GetPendingTransactions(ctx context.Context, in *GetPendingTransactionsRequest, opts ...grpc.CallOption) (*GetPendingTransactionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPendingTransactionsResponse)
+	err := c.cc.Invoke(ctx, TxService_GetPendingTransactions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TxServiceServer is the server API for TxService service.
 // All implementations must embed UnimplementedTxServiceServer
 // for forward compatibility.
@@ -117,6 +130,8 @@ type TxServiceServer interface {
 	GetTransactionStatus(context.Context, *GetTransactionStatusRequest) (*TransactionStatusInfo, error)
 	// Subscribe to status updates for all transactions
 	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error
+	// Get all pending transactions from mempool
+	GetPendingTransactions(context.Context, *GetPendingTransactionsRequest) (*GetPendingTransactionsResponse, error)
 	mustEmbedUnimplementedTxServiceServer()
 }
 
@@ -141,6 +156,9 @@ func (UnimplementedTxServiceServer) GetTransactionStatus(context.Context, *GetTr
 }
 func (UnimplementedTxServiceServer) SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeTransactionStatus not implemented")
+}
+func (UnimplementedTxServiceServer) GetPendingTransactions(context.Context, *GetPendingTransactionsRequest) (*GetPendingTransactionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPendingTransactions not implemented")
 }
 func (UnimplementedTxServiceServer) mustEmbedUnimplementedTxServiceServer() {}
 func (UnimplementedTxServiceServer) testEmbeddedByValue()                   {}
@@ -246,6 +264,24 @@ func _TxService_SubscribeTransactionStatus_Handler(srv interface{}, stream grpc.
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TxService_SubscribeTransactionStatusServer = grpc.ServerStreamingServer[TransactionStatusInfo]
 
+func _TxService_GetPendingTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPendingTransactionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxServiceServer).GetPendingTransactions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TxService_GetPendingTransactions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxServiceServer).GetPendingTransactions(ctx, req.(*GetPendingTransactionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TxService_ServiceDesc is the grpc.ServiceDesc for TxService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -268,6 +304,10 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTransactionStatus",
 			Handler:    _TxService_GetTransactionStatus_Handler,
+		},
+		{
+			MethodName: "GetPendingTransactions",
+			Handler:    _TxService_GetPendingTransactions_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

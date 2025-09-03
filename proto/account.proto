@@ -55,8 +55,26 @@ message GetCurrentNonceResponse {
   string error = 4;
 }
 
+// Get account by address (convenience wrapper)
+message GetAccountByAddressRequest {
+  string address = 1;
+}
+
+message GetAccountByAddressResponse {
+  AccountData account = 1; // null fields if not found
+  string error = 2;
+}
+
+// Account data structure
+message AccountData {
+  string address = 1;
+  string balance = 2;
+  uint64 nonce   = 3;
+}
+
 service AccountService {
   rpc GetAccount     (GetAccountRequest)     returns (GetAccountResponse);
   rpc GetTxHistory   (GetTxHistoryRequest)   returns (GetTxHistoryResponse);
   rpc GetCurrentNonce (GetCurrentNonceRequest) returns (GetCurrentNonceResponse);
+  rpc GetAccountByAddress (GetAccountByAddressRequest) returns (GetAccountByAddressResponse);
 }

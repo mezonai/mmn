@@ -11,6 +11,17 @@ enum TransactionStatus {
   FAILED = 3;       // Transaction failed validation
 }
 
+// Transaction data structure for transactions
+message TransactionData {
+  string tx_hash = 1;
+  string sender = 2; // sender address
+  string recipient = 3; // recipient address
+  string amount = 4; // amount
+  uint64 nonce = 5; // nonce
+  uint64 timestamp = 6;
+  TransactionStatus status = 7;
+}
+
 message TxMsg { 
   int32 type = 1;
   string sender = 2;
@@ -83,6 +94,16 @@ message SubscribeTransactionStatusRequest {
   // Empty request - subscribes to all transaction events
 }
 
+// Request to get all pending transactions
+message GetPendingTransactionsRequest {}
+
+// Response containing pending transactions information
+message GetPendingTransactionsResponse {
+  uint64 total_count = 1;                
+  repeated TransactionData pending_txs = 2; 
+  string error = 3;      
+}
+
 service TxService {
   rpc TxBroadcast (SignedTxMsg) returns (TxResponse);
   rpc AddTx (SignedTxMsg) returns (AddTxResponse);
@@ -93,4 +114,7 @@ service TxService {
   
   // Subscribe to status updates for all transactions
   rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusInfo);
+  
+  // Get all pending transactions from mempool
+  rpc GetPendingTransactions(GetPendingTransactionsRequest) returns (GetPendingTransactionsResponse);
 }

@@ -1,7 +1,7 @@
 syntax = "proto3";
 package mmn;
 option go_package = "mmn/proto;proto";
-import "tx.proto";
+import "proto/tx.proto";
 
 message Entry {
   uint64 num_hashes = 1;
@@ -9,22 +9,7 @@ message Entry {
   repeated bytes transactions = 3;
   repeated string tx_hashes = 4;
 }
-message AccountData {
-  string address = 1;
-  string balance = 2;
-  uint64 nonce   = 3;
-} 
-message TransactionData {
-  string tx_hash = 1;
-  string sender    = 2; // sender address
-  string recipient = 3; // recipient address
-  string amount    = 4; // amount
-  uint64 nonce     = 5; // nonce
-  uint64 timestamp = 6;
-  TransactionStatus status = 7;
-  AccountData sender_account = 8;
-  AccountData recipient_account = 9;
-}
+
 
 
 message Block {
