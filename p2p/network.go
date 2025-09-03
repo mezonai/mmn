@@ -31,6 +31,7 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	joinAfterSync bool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -94,6 +95,8 @@ func NewNetWork(
 		recentlyRequestedSlots: make(map[uint64]time.Time),
 		ctx:                    ctx,
 		cancel:                 cancel,
+		joinAfterSync:          joinAfterSync,
+		worldLatestSlot:        0,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -120,8 +123,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
-	ln.SetupPubSubTopics(ctx)
-
+	ln.SetupPubSubSyncTopics(ctx)
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
 		if bootstrapPeer == "" {

@@ -385,7 +385,8 @@ func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
 		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
 		return
 	}
-	dir := "/data/snapshots"
+	// Use the configurable snapshot directory
+	dir := snapshot.SnapshotDirectory
 	// Write snapshot and cleanup old ones, keep only the latest
 	saved, err := snapshot.WriteSnapshotAndCleanup(dir, dbProvider, slot, bankHash, nil)
 	if err != nil {

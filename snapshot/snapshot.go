@@ -19,11 +19,35 @@ import (
 const accountPrefix = "account:"
 
 // SnapshotDirectory is the single directory for all snapshot operations
-const SnapshotDirectory = "/data/snapshots"
+// Can be overridden by SNAPSHOT_DIR environment variable
+var SnapshotDirectory = getSnapshotDirectory()
+
+// getSnapshotDirectory returns the snapshot directory, with fallback logic
+func getSnapshotDirectory() string {
+	if envDir := os.Getenv("SNAPSHOT_DIR"); envDir != "" {
+		return envDir
+	}
+
+	// Try multiple directories in order of preference
+	dirs := []string{"./snapshots", "./data/snapshots", "/data/snapshots"}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err == nil {
+			return dir
+		}
+	}
+
+	// Fallback to default
+	return "/data/snapshots"
+}
 
 // GetSnapshotPath returns the full path to snapshot-latest.json
 func GetSnapshotPath() string {
 	return filepath.Join(SnapshotDirectory, "snapshot-latest.json")
+}
+
+// EnsureSnapshotDirectory ensures the snapshot directory exists and is writable
+func EnsureSnapshotDirectory() error {
+	return os.MkdirAll(SnapshotDirectory, 0755)
 }
 
 // EpochMetadata contains epoch-related information

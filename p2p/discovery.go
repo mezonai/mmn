@@ -16,7 +16,7 @@ import (
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()
 
-	logx.Info("NETWORK CONNECTED AND REQYEST NODE INFO TO JOIN", bootstrapPeer)
+	logx.Info("NETWORK CONNECTED AND REQUEST NODE INFO TO JOIN", bootstrapPeer)
 
 	if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
 		if err := ln.host.Connect(ctx, *info); err != nil {
@@ -71,24 +71,6 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to marshal request:", err)
 		return 0, err
-	}
-
-	if ln.topicLatestSlot == nil {
-		// Topics might not be set up yet (early call during join-after-sync). Ensure topics are created.
-		ln.SetupPubSubTopics(ln.ctx)
-		// If still nil, lazily join just this topic.
-		if ln.topicLatestSlot == nil {
-			if topic, jErr := ln.pubsub.Join(LatestSlotTopic); jErr == nil {
-				ln.topicLatestSlot = topic
-				if sub, sErr := ln.topicLatestSlot.Subscribe(); sErr == nil {
-					go ln.HandleLatestSlotTopic(ln.ctx, sub)
-				}
-			} else {
-				errMsg := "latest slot topic is not initialized"
-				logx.Error("NETWORK:LATEST SLOT", "%s", errMsg)
-				return 0, fmt.Errorf(errMsg)
-			}
-		}
 	}
 
 	err = ln.topicLatestSlot.Publish(ctx, data)

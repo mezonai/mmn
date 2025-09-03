@@ -3,13 +3,11 @@ package snapshot
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -22,8 +20,6 @@ import (
 
 // TransferProtocol defines the protocol used for snapshot transfer
 type TransferProtocol string
-
-const ()
 
 // TransferStatus defines the status of a transfer
 type TransferStatus string
@@ -274,6 +270,11 @@ func (sd *SnapshotDownloader) receiveUDPChunks(task *DownloadTask) error {
 
 // assembleAndVerifySnapshot assembles snapshot from chunks and verifies it
 func (sd *SnapshotDownloader) assembleAndVerifySnapshot(task *DownloadTask) error {
+	// Ensure snapshot directory exists
+	if err := os.MkdirAll(sd.snapshotDir, 0755); err != nil {
+		return fmt.Errorf("failed to create snapshot directory %s: %w", sd.snapshotDir, err)
+	}
+
 	// Create snapshot file
 	snapshotPath := filepath.Join(sd.snapshotDir, "snapshot-latest.json")
 	file, err := os.Create(snapshotPath)
@@ -341,35 +342,6 @@ func generateDownloadTaskID(peerID string, slot uint64) string {
 	data := fmt.Sprintf("download-%s-%d-%d", peerID, slot, time.Now().UnixNano())
 	hash := sha256.Sum256([]byte(data))
 	return fmt.Sprintf("%x", hash[:8])
-}
-
-// computeBankHashFromAccounts computes a bank hash deterministically from the provided accounts
-func computeBankHashFromAccounts(accounts []types.Account) [32]byte {
-	type item struct {
-		addr string
-		acc  types.Account
-	}
-	items := make([]item, 0, len(accounts))
-	for _, a := range accounts {
-		items = append(items, item{addr: a.Address, acc: a})
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].addr < items[j].addr })
-
-	h := sha256.New()
-	buf := make([]byte, 8)
-	for _, it := range items {
-		addr := it.addr
-		acc := it.acc
-		binary.BigEndian.PutUint64(buf, uint64(len(addr)))
-		h.Write(buf)
-		h.Write([]byte(addr))
-		binary.BigEndian.PutUint64(buf, acc.Balance.Uint64())
-		binary.BigEndian.PutUint64(buf, acc.Nonce)
-		h.Write(buf)
-	}
-	var out [32]byte
-	copy(out[:], h.Sum(nil))
-	return out
 }
 
 // storeAccountsBatch writes accounts to the underlying DB using a batch for efficiency

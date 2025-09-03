@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/store"
@@ -72,7 +71,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().BoolVar(&joinAfterSync, "join-after-sync", false, "Join the network after syncing blocks")
+	runCmd.Flags().BoolVar(&joinAfterSync, "sync-snapshot", false, "Join the network after syncing blocks")
 
 }
 
@@ -104,7 +103,6 @@ func runNode() {
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
 		return
 	}
 
@@ -258,16 +256,6 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 	return store.CreateStore(storeCfg, eventRouter)
 }
 
-// getDBProvider extracts database provider from block store
-func getDBProvider(bs store.BlockStore) (db.DatabaseProvider, error) {
-	// Get database provider from block store
-	provider := bs.GetProvider()
-	if provider == nil {
-		return nil, fmt.Errorf("block store does not have a database provider")
-	}
-	return provider, nil
-}
-
 // initializePoH initializes Proof of History components
 func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
@@ -304,6 +292,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		self.JoinAfterSync,
 	)
 
 	if err == nil {
