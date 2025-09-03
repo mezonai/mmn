@@ -84,6 +84,7 @@ type TransactionData struct {
 	Nonce         uint64                 `protobuf:"varint,5,opt,name=nonce,proto3" json:"nonce,omitempty"`        // nonce
 	Timestamp     uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Status        TransactionStatus      `protobuf:"varint,7,opt,name=status,proto3,enum=mmn.TransactionStatus" json:"status,omitempty"`
+	TextData      string                 `protobuf:"bytes,8,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -165,6 +166,13 @@ func (x *TransactionData) GetStatus() TransactionStatus {
 		return x.Status
 	}
 	return TransactionStatus_PENDING
+}
+
+func (x *TransactionData) GetTextData() string {
+	if x != nil {
+		return x.TextData
+	}
+	return ""
 }
 
 type TxMsg struct {
@@ -920,7 +928,7 @@ var File_proto_tx_proto protoreflect.FileDescriptor
 
 const file_proto_tx_proto_rawDesc = "" +
 	"\n" +
-	"\x0eproto/tx.proto\x12\x03mmn\"\xdc\x01\n" +
+	"\x0eproto/tx.proto\x12\x03mmn\"\xf9\x01\n" +
 	"\x0fTransactionData\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
@@ -928,7 +936,8 @@ const file_proto_tx_proto_rawDesc = "" +
 	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x14\n" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12\x1c\n" +
 	"\ttimestamp\x18\x06 \x01(\x04R\ttimestamp\x12.\n" +
-	"\x06status\x18\a \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\"\xba\x01\n" +
+	"\x06status\x18\a \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1b\n" +
+	"\ttext_data\x18\b \x01(\tR\btextData\"\xba\x01\n" +
 	"\x05TxMsg\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\x05R\x04type\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
