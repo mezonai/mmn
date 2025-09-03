@@ -3,6 +3,7 @@
 This tool migrates user data from the current database to MMN blockchain by creating wallets and transferring tokens from faucet.
 
 ## Features
+
 - ✅ **Automatic wallet creation**: Create Ed25519 wallets for all users in database
 - ✅ **Successful token transfer**: Transfer tokens from faucet account to user wallets with signature errors fixed
 - ✅ **AES-GCM private key encryption**: Store AES-GCM encrypted private keys in database (upgraded from hex encoding)
@@ -13,6 +14,8 @@ This tool migrates user data from the current database to MMN blockchain by crea
 - ✅ **Upsert operations**: Automatically update existing wallets gracefully
 - ✅ **Genesis faucet integration**: Use correct faucet account from genesis config
 - ✅ **Transaction type compatibility**: Use FaucetTxType for funding transactions
+- ✅ **HRM user management**: Automatically setup HRM user with wallet balance equal to total users' balance
+- ✅ **Independent processes**: HRM setup and user migration can run separately
 
 ## System Requirements
 
@@ -24,11 +27,12 @@ This tool migrates user data from the current database to MMN blockchain by crea
 ## Configuration
 
 ### Database
+
 ```sql
 -- Users table (existing)
 CREATE TABLE users (
     id BIGINT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    username VARCHAR(255) NOT NULL,
     wallet INTEGER NOT NULL
 );
 
@@ -42,7 +46,21 @@ CREATE TABLE mmn_user_keys (
 );
 ```
 
+### Configuration Constants
+
+The tool uses configurable constants that can be easily modified:
+
+```go
+// constants.go
+const (
+    HRM_USERNAME = "hrm"  // Username for the HRM user
+)
+```
+
+To change the HRM username, simply modify the `HRM_USERNAME` constant in `constants.go`.
+
 ### Environment Variables
+
 ```bash
 # Database connection
 export DATABASE_URL="postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
@@ -56,37 +74,49 @@ export MASTER_KEY="bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA="
 
 ## Usage
 
-### 1. Run basic migration
+### 1. Run HRM setup only
+
+```bash
+cd migrate
+go run . -hrm
+```
+
+### 2. Run user migration only
+
+```bash
+cd migrate
+go run . -migrate
+```
+
+### 3. Run both HRM setup and migration (default)
+
 ```bash
 cd migrate
 go run .
 ```
 
-### 2. Run with custom parameters
-```bash
-cd migrate
-go run . \
-  -endpoint="localhost:9002" \
-  -db="postgres://user:pass@localhost:5432/db?sslmode=disable" \
-  -master-key="your_base64_master_key"
-```
+### 4. Run with dry-run mode
 
-### 3. Dry run (no actual changes)
 ```bash
 cd migrate
-go run . -dry-run=true
+go run . -hrm -dry-run=true
+go run . -migrate -dry-run=true
+go run . -dry-run=true  # Both HRM and migration
 ```
 
 ## Command Line Options
 
-| Option | Description | Default Value |
-|--------|-------------|---------------|
-| `-endpoint` | MMN blockchain gRPC endpoint | `localhost:9002` |
-| `-db` | Database connection URL | `postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable` |
-| `-master-key` | Master key for encryption (base64) | `bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=` |
-| `-dry-run` | Run migration without making actual changes | `false` |
+| Option       | Description                                 | Default Value |
+| ------------ | ------------------------------------------- | ------------- |
+| `-hrm`       | Run HRM setup only                          | `false`       |
+| `-migrate`   | Run user migration only                     | `false`       |
+| `-dry-run`   | Run without making actual changes           | `false`       |
+| `-log-level` | Log level (debug, info, warn, error, fatal) | `info`        |
 
-**Note**: Other configurations are loaded from environment variables:
+**Note**: If neither `-hrm` nor `-migrate` is specified, both will run by default.
+
+**Environment Variables**:
+
 - `DATABASE_URL`: Database connection string
 - `MMN_ENDPOINT`: MMN blockchain gRPC endpoint
 - `MASTER_KEY`: Master key for encryption (base64)
@@ -94,21 +124,43 @@ go run . -dry-run=true
 ## Migration Process
 
 1. **Connection check**
+
    - Check database connection
    - Check MMN blockchain gRPC connection
    - Create `mmn_user_keys` table if not exists
 
-2. **Get user list**
+2. **HRM user setup** (Independent process)
+
+   - Calculate total wallet balance of all users (excluding HRM)
+   - Check if user with username "hrm" exists, create if not
+   - Update HRM user's wallet balance to match total users' wallet balance
+   - Check if HRM user has a wallet, create if not
+   - Verify HRM wallet balance matches database balance
+   - Transfer tokens from faucet if balance is insufficient
+
+3. **User migration** (Independent process)
+
+   - Query all users from database (excluding HRM user)
+   - For each user:
+     - Check if wallet exists, create if not
+     - Get current blockchain balance
+     - Compare with database balance
+     - Transfer shortfall from HRM wallet (not faucet)
+     - Skip users that already have sufficient balance
+
+4. **Get user list**
+
    - Query users from `users` table
    - Check if user already has wallet
 
-3. **Create wallets**
+5. **Create wallets**
+
    - Generate Ed25519 key pair
    - Encrypt private key with master key (AES-GCM)
    - Save to database with upsert operation
    - Automatically update `updated_at` timestamp
 
-4. **Transfer tokens**
+6. **Transfer tokens**
    - Get faucet account info from genesis config
    - Build and sign transaction with Ed25519
    - Send transaction via gRPC
@@ -118,12 +170,14 @@ go run . -dry-run=true
 ## Utility Scripts
 
 ### Check database
+
 ```bash
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM users;"
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM mmn_user_keys;"
 ```
 
 ### Clean wallets (for testing)
+
 ```bash
 # Delete all wallets in database
 psql "$DATABASE_URL" -c "DELETE FROM mmn_user_keys;"
@@ -149,11 +203,13 @@ migrate/
 ## Module Architecture
 
 ### migrate.go
+
 - `main()`: Main entry point, orchestrate entire migration process
 - `parseLogLevel()`: Convert string log level to LogLevel enum
 - Handle command line flags and initialize logger
 
 ### wallet.go
+
 - `GetFaucetAccount()`: Get faucet account from genesis private key (fixed)
 - `NewPgEncryptedStore()`: Create wallet manager with AES-GCM encryption
 - `LoadKey()`: Load private key from database and decrypt
@@ -161,6 +217,7 @@ migrate/
 - `encrypt()/decrypt()`: Encrypt/decrypt private key with AES-GCM
 
 ### database.go
+
 - `ConnectDatabase()`: Connect to PostgreSQL with retry mechanism
 - `CreateUserKeysTable()`: Create/recreate mmn_user_keys table
 - `GetUsers()`: Get list of users to migrate
@@ -168,11 +225,13 @@ migrate/
 - `CountExistingWallets()`: Count existing wallets
 
 ### transfer.go
+
 - `TransferTokens()`: Execute token transfer from faucet to user
 - `defaultClient()`: Create MMN client to communicate with blockchain
 - Use Ed25519 signature and FaucetTxType
 
 ### logger.go
+
 - `InitLogger()`: Initialize global logger with log level
 - `LogDebug/Info/Warn/Error/Fatal()`: Logging functions with colors
 - `LogMigrationStart/Complete()`: Specialized logs for migration
@@ -181,11 +240,13 @@ migrate/
 - Support colors and timestamps for each log level
 
 ### types.go
+
 - `Wallet`: Struct containing wallet information
 - `Tx`: Transaction structure
 - `SignedTx`: Signed transaction structure
 
 ### config.go
+
 - `LoadConfig()`: Load configuration from environment variables
 - `getEnv()`: Helper function to get env with default values
 - Default configuration constants
@@ -205,13 +266,15 @@ migrate/
 The tool outputs the following information with **structured logging with colors and timestamps**:
 
 ### Log types:
+
 - 🟢 **INFO**: Important information (green)
-- 🔵 **DEBUG**: Debug details (blue) 
+- 🔵 **DEBUG**: Debug details (blue)
 - 🟡 **WARN**: Warnings (yellow)
 - 🔴 **ERROR**: Errors (red)
 - 🟣 **FATAL**: Critical errors (purple)
 
 ### Information logged:
+
 - ✅ Successful database and blockchain connections
 - 📊 Number of users to migrate
 - 🔑 Wallet addresses created for each user
@@ -221,6 +284,7 @@ The tool outputs the following information with **structured logging with colors
 - ⏱️ Migration completion time
 
 ### Example successful output:
+
 ```
 [2024-01-15 10:30:15] INFO 🚀 Starting MMN Migration Tool (dry-run: false, log-level: info)
 [2024-01-15 10:30:15] INFO 📋 Configuration loaded - MMN Endpoint: localhost:9002
@@ -242,6 +306,7 @@ The tool outputs the following information with **structured logging with colors
 ## Support
 
 If you encounter issues, check:
+
 1. Database connection string
 2. MMN node is running and accessible
 3. Faucet account has sufficient balance
@@ -249,6 +314,7 @@ If you encounter issues, check:
 5. Appropriate log level for debugging
 
 For additional help:
+
 - Review the logs for specific error messages
 - Ensure all environment variables are properly set
 - Verify the MMN blockchain node is synchronized

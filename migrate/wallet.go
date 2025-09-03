@@ -44,6 +44,31 @@ func GetFaucetAccount() (string, ed25519.PrivateKey) {
 	return faucetPublicKeyBase58, faucetPrivateKey
 }
 
+// GetHRMAccount gets the HRM account information including private key
+func GetHRMAccount(db *sql.DB, config *Config) (string, ed25519.PrivateKey, error) {
+	// Get HRM wallet info
+	userID, address, err := GetHRMWalletInfo(db)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to get HRM wallet info: %v", err)
+	}
+
+	// Load HRM private key
+	ks, err := NewPgEncryptedStore(db, config.MasterKey)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create wallet manager: %v", err)
+	}
+
+	_, seed, err := ks.LoadKey(uint64(userID))
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to load HRM private key: %v", err)
+	}
+
+	// Create private key from seed
+	privateKey := ed25519.NewKeyFromSeed(seed)
+
+	return address, privateKey, nil
+}
+
 func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (mmnClient.WalletManager, error) {
 	mk, err := base64.StdEncoding.DecodeString(base64MasterKey)
 	if err != nil {
