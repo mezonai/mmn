@@ -164,7 +164,7 @@ export async function fundAccount(grpcClient: GrpcClient, recipientAddress: stri
       console.log(`Fund transaction response (attempt ${attempt}):`, response);
       // If successful, wait and verify the balance was updated
       if (response.ok) {
-        await waitForTransaction(8000); // ~ 2 slots
+        await waitForTransaction(800); // ~ 2 slots
         try {
           const balance = await getAccountBalance(grpcClient, recipientAddress);
           console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);

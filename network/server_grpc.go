@@ -260,6 +260,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 						Status:        pb.TransactionStatus_PENDING,
 						Confirmations: 0, // No confirmations for mempool transactions
 						Timestamp:     uint64(time.Now().Unix()),
+						ExtraInfo:     tx.ExtraInfo,
 					}, nil
 				}
 			}
@@ -275,6 +276,10 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			if confirmations > 1 {
 				status = pb.TransactionStatus_FINALIZED
 			}
+			tx, _, err := s.ledger.GetTxByHash(txHash)
+			if err != nil {
+				return nil, err
+			}
 
 			return &pb.TransactionStatusInfo{
 				TxHash:        txHash,
@@ -283,6 +288,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 				BlockHash:     blk.HashString(),
 				Confirmations: confirmations,
 				Timestamp:     uint64(time.Now().Unix()),
+				ExtraInfo:     tx.ExtraInfo,
 			}, nil
 		}
 	}
@@ -374,6 +380,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.Transaction().ExtraInfo,
 		}
 
 	case *events.TransactionIncludedInBlock:
@@ -387,6 +394,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
 		}
 
 	case *events.TransactionFinalized:
@@ -400,6 +408,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
 		}
 
 	case *events.TransactionFailed:
@@ -409,6 +418,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ErrorMessage:  e.ErrorMessage(),
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
 		}
 	}
 
