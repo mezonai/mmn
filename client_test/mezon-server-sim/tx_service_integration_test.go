@@ -15,6 +15,7 @@ import (
 	mmnClient "github.com/mezonai/mmn/client"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/utils"
 	mmnpb "github.com/mezonai/mmn/proto"
 	"github.com/mr-tron/base58"
 
@@ -242,7 +243,7 @@ func TestSendToken_Integration_RealMainnet(t *testing.T) {
 	// Test data
 	fromUID := uint64(1)
 	toUID := uint64(2)
-	amount := uint256.NewInt(100) // Send minimal amount for testing
+	amount := utils.ToBigNumber(100) // Send minimal amount for testing
 	textData := "Integration test transfer"
 
 	// get amount from faucet account
@@ -251,7 +252,7 @@ func TestSendToken_Integration_RealMainnet(t *testing.T) {
 		t.Fatalf("Failed to get account address %s: %v", fromAccount.Address, err)
 	}
 	fmt.Printf("fromAddr: %s\n", fromAccount.Address)
-	seedAmount := uint256.NewInt(10000)
+	seedAmount := utils.ToBigNumber(10000)
 	_, err = seedAccountFromFaucet(t, ctx, service, fromAccount.Address, seedAmount)
 	if err != nil {
 		t.Fatalf("Failed to seed from account %s: %v", fromAccount.Address, err)
