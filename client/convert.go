@@ -14,6 +14,7 @@ func ToProtoTx(tx *Tx) *proto.TxMsg {
 		Nonce:     tx.Nonce,
 		TextData:  tx.TextData,
 		Timestamp: tx.Timestamp,
+		ExtraInfo: tx.ExtraInfo,
 	}
 }
 

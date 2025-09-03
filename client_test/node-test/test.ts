@@ -45,6 +45,7 @@ interface Tx {
   text_data: string;
   nonce: number;
   signature: string;
+  extra_info: string;
 }
 
 function buildTx(
@@ -53,7 +54,8 @@ function buildTx(
   amount: number,
   text_data: string,
   nonce: number,
-  type: number
+  type: number,
+  extra_info?: string
 ): Tx {
   return {
     type: type,
@@ -64,6 +66,7 @@ function buildTx(
     text_data: text_data,
     nonce: nonce,
     signature: '',
+    extra_info: extra_info || "",
   };
 }
 
@@ -103,6 +106,7 @@ async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
     timestamp: tx.timestamp,
     text_data: tx.text_data,
     nonce: tx.nonce,
+    extra_info: tx.extra_info,
   };
   return await grpcClient.addTransaction(txMsg, tx.signature);
 }

@@ -212,6 +212,7 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Blockhash: txMeta.BlockHash,
 		Status:    txMeta.Status,
 		ErrMsg:    txMeta.Error,
+		ExtraInfo: tx.ExtraInfo,
 	}
 	return &pb.GetTxByHashResponse{
 		Tx:       txInfo,
@@ -233,6 +234,7 @@ func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (
 			Nonce:     tx.Nonce,
 			Timestamp: tx.Timestamp,
 			Status:    pb.TxMeta_CONFIRMED,
+			ExtraInfo: tx.ExtraInfo,
 		}
 	}
 	return &pb.GetTxHistoryResponse{
@@ -259,6 +261,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 						Status:        pb.TransactionStatus_PENDING,
 						Confirmations: 0, // No confirmations for mempool transactions
 						Timestamp:     uint64(time.Now().Unix()),
+						ExtraInfo:     tx.ExtraInfo,
 					}, nil
 				}
 			}
@@ -274,6 +277,10 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			if confirmations > 1 {
 				status = pb.TransactionStatus_FINALIZED
 			}
+			tx, _, err := s.ledger.GetTxByHash(txHash)
+			if err != nil {
+				return nil, err
+			}
 
 			return &pb.TransactionStatusInfo{
 				TxHash:        txHash,
@@ -282,6 +289,7 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 				BlockHash:     blk.HashString(),
 				Confirmations: confirmations,
 				Timestamp:     uint64(time.Now().Unix()),
+				ExtraInfo:     tx.ExtraInfo,
 			}, nil
 		}
 	}
@@ -297,7 +305,7 @@ func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTr
 		return &pb.GetPendingTransactionsResponse{
 			TotalCount: 0,
 			PendingTxs: []*pb.TransactionData{},
-			Error:       "mempool not available",
+			Error:      "mempool not available",
 		}, nil
 	}
 
@@ -321,22 +329,22 @@ func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTr
 		}
 		// Create pending transaction info
 		pendingTx := &pb.TransactionData{
-			TxHash:        txHash,
-			Sender:        tx.Sender,
-			Recipient:     tx.Recipient,
-			Amount:        utils.Uint256ToString(tx.Amount),
-			Nonce:         tx.Nonce,
-			Timestamp:     tx.Timestamp,
-			Status:        pb.TransactionStatus_PENDING,
+			TxHash:    txHash,
+			Sender:    tx.Sender,
+			Recipient: tx.Recipient,
+			Amount:    utils.Uint256ToString(tx.Amount),
+			Nonce:     tx.Nonce,
+			Timestamp: tx.Timestamp,
+			Status:    pb.TransactionStatus_PENDING,
 		}
-		
+
 		pendingTxs = append(pendingTxs, pendingTx)
 	}
 
 	return &pb.GetPendingTransactionsResponse{
 		TotalCount: totalCount,
 		PendingTxs: pendingTxs,
-		Error:       "",
+		Error:      "",
 	}, nil
 }
 
@@ -373,6 +381,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.Transaction().ExtraInfo,
 		}
 
 	case *events.TransactionIncludedInBlock:
@@ -386,6 +395,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
 		}
 
 	case *events.TransactionFinalized:
@@ -399,6 +409,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
 		}
 
 	case *events.TransactionFailed:
@@ -408,6 +419,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ErrorMessage:  e.ErrorMessage(),
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
 		}
 	}
 
@@ -564,7 +576,6 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
 			}
 
-
 			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
 			if err != nil {
 				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
@@ -605,18 +616,18 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 // GetAccountByAddress is a convenience RPC under AccountService to fetch account info
 func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
-    if in == nil || in.Address == "" {
-        return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
-    }
+	if in == nil || in.Address == "" {
+		return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
+	}
 
-    acc, err := s.ledger.GetAccount(in.Address)
-    if err != nil {
-        return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
-    }
-    if acc == nil {
+	acc, err := s.ledger.GetAccount(in.Address)
+	if err != nil {
+		return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
+	}
+	if acc == nil {
 		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
-    }
-    return &pb.GetAccountByAddressResponse{
-        Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
-    }, nil
+	}
+	return &pb.GetAccountByAddressResponse{
+		Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
+	}, nil
 }

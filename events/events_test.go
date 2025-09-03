@@ -21,12 +21,14 @@ func TestEventBus(t *testing.T) {
 	}
 
 	// Test publishing event
+	extraInfo := "extra_info"
 	tx := &transaction.Transaction{
 		Type:      transaction.TxTypeTransfer,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
+		ExtraInfo: extraInfo,
 	}
 
 	txHash := "test-tx-hash"
@@ -45,6 +47,9 @@ func TestEventBus(t *testing.T) {
 		}
 		if receivedEvent.TxHash() != txHash {
 			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.TxHash())
+		}
+		if receivedEvent.TxExtraInfo() != extraInfo {
+			t.Errorf("Expected extraInfo %s, got %s", extraInfo, receivedEvent.TxExtraInfo())
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event")
@@ -69,6 +74,7 @@ func TestBlockchainEvents(t *testing.T) {
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
 		Timestamp: uint64(time.Now().Unix()),
+		ExtraInfo: "extra_info",
 	}
 
 	event := NewTransactionAddedToMempool("tx-hash", tx)
@@ -77,25 +83,31 @@ func TestBlockchainEvents(t *testing.T) {
 	}
 
 	// Test TransactionIncludedInBlock
-	blockEvent := NewTransactionIncludedInBlock("tx-hash", 123, "block-hash")
+	blockEvent := NewTransactionIncludedInBlock("tx-hash", 123, "block-hash", tx.ExtraInfo)
 	if blockEvent.Type() != EventTransactionIncludedInBlock {
 		t.Errorf("Expected %s, got %s", EventTransactionIncludedInBlock, blockEvent.Type())
 	}
 	if blockEvent.BlockSlot() != 123 {
 		t.Errorf("Expected block slot 123, got %d", blockEvent.BlockSlot())
 	}
+	if blockEvent.TxExtraInfo() != tx.ExtraInfo {
+		t.Errorf("Expected extraInfo %s, got %s", tx.ExtraInfo, blockEvent.TxExtraInfo())
+	}
 
 	// Test TransactionFailed
-	failedEvent := NewTransactionFailed("tx-hash", "insufficient funds")
+	failedEvent := NewTransactionFailed("tx-hash", "insufficient funds", tx.ExtraInfo)
 	if failedEvent.Type() != EventTransactionFailed {
 		t.Errorf("Expected %s, got %s", EventTransactionFailed, failedEvent.Type())
 	}
 	if failedEvent.ErrorMessage() != "insufficient funds" {
 		t.Errorf("Expected error message 'insufficient funds', got %s", failedEvent.ErrorMessage())
 	}
+	if blockEvent.TxExtraInfo() != tx.ExtraInfo {
+		t.Errorf("Expected extraInfo %s, got %s", tx.ExtraInfo, blockEvent.TxExtraInfo())
+	}
 
 	// Test TransactionFinalized
-	finalizedEvent := NewTransactionFinalized("tx-hash", 123, "block-hash")
+	finalizedEvent := NewTransactionFinalized("tx-hash", 123, "block-hash", tx.ExtraInfo)
 	if finalizedEvent.Type() != EventTransactionFinalized {
 		t.Errorf("Expected %s, got %s", EventTransactionFinalized, finalizedEvent.Type())
 	}
@@ -104,6 +116,9 @@ func TestBlockchainEvents(t *testing.T) {
 	}
 	if finalizedEvent.BlockHash() != "block-hash" {
 		t.Errorf("Expected block hash 'block-hash', got %s", finalizedEvent.BlockHash())
+	}
+	if blockEvent.TxExtraInfo() != tx.ExtraInfo {
+		t.Errorf("Expected extraInfo %s, got %s", tx.ExtraInfo, blockEvent.TxExtraInfo())
 	}
 }
 
@@ -171,7 +186,7 @@ func TestNewTransactionFailed(t *testing.T) {
 	txHash := "test-tx-hash"
 	errorMessage := "insufficient funds"
 
-	failedEvent := NewTransactionFailed(txHash, errorMessage)
+	failedEvent := NewTransactionFailed(txHash, errorMessage, "")
 
 	if failedEvent == nil {
 		t.Fatal("NewTransactionFailed returned nil")
@@ -203,11 +218,11 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 	// Subscribe to events
 	subscriberID, eventChan := eventRouter.Subscribe()
 	defer eventRouter.Unsubscribe(subscriberID)
-	
+
 	// Create and publish a failed transaction event
 	txHash := "failed-tx-hash"
 	errorMessage := "invalid signature"
-	failedEvent := NewTransactionFailed(txHash, errorMessage)
+	failedEvent := NewTransactionFailed(txHash, errorMessage, "")
 
 	eventRouter.PublishTransactionEvent(failedEvent)
 
@@ -244,26 +259,26 @@ func TestTransactionAddedToMempool(t *testing.T) {
 		Amount:    uint256.NewInt(1000),
 		Timestamp: uint64(time.Now().Unix()),
 	}
-	
+
 	txHash := "test-tx-hash"
 	event := NewTransactionAddedToMempool(txHash, tx)
-	
+
 	if event == nil {
 		t.Fatal("NewTransactionAddedToMempool returned nil")
 	}
-	
+
 	if event.Type() != EventTransactionAddedToMempool {
 		t.Errorf("Expected event type %s, got %s", EventTransactionAddedToMempool, event.Type())
 	}
-	
+
 	if event.TxHash() != txHash {
 		t.Errorf("Expected tx hash %s, got %s", txHash, event.TxHash())
 	}
-	
+
 	if event.Transaction() != tx {
 		t.Error("Transaction reference does not match")
 	}
-	
+
 	// Check timestamp is recent
 	now := time.Now()
 	if event.Timestamp().Sub(now) > time.Second {
@@ -275,29 +290,29 @@ func TestTransactionIncludedInBlock(t *testing.T) {
 	txHash := "test-tx-hash"
 	blockSlot := uint64(12345)
 	blockHash := "block-hash-123"
-	
-	event := NewTransactionIncludedInBlock(txHash, blockSlot, blockHash)
-	
+
+	event := NewTransactionIncludedInBlock(txHash, blockSlot, blockHash, "")
+
 	if event == nil {
 		t.Fatal("NewTransactionIncludedInBlock returned nil")
 	}
-	
+
 	if event.Type() != EventTransactionIncludedInBlock {
 		t.Errorf("Expected event type %s, got %s", EventTransactionIncludedInBlock, event.Type())
 	}
-	
+
 	if event.TxHash() != txHash {
 		t.Errorf("Expected tx hash %s, got %s", txHash, event.TxHash())
 	}
-	
+
 	if event.BlockSlot() != blockSlot {
 		t.Errorf("Expected block slot %d, got %d", blockSlot, event.BlockSlot())
 	}
-	
+
 	if event.BlockHash() != blockHash {
 		t.Errorf("Expected block hash %s, got %s", blockHash, event.BlockHash())
 	}
-	
+
 	// Check timestamp is recent
 	now := time.Now()
 	if event.Timestamp().Sub(now) > time.Second {
@@ -309,29 +324,29 @@ func TestTransactionFinalized(t *testing.T) {
 	txHash := "test-tx-hash"
 	blockSlot := uint64(12345)
 	blockHash := "block-hash-123"
-	
-	event := NewTransactionFinalized(txHash, blockSlot, blockHash)
-	
+
+	event := NewTransactionFinalized(txHash, blockSlot, blockHash, "")
+
 	if event == nil {
 		t.Fatal("NewTransactionFinalized returned nil")
 	}
-	
+
 	if event.Type() != EventTransactionFinalized {
 		t.Errorf("Expected event type %s, got %s", EventTransactionFinalized, event.Type())
 	}
-	
+
 	if event.TxHash() != txHash {
 		t.Errorf("Expected tx hash %s, got %s", txHash, event.TxHash())
 	}
-	
+
 	if event.BlockSlot() != blockSlot {
 		t.Errorf("Expected block slot %d, got %d", blockSlot, event.BlockSlot())
 	}
-	
+
 	if event.BlockHash() != blockHash {
 		t.Errorf("Expected block hash %s, got %s", blockHash, event.BlockHash())
 	}
-	
+
 	// Check timestamp is recent
 	now := time.Now()
 	if event.Timestamp().Sub(now) > time.Second {
@@ -343,25 +358,25 @@ func TestEventBusConcurrentPublishing(t *testing.T) {
 	eventBus := NewEventBus()
 	subscriberID, eventChan := eventBus.Subscribe()
 	defer eventBus.Unsubscribe(subscriberID)
-	
+
 	// Publish multiple events concurrently
 	numEvents := 10
 	events := make([]BlockchainEvent, numEvents)
-	
+
 	for i := 0; i < numEvents; i++ {
 		txHash := fmt.Sprintf("tx-hash-%d", i)
-		events[i] = NewTransactionFailed(txHash, "test error")
+		events[i] = NewTransactionFailed(txHash, "test error", "")
 	}
-	
+
 	// Publish all events concurrently
 	for _, event := range events {
 		go eventBus.Publish(event)
 	}
-	
+
 	// Collect all events
 	receivedEvents := make([]BlockchainEvent, 0, numEvents)
 	timeout := time.After(2 * time.Second)
-	
+
 	for i := 0; i < numEvents; i++ {
 		select {
 		case event := <-eventChan:
@@ -371,7 +386,7 @@ func TestEventBusConcurrentPublishing(t *testing.T) {
 			return
 		}
 	}
-	
+
 	if len(receivedEvents) != numEvents {
 		t.Errorf("Expected %d events, got %d", numEvents, len(receivedEvents))
 	}

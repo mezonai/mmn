@@ -43,6 +43,10 @@ export interface TxMsg {
      * @generated from protobuf field: uint64 nonce = 7
      */
     nonce: bigint;
+    /**
+     * @generated from protobuf field: string extra_info = 8
+     */
+    extraInfo: string;
 }
 /**
  * @generated from protobuf message mmn.SignedTxMsg
@@ -234,7 +238,8 @@ class TxMsg$Type extends MessageType<TxMsg> {
             { no: 4, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 5, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 6, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 7, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+            { no: 7, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 8, name: "extra_info", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<TxMsg>): TxMsg {
@@ -246,6 +251,7 @@ class TxMsg$Type extends MessageType<TxMsg> {
         message.timestamp = 0n;
         message.textData = "";
         message.nonce = 0n;
+        message.extraInfo = "";
         if (value !== undefined)
             reflectionMergePartial<TxMsg>(this, message, value);
         return message;
@@ -275,6 +281,9 @@ class TxMsg$Type extends MessageType<TxMsg> {
                     break;
                 case /* uint64 nonce */ 7:
                     message.nonce = reader.uint64().toBigInt();
+                    break;
+                case /* string extra_info */ 8:
+                    message.extraInfo = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -309,6 +318,9 @@ class TxMsg$Type extends MessageType<TxMsg> {
         /* uint64 nonce = 7; */
         if (message.nonce !== 0n)
             writer.tag(7, WireType.Varint).uint64(message.nonce);
+        /* string extra_info = 8; */
+        if (message.extraInfo !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.extraInfo);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
