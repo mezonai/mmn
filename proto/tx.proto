@@ -20,6 +20,7 @@ message TransactionData {
   uint64 nonce = 5; // nonce
   uint64 timestamp = 6;
   TransactionStatus status = 7;
+  string text_data = 8;
 }
 
 message TxMsg { 
