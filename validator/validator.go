@@ -178,11 +178,11 @@ func (v *Validator) ReadyToStart(slot uint64) bool {
 // handleEntry buffers entries and assembles a block at slot boundary.
 func (v *Validator) handleEntry(entries []poh.Entry) {
 	// Check if network is ready before processing
-	if v.netClient != nil {
-		if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
-			return // Skip processing if network not ready
-		}
-	}
+	// if v.netClient != nil {
+	// 	if ready, ok := v.netClient.(interface{ IsNodeReady() bool }); ok && !ready.IsNodeReady() {
+	// 		return // Skip processing if network not ready
+	// 	}
+	// }
 	currentSlot := v.Recorder.CurrentSlot()
 
 	// When slot advances, assemble block for lastSlot if we were leader

@@ -79,6 +79,9 @@ type Libp2pNetwork struct {
 	// readiness control
 	enableFullModeOnce sync.Once
 	ready              atomic.Bool
+
+	// New field for join behavior control
+	joinAfterSync bool // If true, node joins network only after snapshot download and block sync
 }
 
 type PeerInfo struct {

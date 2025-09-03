@@ -74,9 +74,21 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 	}
 
 	if ln.topicLatestSlot == nil {
-		errMsg := "latest slot topic is not initialized"
-		logx.Error("NETWORK:LATEST SLOT", errMsg)
-		return 0, fmt.Errorf(errMsg)
+		// Topics might not be set up yet (early call during join-after-sync). Ensure topics are created.
+		ln.SetupPubSubTopics(ln.ctx)
+		// If still nil, lazily join just this topic.
+		if ln.topicLatestSlot == nil {
+			if topic, jErr := ln.pubsub.Join(LatestSlotTopic); jErr == nil {
+				ln.topicLatestSlot = topic
+				if sub, sErr := ln.topicLatestSlot.Subscribe(); sErr == nil {
+					go ln.HandleLatestSlotTopic(ln.ctx, sub)
+				}
+			} else {
+				errMsg := "latest slot topic is not initialized"
+				logx.Error("NETWORK:LATEST SLOT", "%s", errMsg)
+				return 0, fmt.Errorf(errMsg)
+			}
+		}
 	}
 
 	err = ln.topicLatestSlot.Publish(ctx, data)

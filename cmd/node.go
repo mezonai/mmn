@@ -50,6 +50,7 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+	joinAfterSync   bool // New flag for join behavior
 )
 
 var runCmd = &cobra.Command{
@@ -71,6 +72,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
+	runCmd.Flags().BoolVar(&joinAfterSync, "join-after-sync", false, "Join the network after syncing blocks")
 
 }
 
@@ -166,6 +168,7 @@ func runNode() {
 		ListenAddr:         listenAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
+		JoinAfterSync:      joinAfterSync,
 	}
 
 	txTracker := transaction.NewTransactionTracker()
@@ -302,6 +305,11 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.BootStrapAddresses,
 		bs,
 	)
+
+	if err == nil {
+		// Set join behavior based on configuration
+		libp2pNetwork.SetJoinBehavior(self.JoinAfterSync)
+	}
 
 	return libp2pNetwork, err
 }
