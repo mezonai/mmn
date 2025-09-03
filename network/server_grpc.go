@@ -212,6 +212,7 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 		Blockhash: txMeta.BlockHash,
 		Status:    txMeta.Status,
 		ErrMsg:    txMeta.Error,
+		ExtraInfo: tx.ExtraInfo,
 	}
 	return &pb.GetTxByHashResponse{
 		Tx:       txInfo,
