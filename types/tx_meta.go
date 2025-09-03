@@ -5,6 +5,7 @@ import "github.com/mezonai/mmn/transaction"
 const (
 	TxStatusFailed  = 0
 	TxStatusSuccess = 1
+	TxStatusPending = 2
 )
 
 type TransactionMeta struct {

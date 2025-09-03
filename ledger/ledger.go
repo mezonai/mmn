@@ -76,6 +76,16 @@ func (l *Ledger) createAccountWithoutLocking(addr string, balance *uint256.Int) 
 	return account, nil
 }
 
+func (l *Ledger) createTemporaryAccountWithoutLocking(addr string, balance *uint256.Int) *types.Account {
+	account := &types.Account{
+		Address: addr,
+		Balance: balance,
+		Nonce:   0,
+	}
+
+	return account
+}
+
 // CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
 func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 	l.mu.Lock()
@@ -192,34 +202,51 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 func (l *Ledger) ApplyBlockToBatch(batch db.DatabaseBatch, b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+
+	var total int
+	for _, e := range b.Entries {
+		total += len(e.TxHashes)
+	}
+
+	blockHash := hex.EncodeToString(b.Hash[:])
+	allTxMetas := make([]*types.TransactionMeta, 0, total)
+
+	updatingAccounts := make(map[string]*types.Account, 2*total)
+
+	loadAccount := func(addr string) (*types.Account, error) {
+		if acc, ok := updatingAccounts[addr]; ok {
+			return acc, nil
+		}
+
+		acc, err := l.accountStore.GetByAddr(addr)
+		if err != nil {
+			return nil, err
+		}
+		if acc == nil {
+			acc = l.createTemporaryAccountWithoutLocking(addr, uint256.NewInt(0))
+		}
+		updatingAccounts[addr] = acc
+		return acc, nil
+	}
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
 			return err
 		}
-		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
 		for _, tx := range txs {
-			sender, err := l.accountStore.GetByAddr(tx.Sender)
-			if err != nil {
-				return err
-			}
-			if sender == nil {
-				if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
-					return err
-				}
-			}
+			txHash := tx.Hash()
 
-			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
+			sender, err := loadAccount(tx.Sender)
 			if err != nil {
 				return err
 			}
-			if recipient == nil {
-				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
-					return err
-				}
+			recipient, err := loadAccount(tx.Recipient)
+			if err != nil {
+				return err
 			}
 
 			state := map[string]*types.Account{
@@ -229,38 +256,48 @@ func (l *Ledger) ApplyBlockToBatch(batch db.DatabaseBatch, b *block.Block) error
 
 			if err := applyTx(state, tx); err != nil {
 				if l.eventRouter != nil {
-					txHash := tx.Hash()
-					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err))
-					l.eventRouter.PublishTransactionEvent(event)
+					l.eventRouter.PublishTransactionEvent(
+						events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err)),
+					)
 				}
-
-				fmt.Printf("Apply fail: %v\n", err)
 				state[tx.Sender].Nonce++
-				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
+				allTxMetas = append(allTxMetas, types.NewTxMeta(tx, b.Slot, blockHash, types.TxStatusFailed, err.Error()))
 				continue
 			}
 
-			fmt.Printf("Applied tx %s\n", tx.Hash())
-			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
-			addHistory(state[tx.Sender], tx)
+			// Success path
+			allTxMetas = append(allTxMetas, types.NewTxMeta(tx, b.Slot, blockHash, types.TxStatusSuccess, ""))
 
+			addHistory(state[tx.Sender], tx)
 			if tx.Recipient != tx.Sender {
 				addHistory(state[tx.Recipient], tx)
 			}
-
-			if err := l.accountStore.StoreToBatch(batch, []*types.Account{sender, recipient}); err != nil {
-				if l.eventRouter != nil {
-					event := events.NewTransactionFailed("", fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
-					l.eventRouter.PublishTransactionEvent(event)
-				}
-				return err
-			}
 		}
+	}
 
-		if len(txMetas) > 0 {
-			if err := l.txMetaStore.StoreToBatch(batch, txMetas); err != nil {
-				return err
+	if len(updatingAccounts) > 0 {
+		allAccounts := make([]*types.Account, 0, len(updatingAccounts))
+		for _, acc := range updatingAccounts {
+			allAccounts = append(allAccounts, acc)
+		}
+		if err := l.accountStore.StoreToBatch(batch, allAccounts); err != nil {
+			if l.eventRouter != nil {
+				l.eventRouter.PublishTransactionEvent(
+					events.NewTransactionFailed("", fmt.Sprintf("failed to store accounts: %v", err)),
+				)
 			}
+			return err
+		}
+	}
+
+	if len(allTxMetas) > 0 {
+		if err := l.txMetaStore.StoreToBatch(batch, allTxMetas); err != nil {
+			if l.eventRouter != nil {
+				l.eventRouter.PublishTransactionEvent(
+					events.NewTransactionFailed("", fmt.Sprintf("failed to store transaction metas: %v", err)),
+				)
+			}
+			return err
 		}
 	}
 

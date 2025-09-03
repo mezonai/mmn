@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -50,11 +51,12 @@ type GenericBlockStore struct {
 	mu              sync.RWMutex
 	latestFinalized uint64
 	txStore         TxStore
+	txMetaStore     TxMetaStore
 	eventRouter     *events.EventRouter
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, eventRouter *events.EventRouter) (BlockStore, error) {
+func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, tms TxMetaStore, eventRouter *events.EventRouter) (BlockStore, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
@@ -62,6 +64,7 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, eventRouter 
 	store := &GenericBlockStore{
 		provider:    provider,
 		txStore:     ts,
+		txMetaStore: tms,
 		eventRouter: eventRouter,
 	}
 
@@ -195,13 +198,22 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	batch.Put(blockKey, blockValue)
 
 	txs := make([]*transaction.Transaction, 0)
+	txMetas := make([]*types.TransactionMeta, 0)
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
+		blockHash := b.HashString()
+		for _, tx := range entry.Transactions {
+			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, blockHash, types.TxStatusPending, ""))
+		}
 	}
 
 	// Store transactions in the same batch
 	if err := s.txStore.StoreToBatch(batch, txs); err != nil {
 		return fmt.Errorf("failed to store transactions: %w", err)
+	}
+
+	if err := s.txMetaStore.StoreToBatch(batch, txMetas); err != nil {
+		return fmt.Errorf("failed to store transaction metas: %w", err)
 	}
 
 	// Atomic write of block and all transactions
