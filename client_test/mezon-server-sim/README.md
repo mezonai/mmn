@@ -22,21 +22,6 @@ cd client_test/mezon-server-sim
 docker compose up -d
 ```
 
-### 3. Database Setup
-
-Create the required database table and seed data:
-
-```sql
--- Create users table
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY,
-    -- Add other columns as needed
-);
-
--- Insert seed data
-INSERT INTO users (id) VALUES (0), (1), (2);
-```
-
 ## Running Tests
 
 After setting up the database and seed data, you can run the integration tests:

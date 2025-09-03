@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/block"
@@ -47,14 +48,16 @@ func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 	}
 
 	blk := &block.Block{
-		Slot:      b.Slot,
-		Status:    block.BlockPending,
-		PrevHash:  b.PrevHash,
-		Entries:   entries,
-		LeaderID:  b.LeaderID,
-		Timestamp: b.Timestamp,
-		Hash:      b.Hash,
-		Signature: b.Signature,
+		BlockCore: block.BlockCore{
+			Slot:      b.Slot,
+			Status:    block.BlockPending,
+			PrevHash:  b.PrevHash,
+			LeaderID:  b.LeaderID,
+			Timestamp: b.Timestamp,
+			Hash:      b.Hash,
+			Signature: b.Signature,
+		},
+		Entries: entries,
 	}
 
 	return blk
@@ -83,13 +86,15 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.BroadcastedBlock, error) {
 	copy(bh[:], pbBlk.Hash)
 
 	return &block.BroadcastedBlock{
-		Slot:      pbBlk.Slot,
-		PrevHash:  prev,
-		Entries:   entries,
-		LeaderID:  pbBlk.LeaderId,
-		Timestamp: pbBlk.Timestamp,
-		Hash:      bh,
-		Signature: pbBlk.Signature,
+		BlockCore: block.BlockCore{
+			Slot:      pbBlk.Slot,
+			PrevHash:  prev,
+			LeaderID:  pbBlk.LeaderId,
+			Timestamp: pbBlk.Timestamp,
+			Hash:      bh,
+			Signature: pbBlk.Signature,
+		},
+		Entries: entries,
 	}, nil
 }
 
@@ -138,11 +143,21 @@ func ParseTx(data []byte) (*transaction.Transaction, error) {
 }
 
 func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
+	amount := uint256.NewInt(0)
+	if pbTx.TxMsg.Amount != "" {
+		var err error
+		amount, err = uint256.FromDecimal(pbTx.TxMsg.Amount)
+		if err != nil {
+			fmt.Println("Error parsing amount:", err)
+			return nil, err
+		}
+	}
+	
 	return &transaction.Transaction{
 		Type:      pbTx.TxMsg.Type,
 		Sender:    pbTx.TxMsg.Sender,
 		Recipient: pbTx.TxMsg.Recipient,
-		Amount:    pbTx.TxMsg.Amount,
+		Amount:    amount,
 		Timestamp: pbTx.TxMsg.Timestamp,
 		TextData:  pbTx.TxMsg.TextData,
 		Nonce:     pbTx.TxMsg.Nonce,
@@ -158,13 +173,34 @@ func ToProtoSignedTx(tx *transaction.Transaction) *pb.SignedTxMsg {
 }
 
 func ToProtoTx(tx *transaction.Transaction) *pb.TxMsg {
+	amount := Uint256ToString(tx.Amount)
 	return &pb.TxMsg{
 		Type:      tx.Type,
 		Sender:    tx.Sender,
 		Recipient: tx.Recipient,
-		Amount:    tx.Amount,
+		Amount:    amount,
 		Timestamp: tx.Timestamp,
 		TextData:  tx.TextData,
 		Nonce:     tx.Nonce,
 	}
+}
+
+// Uint256ToString converts a *uint256.Int to string, returning "0" if nil
+func Uint256ToString(value *uint256.Int) string {
+	if value == nil {
+		return "0"
+	}
+	return value.String()
+}
+
+// Uint256FromString converts a string to *uint256.Int, returning 0 if empty
+func Uint256FromString(value string) *uint256.Int {
+	if value == "" {
+		return uint256.NewInt(0)
+	}
+	amount, err := uint256.FromDecimal(value)
+	if err != nil {
+		return nil
+	}
+	return amount
 }
