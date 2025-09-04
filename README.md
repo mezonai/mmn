@@ -96,13 +96,14 @@ go build -o bin/mmn ./cmd
   ```
 - Then execute command to perform transfer from faucet to wallet
   ```
-  ./mmn faucet fund [--verbose] [--p <private-key>] [--f <private-key-file>] [--u <node-url>] <address> <amount>
+  ./mmn fund [--verbose] [--p <private-key>] [--f <private-key-file>] [--u <node-url>] <address> <amount>
   ```
   For example:
   ```
-  ./mmn faucet fund EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx 1000 -v -f /path/to/private -u node1:9001
+  ./mmn fund EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx 1000 -v -f /path/to/private -u node1:9001
+  ./mmn fund EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx 1000 -v -p 302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee -u node1:9001
   ```
-- For more details about command, run `./mmn faucet fund --help`
+- For more details about command, run `./mmn fund --help`
 
 
 # uses cases

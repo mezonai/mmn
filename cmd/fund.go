@@ -1,10 +1,11 @@
-package faucet
+package cmd
 
 import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/proto"
 	"io"
 	"os"
@@ -17,10 +18,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var config struct {
+var fundingConfig struct {
 	PrivateKey     string
 	PrivateKeyFile string
 	NodeURL        string
+	TextData       string
 	Verbose        bool
 }
 
@@ -34,39 +36,42 @@ or via a file using --private-key-file flag.
 
 Examples:
   # Fund account with 1000 tokens using private key file
-  faucet fund 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY 1000 --private-key-file /path/to/key.txt
+  fund 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY 1_000 --private-key-file /path/to/key.txt
 
   # Fund account with 500 tokens using private key directly
-  faucet fund 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY 500 --private-key "your-private-key-here"`,
+  fund 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY 500 --private-key "your-private-key-here"`,
 	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		recipient := args[0]
 		amountStr := args[1]
 
 		// Parse amount string to uint256.Int
-		amount, err := uint256.FromDecimal(amountStr)
+		amount, err := uint256.FromDecimal(strings.ReplaceAll(amountStr, "_", ""))
 		if err != nil {
-			fmt.Println("invalid amount: %w", err)
+			logx.Error("FAUCET FUNDING", "could not parse amount string: ", err)
 			return
 		}
 
 		if err := fundAccount(recipient, amount); err != nil {
-			fmt.Println(err)
+			logx.Error("FAUCET FUNDING", err)
 		}
 	},
 }
 
 func init() {
-	fundCmd.PersistentFlags().StringVarP(&config.PrivateKeyFile, "private-key-file", "f", "", "Faucet private key file in hex")
-	fundCmd.PersistentFlags().StringVarP(&config.PrivateKey, "private-key", "p", "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee", "Faucet private key in hex")
-	fundCmd.PersistentFlags().StringVarP(&config.NodeURL, "node-url", "u", "localhost:9001", "Blockchain node URL")
-	fundCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "Verbose output")
+	rootCmd.AddCommand(fundCmd)
+
+	fundCmd.PersistentFlags().StringVarP(&fundingConfig.PrivateKeyFile, "private-key-file", "f", "", "Faucet private key file in hex")
+	fundCmd.PersistentFlags().StringVarP(&fundingConfig.PrivateKey, "private-key", "p", "", "Faucet private key in hex")
+	fundCmd.PersistentFlags().StringVarP(&fundingConfig.NodeURL, "node-url", "u", "localhost:9001", "Blockchain node URL")
+	fundCmd.PersistentFlags().StringVarP(&fundingConfig.NodeURL, "text-data", "t", "Funding at "+time.Now().Format(time.DateTime), "Blockchain node URL")
+	fundCmd.PersistentFlags().BoolVarP(&fundingConfig.Verbose, "verbose", "v", false, "Verbose output")
 }
 
 func fundAccount(recipient string, amount *uint256.Int) error {
 	// Load faucet private key
-	if config.Verbose {
-		fmt.Println("Loading faucet private key...")
+	if fundingConfig.Verbose {
+		logx.Info("FAUCET FUNDING", "Loading faucet private key...")
 	}
 	privKeyStr, err := loadFaucetPrivateKey()
 	if err != nil {
@@ -102,7 +107,7 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 		amount,
 		nonce,
 		uint64(time.Now().Unix()),
-		"Faucet funding",
+		fundingConfig.TextData,
 		nil,
 	)
 	if err != nil {
@@ -116,8 +121,8 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 	}
 
 	// Send transaction to blockchain
-	if config.Verbose {
-		fmt.Printf("Sending transaction to node: %+v\n", unsigned)
+	if fundingConfig.Verbose {
+		logx.Info("FAUCET FUNDING", fmt.Sprintf("Sending funding transaction to %s: %+v", fundingConfig.NodeURL, unsigned))
 	}
 	addTxResp, err := grpcClient.AddTx(ctx, signedTx)
 	if err != nil {
@@ -126,8 +131,8 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 	if !addTxResp.Ok {
 		return fmt.Errorf("failed to send transaction: %s", addTxResp.Error)
 	}
-	if config.Verbose {
-		fmt.Println("Transaction sent: ", addTxResp.TxHash)
+	if fundingConfig.Verbose {
+		logx.Info("FAUCET FUNDING", "Funding transaction sent: ", addTxResp.TxHash)
 	}
 
 	// Track for transaction updates
@@ -149,11 +154,11 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 		if update.TxHash != addTxResp.TxHash {
 			continue
 		}
-		if config.Verbose {
-			fmt.Println("Transaction status received:", update.Status)
+		if fundingConfig.Verbose {
+			logx.Info("FAUCET FUNDING", "Transaction status received: ", update.Status)
 		}
 		if update.Status == proto.TransactionStatus_FAILED || update.Status == proto.TransactionStatus_FINALIZED {
-			fmt.Println("Transaction ended with status:", update.Status)
+			logx.Info("FAUCET FUNDING", "Transaction ended with status: ", update.Status)
 			break
 		}
 	}
@@ -163,7 +168,7 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 	if err != nil {
 		return fmt.Errorf("failed to get recipient account: %w", err)
 	}
-	fmt.Println("Recipient account after transfer:", recipientAccount)
+	logx.Info("FAUCET FUNDING", "Recipient account after transfer: ", recipientAccount)
 
 	return nil
 }
@@ -171,10 +176,10 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 // loadFaucetPrivateKey loads the key from config, which is set by command flags
 // the private key is originally in hex format
 func loadFaucetPrivateKey() (string, error) {
-	if config.PrivateKey != "" {
-		return config.PrivateKey, nil
+	if fundingConfig.PrivateKey != "" {
+		return fundingConfig.PrivateKey, nil
 	}
-	bytes, err := os.ReadFile(config.PrivateKeyFile)
+	bytes, err := os.ReadFile(fundingConfig.PrivateKeyFile)
 	if err != nil {
 		return "", err
 	}
@@ -197,10 +202,10 @@ func parsePrivateKey(privKeyStr string) (faucetAddress string, faucetPrivate ed2
 
 // createClient creates a new blockchain client connection
 func createClient() (*mmn.MmnClient, error) {
-	cfg := mmn.Config{Endpoint: config.NodeURL}
+	cfg := mmn.Config{Endpoint: fundingConfig.NodeURL}
 	client, err := mmn.NewClient(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create grpc client: %w", err)
+		return nil, logx.Errorf("failed to create grpc client: %w", err)
 	}
 	return client, nil
 }
