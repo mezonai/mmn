@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/proto"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -136,31 +134,14 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 	}
 
 	// Track for transaction updates
-	statusStream, err := grpcClient.SubscribeTransactionStatus(ctx)
+	logx.Debug("FAUCET FUNDING", "Waiting for transaction to be processed...")
+	time.Sleep(4 * time.Second)
+	txInfo, err := grpcClient.GetTxByHash(ctx, addTxResp.TxHash)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe transaction status: %w", err)
+		return fmt.Errorf("failed to get transaction status: %w", err)
 	}
-	for {
-		// Receive updates from stream
-		update, err := statusStream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("failed to receive transaction status: %w", err)
-		}
-
-		// Ignore other transaction updates
-		if update.TxHash != addTxResp.TxHash {
-			continue
-		}
-		if fundingConfig.Verbose {
-			logx.Debug("FAUCET FUNDING", "Transaction status received: ", update.Status)
-		}
-		if update.Status == proto.TransactionStatus_FAILED || update.Status == proto.TransactionStatus_FINALIZED {
-			logx.Info("FAUCET FUNDING", "Transaction ended with status: ", update.Status)
-			break
-		}
+	if txInfo.ErrMsg != "" {
+		return fmt.Errorf("funding error: %s", txInfo.ErrMsg)
 	}
 
 	// Print recipient wallet state after transfer
