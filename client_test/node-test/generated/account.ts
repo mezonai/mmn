@@ -90,6 +90,10 @@ export interface TxMeta {
      * @generated from protobuf field: mmn.TxMeta.Status status = 6
      */
     status: TxMeta_Status;
+    /**
+     * @generated from protobuf field: string extra_info = 7
+     */
+    extraInfo: string;
 }
 /**
  * @generated from protobuf enum mmn.TxMeta.Status
@@ -361,7 +365,8 @@ class TxMeta$Type extends MessageType<TxMeta> {
             { no: 3, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 4, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 5, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
-            { no: 6, name: "status", kind: "enum", T: () => ["mmn.TxMeta.Status", TxMeta_Status] }
+            { no: 6, name: "status", kind: "enum", T: () => ["mmn.TxMeta.Status", TxMeta_Status] },
+            { no: 7, name: "extra_info", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<TxMeta>): TxMeta {
@@ -372,6 +377,7 @@ class TxMeta$Type extends MessageType<TxMeta> {
         message.nonce = 0n;
         message.timestamp = 0n;
         message.status = 0;
+        message.extraInfo = "";
         if (value !== undefined)
             reflectionMergePartial<TxMeta>(this, message, value);
         return message;
@@ -398,6 +404,9 @@ class TxMeta$Type extends MessageType<TxMeta> {
                     break;
                 case /* mmn.TxMeta.Status status */ 6:
                     message.status = reader.int32();
+                    break;
+                case /* string extra_info */ 7:
+                    message.extraInfo = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -429,6 +438,9 @@ class TxMeta$Type extends MessageType<TxMeta> {
         /* mmn.TxMeta.Status status = 6; */
         if (message.status !== 0)
             writer.tag(6, WireType.Varint).int32(message.status);
+        /* string extra_info = 7; */
+        if (message.extraInfo !== "")
+            writer.tag(7, WireType.LengthDelimited).string(message.extraInfo);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

@@ -34,6 +34,7 @@ message TxMeta {
     FAILED    = 3;
   }
   Status status = 6;
+  string extra_info = 7;
 }
 
 message GetTxHistoryResponse {

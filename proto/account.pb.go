@@ -261,6 +261,7 @@ type TxMeta struct {
 	Nonce         uint64                 `protobuf:"varint,4,opt,name=nonce,proto3" json:"nonce,omitempty"`        // nonce
 	Timestamp     uint64                 `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Status        TxMeta_Status          `protobuf:"varint,6,opt,name=status,proto3,enum=mmn.TxMeta_Status" json:"status,omitempty"`
+	ExtraInfo     string                 `protobuf:"bytes,7,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -335,6 +336,13 @@ func (x *TxMeta) GetStatus() TxMeta_Status {
 		return x.Status
 	}
 	return TxMeta_PENDING
+}
+
+func (x *TxMeta) GetExtraInfo() string {
+	if x != nil {
+		return x.ExtraInfo
+	}
+	return ""
 }
 
 type GetTxHistoryResponse struct {
@@ -691,14 +699,16 @@ const file_proto_account_proto_rawDesc = "" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\rR\x05limit\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\rR\x06offset\x12\x16\n" +
-	"\x06filter\x18\x04 \x01(\rR\x06filter\"\xf7\x01\n" +
+	"\x06filter\x18\x04 \x01(\rR\x06filter\"\x96\x02\n" +
 	"\x06TxMeta\x12\x16\n" +
 	"\x06sender\x18\x01 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\tR\x06amount\x12\x14\n" +
 	"\x05nonce\x18\x04 \x01(\x04R\x05nonce\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x04R\ttimestamp\x12*\n" +
-	"\x06status\x18\x06 \x01(\x0e2\x12.mmn.TxMeta.StatusR\x06status\"?\n" +
+	"\x06status\x18\x06 \x01(\x0e2\x12.mmn.TxMeta.StatusR\x06status\x12\x1d\n" +
+	"\n" +
+	"extra_info\x18\a \x01(\tR\textraInfo\"?\n" +
 	"\x06Status\x12\v\n" +
 	"\aPENDING\x10\x00\x12\r\n" +
 	"\tCONFIRMED\x10\x01\x12\r\n" +

@@ -3,7 +3,6 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/transaction"
 
@@ -152,7 +151,7 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
 			return nil, err
 		}
 	}
-	
+
 	return &transaction.Transaction{
 		Type:      pbTx.TxMsg.Type,
 		Sender:    pbTx.TxMsg.Sender,
@@ -161,6 +160,7 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
 		Timestamp: pbTx.TxMsg.Timestamp,
 		TextData:  pbTx.TxMsg.TextData,
 		Nonce:     pbTx.TxMsg.Nonce,
+		ExtraInfo: pbTx.TxMsg.ExtraInfo,
 		Signature: pbTx.Signature,
 	}, nil
 }
