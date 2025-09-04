@@ -71,7 +71,7 @@ func init() {
 func fundAccount(recipient string, amount *uint256.Int) error {
 	// Load faucet private key
 	if fundingConfig.Verbose {
-		logx.Info("FAUCET FUNDING", "Loading faucet private key...")
+		logx.Debug("FAUCET FUNDING", "Loading faucet private key...")
 	}
 	privKeyStr, err := loadFaucetPrivateKey()
 	if err != nil {
@@ -122,7 +122,7 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 
 	// Send transaction to blockchain
 	if fundingConfig.Verbose {
-		logx.Info("FAUCET FUNDING", fmt.Sprintf("Sending funding transaction to %s: %+v", fundingConfig.NodeURL, unsigned))
+		logx.Debug("FAUCET FUNDING", fmt.Sprintf("Sending funding transaction to %s: %+v", fundingConfig.NodeURL, unsigned))
 	}
 	addTxResp, err := grpcClient.AddTx(ctx, signedTx)
 	if err != nil {
@@ -132,7 +132,7 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 		return fmt.Errorf("failed to send transaction: %s", addTxResp.Error)
 	}
 	if fundingConfig.Verbose {
-		logx.Info("FAUCET FUNDING", "Funding transaction sent: ", addTxResp.TxHash)
+		logx.Debug("FAUCET FUNDING", "Funding transaction sent: ", addTxResp.TxHash)
 	}
 
 	// Track for transaction updates
@@ -155,7 +155,7 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 			continue
 		}
 		if fundingConfig.Verbose {
-			logx.Info("FAUCET FUNDING", "Transaction status received: ", update.Status)
+			logx.Debug("FAUCET FUNDING", "Transaction status received: ", update.Status)
 		}
 		if update.Status == proto.TransactionStatus_FAILED || update.Status == proto.TransactionStatus_FINALIZED {
 			logx.Info("FAUCET FUNDING", "Transaction ended with status: ", update.Status)
