@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -97,6 +98,8 @@ func NewNetWork(
 		cancel:                 cancel,
 		joinAfterSync:          joinAfterSync,
 		worldLatestSlot:        0,
+		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlot:       0,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {

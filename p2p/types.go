@@ -83,6 +83,12 @@ type Libp2pNetwork struct {
 	// New field for join behavior control
 	joinAfterSync   bool
 	worldLatestSlot uint64
+
+	// Global block ordering queue
+	blockOrderingQueue map[uint64]*block.BroadcastedBlock
+	nextExpectedSlot   uint64
+	blockOrderingMu    sync.RWMutex
+	onBlockProcessed   func(*block.BroadcastedBlock)
 }
 
 type PeerInfo struct {
