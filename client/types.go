@@ -143,6 +143,8 @@ type TxInfo struct {
 	Timestamp uint64       `json:"timestamp"`
 	TextData  string       `json:"text_data"`
 	Nonce     uint64       `json:"nonce,omitempty"`
+	Status    int32        `json:"status,omitempty"`
+	ErrMsg    string       `json:"err_msg,omitempty"`
 	ExtraInfo string       `json:"extra_info,omitempty"`
 }
 
