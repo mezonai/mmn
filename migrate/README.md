@@ -101,14 +101,6 @@ go run . -dry-run  # Both wallet creation and migration in dry-run
 go run .           # Both wallet creation and migration
 ```
 
-### 3. Run both wallet creation and migration (default)
-
-```bash
-cd migrate
-go run .           # Both wallet creation and migration
-go run . -dry-run  # Both wallet creation and migration in dry-run mode
-```
-
 ### 4. Log level control
 
 ```bash
@@ -211,8 +203,7 @@ migrate/
 ├── transfer.go         # Token transfer and transaction handling
 ├── logger.go           # Structured logging system with colors
 ├── config.go           # Configuration and constants
-├── README.md           # This documentation
-└── go.mod              # Go module dependencies
+└── README.md           # This documentation
 ```
 
 ## Module Architecture
@@ -227,7 +218,7 @@ migrate/
 
 - `CreateMigrationWallet()`: Create migration wallet with automatic funding from faucet
 - `CreateKey(userID uint64, isSave bool)`: Enhanced key creation with database save control
-- `LoadMigrationWallet()`: Load migration wallet private key from file
+- `GetMigrationWalletFromFile()`: Reads migration wallet from file
 - `GetFaucetAccount()`: Get faucet account from genesis private key
 - `NewPgEncryptedStore()`: Create wallet manager with AES-GCM encryption
 - `LoadKey()`: Load private key from database and decrypt
@@ -239,12 +230,6 @@ migrate/
 - `CreateUserKeysTable()`: Create/recreate mmn_user_keys table
 - `GetUsers()`: Get list of users to migrate (excludes migration wallet)
 - `GetTotalUsersWallet()`: Calculate total wallet balance for all users
-- `CheckExistingWallet()`: Check if wallet already exists
-- `CountExistingWallets()`: Count existing wallets
-
-- `ConnectDatabase()`: Connect to PostgreSQL with retry mechanism
-- `CreateUserKeysTable()`: Create/recreate mmn_user_keys table
-- `GetUsers()`: Get list of users to migrate
 - `CheckExistingWallet()`: Check if wallet already exists
 - `CountExistingWallets()`: Count existing wallets
 
