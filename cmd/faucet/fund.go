@@ -26,7 +26,7 @@ var config struct {
 
 // fundCmd represents the transfer command
 var fundCmd = &cobra.Command{
-	Use:   "fund [recipient] [amount] [flags]",
+	Use:   "fund <recipient> <amount> [flags]",
 	Short: "Fund an account with tokens from the faucet",
 	Long: `This command sends tokens from the faucet account to the specified recipient address.
 The faucet private key can be provided either directly via --private-key flag
@@ -136,6 +136,7 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 		return fmt.Errorf("failed to subscribe transaction status: %w", err)
 	}
 	for {
+		// Receive updates from stream
 		update, err := statusStream.Recv()
 		if err == io.EOF {
 			break
@@ -143,16 +144,26 @@ func fundAccount(recipient string, amount *uint256.Int) error {
 		if err != nil {
 			return fmt.Errorf("failed to receive transaction status: %w", err)
 		}
-		if update.TxHash == addTxResp.TxHash {
-			if config.Verbose {
-				fmt.Println("Transaction status received:", update.Status)
-			}
-			if update.Status == proto.TransactionStatus_FAILED || update.Status == proto.TransactionStatus_FINALIZED {
-				fmt.Println("Transaction ended with status:", update.Status)
-				break
-			}
+
+		// Ignore other transaction updates
+		if update.TxHash != addTxResp.TxHash {
+			continue
+		}
+		if config.Verbose {
+			fmt.Println("Transaction status received:", update.Status)
+		}
+		if update.Status == proto.TransactionStatus_FAILED || update.Status == proto.TransactionStatus_FINALIZED {
+			fmt.Println("Transaction ended with status:", update.Status)
+			break
 		}
 	}
+
+	// Print recipient wallet state after transfer
+	recipientAccount, err := grpcClient.GetAccount(ctx, recipient)
+	if err != nil {
+		return fmt.Errorf("failed to get recipient account: %w", err)
+	}
+	fmt.Println("Recipient account after transfer:", recipientAccount)
 
 	return nil
 }

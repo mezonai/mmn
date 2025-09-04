@@ -84,6 +84,27 @@ go build -o bin/mmn ./cmd
 ### Generate random private key (default behavior)
 ./mmn bootnode --bootstrap-p2p-port 9000
 
+
+# Perform transfer from faucet with CLI command
+- If node runs inside docker container with docker compose, execute the following command first
+  ```
+  docker compose exec -it <node_service_name> bash
+  ```
+  Or directly access container
+  ```
+  docker exec -it <node_container> bash
+  ```
+- Then execute command to perform transfer from faucet to wallet
+  ```
+  ./mmn faucet fund [--verbose] [--p <private-key>] [--f <private-key-file>] [--u <node-url>] <address> <amount>
+  ```
+  For example:
+  ```
+  ./mmn faucet fund EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx 1000 -v -f /path/to/private -u node1:9001
+  ```
+- For more details about command, run `./mmn faucet fund --help`
+
+
 # uses cases
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
