@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/store"
@@ -130,7 +131,7 @@ func runNode() {
 	eventRouter := events.NewEventRouter(eventBus)
 
 	// Initialize db store inside directory
-	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
+	as, ts, tms, bs, txm, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -184,7 +185,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey, txm)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -231,11 +232,11 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 }
 
 // initializeDBStore initializes the block storage backend using the factory pattern
-func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, *db.DBTxManager, error) {
 	// Create data folder if not exist
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create db store directory:", err.Error())
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// Create store configuration with StoreType
@@ -247,11 +248,15 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 
 	// Validate the configuration (this will check if the backend is supported)
 	if err := storeCfg.Validate(); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
 	}
 
 	// Use the factory pattern to create the store
-	return store.CreateStore(storeCfg, eventRouter)
+	as, ts, tms, bs, txm, err := store.CreateStore(storeCfg, eventRouter)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	return as, ts, tms, bs, txm, nil
 }
 
 // initializePoH initializes Proof of History components
@@ -282,7 +287,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey, txm *db.DBTxManager) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -290,6 +295,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		txm,
 	)
 
 	return libp2pNetwork, err

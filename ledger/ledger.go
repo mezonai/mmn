@@ -13,6 +13,7 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/transaction"
@@ -73,6 +74,16 @@ func (l *Ledger) createAccountWithoutLocking(addr string, balance *uint256.Int) 
 	}
 
 	return account, nil
+}
+
+func (l *Ledger) createTemporaryAccountWithoutLocking(addr string, balance *uint256.Int) *types.Account {
+	account := &types.Account{
+		Address: addr,
+		Balance: balance,
+		Nonce:   0,
+	}
+
+	return account
 }
 
 // CreateAccountsFromGenesis creates an account from genesis block (implements LedgerInterface)
@@ -182,6 +193,112 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
+		}
+	}
+
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
+	return nil
+}
+
+func (l *Ledger) ApplyBlockToBatch(batch db.DatabaseBatch, b *block.Block) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+
+	var total int
+	for _, e := range b.Entries {
+		total += len(e.TxHashes)
+	}
+
+	blockHash := hex.EncodeToString(b.Hash[:])
+	allTxMetas := make([]*types.TransactionMeta, 0, total)
+
+	updatingAccounts := make(map[string]*types.Account, 2*total)
+
+	loadAccount := func(addr string) (*types.Account, error) {
+		if acc, ok := updatingAccounts[addr]; ok {
+			return acc, nil
+		}
+
+		acc, err := l.accountStore.GetByAddr(addr)
+		if err != nil {
+			return nil, err
+		}
+		if acc == nil {
+			acc = l.createTemporaryAccountWithoutLocking(addr, uint256.NewInt(0))
+		}
+		updatingAccounts[addr] = acc
+		return acc, nil
+	}
+
+	for _, entry := range b.Entries {
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs {
+			txHash := tx.Hash()
+
+			sender, err := loadAccount(tx.Sender)
+			if err != nil {
+				return err
+			}
+			recipient, err := loadAccount(tx.Recipient)
+			if err != nil {
+				return err
+			}
+
+			state := map[string]*types.Account{
+				sender.Address:    sender,
+				recipient.Address: recipient,
+			}
+
+			if err := applyTx(state, tx); err != nil {
+				if l.eventRouter != nil {
+					l.eventRouter.PublishTransactionEvent(
+						events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err)),
+					)
+				}
+				state[tx.Sender].Nonce++
+				allTxMetas = append(allTxMetas, types.NewTxMeta(tx, b.Slot, blockHash, types.TxStatusFailed, err.Error()))
+				continue
+			}
+
+			// Success path
+			allTxMetas = append(allTxMetas, types.NewTxMeta(tx, b.Slot, blockHash, types.TxStatusSuccess, ""))
+
+			addHistory(state[tx.Sender], tx)
+			if tx.Recipient != tx.Sender {
+				addHistory(state[tx.Recipient], tx)
+			}
+		}
+	}
+
+	if len(updatingAccounts) > 0 {
+		allAccounts := make([]*types.Account, 0, len(updatingAccounts))
+		for _, acc := range updatingAccounts {
+			allAccounts = append(allAccounts, acc)
+		}
+		if err := l.accountStore.StoreToBatch(batch, allAccounts); err != nil {
+			if l.eventRouter != nil {
+				l.eventRouter.PublishTransactionEvent(
+					events.NewTransactionFailed("", fmt.Sprintf("failed to store accounts: %v", err)),
+				)
+			}
+			return err
+		}
+	}
+
+	if len(allTxMetas) > 0 {
+		if err := l.txMetaStore.StoreToBatch(batch, allTxMetas); err != nil {
+			if l.eventRouter != nil {
+				l.eventRouter.PublishTransactionEvent(
+					events.NewTransactionFailed("", fmt.Sprintf("failed to store transaction metas: %v", err)),
+				)
+			}
+			return err
 		}
 	}
 
