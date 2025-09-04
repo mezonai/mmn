@@ -3,8 +3,10 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -116,6 +118,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
 			}
 
+			// Decrement active sync count when sync response is processed
+			ln.DecrementActiveSyncCount()
+
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
@@ -134,7 +139,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 	})
 
-	go ln.startInitialSync(bs)
+	go ln.startInitialSync()
 
 	go ln.startPeriodicSyncCheck(bs)
 
@@ -176,6 +181,9 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
+	// register validators before subscribing
+	_ = ln.registerTopicValidators()
+
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
 			exception.SafeGoWithPanic("HandleBlockTopic", func() {
@@ -216,6 +224,22 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 			})
 		}
 	}
+
+	if ln.topicAccessControl, err = ln.pubsub.Join(AccessControlTopic); err == nil {
+		if sub, err := ln.topicAccessControl.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleAccessControlTopic", func() {
+				ln.HandleAccessControlTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicAccessControlSync, err = ln.pubsub.Join(AccessControlSyncTopic); err == nil {
+		if sub, err := ln.topicAccessControlSync.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleAccessControlSyncTopic", func() {
+				ln.HandleAccessControlSyncTopic(ctx, sub)
+			})
+		}
+	}
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
@@ -233,5 +257,59 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	}
 	if cbs.OnSyncResponseReceived != nil {
 		ln.onSyncResponseReceived = cbs.OnSyncResponseReceived
+	}
+}
+
+func (ln *Libp2pNetwork) HandleAccessControlTopic(ctx context.Context, sub *pubsub.Subscription) {
+	defer sub.Cancel()
+
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			if err == context.Canceled {
+				return
+			}
+			logx.Error("ACCESS CONTROL", "Error reading from access control topic:", err)
+			continue
+		}
+
+		if msg.ReceivedFrom == ln.host.ID() {
+			continue
+		}
+
+		var update AccessControlUpdate
+		if err := json.Unmarshal(msg.Data, &update); err != nil {
+			logx.Error("ACCESS CONTROL", "Failed to unmarshal access control update:", err)
+			continue
+		}
+
+		ln.HandleAccessControlUpdate(update)
+	}
+}
+
+func (ln *Libp2pNetwork) HandleAccessControlSyncTopic(ctx context.Context, sub *pubsub.Subscription) {
+	defer sub.Cancel()
+
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			if err == context.Canceled {
+				return
+			}
+			logx.Error("ACCESS CONTROL", "Error reading from access control sync topic:", err)
+			continue
+		}
+
+		if msg.ReceivedFrom == ln.host.ID() {
+			continue
+		}
+
+		var sync AccessControlSync
+		if err := json.Unmarshal(msg.Data, &sync); err != nil {
+			logx.Error("ACCESS CONTROL", "Failed to unmarshal access control sync:", err)
+			continue
+		}
+
+		ln.HandleAccessControlSync(sync)
 	}
 }

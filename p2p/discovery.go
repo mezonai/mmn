@@ -18,9 +18,18 @@ func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrIn
 
 	logx.Info("NETWORK CONNECTED AND REQYEST NODE INFO TO JOIN", bootstrapPeer)
 
+	// Check access control before connecting to bootstrap peer
+	if !ln.IsAllowed(info.ID) {
+		logx.Info("NETWORK:SETUP", "Bootstrap peer not allowed by access control:", info.ID.String())
+		return nil
+	}
+
 	if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
 		if err := ln.host.Connect(ctx, *info); err != nil {
 			logx.Error("NETWORK:SETUP", "connect bootstrap", err.Error())
+		} else {
+			// Update peer score for successful bootstrap connection
+			ln.UpdatePeerScore(info.ID, "connection", nil)
 		}
 	}
 
@@ -42,6 +51,12 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 					continue
 				}
 
+				// Check access control before attempting connection
+				if !ln.IsAllowed(p.ID) {
+					logx.Info("DISCOVERY", "Peer not allowed by access control:", p.ID.String())
+					continue
+				}
+
 				if len(h.Network().Peers()) >= int(ln.maxPeers) {
 					break
 				}
@@ -51,6 +66,16 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 					logx.Error("DISCOVERY", "Failed to connect to discovered peer:", err)
 				} else {
 					logx.Info("DISCOVERY", "Connected to discovered peer:", p.ID.String())
+
+					// Attempt authentication with the new peer
+					go func(peerID peer.ID) {
+						if err := ln.InitiateAuthentication(ctx, peerID); err != nil {
+							logx.Error("DISCOVERY", "Authentication failed: ", err.Error())
+						} else {
+							logx.Info("DISCOVERY", "Authentication successful with peer: ", peerID.String())
+							ln.AutoAddToAllowlistIfBootstrap(peerID)
+						}
+					}(p.ID)
 				}
 			}
 
@@ -89,9 +114,12 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 }
 
 func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) error {
-	toSlot := fromSlot + BatchSize - 1
+	toSlot := fromSlot + SyncBlockBatchSize - 1
 
 	requestID := GenerateSyncRequestID()
+
+	// Increment active sync count
+	ln.IncrementActiveSyncCount()
 
 	// new track
 	tracker := NewSyncRequestTracker(requestID, fromSlot, toSlot)
@@ -131,7 +159,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 
 	localLatestSlot := ln.blockStore.GetLatestSlot()
 	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + BatchSize
+		fromSlot = localLatestSlot + SyncBlockBatchSize
 		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
 	}
 
@@ -139,7 +167,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 	if err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
 	} else if latestSlot > fromSlot {
-		fromSlot = latestSlot + BatchSize
+		fromSlot = latestSlot + SyncBlockBatchSize
 	}
 
 	return ln.RequestBlockSync(ctx, fromSlot)
