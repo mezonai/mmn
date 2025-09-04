@@ -20,8 +20,8 @@ func defaultClient() (*clt.MmnClient, error) {
 	return client, err
 }
 
-// TransferTokens transfers tokens from faucet to a user wallet with retry mechanism
-func TransferTokens(endpoint, faucetAddress, toAddress string, amount *uint256.Int, faucetPrivateKey ed25519.PrivateKey) error {
+// TransferTokens transfers tokens from faucet to a user wallet with retry mechanism (legacy function)
+func TransferTokens(faucetAddress, toAddress string, amount *uint256.Int, faucetPrivateKey ed25519.PrivateKey) error {
 	ctx := context.Background()
 	client, err := defaultClient()
 	if err != nil {

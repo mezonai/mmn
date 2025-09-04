@@ -74,9 +74,9 @@ func CreateUserKeysTable(db *sql.DB) error {
 	return nil
 }
 
-// GetUsers retrieves all users from the users table excluding HRM user
+// GetUsers retrieves all users from the users table
 func GetUsers(db *sql.DB) ([]map[string]interface{}, error) {
-	rows, err := db.Query("SELECT id, username, wallet FROM users WHERE username != $1 ORDER BY id", HRM_USERNAME)
+	rows, err := db.Query("SELECT id, username, wallet FROM users ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query users: %v", err)
 	}
@@ -184,32 +184,12 @@ func GetUserWalletAddress(db *sql.DB, userID int) (string, error) {
 	return address, nil
 }
 
-// GetTotalUsersWallet calculates the total wallet balance of all users except HRM
+// GetTotalUsersWallet calculates the total wallet balance of all users
 func GetTotalUsersWallet(db *sql.DB) (int64, error) {
 	var total int64
-	err := db.QueryRow("SELECT COALESCE(SUM(wallet), 0) FROM users WHERE username != $1", HRM_USERNAME).Scan(&total)
+	err := db.QueryRow("SELECT COALESCE(SUM(wallet), 0) FROM users").Scan(&total)
 	if err != nil {
 		return 0, fmt.Errorf("failed to calculate total users wallet: %v", err)
 	}
 	return total, nil
-}
-
-// GetHRMWalletInfo gets the HRM user's wallet information
-func GetHRMWalletInfo(db *sql.DB) (int, string, error) {
-	var userID int
-	var address string
-
-	// Get HRM user ID
-	err := db.QueryRow("SELECT id FROM users WHERE username = $1", HRM_USERNAME).Scan(&userID)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to get HRM user ID: %v", err)
-	}
-
-	// Get HRM wallet address
-	err = db.QueryRow("SELECT address FROM mmn_user_keys WHERE user_id = $1", userID).Scan(&address)
-	if err != nil {
-		return 0, "", fmt.Errorf("failed to get HRM wallet address: %v", err)
-	}
-
-	return userID, address, nil
 }

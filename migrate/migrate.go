@@ -35,7 +35,7 @@ func main() {
 	// Parse command line flags
 	dryRun := flag.Bool("dry-run", false, "Run in dry-run mode (no actual changes)")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error, fatal)")
-	runHRM := flag.Bool("hrm", false, "Run HRM setup only")
+	createWallet := flag.Bool("create-wallet", false, "Create migration wallet only")
 	runMigration := flag.Bool("migrate", false, "Run user migration only")
 	flag.Parse()
 
@@ -44,14 +44,14 @@ func main() {
 	InitLogger(level)
 
 	// Determine what to run
-	if !*runHRM && !*runMigration {
-		// Default: run both HRM and migration
-		*runHRM = true
+	if !*createWallet && !*runMigration {
+		// Default: run both wallet creation and migration
+		*createWallet = true
 		*runMigration = true
 	}
 
-	if *runHRM {
-		LogInfo("🚀 Starting HRM Setup Tool (dry-run: %v, log-level: %s)", *dryRun, *logLevel)
+	if *createWallet {
+		LogInfo("🚀 Starting Migration Wallet Creation Tool (dry-run: %v, log-level: %s)", *dryRun, *logLevel)
 	}
 	if *runMigration {
 		LogInfo("🚀 Starting MMN Migration Tool (dry-run: %v, log-level: %s)", *dryRun, *logLevel)
@@ -61,37 +61,37 @@ func main() {
 	config := LoadConfig()
 	LogInfo("📋 Configuration loaded - MMN Endpoint: %s", config.MMNEndpoint)
 
-	// Connect to database
+	// Connect to database for wallet creation
 	db, err := ConnectDatabase(config.DatabaseURL)
 	if err != nil {
 		LogFatal("❌ Database connection failed: %v", err)
 	}
 	defer db.Close()
 
-	// Create mmn_user_keys table if it doesn't exist
-	if err := CreateUserKeysTable(db); err != nil {
-		log.Fatalf("Failed to create mmn_user_keys table: %v", err)
-	}
-
-	// Execute HRM setup if requested
-	if *runHRM {
-		// Create faucet account
+	// Execute migration wallet creation if requested (requires database)
+	if *createWallet {
+		LogInfo("🔧 Starting migration wallet creation process...")
 		faucetAddress, faucetPrivateKey := GetFaucetAccount()
 		if err != nil {
 			LogFatal("❌ Failed to create faucet account: %v", err)
 		}
 		LogInfo("✅ Faucet account ready - Address: %s", faucetAddress)
 
-		LogInfo("🔧 Starting HRM setup process...")
-		err = CreateHRM(db, config, faucetAddress, faucetPrivateKey, *dryRun)
+		err := CreateMigrationWallet(db, config, faucetAddress, faucetPrivateKey, *dryRun)
 		if err != nil {
-			LogFatal("❌ HRM setup failed: %v", err)
+			LogFatal("❌ Migration wallet creation failed: %v", err)
 		}
-		LogInfo("✅ HRM setup completed successfully")
+
+		LogInfo("✅ Migration wallet created successfully")
 	}
 
-	// Execute migration if requested
+	// Execute migration if requested (requires database)
 	if *runMigration {
+		// Create mmn_user_keys table if it doesn't exist
+		if err := CreateUserKeysTable(db); err != nil {
+			log.Fatalf("Failed to create mmn_user_keys table: %v", err)
+		}
+
 		runUserMigration(db, config, *dryRun)
 	}
 }
@@ -114,12 +114,12 @@ func runUserMigration(db *sql.DB, config *Config, dryRun bool) {
 	}
 	LogInfo("📊 Found %d existing wallets", existingWallets)
 
-	// Get HRM wallet info for transfers
-	hrmAddress, hrmPrivateKey, err := GetHRMAccount(db, config)
+	// Get migration wallet info for transfers from file
+	migrationAddress, migrationPrivateKey, err := GetMigrationWalletFromFile()
 	if err != nil {
-		LogFatal("❌ Failed to get HRM account: %v", err)
+		LogFatal("❌ Failed to get migration wallet from file: %v", err)
 	}
-	LogInfo("✅ HRM wallet ready for transfers - Address: %s", hrmAddress)
+	LogInfo("✅ Migration wallet loaded from file - Address: %s", migrationAddress)
 
 	var processed, successful int
 	for _, user := range users {
@@ -150,7 +150,7 @@ func runUserMigration(db *sql.DB, config *Config, dryRun bool) {
 					continue
 				}
 
-				userAddress, _, err = ks.CreateKey(uint64(userID))
+				userAddress, _, err = ks.CreateKey(uint64(userID), true)
 				if err != nil {
 					LogError("❌ Failed to create wallet for user %d: %v", userID, err)
 					continue
@@ -188,14 +188,14 @@ func runUserMigration(db *sql.DB, config *Config, dryRun bool) {
 			// Calculate transfer amount needed
 			if currentBalance.Cmp(expectedBalanceBig) < 0 {
 				transferAmount := new(uint256.Int).Sub(expectedBalanceBig, currentBalance)
-				LogInfo("💸 Transferring %s tokens from HRM to user %d", transferAmount.String(), userID)
+				LogInfo("💸 Transferring %s tokens from migration wallet to user %d", transferAmount.String(), userID)
 
-				err = TransferTokens(config.MMNEndpoint, hrmAddress, userAddress, transferAmount, hrmPrivateKey)
+				err = TransferTokens(migrationAddress, userAddress, transferAmount, migrationPrivateKey)
 				if err != nil {
 					LogError("❌ Failed to transfer tokens to user %d: %v", userID, err)
 					continue
 				} else {
-					LogTokenTransfer(hrmAddress, userAddress, int64(transferAmount.Uint64()))
+					LogTokenTransfer(migrationAddress, userAddress, int64(transferAmount.Uint64()))
 				}
 			} else if currentBalance.Cmp(expectedBalanceBig) > 0 {
 				LogWarn("⚠️ User %d blockchain balance (%s) is higher than database balance (%d)",
