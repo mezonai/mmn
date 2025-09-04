@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/mezonai/mmn/cmd/faucet"
 	"os"
 
 	"github.com/mezonai/mmn/logx"
@@ -11,6 +12,10 @@ var rootCmd = &cobra.Command{
 	Use:   "mmn",
 	Short: "MMN blockchain node CLI",
 	Long:  "Command line interface for running and managing an MMN blockchain node.",
+}
+
+func init() {
+	rootCmd.AddCommand(faucet.FaucetCmd)
 }
 
 func Execute() {
