@@ -10,11 +10,6 @@ import (
 	clt "github.com/mezonai/mmn/client"
 )
 
-// Global nonce management
-var (
-	faucetNonce uint64
-)
-
 func defaultClient() (*clt.MmnClient, error) {
 	cfg := clt.Config{Endpoint: "localhost:9001"}
 	client, err := clt.NewClient(cfg)
@@ -25,54 +20,59 @@ func defaultClient() (*clt.MmnClient, error) {
 	return client, err
 }
 
-// TransferTokens transfers tokens from faucet to a user wallet with retry mechanism
-func TransferTokens(endpoint, faucetAddress, toAddress string, amount *uint256.Int, faucetPrivateKey ed25519.PrivateKey) error {
+// TransferTokens transfers tokens from faucet to a user wallet with retry mechanism (legacy function)
+func TransferTokens(faucetAddress, toAddress string, amount *uint256.Int, faucetPrivateKey ed25519.PrivateKey) error {
 	ctx := context.Background()
 	client, err := defaultClient()
 	if err != nil {
-		fmt.Printf("Failed to create client: %v", err)
-		return err
+		return fmt.Errorf("failed to create client: %v", err)
 	}
 
-	// Get faucet account info to initialize nonce if needed
-	if faucetNonce == 0 {
-		var faucetAccount clt.Account
-		faucetAccount, err = client.GetAccount(ctx, faucetAddress)
-		if err != nil {
-			return fmt.Errorf("failed to get faucet account: %w", err)
-		}
-		faucetNonce = faucetAccount.Nonce
-		fmt.Printf("Faucet account - Balance: %d, Initial Nonce: %d\n", faucetAccount.Balance, faucetAccount.Nonce)
-	}
-
-	// Increment nonce for this transaction
-	faucetNonce++
-
-	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransfer, faucetAddress, toAddress, amount, faucetNonce, uint64(time.Now().Unix()), "Migration transfer")
+	// Get fresh nonce for this transaction instead of using global counter
+	var faucetAccount clt.Account
+	faucetAccount, err = client.GetAccount(ctx, faucetAddress)
 	if err != nil {
-		fmt.Printf("Failed to build transfer tx: %v\n", err)
-		return err
+		return fmt.Errorf("failed to get faucet account for fresh nonce: %w", err)
+	}
+
+	currentNonce := faucetAccount.Nonce + 1
+
+	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransfer, faucetAddress, toAddress, amount, currentNonce, uint64(time.Now().Unix()), "Migration transfer", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("failed to build transfer transaction: %v", err)
 	}
 
 	faucetSeed := faucetPrivateKey.Seed()
 	signedRaw, err := clt.SignTx(unsigned, faucetSeed)
 	if err != nil {
-		fmt.Printf("Failed to sign tx: %v\n", err)
-		return err
+		return fmt.Errorf("failed to sign transaction: %v", err)
 	}
 
 	if !clt.Verify(unsigned, signedRaw.Sig) {
-		fmt.Printf("Self verify failed\n")
-		return err
+		return fmt.Errorf("transaction signature verification failed")
 	}
 
 	res, err := client.AddTx(ctx, signedRaw)
 	if err != nil {
-		fmt.Printf("Failed to add tx: %v\n", err)
-		return err
+		return fmt.Errorf("failed to submit transaction: %v", err)
 	}
 
-	fmt.Printf("Transaction successful! Hash: %s\n", res.TxHash)
-
+	fmt.Printf("✅ Transaction successful! Hash: %s\n", res.TxHash)
 	return nil
+}
+
+// GetAccountByAddress gets the account information for a given address
+func GetAccountByAddress(address string) (clt.Account, error) {
+	ctx := context.Background()
+	client, err := defaultClient() // TODO: Make this configurable
+	if err != nil {
+		return clt.Account{}, fmt.Errorf("failed to create client: %v", err)
+	}
+
+	account, err := client.GetAccount(ctx, address)
+	if err != nil {
+		return clt.Account{}, fmt.Errorf("failed to get account: %w", err)
+	}
+
+	return account, nil
 }
