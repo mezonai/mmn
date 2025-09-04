@@ -64,7 +64,7 @@ func init() {
 	fundCmd.PersistentFlags().StringVarP(&fundingConfig.PrivateKeyFile, "private-key-file", "f", "", "Faucet private key file in hex")
 	fundCmd.PersistentFlags().StringVarP(&fundingConfig.PrivateKey, "private-key", "p", "", "Faucet private key in hex")
 	fundCmd.PersistentFlags().StringVarP(&fundingConfig.NodeURL, "node-url", "u", "localhost:9001", "Blockchain node URL")
-	fundCmd.PersistentFlags().StringVarP(&fundingConfig.NodeURL, "text-data", "t", "Funding at "+time.Now().Format(time.DateTime), "Blockchain node URL")
+	fundCmd.PersistentFlags().StringVarP(&fundingConfig.TextData, "text-data", "t", "Funding at "+time.Now().Format(time.DateTime), "Blockchain node URL")
 	fundCmd.PersistentFlags().BoolVarP(&fundingConfig.Verbose, "verbose", "v", false, "Verbose output")
 }
 
