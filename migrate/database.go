@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -118,57 +117,6 @@ func CountExistingWallets(db *sql.DB) (int, error) {
 		return 0, fmt.Errorf("failed to count existing wallets: %v", err)
 	}
 	return count, nil
-}
-
-// CheckUserExists checks if a user with given username exists
-func CheckUserExists(db *sql.DB, username string) (bool, int, int64, error) {
-	var id int
-	var wallet int64
-	err := db.QueryRow("SELECT id, wallet FROM users WHERE username = $1", username).Scan(&id, &wallet)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, 0, 0, nil
-		}
-		return false, 0, 0, fmt.Errorf("failed to check user existence: %v", err)
-	}
-	return true, id, wallet, nil
-}
-
-// CreateUser creates a new user with given username and wallet balance
-func CreateUser(db *sql.DB, username string, walletBalance int64) (int, error) {
-	var userID int
-
-	// First try with auto-increment ID (PostgreSQL SERIAL)
-	err := db.QueryRow("INSERT INTO users (username, wallet) VALUES ($1, $2) RETURNING id",
-		username, walletBalance).Scan(&userID)
-
-	if err != nil {
-		// Check if it's a NOT NULL constraint on id column
-		if strings.Contains(err.Error(), `null value in column "id"`) {
-			// Get the next available ID manually
-			var maxID int
-			err2 := db.QueryRow("SELECT COALESCE(MAX(id), 0) + 1 FROM users").Scan(&maxID)
-			if err2 != nil {
-				return 0, fmt.Errorf("failed to get next user ID: %v (original error: %v)", err2, err)
-			}
-
-			// Try inserting with explicit ID
-			err = db.QueryRow("INSERT INTO users (id, username, wallet) VALUES ($1, $2, $3) RETURNING id",
-				maxID, username, walletBalance).Scan(&userID)
-			if err != nil {
-				return 0, fmt.Errorf("failed to create user with explicit ID %d: %v", maxID, err)
-			}
-
-			log.Printf("✅ Created user '%s' with manually assigned ID %d", username, userID)
-			return userID, nil
-		}
-
-		// Other errors
-		return 0, fmt.Errorf("failed to create user: %v", err)
-	}
-
-	log.Printf("✅ Created user '%s' with auto-generated ID %d", username, userID)
-	return userID, nil
 }
 
 // GetUserWalletAddress gets the wallet address for a user
