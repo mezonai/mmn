@@ -99,8 +99,8 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 			ln.cleanupOldSyncRequests()
 			// probe checkpoint every tick
 			latest := bs.GetLatestSlot()
-			if latest >= MaxScanRange {
-				checkpoint := (latest / MaxScanRange) * MaxScanRange
+			if latest >= MaxcheckpointScanBlocksRange {
+				checkpoint := (latest / MaxcheckpointScanBlocksRange) * MaxcheckpointScanBlocksRange
 				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
 				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
 			}

@@ -154,7 +154,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 		bootstrapConnected = true
 
-		// Record bootstrap peer ID for filtering later
 		ln.bootstrapPeerIDs[info.ID] = struct{}{}
 
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
@@ -239,12 +238,10 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
-// SetApplyLeaderSchedule sets a callback for applying leader schedules at runtime
 func (ln *Libp2pNetwork) SetApplyLeaderSchedule(fn func(*poh.LeaderSchedule)) {
 	ln.applyLeaderSchedule = fn
 }
 
-// IsNodeReady returns whether the node has caught up sufficiently and enabled full pubsub handlers
 func (ln *Libp2pNetwork) IsNodeReady() bool {
 	return ln.ready.Load()
 }

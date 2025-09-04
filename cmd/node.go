@@ -50,6 +50,7 @@ var (
 	// database backend
 	databaseBackend string
 	joinAfterSync   bool // New flag for join behavior
+	snapshotUDPPort string
 )
 
 var runCmd = &cobra.Command{
@@ -72,6 +73,7 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().BoolVar(&joinAfterSync, "sync-snapshot", false, "Join the network after syncing blocks")
+	runCmd.Flags().StringVar(&snapshotUDPPort, "udp-port", ":9100", "UDP port for snapshot streaming :<port>")
 
 }
 
@@ -199,7 +201,7 @@ func runNode() {
 
 	collector := consensus.NewCollector(1) // TODO: every epoch need have a fixed number
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, snapshotUDPPort)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)

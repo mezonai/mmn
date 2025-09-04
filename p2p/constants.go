@@ -5,6 +5,7 @@ const (
 	RequestBlockSyncStream = "/sync-block-request"
 	LatestSlotProtocol     = "/latest-slot-request"
 	CheckpointProtocol     = "/checkpoint-hash"
+	SnapshotSyncProtocol   = "/snapshot-sync"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
@@ -18,15 +19,15 @@ const (
 	SnapshotRequestTopic   = "snapshot/request"
 	SnapshotResponseTopic  = "snapshot/response"
 	SnapshotSyncTopic      = "snapshot/sync"
-	SnapshotSyncProtocol   = "/mmn/snapshot/sync/1.0.0"
 	AdvertiseName          = "mmn"
 )
 
 var (
-	ConnCount         int32  = 0
-	MaxPeers          int32  = 50
-	BatchSize         uint64 = 10 // for test only, should be 1000
-	MaxScanRange      uint64 = 100
-	RangeForSnapshot  uint64 = 50
-	ReadyGapThreshold uint64 = 5
+	ConnCount                    int32  = 0
+	MaxPeers                     int32  = 50
+	SyncBlocksBatchSize          uint64 = 10 // for test only, should be 1000
+	MaxcheckpointScanBlocksRange uint64 = 100
+	SnapshotRangeFor             uint64 = 50
+	SnapshotReadyGapThreshold    uint64 = 5
+	SnapshotChunkSize            int    = 16384
 )

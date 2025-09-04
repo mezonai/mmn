@@ -369,7 +369,7 @@ func (v *Validator) mempoolCleanupLoop() {
 }
 
 func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
-	if slot%p2p.RangeForSnapshot != 0 { // adjust interval as needed
+	if slot%p2p.SnapshotRangeFor != 0 {
 		return
 	}
 	accountStore := ld.GetAccountStore()
@@ -385,9 +385,7 @@ func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
 		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
 		return
 	}
-	// Use the configurable snapshot directory
 	dir := snapshot.SnapshotDirectory
-	// Write snapshot and cleanup old ones, keep only the latest
 	saved, err := snapshot.WriteSnapshotAndCleanup(dir, dbProvider, slot, bankHash, nil)
 	if err != nil {
 		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))

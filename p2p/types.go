@@ -88,7 +88,9 @@ type Libp2pNetwork struct {
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
 	blockOrderingMu    sync.RWMutex
-	onBlockProcessed   func(*block.BroadcastedBlock)
+
+	// Snapshot UDP port
+	snapshotUDPPort string
 }
 
 type PeerInfo struct {

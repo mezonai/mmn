@@ -17,48 +17,31 @@ import (
 )
 
 const accountPrefix = "account:"
+const folder = "./snapshots"
+const fileName = "snapshot-latest.json"
 
-// SnapshotDirectory is the single directory for all snapshot operations
-// Can be overridden by SNAPSHOT_DIR environment variable
 var SnapshotDirectory = getSnapshotDirectory()
 
-// getSnapshotDirectory returns the snapshot directory, with fallback logic
 func getSnapshotDirectory() string {
-	if envDir := os.Getenv("SNAPSHOT_DIR"); envDir != "" {
-		return envDir
-	}
-
-	// Try multiple directories in order of preference
-	dirs := []string{"./snapshots", "./data/snapshots", "/data/snapshots"}
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err == nil {
-			return dir
-		}
-	}
-
-	// Fallback to default
-	return "/data/snapshots"
+	os.MkdirAll(folder, 0755)
+	return folder
 }
 
-// GetSnapshotPath returns the full path to snapshot-latest.json
 func GetSnapshotPath() string {
-	return filepath.Join(SnapshotDirectory, "snapshot-latest.json")
+	return filepath.Join(SnapshotDirectory, fileName)
 }
 
-// EnsureSnapshotDirectory ensures the snapshot directory exists and is writable
 func EnsureSnapshotDirectory() error {
 	return os.MkdirAll(SnapshotDirectory, 0755)
 }
 
-// EpochMetadata contains epoch-related information
 type EpochMetadata struct {
 	EpochNumber    uint64 `json:"epoch_number"`
 	EpochStartSlot uint64 `json:"epoch_start_slot"`
 	EpochEndSlot   uint64 `json:"epoch_end_slot"`
-	EpochDuration  uint64 `json:"epoch_duration"` // in slots
+	EpochDuration  uint64 `json:"epoch_duration"`
 }
 
-// SnapshotMeta holds snapshot header metadata
 type SnapshotMeta struct {
 	Slot           uint64                    `json:"slot"`
 	BankHash       [32]byte                  `json:"bank_hash"`
@@ -150,7 +133,7 @@ func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHa
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir snapshot dir: %w", err)
 	}
-	path := filepath.Join(dir, "snapshot-latest.json")
+	path := filepath.Join(dir, fileName)
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return "", fmt.Errorf("write snapshot file: %w", err)
 	}
@@ -175,7 +158,6 @@ func WriteSnapshotWithDefaults(dir string, provider db.DatabaseProvider, slot ui
 	return WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
 }
 
-// WriteSnapshotAndCleanup writes snapshot and keeps only the latest one
 func WriteSnapshotAndCleanup(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
 	// Write new snapshot
 	path, err := WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
@@ -186,13 +168,11 @@ func WriteSnapshotAndCleanup(dir string, provider db.DatabaseProvider, slot uint
 	// Clean up old snapshots, keep only the latest
 	if err := cleanupOldSnapshots(dir, path); err != nil {
 		logx.Error("SNAPSHOT", "Failed to cleanup old snapshots:", err)
-		// Don't return error, snapshot was written successfully
 	}
 
 	return path, nil
 }
 
-// cleanupOldSnapshots removes all snapshot files except the latest one
 func cleanupOldSnapshots(dir, latestPath string) error {
 	files, err := os.ReadDir(dir)
 	if err != nil {
@@ -208,8 +188,6 @@ func cleanupOldSnapshots(dir, latestPath string) error {
 		if filePath != latestPath {
 			if err := os.Remove(filePath); err != nil {
 				logx.Error("SNAPSHOT", "Failed to remove old snapshot:", filePath, err)
-			} else {
-				logx.Info("SNAPSHOT", "Removed old snapshot:", filePath)
 			}
 		}
 	}

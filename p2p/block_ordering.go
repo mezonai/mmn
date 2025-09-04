@@ -8,8 +8,6 @@ import (
 	"github.com/mezonai/mmn/store"
 )
 
-// AddBlockToOrderingQueue adds a block to the global ordering queue
-// and processes consecutive blocks starting from nextExpectedSlot
 func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs store.BlockStore) error {
 	if blk == nil {
 		return fmt.Errorf("block is nil")
@@ -28,11 +26,9 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 	ln.blockOrderingQueue[blk.Slot] = blk
 	logx.Info("BLOCK:ORDERING", "Added block to queue at slot", blk.Slot, "queue size:", len(ln.blockOrderingQueue), "nextExpectedSlot:", ln.nextExpectedSlot)
 
-	// Process consecutive blocks starting from nextExpectedSlot
 	return ln.processConsecutiveBlocks(bs)
 }
 
-// processConsecutiveBlocks processes blocks in consecutive order starting from nextExpectedSlot
 func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore) error {
 	var processedBlocks []*block.BroadcastedBlock
 
@@ -47,13 +43,8 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore) error {
 		}
 	}
 
-	// Debug: log if no blocks were processed
 	if len(processedBlocks) == 0 {
-		logx.Debug("BLOCK:ORDERING", "No consecutive blocks to process. nextExpectedSlot:", ln.nextExpectedSlot, "queue size:", len(ln.blockOrderingQueue))
-
-		// If we have blocks in queue but none processed, check for large gap
 		if len(ln.blockOrderingQueue) > 0 {
-			// Find the lowest slot in queue
 			var lowestSlot uint64
 			first := true
 			for slot := range ln.blockOrderingQueue {
@@ -63,8 +54,8 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore) error {
 				}
 			}
 
-			// If there's a large gap (> 10 slots), adjust nextExpectedSlot
-			if lowestSlot > ln.nextExpectedSlot+10 {
+			// If there's a large gap (> BatchSize slots), adjust nextExpectedSlot
+			if lowestSlot > ln.nextExpectedSlot+SyncBlocksBatchSize {
 				logx.Warn("BLOCK:ORDERING", "Large gap detected! Adjusting nextExpectedSlot from", ln.nextExpectedSlot, "to", lowestSlot)
 				ln.nextExpectedSlot = lowestSlot
 				// Try processing again with adjusted slot
@@ -89,7 +80,6 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore) error {
 	return nil
 }
 
-// processBlock processes a single block (store and finalize)
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore) error {
 	// Verify PoH
 	if err := blk.VerifyPoH(); err != nil {
@@ -109,16 +99,10 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 	// Remove from missing blocks tracker
 	ln.removeFromMissingTracker(blk.Slot)
 
-	// Trigger post-processing callbacks if this is a new block (not from sync)
-	if ln.onBlockProcessed != nil {
-		ln.onBlockProcessed(blk)
-	}
-
 	logx.Info("BLOCK:ORDERING", "Successfully processed block at slot", blk.Slot)
 	return nil
 }
 
-// GetOrderingQueueStatus returns the current status of the ordering queue
 func (ln *Libp2pNetwork) GetOrderingQueueStatus() (nextExpected uint64, queueSize int, queuedSlots []uint64) {
 	ln.blockOrderingMu.RLock()
 	defer ln.blockOrderingMu.RUnlock()
@@ -134,7 +118,6 @@ func (ln *Libp2pNetwork) GetOrderingQueueStatus() (nextExpected uint64, queueSiz
 	return nextExpected, queueSize, queuedSlots
 }
 
-// SetNextExpectedSlot sets the next expected slot (useful for initialization)
 func (ln *Libp2pNetwork) SetNextExpectedSlot(slot uint64) {
 	ln.blockOrderingMu.Lock()
 	defer ln.blockOrderingMu.Unlock()
@@ -143,11 +126,9 @@ func (ln *Libp2pNetwork) SetNextExpectedSlot(slot uint64) {
 	logx.Info("BLOCK:ORDERING", "Set next expected slot to", slot)
 }
 
-// ClearOrderingQueue clears the ordering queue (useful for cleanup)
 func (ln *Libp2pNetwork) ClearOrderingQueue() {
 	ln.blockOrderingMu.Lock()
 	defer ln.blockOrderingMu.Unlock()
 
 	ln.blockOrderingQueue = make(map[uint64]*block.BroadcastedBlock)
-	logx.Info("BLOCK:ORDERING", "Cleared ordering queue")
 }
