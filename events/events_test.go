@@ -83,7 +83,7 @@ func TestBlockchainEvents(t *testing.T) {
 	}
 
 	// Test TransactionIncludedInBlock
-	blockEvent := NewTransactionIncludedInBlock("tx-hash", 123, "block-hash", tx.ExtraInfo)
+	blockEvent := NewTransactionIncludedInBlock(tx, 123, "block-hash")
 	if blockEvent.Type() != EventTransactionIncludedInBlock {
 		t.Errorf("Expected %s, got %s", EventTransactionIncludedInBlock, blockEvent.Type())
 	}
@@ -95,7 +95,7 @@ func TestBlockchainEvents(t *testing.T) {
 	}
 
 	// Test TransactionFailed
-	failedEvent := NewTransactionFailed("tx-hash", "insufficient funds", tx.ExtraInfo)
+	failedEvent := NewTransactionFailed(tx, "insufficient funds")
 	if failedEvent.Type() != EventTransactionFailed {
 		t.Errorf("Expected %s, got %s", EventTransactionFailed, failedEvent.Type())
 	}
@@ -107,7 +107,7 @@ func TestBlockchainEvents(t *testing.T) {
 	}
 
 	// Test TransactionFinalized
-	finalizedEvent := NewTransactionFinalized("tx-hash", 123, "block-hash", tx.ExtraInfo)
+	finalizedEvent := NewTransactionFinalized(tx, 123, "block-hash")
 	if finalizedEvent.Type() != EventTransactionFinalized {
 		t.Errorf("Expected %s, got %s", EventTransactionFinalized, finalizedEvent.Type())
 	}
@@ -183,10 +183,17 @@ func TestMultipleSubscribers(t *testing.T) {
 }
 
 func TestNewTransactionFailed(t *testing.T) {
-	txHash := "test-tx-hash"
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
+		Sender:    "sender",
+		Recipient: "recipient",
+		Amount:    uint256.NewInt(100),
+		Timestamp: uint64(time.Now().Unix()),
+		ExtraInfo: "extra_info",
+	}
 	errorMessage := "insufficient funds"
 
-	failedEvent := NewTransactionFailed(txHash, errorMessage, "")
+	failedEvent := NewTransactionFailed(tx, errorMessage)
 
 	if failedEvent == nil {
 		t.Fatal("NewTransactionFailed returned nil")
@@ -196,8 +203,8 @@ func TestNewTransactionFailed(t *testing.T) {
 		t.Errorf("Expected event type %s, got %s", EventTransactionFailed, failedEvent.Type())
 	}
 
-	if failedEvent.TxHash() != txHash {
-		t.Errorf("Expected tx hash %s, got %s", txHash, failedEvent.TxHash())
+	if failedEvent.TxHash() != tx.Hash() {
+		t.Errorf("Expected tx hash %s, got %s", tx.Hash(), failedEvent.TxHash())
 	}
 
 	if failedEvent.ErrorMessage() != errorMessage {
@@ -220,9 +227,16 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 	defer eventRouter.Unsubscribe(subscriberID)
 
 	// Create and publish a failed transaction event
-	txHash := "failed-tx-hash"
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
+		Sender:    "sender",
+		Recipient: "recipient",
+		Amount:    uint256.NewInt(100),
+		Timestamp: uint64(time.Now().Unix()),
+		ExtraInfo: "extra_info",
+	}
 	errorMessage := "invalid signature"
-	failedEvent := NewTransactionFailed(txHash, errorMessage, "")
+	failedEvent := NewTransactionFailed(tx, errorMessage)
 
 	eventRouter.PublishTransactionEvent(failedEvent)
 
@@ -233,8 +247,8 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 			t.Errorf("Expected event type %s, got %s", EventTransactionFailed, receivedEvent.Type())
 		}
 
-		if receivedEvent.TxHash() != txHash {
-			t.Errorf("Expected tx hash %s, got %s", txHash, receivedEvent.TxHash())
+		if receivedEvent.TxHash() != tx.Hash() {
+			t.Errorf("Expected tx hash %s, got %s", tx.Hash(), receivedEvent.TxHash())
 		}
 
 		// Type assert to get error message
@@ -287,11 +301,18 @@ func TestTransactionAddedToMempool(t *testing.T) {
 }
 
 func TestTransactionIncludedInBlock(t *testing.T) {
-	txHash := "test-tx-hash"
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
+		Sender:    "sender",
+		Recipient: "recipient",
+		Amount:    uint256.NewInt(100),
+		Timestamp: uint64(time.Now().Unix()),
+		ExtraInfo: "extra_info",
+	}
 	blockSlot := uint64(12345)
 	blockHash := "block-hash-123"
 
-	event := NewTransactionIncludedInBlock(txHash, blockSlot, blockHash, "")
+	event := NewTransactionIncludedInBlock(tx, blockSlot, blockHash)
 
 	if event == nil {
 		t.Fatal("NewTransactionIncludedInBlock returned nil")
@@ -301,8 +322,8 @@ func TestTransactionIncludedInBlock(t *testing.T) {
 		t.Errorf("Expected event type %s, got %s", EventTransactionIncludedInBlock, event.Type())
 	}
 
-	if event.TxHash() != txHash {
-		t.Errorf("Expected tx hash %s, got %s", txHash, event.TxHash())
+	if event.TxHash() != tx.Hash() {
+		t.Errorf("Expected tx hash %s, got %s", tx.Hash(), event.TxHash())
 	}
 
 	if event.BlockSlot() != blockSlot {
@@ -321,11 +342,18 @@ func TestTransactionIncludedInBlock(t *testing.T) {
 }
 
 func TestTransactionFinalized(t *testing.T) {
-	txHash := "test-tx-hash"
+	tx := &transaction.Transaction{
+		Type:      transaction.TxTypeTransfer,
+		Sender:    "sender",
+		Recipient: "recipient",
+		Amount:    uint256.NewInt(100),
+		Timestamp: uint64(time.Now().Unix()),
+		ExtraInfo: "extra_info",
+	}
 	blockSlot := uint64(12345)
 	blockHash := "block-hash-123"
 
-	event := NewTransactionFinalized(txHash, blockSlot, blockHash, "")
+	event := NewTransactionFinalized(tx, blockSlot, blockHash)
 
 	if event == nil {
 		t.Fatal("NewTransactionFinalized returned nil")
@@ -335,8 +363,8 @@ func TestTransactionFinalized(t *testing.T) {
 		t.Errorf("Expected event type %s, got %s", EventTransactionFinalized, event.Type())
 	}
 
-	if event.TxHash() != txHash {
-		t.Errorf("Expected tx hash %s, got %s", txHash, event.TxHash())
+	if event.TxHash() != tx.Hash() {
+		t.Errorf("Expected tx hash %s, got %s", tx.Hash(), event.TxHash())
 	}
 
 	if event.BlockSlot() != blockSlot {
@@ -364,8 +392,15 @@ func TestEventBusConcurrentPublishing(t *testing.T) {
 	events := make([]BlockchainEvent, numEvents)
 
 	for i := 0; i < numEvents; i++ {
-		txHash := fmt.Sprintf("tx-hash-%d", i)
-		events[i] = NewTransactionFailed(txHash, "test error", "")
+		tx := &transaction.Transaction{
+			Type:      transaction.TxTypeTransfer,
+			Sender:    fmt.Sprintf("sender-%d", i),
+			Recipient: fmt.Sprintf("recipient-%d", i),
+			Amount:    uint256.NewInt(100),
+			Timestamp: uint64(time.Now().Unix()),
+			ExtraInfo: "extra_info",
+		}
+		events[i] = NewTransactionFailed(tx, "test error")
 	}
 
 	// Publish all events concurrently

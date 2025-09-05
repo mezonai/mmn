@@ -151,7 +151,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err := applyTx(state, tx); err != nil {
 				// Publish specific transaction failure event
 				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err), tx.ExtraInfo)
+					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
 				}
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
@@ -174,7 +174,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err), tx.ExtraInfo)
+					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
 					l.eventRouter.PublishTransactionEvent(event)
 				}
 				return err
@@ -367,7 +367,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 		if err != nil || !tx.Verify() {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			if s.ledger.eventRouter != nil {
-				event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("sig/format: %v", err), tx.ExtraInfo)
+				event := events.NewTransactionFailed(tx, fmt.Sprintf("sig/format: %v", err))
 				s.ledger.eventRouter.PublishTransactionEvent(event)
 			}
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
@@ -376,7 +376,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 		if err := s.view.ApplyTx(tx); err != nil {
 			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
 			if s.ledger.eventRouter != nil {
-				event := events.NewTransactionFailed(tx.Hash(), err.Error(), tx.ExtraInfo)
+				event := events.NewTransactionFailed(tx, err.Error())
 				s.ledger.eventRouter.PublishTransactionEvent(event)
 			}
 			errs = append(errs, err)
