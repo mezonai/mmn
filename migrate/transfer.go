@@ -37,7 +37,7 @@ func TransferTokens(faucetAddress, toAddress string, amount *uint256.Int, faucet
 
 	currentNonce := faucetAccount.Nonce + 1
 
-	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransfer, faucetAddress, toAddress, amount, currentNonce, uint64(time.Now().Unix()), "Migration transfer", map[string]any{})
+	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransfer, faucetAddress, toAddress, amount, currentNonce, uint64(time.Now().Unix()), "Migration transfer", map[string]string{})
 	if err != nil {
 		return fmt.Errorf("failed to build transfer transaction: %v", err)
 	}
