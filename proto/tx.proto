@@ -80,6 +80,7 @@ message GetTransactionStatusRequest {
 }
 
 // Unified transaction status message used for both unary and streaming responses
+// TODO: consider to have single field as wrapper for all original transaction attributes (amount, text data, extra...) to avoid code duplication
 message TransactionStatusInfo {
   string tx_hash = 1;
   TransactionStatus status = 2;
