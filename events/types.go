@@ -17,6 +17,7 @@ const (
 )
 
 // BlockchainEvent represents any event that occurs in the blockchain
+// TODO: omit redundant fields (TxHash, TxExtraInfo) to keep Transaction only
 type BlockchainEvent interface {
 	Type() EventType
 	Timestamp() time.Time
