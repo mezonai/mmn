@@ -62,22 +62,18 @@ func (e *TransactionAddedToMempool) TxExtraInfo() string {
 
 // TransactionIncludedInBlock event when a transaction is included in a block
 type TransactionIncludedInBlock struct {
-	tx          *transaction.Transaction
-	txHash      string
-	blockSlot   uint64
-	blockHash   string
-	timestamp   time.Time
-	txExtraInfo string
+	tx        *transaction.Transaction
+	blockSlot uint64
+	blockHash string
+	timestamp time.Time
 }
 
 func NewTransactionIncludedInBlock(tx *transaction.Transaction, blockSlot uint64, blockHash string) *TransactionIncludedInBlock {
 	return &TransactionIncludedInBlock{
-		tx:          tx,
-		txHash:      tx.Hash(),
-		blockSlot:   blockSlot,
-		blockHash:   blockHash,
-		timestamp:   time.Now(),
-		txExtraInfo: tx.ExtraInfo,
+		tx:        tx,
+		blockSlot: blockSlot,
+		blockHash: blockHash,
+		timestamp: time.Now(),
 	}
 }
 
@@ -90,7 +86,7 @@ func (e *TransactionIncludedInBlock) Timestamp() time.Time {
 }
 
 func (e *TransactionIncludedInBlock) TxHash() string {
-	return e.txHash
+	return e.tx.Hash()
 }
 
 func (e *TransactionIncludedInBlock) BlockSlot() uint64 {
@@ -102,7 +98,7 @@ func (e *TransactionIncludedInBlock) BlockHash() string {
 }
 
 func (e *TransactionIncludedInBlock) TxExtraInfo() string {
-	return e.txExtraInfo
+	return e.tx.ExtraInfo
 }
 
 func (e *TransactionIncludedInBlock) Transaction() *transaction.Transaction {
@@ -111,22 +107,18 @@ func (e *TransactionIncludedInBlock) Transaction() *transaction.Transaction {
 
 // TransactionFinalized event when a transaction is finalized (block is finalized)
 type TransactionFinalized struct {
-	tx          *transaction.Transaction
-	txHash      string
-	blockSlot   uint64
-	blockHash   string
-	timestamp   time.Time
-	txExtraInfo string
+	tx        *transaction.Transaction
+	blockSlot uint64
+	blockHash string
+	timestamp time.Time
 }
 
 func NewTransactionFinalized(tx *transaction.Transaction, blockSlot uint64, blockHash string) *TransactionFinalized {
 	return &TransactionFinalized{
-		tx:          tx,
-		txHash:      tx.Hash(),
-		blockSlot:   blockSlot,
-		blockHash:   blockHash,
-		timestamp:   time.Now(),
-		txExtraInfo: tx.ExtraInfo,
+		tx:        tx,
+		blockSlot: blockSlot,
+		blockHash: blockHash,
+		timestamp: time.Now(),
 	}
 }
 
@@ -139,7 +131,7 @@ func (e *TransactionFinalized) Timestamp() time.Time {
 }
 
 func (e *TransactionFinalized) TxHash() string {
-	return e.txHash
+	return e.tx.Hash()
 }
 
 func (e *TransactionFinalized) BlockSlot() uint64 {
@@ -151,7 +143,7 @@ func (e *TransactionFinalized) BlockHash() string {
 }
 
 func (e *TransactionFinalized) TxExtraInfo() string {
-	return e.txExtraInfo
+	return e.tx.ExtraInfo
 }
 
 func (e *TransactionFinalized) Transaction() *transaction.Transaction {
@@ -161,19 +153,15 @@ func (e *TransactionFinalized) Transaction() *transaction.Transaction {
 // TransactionFailed event when a transaction fails validation
 type TransactionFailed struct {
 	tx           *transaction.Transaction
-	txHash       string
 	errorMessage string
 	timestamp    time.Time
-	txExtraInfo  string
 }
 
 func NewTransactionFailed(tx *transaction.Transaction, errorMessage string) *TransactionFailed {
 	return &TransactionFailed{
 		tx:           tx,
-		txHash:       tx.Hash(),
 		errorMessage: errorMessage,
 		timestamp:    time.Now(),
-		txExtraInfo:  tx.ExtraInfo,
 	}
 }
 
@@ -186,7 +174,7 @@ func (e *TransactionFailed) Timestamp() time.Time {
 }
 
 func (e *TransactionFailed) TxHash() string {
-	return e.txHash
+	return e.tx.Hash()
 }
 
 func (e *TransactionFailed) ErrorMessage() string {
@@ -194,7 +182,7 @@ func (e *TransactionFailed) ErrorMessage() string {
 }
 
 func (e *TransactionFailed) TxExtraInfo() string {
-	return e.txExtraInfo
+	return e.tx.ExtraInfo
 }
 
 func (e *TransactionFailed) Transaction() *transaction.Transaction {
