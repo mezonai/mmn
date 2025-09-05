@@ -49,7 +49,7 @@ type Tx struct {
 	ExtraInfo string       `json:"extra_info"`
 }
 
-func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string, extraInfo map[string]any) (*Tx, error) {
+func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string, extraInfo map[string]string) (*Tx, error) {
 	if err := ValidateAddress(sender); err != nil {
 		return nil, fmt.Errorf("from: %w", err)
 	}
@@ -77,7 +77,7 @@ func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, 
 	}, nil
 }
 
-func SerializeTxExtraInfo(data map[string]any) (string, error) {
+func SerializeTxExtraInfo(data map[string]string) (string, error) {
 	if data == nil {
 		return "", nil
 	}
@@ -89,12 +89,12 @@ func SerializeTxExtraInfo(data map[string]any) (string, error) {
 	return string(extraBytes), nil
 }
 
-func DeserializeTxExtraInfo(raw string) (map[string]any, error) {
+func DeserializeTxExtraInfo(raw string) (map[string]string, error) {
 	if raw == "" {
 		return nil, nil
 	}
 
-	var extraInfo map[string]any
+	var extraInfo map[string]string
 	if err := json.Unmarshal([]byte(raw), &extraInfo); err != nil {
 		return nil, fmt.Errorf("unable to unmarshal extra info: %w", err)
 	}
@@ -146,6 +146,6 @@ type TxInfo struct {
 	ExtraInfo string       `json:"extra_info,omitempty"`
 }
 
-func (i *TxInfo) DeserializedExtraInfo() (map[string]any, error) {
+func (i *TxInfo) DeserializedExtraInfo() (map[string]string, error) {
 	return DeserializeTxExtraInfo(i.ExtraInfo)
 }
