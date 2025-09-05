@@ -3,7 +3,6 @@ package network
 import (
 	"context"
 	"fmt"
-	"github.com/mezonai/mmn/logx"
 	"time"
 
 	"github.com/mezonai/mmn/block"
