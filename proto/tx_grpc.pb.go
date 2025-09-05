@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.32.0
-// source: proto/tx.proto
+// source: tx.proto
 
 package proto
 
@@ -317,5 +317,5 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "proto/tx.proto",
+	Metadata: "tx.proto",
 }

@@ -262,6 +262,8 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 						Confirmations: 0, // No confirmations for mempool transactions
 						Timestamp:     uint64(time.Now().Unix()),
 						ExtraInfo:     tx.ExtraInfo,
+						Amount:        utils.Uint256ToString(tx.Amount),
+						TextData:      tx.TextData,
 					}, nil
 				}
 			}
@@ -290,6 +292,8 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 				Confirmations: confirmations,
 				Timestamp:     uint64(time.Now().Unix()),
 				ExtraInfo:     tx.ExtraInfo,
+				Amount:        utils.Uint256ToString(tx.Amount),
+				TextData:      tx.TextData,
 			}, nil
 		}
 	}
@@ -382,6 +386,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.Transaction().ExtraInfo,
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionIncludedInBlock:
@@ -396,6 +402,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionFinalized:
@@ -410,6 +418,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionFailed:
@@ -420,6 +430,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 	}
 
