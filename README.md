@@ -87,3 +87,7 @@ go build -o bin/mmn ./cmd
 # uses cases
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
+
+## Monitoring stack (Grafana + Loki + Promtail)
+
+- Open grafana at http://localhost:3000 (admin / admin)
