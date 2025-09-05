@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/block"
@@ -147,7 +148,7 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
 		var err error
 		amount, err = uint256.FromDecimal(pbTx.TxMsg.Amount)
 		if err != nil {
-			fmt.Println("Error parsing amount:", err)
+			logx.Error("UTIL", "Error parsing amount: ", err)
 			return nil, err
 		}
 	}

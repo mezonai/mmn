@@ -365,7 +365,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 	for _, r := range raws {
 		tx, err := utils.ParseTx(r)
 		if err != nil || !tx.Verify() {
-			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			logx.Error("LEDGER SESSION", fmt.Sprintf("Invalid tx: %v, %+v", err, tx))
 			if s.ledger.eventRouter != nil {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("sig/format: %v", err))
 				s.ledger.eventRouter.PublishTransactionEvent(event)
@@ -374,7 +374,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 			continue
 		}
 		if err := s.view.ApplyTx(tx); err != nil {
-			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
+			logx.Error("LEDGER SESSION", fmt.Sprintf("Invalid tx: %v, %+v", err, tx))
 			if s.ledger.eventRouter != nil {
 				event := events.NewTransactionFailed(tx, err.Error())
 				s.ledger.eventRouter.PublishTransactionEvent(event)

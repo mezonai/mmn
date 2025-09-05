@@ -1,11 +1,11 @@
-version: "3.8"
+name: mmn
 
 services:
   bootnode:
     build:
       context: .
       args:
-        DB_VENDOR: ${DB_VENDOR:-rocksdb}  #rocksdb or leveldb
+        DB_VENDOR: ${DB_VENDOR:-rocksdb} #rocksdb or leveldb
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: bootnode
     command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
@@ -14,6 +14,10 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    labels:
+      - "promtail.scrape=true"
+      - "promtail.job=mmn"
+
   node1:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node1
@@ -33,6 +37,10 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    labels:
+      - "promtail.scrape=true"
+      - "promtail.job=mmn"
+
   node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node2
@@ -52,6 +60,9 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    labels:
+      - "promtail.scrape=true"
+      - "promtail.job=mmn"
 
   node3:
     image: mmn-node:${DB_VENDOR:-rocksdb}
@@ -72,7 +83,57 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    labels:
+      - "promtail.scrape=true"
+      - "promtail.job=mmn"
+
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: loki
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./mmn.log:/var/log/mmn/mmn.log:ro
+    depends_on:
+      - loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
 networks:
   mezon:
+
 volumes:
   node_data:
+  loki_data:
+  grafana_data:

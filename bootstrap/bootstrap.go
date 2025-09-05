@@ -105,7 +105,7 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 	for _, addr := range h.Addrs() {
 		if strings.HasPrefix(addr.String(), "/ip4") && strings.Contains(addr.String(), "/tcp/") {
 			fullAddr := fmt.Sprintf("%s/p2p/%s", addr.String(), h.ID().String())
-			fmt.Println(fullAddr)
+			logx.Info("BOOTSTRAP NODE", "fullAddr: ", fullAddr)
 		}
 	}
 

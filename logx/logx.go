@@ -2,8 +2,8 @@ package logx
 
 import (
 	"fmt"
+	"gopkg.in/natefinch/lumberjack.v2"
 	"log"
-	"os"
 )
 
 const (
@@ -14,7 +14,16 @@ const (
 	ColorBlue   = "\033[34m"
 )
 
-var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds)
+var (
+	lumberjackLogger = &lumberjack.Logger{
+		Filename: "./mmn.log",
+		MaxSize:  500, // megabytes
+		MaxAge:   7,   // days
+		Compress: true,
+	}
+
+	logger = log.New(lumberjackLogger, "", log.Ldate|log.Ltime|log.Lmicroseconds)
+)
 
 func Info(category string, content ...interface{}) {
 	message := fmt.Sprint(content...)

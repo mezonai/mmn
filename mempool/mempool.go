@@ -499,7 +499,7 @@ func (mp *Mempool) PeriodicCleanup() {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
-	fmt.Println("Starting periodic mempool cleanup...")
+	logx.Info("MEMPOOL", "Starting periodic mempool cleanup...")
 
 	// Clean up stale transactions
 	mp.cleanupStaleTransactions()
@@ -514,15 +514,17 @@ func (mp *Mempool) PeriodicCleanup() {
 		totalPending += len(pendingMap)
 	}
 
-	fmt.Printf("Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
-		len(mp.readyQueue), totalPending, len(mp.txsBuf))
+	logx.Info("MEMPOOL", fmt.Sprintf(
+		"Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
+		len(mp.readyQueue), totalPending, len(mp.txsBuf),
+	))
 }
 
 func (mp *Mempool) cleanupOutdatedTransactions() {
 	for sender, pendingMap := range mp.pendingTxs {
 		account, err := mp.ledger.GetAccount(sender)
 		if err != nil {
-			fmt.Printf("Error getting account for sender %s: %v\n", sender, err)
+			logx.Error("MEMPOOL", "Error getting account for sender ", sender, ": ", err)
 			continue
 		}
 		currentNonce := account.Nonce
@@ -559,7 +561,7 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 		account, err := mp.ledger.GetAccount(tx.Sender)
 		if err != nil {
 			// Skip this transaction if we can't get the account
-			fmt.Printf("Error getting account for sender %s: %v\n", tx.Sender, err)
+			logx.Error("MEMPOOL", "Error getting account for sender ", tx.Sender, ": ", err)
 			continue
 		}
 		currentNonce := account.Nonce

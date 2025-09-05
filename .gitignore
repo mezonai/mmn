@@ -39,3 +39,6 @@ client_test/mezon-server-sim/performance-test/performance_results.json
 leveldb
 ./mmn
 node-data
+
+# Log files
+mmn*.log
