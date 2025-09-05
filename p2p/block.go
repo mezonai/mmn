@@ -98,10 +98,8 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 				continue
 			}
 
-			// Send blocks in a goroutine to avoid blocking
-			go func(request SyncRequest, peer peer.ID) {
-				ln.sendBlocksOverStream(request, peer)
-			}(req, msg.ReceivedFrom)
+			ln.sendBlocksOverStream(req, msg.ReceivedFrom)
+
 		}
 	}
 }
@@ -119,7 +117,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		return
 	}
 
-	logx.Info("NETWORK:SYNC BLOCK", "Received stream for request:", syncRequest.RequestID, "from peer:", remotePeer.String())
+	logx.Info("NETWORK:SYNC BLOCK", "Received stream for request: ", syncRequest.RequestID, " from peer: ", remotePeer.String())
 
 	// check request id actived
 	ln.syncTrackerMu.Lock()
@@ -166,7 +164,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		}
 
 		if len(filtered) == 0 {
-			logx.Debug("NETWORK:SYNC BLOCK", "Batch", batchCount, "contains only duplicates; continuing to next batch")
+			logx.Debug("NETWORK:SYNC BLOCK", "Batch ", batchCount, " contains only duplicates; continuing to next batch")
 			continue
 		}
 
@@ -272,12 +270,11 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			batch = append(batch, blk)
 		}
 
-		if len(batch) >= int(BatchSize) {
+		if len(batch) >= int(SyncBlocksBatchSize) {
 			if err := ln.sendBlockBatchStream(batch, stream); err != nil {
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to send batch:", err)
 				return
 			}
-			logx.Info("NETWORK:SYNC BLOCK", "Sent batch with", len(batch), "blocks for request", req.RequestID)
 			totalBlocksSent += len(batch)
 			batch = batch[:0]
 		}
@@ -290,15 +287,12 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to send final batch:", err)
 			return
 		}
-		logx.Info("NETWORK:SYNC BLOCK", "Sent final batch with", len(batch), "blocks for request", req.RequestID)
 		totalBlocksSent += len(batch)
 	}
 
-	logx.Info("NETWORK:SYNC BLOCK", "Finished sending blocks for request", req.RequestID, "total blocks sent:", totalBlocksSent)
-
 	if req.ToSlot < localLatestSlot {
 		nextFromSlot := req.ToSlot + 1
-		nextToSlot := nextFromSlot + BatchSize - 1
+		nextToSlot := nextFromSlot + SyncBlocksBatchSize - 1
 		if nextToSlot > localLatestSlot {
 			nextToSlot = localLatestSlot
 		}
@@ -320,7 +314,7 @@ func (ln *Libp2pNetwork) RequestContinuousBlockSync(fromSlot, toSlot uint64, tar
 	currentSlot := fromSlot
 
 	for currentSlot < toSlot {
-		endSlot := currentSlot + BatchSize - 1
+		endSlot := currentSlot + SyncBlocksBatchSize - 1
 		if endSlot > toSlot {
 			endSlot = toSlot
 		}

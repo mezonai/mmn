@@ -39,6 +39,13 @@ func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.entries = make([]Entry, 0)
 }
 
+// SetLeaderSchedule updates the in-memory leader schedule used by the recorder
+func (r *PohRecorder) SetLeaderSchedule(schedule *LeaderSchedule) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.leaderSchedule = schedule
+}
+
 // Assume fromSlot is the last seen slot, toSlot is the target slot
 // Simulate the poh clock from fromSlot to toSlot
 func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uint64) [32]byte {

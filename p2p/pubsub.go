@@ -5,6 +5,11 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -17,11 +22,18 @@ import (
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder, snapshotUDPPort string) {
+	// Set snapshot UDP port
+	ln.snapshotUDPPort = snapshotUDPPort
+
+	latestSlot := bs.GetLatestSlot()
+	ln.SetNextExpectedSlot(latestSlot + 1)
+
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
@@ -76,7 +88,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 			if committed && needApply {
-				logx.Info("VOTE", "Committed vote from OnVoteReceived: slot= ", vote.Slot, ",voter= ", vote.VoterID)
+				logx.Info("VOTE", "Committed vote from OnVote Received: slot= ", vote.Slot, ",voter= ", vote.VoterID)
 				err := ln.applyDataToBlock(vote, bs, ld, mp)
 				if err != nil {
 					logx.Error("VOTE", "Failed to apply data to block: ", err)
@@ -99,52 +111,163 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		OnSyncResponseReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
 
+			// Add all blocks to global ordering queue
 			for _, blk := range blocks {
 				if blk == nil {
 					continue
 				}
 
-				// skip add pending if block already exists
-				if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+				// Add to ordering queue - this will process blocks in order
+				if err := ln.AddBlockToOrderingQueue(blk, bs); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to add block to ordering queue: ", err)
 					continue
 				}
+			}
 
-				// Verify PoH
-				if err := blk.VerifyPoH(); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Invalid PoH for synced block: ", err)
-					continue
-				}
-				// Add to block store and publish transaction inclusion events
-				if err := bs.AddBlockPending(blk); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to store synced block: ", err)
-					continue
+			if !ln.IsNodeReady() {
+				gap := uint64(0)
+				if ln.worldLatestSlot > blocks[len(blocks)-1].Slot {
+					gap = ln.worldLatestSlot - blocks[len(blocks)-1].Slot
 				}
 
-				// Remove from missing blocks tracker if it was there
-				ln.removeFromMissingTracker(blk.Slot)
-
-				logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Successfully processed synced block: slot=%d", blk.Slot))
+				if gap <= SnapshotReadyGapThreshold {
+					ln.enableFullModeOnce.Do(func() {
+						ln.SetupPubSubTopics(ln.ctx)
+						ln.setNodeReady()
+					})
+				} else {
+					ln.RequestBlockSync(ln.ctx, blocks[len(blocks)-1].Slot+1)
+				}
 			}
 
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
-
-			localLatestSlot := bs.GetLatestSlot()
-			if latestSlot > localLatestSlot {
-				fromSlot := localLatestSlot + 1
-				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
-
-				ctx := context.Background()
-				if err := ln.RequestBlockSync(ctx, fromSlot); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request after latest slot:", err)
-				}
-			}
+			ln.worldLatestSlot = latestSlot
 			return nil
 		},
-	})
+		OnSnapshotAnnounce: func(ann SnapshotAnnounce) error {
+			// Skip self announces
+			if ann.PeerID == ln.selfPubKey {
+				logx.Info("SNAPSHOT:DOWNLOAD", "skip self announce", ann.UDPAddr)
+				return nil
+			}
+			// Ensure UDP addr non-empty and valid
+			if ann.UDPAddr == "" || strings.HasPrefix(ann.UDPAddr, ":") {
+				logx.Error("SNAPSHOT:DOWNLOAD", "invalid announce UDP addr, skip", ann.UDPAddr)
+				return nil
+			}
+			// Skip if local is already at or ahead of announced slot
+			localSlot := ln.blockStore.GetLatestSlot()
+			if ann.Slot <= localSlot+SnapshotReadyGapThreshold {
+				logx.Info("SNAPSHOT:DOWNLOAD", "skip announce; local at/above slot", "local=", localSlot, "ann=", ann.Slot)
+				return nil
+			}
+			// Check if we already have a snapshot >= announced slot
+			path := snapshot.GetSnapshotPath()
+			if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
+				if snap, err := snapshot.ReadSnapshot(path); err == nil && snap != nil {
+					if snap.Meta.Slot >= ann.Slot {
+						return nil
+					}
+				}
+			}
+			// If no local snapshot or local snapshot is older, proceed with download
+			logx.Info("SNAPSHOT:DOWNLOAD", "proceeding with download", "announced_slot=", ann.Slot, "local_path=", path)
+			accountStore := ld.GetAccountStore()
+			if accountStore == nil {
+				return nil
+			}
+			provider := accountStore.GetDatabaseProvider()
+			if provider == nil {
+				return nil
+			}
 
-	go ln.startInitialSync(bs)
+			// Ensure snapshot directory exists before creating downloader
+			if err := snapshot.EnsureSnapshotDirectory(); err != nil {
+				logx.Error("SNAPSHOT:DOWNLOAD", "Failed to ensure snapshot directory:", err)
+				return nil
+			}
+
+			// Use single snapshot directory
+			down := snapshot.NewSnapshotDownloader(provider, snapshot.SnapshotDirectory)
+			logx.Info("SNAPSHOT:DOWNLOAD", "start", ann.UDPAddr)
+			go func() {
+				logx.Info("SNAPSHOT:DEBUG", "Starting download from peer: ", ann.PeerID, " UDP: ", ann.UDPAddr, " Slot: ", ann.Slot)
+				task, err := down.DownloadSnapshotFromPeer(ln.ctx, ann.UDPAddr, ann.PeerID, ann.Slot, ann.ChunkSize)
+				if err != nil {
+					logx.Error("SNAPSHOT:DOWNLOAD", "start failed:", err)
+					return
+				}
+				for {
+					time.Sleep(2 * time.Second)
+					st, ok := down.GetDownloadStatus(task.ID)
+					if !ok || st == nil {
+						continue
+					}
+					if st.Status == snapshot.TransferStatusComplete {
+						logx.Info("SNAPSHOT:DOWNLOAD", "completed ", ann.UDPAddr)
+						ln.SetNextExpectedSlot(ann.Slot + 1)
+						path := filepath.Join(snapshot.SnapshotDirectory, "snapshot-latest.json")
+						if snap, err := snapshot.ReadSnapshot(path); err == nil && snap != nil {
+							if len(snap.Meta.LeaderSchedule) > 0 {
+								if ls, err := poh.NewLeaderSchedule(snap.Meta.LeaderSchedule); err == nil {
+									if ln.applyLeaderSchedule != nil {
+										ln.applyLeaderSchedule(ls)
+										logx.Info("SNAPSHOT:DOWNLOAD", "Applied leader schedule from snapshot")
+									}
+									if recorder != nil {
+										recorder.SetLeaderSchedule(ls)
+									}
+								}
+							}
+						}
+						// reset recorder to the snapshot slot boundary
+						if recorder != nil {
+							var zero [32]byte
+							recorder.Reset(zero, ann.Slot)
+						}
+
+						logx.Info("SNAPSHOT:DOWNLOAD", "Snapshot loaded, starting block sync")
+						// Trigger a single block sync from the announced slot + 1
+						go func() {
+							ctx := context.Background()
+							if err := ln.RequestBlockSync(ctx, ann.Slot+1); err != nil {
+								logx.Error("NETWORK:SYNC BLOCK", "Failed to request block sync after snapshot:", err)
+								return
+							}
+							logx.Info("NETWORK:SYNC BLOCK", "Block sync requested from slot ", ann.Slot+1)
+						}()
+						break
+					}
+					if st.Status == snapshot.TransferStatusFailed || st.Status == snapshot.TransferStatusCancelled {
+						logx.Error("SNAPSHOT:DOWNLOAD", "not successful:", st.Status)
+						break
+					}
+				}
+			}()
+			return nil
+		}})
+
+	// Start UDP snapshot streamer for serving nodes
+	accountStore := ld.GetAccountStore()
+	if accountStore != nil {
+		provider := accountStore.GetDatabaseProvider()
+		if provider != nil {
+			go func() {
+				// Ensure snapshot directory exists before starting streamer
+				if err := snapshot.EnsureSnapshotDirectory(); err != nil {
+					logx.Error("SNAPSHOT:STREAMER", "Failed to ensure snapshot directory:", err)
+					return
+				}
+
+				// Use single snapshot directory
+				if err := snapshot.StartSnapshotUDPStreamer(provider, snapshot.SnapshotDirectory, snapshotUDPPort); err != nil {
+					logx.Error("SNAPSHOT:STREAMER", "failed to start:", err)
+				}
+			}()
+		}
+	}
 
 	go ln.startPeriodicSyncCheck(bs)
 
@@ -186,6 +309,56 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	return nil
 }
 
+func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
+
+	if ln.topicBlockSyncReq == nil {
+		if topic, err := ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
+			ln.topicBlockSyncReq = topic
+			if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
+				exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
+					ln.handleBlockSyncRequestTopic(ctx, sub)
+				})
+			}
+		}
+	}
+
+	if t, e := ln.pubsub.Join(LatestSlotTopic); e == nil {
+		ln.topicLatestSlot = t
+		if sub, err := ln.topicLatestSlot.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleLatestSlotTopic", func() {
+				ln.HandleLatestSlotTopic(ctx, sub)
+			})
+		}
+	}
+
+	if t, e := ln.pubsub.Join(TopicSnapshotAnnounce); e == nil {
+		ln.topicSnapshotAnnounce = t
+		if sub, e2 := ln.topicSnapshotAnnounce.Subscribe(); e2 == nil {
+			exception.SafeGoWithPanic("HandleSnapshotAnnounce", func() {
+				ln.handleSnapshotAnnounce(ctx, sub)
+			})
+		}
+	}
+
+	if t, e := ln.pubsub.Join(TopicSnapshotRequest); e == nil {
+		ln.topicSnapshotRequest = t
+		if sub, e2 := ln.topicSnapshotRequest.Subscribe(); e2 == nil {
+			exception.SafeGoWithPanic("HandleSnapshotRequest", func() {
+				ln.handleSnapshotRequest(ctx, sub)
+			})
+		}
+	}
+
+	ln.startSnapshotAnnouncer()
+
+	if !ln.joinAfterSync {
+		ln.SetupPubSubTopics(ln.ctx)
+	}
+
+	go ln.requestSnapshotOnJoin()
+
+}
+
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
@@ -213,24 +386,8 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicBlockSyncReq, err = ln.pubsub.Join(BlockSyncRequestTopic); err == nil {
-		if sub, err := ln.topicBlockSyncReq.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
-				ln.handleBlockSyncRequestTopic(ctx, sub)
-			})
-
-		}
-	}
-
-	if ln.topicLatestSlot, err = ln.pubsub.Join(LatestSlotTopic); err == nil {
-		if sub, err := ln.topicLatestSlot.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("handleBlockSyncResponseTopic", func() {
-				ln.HandleLatestSlotTopic(ctx, sub)
-			})
-		}
-	}
-
-	if ln.topicCheckpointRequest, err = ln.pubsub.Join(CheckpointRequestTopic); err == nil {
+	if t, e := ln.pubsub.Join(CheckpointRequestTopic); e == nil {
+		ln.topicCheckpointRequest = t
 		if sub, err := ln.topicCheckpointRequest.Subscribe(); err == nil {
 			exception.SafeGoWithPanic("HandleCheckpointRequestTopic", func() {
 				ln.HandleCheckpointRequestTopic(ctx, sub)
@@ -262,8 +419,6 @@ func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *
 				logx.Error("NETWORK:CHECKPOINT", "Failed to unmarshal checkpoint request:", err)
 				continue
 			}
-
-			logx.Info("NETWORK:CHECKPOINT", "Received checkpoint request from", msg.ReceivedFrom.String(), "checkpoint=", req.Checkpoint)
 
 			localSlot, localHash, ok := ln.getCheckpointHash(req.Checkpoint)
 			if !ok {
@@ -329,17 +484,11 @@ func (ln *Libp2pNetwork) handleCheckpointStream(s network.Stream) {
 		return
 	}
 
-	logx.Info("NETWORK:CHECKPOINT", "Received checkpoint response from", resp.PeerID, "checkpoint=", resp.Checkpoint)
-
-	// Compare with local checkpoint
 	_, localHash, ok := ln.getCheckpointHash(resp.Checkpoint)
 	if !ok {
-		logx.Warn("NETWORK:CHECKPOINT", "Local missing checkpoint block", resp.Checkpoint)
 		return
 	}
 	if localHash != resp.BlockHash {
-		logx.Warn("NETWORK:CHECKPOINT", "Checkpoint hash mismatch at", resp.Checkpoint, "from peer", resp.PeerID)
-		// Re-request exact block if mismatch
 		ctx := context.Background()
 		if err := ln.RequestSingleBlockSync(ctx, resp.Checkpoint); err != nil {
 			logx.Error("NETWORK:CHECKPOINT", "Failed to request single block sync:", err)
@@ -380,4 +529,197 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	if cbs.OnSyncResponseReceived != nil {
 		ln.onSyncResponseReceived = cbs.OnSyncResponseReceived
 	}
+	if cbs.OnSnapshotAnnounce != nil {
+		ln.onSnapshotAnnounce = cbs.OnSnapshotAnnounce
+	}
+}
+
+// requestSnapshotOnJoin sends a snapshot request when node joins the network
+func (ln *Libp2pNetwork) requestSnapshotOnJoin() {
+	logx.Info("SNAPSHOT:REQUEST", "request snapshot on join")
+	if ln.topicSnapshotRequest == nil {
+		logx.Info("SNAPSHOT:REQUEST", "request topic not ready; skip request")
+		return
+	}
+
+	// Send snapshot request
+	req := SnapshotRequest{
+		PeerID:       ln.selfPubKey,
+		WantSlot:     0,
+		ReceiverAddr: ln.getAnnounceUDPAddr(),
+		ChunkSize:    SnapshotChunkSize,
+	}
+	data, _ := json.Marshal(req)
+	if err := ln.topicSnapshotRequest.Publish(ln.ctx, data); err == nil {
+		logx.Info("SNAPSHOT:REQUEST", "snapshot request sent on join")
+	}
+}
+
+func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
+	if ln.topicSnapshotAnnounce == nil {
+		logx.Info("SNAPSHOT:GOSSIP", "announce topic not ready; skip announcer")
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ln.ctx.Done():
+				return
+			case <-ticker.C:
+				path := snapshot.GetSnapshotPath()
+				fi, err := os.Stat(path)
+				if err != nil {
+					// wait for snapshot download and block sync
+					continue
+				}
+
+				snap, err := snapshot.ReadSnapshot(path)
+				if err != nil {
+					logx.Error("SNAPSHOT:GOSSIP", "read snapshot error:", err)
+					continue
+				}
+
+				ann := SnapshotAnnounce{
+					Slot:      snap.Meta.Slot,
+					BankHash:  fmt.Sprintf("%x", snap.Meta.BankHash[:]),
+					Size:      fi.Size(),
+					UDPAddr:   ln.getAnnounceUDPAddr(),
+					ChunkSize: SnapshotChunkSize,
+					CreatedAt: time.Now().Unix(),
+					PeerID:    ln.selfPubKey,
+				}
+				if ann.UDPAddr == "" {
+					continue
+				}
+				data, _ := json.Marshal(ann)
+				if err := ln.topicSnapshotAnnounce.Publish(ln.ctx, data); err == nil {
+					logx.Info("SNAPSHOT:GOSSIP", "Announce published slot=", ann.Slot)
+					if ln.onSnapshotAnnounce != nil {
+						_ = ln.onSnapshotAnnounce(ann)
+					}
+				}
+			}
+		}
+	}()
+}
+
+// getAnnounceUDPAddr builds an ip:port string for the UDP snapshot streamer
+func (ln *Libp2pNetwork) getAnnounceUDPAddr() string {
+
+	ip := ""
+	// Track a non-loopback fallback if present
+	for _, maddr := range ln.host.Addrs() {
+		str := maddr.String()
+		// naive extract /ip4/x.x.x.x
+		if strings.HasPrefix(str, "/ip4/") {
+			parts := strings.Split(str, "/")
+			if len(parts) >= 3 {
+				cand := parts[2]
+				parsed := net.ParseIP(cand)
+				if parsed != nil {
+					if !parsed.IsUnspecified() && !parsed.IsLoopback() {
+						ip = cand
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if ip == "" {
+		logx.Error("SNAPSHOT:GOSSIP", "no valid non-loopback IP found; skip announce")
+		return ""
+	}
+
+	port := strings.TrimPrefix(ln.snapshotUDPPort, ":")
+
+	addr := fmt.Sprintf("%s:%s", ip, port)
+	logx.Info("SNAPSHOT:GOSSIP", "announce UDP addr", addr)
+	return addr
+}
+
+// handleSnapshotAnnounce processes incoming snapshot announce messages and triggers HTTP download when needed
+func (ln *Libp2pNetwork) handleSnapshotAnnounce(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			return
+		}
+		var ann SnapshotAnnounce
+		if err := json.Unmarshal(msg.Data, &ann); err != nil {
+			continue
+		}
+		if ann.PeerID == ln.selfPubKey {
+			continue
+		}
+		localSlot := ln.blockStore.GetLatestSlot()
+		if ann.Slot > localSlot {
+			if ln.onSnapshotAnnounce != nil {
+				if err := ln.onSnapshotAnnounce(ann); err != nil {
+					logx.Error("SNAPSHOT:GOSSIP", "Error in OnSnapshotAnnounce callback:", err)
+				}
+			}
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) handleSnapshotRequest(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			return
+		}
+
+		if msg.ReceivedFrom.String() != ln.selfPubKey {
+			continue
+		}
+
+		var req SnapshotRequest
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			continue
+		}
+
+		// Check snapshot availability in single directory
+		path := snapshot.GetSnapshotPath()
+		fi, err := os.Stat(path)
+		if err != nil {
+			// no snapshot to announce
+			logx.Info("SNAPSHOT:GOSSIP", "request received but no snapshot found")
+			continue
+		}
+
+		snap, err := snapshot.ReadSnapshot(path)
+		if err != nil || snap == nil {
+			logx.Error("SNAPSHOT:GOSSIP", "read snapshot error:", err)
+			continue
+		}
+
+		ann := SnapshotAnnounce{
+			Slot:      snap.Meta.Slot,
+			BankHash:  fmt.Sprintf("%x", snap.Meta.BankHash[:]),
+			Size:      fi.Size(),
+			UDPAddr:   ln.getAnnounceUDPAddr(),
+			ChunkSize: SnapshotChunkSize,
+			CreatedAt: time.Now().Unix(),
+			PeerID:    ln.selfPubKey,
+		}
+		data, _ := json.Marshal(ann)
+		if ln.topicSnapshotAnnounce != nil {
+			_ = ln.topicSnapshotAnnounce.Publish(ctx, data)
+			logx.Info("SNAPSHOT:GOSSIP", "announce in response slot=", ann.Slot)
+			// simulate local delivery for single-node tests
+			if ln.onSnapshotAnnounce != nil {
+				_ = ln.onSnapshotAnnounce(ann)
+			}
+		}
+	}
+}
+
+// SetJoinBehavior sets whether the node should join the network immediately or wait for sync
+func (ln *Libp2pNetwork) SetJoinBehavior(joinAfterSync bool) {
+	ln.joinAfterSync = joinAfterSync
+	logx.Info("NETWORK:JOIN", "Join behavior set:", "joinAfterSync=", joinAfterSync)
 }

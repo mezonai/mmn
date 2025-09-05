@@ -29,8 +29,8 @@ func (ln *Libp2pNetwork) scanMissingBlocks(bs store.BlockStore) {
 	}
 
 	scanEnd := latest
-	if scanEnd-scanStart > MaxScanRange {
-		scanEnd = scanStart + MaxScanRange
+	if scanEnd-scanStart > MaxcheckpointScanBlocksRange {
+		scanEnd = scanStart + MaxcheckpointScanBlocksRange
 	}
 
 	logx.Info("NETWORK:SCAN", "Scanning for missing blocks from slot ", scanStart, " to ", scanEnd, " (range: ", scanEnd-scanStart+1, " slots)")
@@ -90,7 +90,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 		return
 	}
 
-	missingBatchSize := int(BatchSize)
+	missingBatchSize := int(SyncBlocksBatchSize)
 
 	batchCount := 0
 	for i := 0; i < len(missingSlots); i += missingBatchSize {

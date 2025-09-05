@@ -12,6 +12,7 @@ type NodeConfig struct {
 	Libp2pAddr         string   `yaml:"libp2p_addr"`
 	GRPCAddr           string   `yaml:"grpc_addr"`
 	BootStrapAddresses []string `yaml:"bootstrap_addresses"`
+	JoinAfterSync      bool     `yaml:"join_after_sync"` // If true, node joins network only after snapshot download and block sync
 }
 
 // LeaderSchedule represents a leader schedule entry
@@ -26,7 +27,7 @@ type Alloc struct {
 }
 
 type Address struct {
-	Address string      `yaml:"address"`
+	Address string       `yaml:"address"`
 	Amount  *uint256.Int `yaml:"amount"`
 }
 
@@ -36,12 +37,12 @@ type NativeCurrency struct {
 
 // GenesisConfig holds the configuration from genesis.yml
 type GenesisConfig struct {
-	LeaderSchedule  []LeaderSchedule `yaml:"leader_schedule"`
-	Alloc           Alloc            `yaml:"alloc"`
-	Poh             PohConfig        `yaml:"poh"`
-	Mempool         MempoolConfig    `yaml:"mempool"`
-	Validator       ValidatorConfig  `yaml:"validator"`
-	NativeCurrency  NativeCurrency   `yaml:"native_currency"`
+	LeaderSchedule []LeaderSchedule `yaml:"leader_schedule"`
+	Alloc          Alloc            `yaml:"alloc"`
+	Poh            PohConfig        `yaml:"poh"`
+	Mempool        MempoolConfig    `yaml:"mempool"`
+	Validator      ValidatorConfig  `yaml:"validator"`
+	NativeCurrency NativeCurrency   `yaml:"native_currency"`
 }
 
 // ConfigFile is the top-level structure for genesis.yml

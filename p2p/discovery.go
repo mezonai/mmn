@@ -16,7 +16,7 @@ import (
 func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrInfo) error {
 	ctx := context.Background()
 
-	logx.Info("NETWORK CONNECTED AND REQYEST NODE INFO TO JOIN", bootstrapPeer)
+	logx.Info("NETWORK CONNECTED AND REQUEST NODE INFO TO JOIN", bootstrapPeer)
 
 	if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
 		if err := ln.host.Connect(ctx, *info); err != nil {
@@ -73,12 +73,6 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		return 0, err
 	}
 
-	if ln.topicLatestSlot == nil {
-		errMsg := "latest slot topic is not initialized"
-		logx.Error("NETWORK:LATEST SLOT", errMsg)
-		return 0, fmt.Errorf(errMsg)
-	}
-
 	err = ln.topicLatestSlot.Publish(ctx, data)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to publish request:", err)
@@ -89,7 +83,7 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 }
 
 func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) error {
-	toSlot := fromSlot + BatchSize - 1
+	toSlot := fromSlot + SyncBlocksBatchSize - 1
 
 	requestID := GenerateSyncRequestID()
 
@@ -147,7 +141,6 @@ func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64
 	if err := ln.topicBlockSyncReq.Publish(ctx, data); err != nil {
 		return err
 	}
-	logx.Info("NETWORK:SYNC BLOCK", "Published single-slot sync request:", requestID, "slot", slot)
 	return nil
 }
 
@@ -156,7 +149,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 
 	localLatestSlot := ln.blockStore.GetLatestSlot()
 	if localLatestSlot > 0 {
-		fromSlot = localLatestSlot + BatchSize
+		fromSlot = localLatestSlot + SyncBlocksBatchSize
 		logx.Info("NETWORK:SYNC BLOCK", "Latest slot in store ", localLatestSlot, ",", " requesting sync from slot ", fromSlot)
 	}
 
@@ -164,7 +157,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 	if err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to get latest slot from peers, using local slot:", err)
 	} else if latestSlot > fromSlot {
-		fromSlot = latestSlot + BatchSize
+		fromSlot = latestSlot + SyncBlocksBatchSize
 	}
 
 	return ln.RequestBlockSync(ctx, fromSlot)
