@@ -9,6 +9,7 @@ import (
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/ratelimit"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/consensus"
@@ -23,6 +24,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -43,11 +45,12 @@ type server struct {
 	mempool       *mempool.Mempool
 	eventRouter   *events.EventRouter                    // Event router for complex event logic
 	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
+	rateLimiter   *ratelimit.GlobalRateLimiter           // Rate limiter for transaction submission protection
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -61,6 +64,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		mempool:       mempool,
 		eventRouter:   eventRouter,
 		txTracker:     txTracker,
+		rateLimiter:   rateLimiter,
 	}
 
 	grpcSrv := grpc.NewServer()
@@ -83,10 +87,28 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
+
+	// Extract client IP for rate limiting
+	clientIP := "unknown"
+	if p, ok := peer.FromContext(ctx); ok {
+		if addr, ok := p.Addr.(*net.TCPAddr); ok {
+			clientIP = addr.IP.String()
+		}
+	}
+
+	// Parse transaction to get sender for wallet-based rate limiting
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
 		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
+	}
+
+	// Apply rate limiting if rate limiter is configured
+	if s.rateLimiter != nil {
+		if !s.rateLimiter.AllowAll(clientIP, tx.Sender) {
+			logx.Warn("GRPC", fmt.Sprintf("Rate limit exceeded for IP: %s, Wallet: %s", clientIP, tx.Sender))
+			return &pb.AddTxResponse{Ok: false, Error: "rate limit exceeded"}, nil
+		}
 	}
 
 	// Generate server-side timestamp for security

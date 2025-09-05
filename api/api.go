@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/ratelimit"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 )
@@ -18,16 +20,18 @@ type TxReq struct {
 }
 
 type APIServer struct {
-	Mempool    *mempool.Mempool
-	Ledger     *ledger.Ledger
-	ListenAddr string
+	Mempool     *mempool.Mempool
+	Ledger      *ledger.Ledger
+	ListenAddr  string
+	RateLimiter *ratelimit.GlobalRateLimiter
 }
 
-func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIServer {
+func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string, rateLimiter *ratelimit.GlobalRateLimiter) *APIServer {
 	return &APIServer{
-		Mempool:    mp,
-		Ledger:     ledger,
-		ListenAddr: addr,
+		Mempool:     mp,
+		Ledger:      ledger,
+		ListenAddr:  addr,
+		RateLimiter: rateLimiter,
 	}
 }
 
@@ -51,6 +55,14 @@ func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
+	// Extract client IP for rate limiting
+	clientIP := "unknown"
+	if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		clientIP = ip
+	} else {
+		clientIP = r.RemoteAddr
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil || len(body) == 0 {
 		http.Error(w, "Empty body", http.StatusBadRequest)
@@ -67,6 +79,14 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Invalid tx", http.StatusBadRequest)
 		return
+	}
+
+	// Apply rate limiting if rate limiter is configured
+	if s.RateLimiter != nil {
+		if !s.RateLimiter.AllowAll(clientIP, tx.Sender) {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 	}
 
 	// Verify transaction signature
