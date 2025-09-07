@@ -818,7 +818,7 @@ describe('Token Transfer Tests', () => {
       const recipient3 = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Concurrent Transactions with Different Nonces');
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Concurrent txs (different nonces)');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender and create transactions with sequential nonces

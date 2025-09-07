@@ -156,7 +156,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       const fundingNonce = currentFaucetNonce + 1;
       
       console.log(`Funding sender ${sender.publicKeyHex.substring(0, 8)}... with nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 3000, 'Parallel Transfers Across 3 Nodes with Consensus Verification');
+      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 3000, 'Parallel 3-node transfers (consensus)');
       if (!fundResponse.ok) {
         console.warn('Funding failed, this might be due to mempool being full or nonce conflicts:', fundResponse.error);
         console.warn('Faucet current nonce:', currentFaucetNonce, 'Used nonce:', fundingNonce);
@@ -272,7 +272,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       const recipients = [generateTestAccount(), generateTestAccount(), generateTestAccount()];
 
       // Fund sender
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 2000, 'Concurrent Same-Sender Transactions to Different Nodes');
+      const fundResponse = await fundAccount(nodeClients[0].client, sender.publicKeyHex, 2000, 'Concurrent same-sender transfers');
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial funding consensus

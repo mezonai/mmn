@@ -200,6 +200,11 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return fmt.Errorf("zero amount not allowed")
 	}
 
+	// 2.1. Check memo length (max 64 characters)
+	if len(tx.TextData) > 64 {
+		return fmt.Errorf("memo too long: max 64 chars, got %d", len(tx.TextData))
+	}
+
 	// 3. Check sender account exists and get current state
 	if mp.ledger == nil {
 		return fmt.Errorf("ledger not available for validation")
