@@ -132,31 +132,10 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	txHash := tx.Hash()
-	account, err := mp.ledger.GetAccount(tx.Sender)
-	if err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("could not get account: %v", err))
-		return // Handle error appropriately based on context
-	}
-	currentNonce := account.Nonce
-	isReady := tx.Nonce == currentNonce+1
-
-	if isReady {
-		// Add to ready queue for immediate processing
-		mp.readyQueue = append(mp.readyQueue, tx)
-		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
-	} else {
-		// Add to pending transactions
-		if mp.pendingTxs[tx.Sender] == nil {
-			mp.pendingTxs[tx.Sender] = make(map[uint64]*PendingTransaction)
-		}
-		mp.pendingTxs[tx.Sender][tx.Nonce] = &PendingTransaction{
-			Tx:        tx,
-			Timestamp: time.Now(),
-		}
-		logx.Info("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
-	}
+	// With strict sequential nonce enforcement, any accepted tx is ready
+	mp.readyQueue = append(mp.readyQueue, tx)
+	logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d)",
+		txHash, tx.Sender[:8], tx.Nonce))
 }
 
 func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
@@ -218,36 +197,14 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}
 
-	// 4. Enhanced nonce validation for zero-fee blockchain
-	// Get current nonce (use cached value if available, otherwise from ledger)
+	// 4. Strict sequential nonce: only accept exactly current+1
 	currentNonce := senderAccount.Nonce
-
-	// Reject old transactions (nonce too low)
-	if tx.Nonce <= currentNonce {
-		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
+	expectedNonce := currentNonce + 1
+	if tx.Nonce != expectedNonce {
+		return fmt.Errorf("nonce must be sequential: expected %d, got %d", expectedNonce, tx.Nonce)
 	}
 
-	// Prevent spam with reasonable future nonce limit
-	if tx.Nonce > currentNonce+MaxFutureNonce {
-		return fmt.Errorf("nonce too high: max allowed %d, got %d",
-			currentNonce+MaxFutureNonce, tx.Nonce)
-	}
-
-	// 6. Check pending transaction limits per sender
-	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
-		if len(pendingNonces) >= MaxPendingPerSender {
-			return fmt.Errorf("too many pending transactions for sender %s: max %d",
-				tx.Sender[:8], MaxPendingPerSender)
-		}
-
-		// 7. Check for duplicate nonce in pending transactions
-		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
-			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions",
-				tx.Nonce, tx.Sender[:8])
-		}
-	}
-
-	// 8. Check for duplicate nonce in ready queue
+	// 5. Check for duplicate nonce in ready queue
 	for _, readyTx := range mp.readyQueue {
 		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
 			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
@@ -255,7 +212,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		}
 	}
 
-	// 9. Validate balance accounting for existing pending/ready transactions
+	// 6. Validate balance accounting for existing ready transactions
 	if err := mp.validateBalance(tx); err != nil {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
 		return err

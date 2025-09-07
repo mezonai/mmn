@@ -423,7 +423,7 @@ describe('Token Transfer Tests', () => {
       // Try to send the same transaction again (same nonce)
       const duplicateResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(duplicateResponse.ok).toBe(false);
-      expect(duplicateResponse.error).toContain('nonce too low');
+      expect(duplicateResponse.error?.toLowerCase()).toContain('nonce');
 
       // Verify balances remain unchanged after duplicate attempt
       const senderBalanceFinal = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -786,12 +786,9 @@ describe('Token Transfer Tests', () => {
 
       await waitForTransaction(2000);
 
-      // Past nonce should definitely fail
+      // Past and future nonces should fail under strict rule
       expect(pastResponse.ok).toBe(false);
-      // Now check exactly nonce, no pending logic in blockchain. Todo: add pending logic in blockchain.
-      expect(futureResponse.ok).toBe(true);
-      // Todo: futureResponse should be failed
-      // for now send trans success but fail to apply to blockstore
+      expect(futureResponse.ok).toBe(false);
 
       // Future nonce may be queued or rejected depending on implementation
       console.log('Nonce manipulation results:', {
@@ -857,7 +854,7 @@ describe('Token Transfer Tests', () => {
       const recipient2Balance = await getAccountBalance(grpcClient, recipient2.publicKeyHex);
       const recipient3Balance = await getAccountBalance(grpcClient, recipient3.publicKeyHex);
 
-      // SECURITY VALIDATION: Check which transactions succeeded
+      // SECURITY VALIDATION: With strict nonce, only the first should succeed
       const successfulTxs = [response1.ok, response2.ok, response3.ok].filter(Boolean).length;
 
       // Calculate expected balances based on successful transactions
@@ -879,8 +876,8 @@ describe('Token Transfer Tests', () => {
         expectedRecipient3 = 300;
       }
 
-      // seq trans only one tx should success
-      expect(successfulTxs).toBe(3);
+      // Only one transaction should succeed (the first with correct nonce)
+      expect(successfulTxs).toBe(1);
       // Verify actual balances match expectations
       expect(senderBalance).toBe(expectedSenderBalance);
       expect(recipient1Balance).toBe(expectedRecipient1);
@@ -931,17 +928,16 @@ describe('Token Transfer Tests', () => {
 
       // SECURITY VALIDATION: Valid nonce should succeed
       await transactionTracker.waitForTerminalStatus(validResponse.tx_hash!);
-      await transactionTracker.waitForTerminalStatus(validResponse2.tx_hash!);
+      // Under strict nonce, the second tx with future nonce should not succeed
 
       // Future nonce may be queued or rejected depending on system implementation
       // The key security property is that balances remain consistent
       const senderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
       const recipientBalance = await getAccountBalance(grpcClient, recipient.publicKeyHex);
 
-      // If future nonce was queued and processed, both transactions succeeded
-      expect(senderBalance).toBe(800); // 1000 - 200 (both transactions)
-      expect(recipientBalance).toBe(200);
-      console.log('Future nonce transaction was queued and processed');
+      // Only first transaction processed
+      expect(senderBalance).toBe(900);
+      expect(recipientBalance).toBe(100);
 
       console.log('Nonce sequence validation results:', {
         validTxSuccess: validResponse.ok,
