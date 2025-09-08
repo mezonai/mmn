@@ -11,12 +11,13 @@ services:
     command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
     ports:
       - "9000:9000"
+    volumes:
+      - logs_data:/app/logs
+    environment:
+      - LOG_FILE=mmn-bootnode.log
     networks:
       - mezon
     restart: unless-stopped
-    labels:
-      - "promtail.scrape=true"
-      - "promtail.job=mmn"
 
   node1:
     image: mmn-node:${DB_VENDOR:-rocksdb}
@@ -34,12 +35,12 @@ services:
       - "9001:9001"
     volumes:
       - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOG_FILE=mmn-node1.log
     networks:
       - mezon
     restart: unless-stopped
-    labels:
-      - "promtail.scrape=true"
-      - "promtail.job=mmn"
 
   node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
@@ -57,12 +58,12 @@ services:
       - "9002:9002"
     volumes:
       - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOG_FILE=mmn-node2.log
     networks:
       - mezon
     restart: unless-stopped
-    labels:
-      - "promtail.scrape=true"
-      - "promtail.job=mmn"
 
   node3:
     image: mmn-node:${DB_VENDOR:-rocksdb}
@@ -80,12 +81,12 @@ services:
       - "9003:9003"
     volumes:
       - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOG_FILE=mmn-node3.log
     networks:
       - mezon
     restart: unless-stopped
-    labels:
-      - "promtail.scrape=true"
-      - "promtail.job=mmn"
 
   loki:
     image: grafana/loki:2.9.4
@@ -105,9 +106,8 @@ services:
     container_name: promtail
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
-      - ./mmn.log:/var/log/mmn/mmn.log:ro
+      - logs_data:/var/log/mmn:ro
     depends_on:
       - loki
     networks:
@@ -137,3 +137,4 @@ volumes:
   node_data:
   loki_data:
   grafana_data:
+  logs_data:

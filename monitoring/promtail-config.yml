@@ -9,9 +9,9 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  - job_name: test
+  - job_name: mmn
     static_configs:
       - targets: [localhost]
         labels:
-          job: test
-          __path__: /var/log/mmn/mmn.log
+          job: mmn
+          __path__: /var/log/mmn/*.log

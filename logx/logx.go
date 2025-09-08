@@ -2,8 +2,10 @@ package logx
 
 import (
 	"fmt"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"log"
+	"os"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -16,7 +18,7 @@ const (
 
 var (
 	lumberjackLogger = &lumberjack.Logger{
-		Filename: "./mmn.log",
+		Filename: getLogFilename(),
 		MaxSize:  500, // megabytes
 		MaxAge:   7,   // days
 		Compress: true,
@@ -24,6 +26,13 @@ var (
 
 	logger = log.New(lumberjackLogger, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 )
+
+func getLogFilename() string {
+	if logFile := os.Getenv("LOG_FILE"); logFile != "" {
+		return "./logs/" + logFile
+	}
+	return "./logs/mmn.log"
+}
 
 func Info(category string, content ...interface{}) {
 	message := fmt.Sprint(content...)
