@@ -21,7 +21,6 @@ var (
 		Filename: getLogFilename(),
 		MaxSize:  500, // megabytes
 		MaxAge:   7,   // days
-		Compress: true,
 	}
 
 	logger = log.New(lumberjackLogger, "", log.Ldate|log.Ltime|log.Lmicroseconds)
