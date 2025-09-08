@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mezonai/mmn/abuse"
 	"github.com/mezonai/mmn/api"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
@@ -354,6 +355,10 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	rateLimiter := ratelimit.NewGlobalRateLimiter(rateLimiterConfig)
 	defer rateLimiter.Stop()
 
+	// Create abuse detector for tracking and flagging
+	abuseConfig := abuse.DefaultAbuseConfig()
+	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
+
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
 		nodeConfig.GRPCAddr,
@@ -369,6 +374,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		eventRouter,
 		txTracker,
 		rateLimiter,
+		abuseDetector,
 	)
 	_ = grpcSrv // Keep server running
 

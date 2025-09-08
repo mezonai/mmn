@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/mezonai/mmn/abuse"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/ratelimit"
@@ -46,11 +47,12 @@ type server struct {
 	eventRouter   *events.EventRouter                    // Event router for complex event logic
 	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
 	rateLimiter   *ratelimit.GlobalRateLimiter           // Rate limiter for transaction submission protection
+	abuseDetector *abuse.AbuseDetector                   // Abuse detection and flagging system
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, abuseDetector *abuse.AbuseDetector) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -65,6 +67,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		eventRouter:   eventRouter,
 		txTracker:     txTracker,
 		rateLimiter:   rateLimiter,
+		abuseDetector: abuseDetector,
 	}
 
 	grpcSrv := grpc.NewServer()
@@ -108,6 +111,14 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 		if !s.rateLimiter.AllowAll(clientIP, tx.Sender) {
 			logx.Warn("GRPC", fmt.Sprintf("Rate limit exceeded for IP: %s, Wallet: %s", clientIP, tx.Sender))
 			return &pb.AddTxResponse{Ok: false, Error: "rate limit exceeded"}, nil
+		}
+	}
+
+	// Apply abuse detection if configured
+	if s.abuseDetector != nil {
+		if err := s.abuseDetector.CheckTransactionRate(clientIP, tx.Sender); err != nil {
+			logx.Warn("GRPC", fmt.Sprintf("Abuse detection blocked transaction: %v", err))
+			return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 		}
 	}
 
