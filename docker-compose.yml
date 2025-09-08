@@ -89,7 +89,7 @@ services:
     restart: unless-stopped
 
   loki:
-    image: grafana/loki:2.9.4
+    image: grafana/loki:3.5.0
     container_name: loki
     command: ["-config.file=/etc/loki/config.yml"]
     ports:
@@ -102,7 +102,7 @@ services:
     restart: unless-stopped
 
   promtail:
-    image: grafana/promtail:2.9.4
+    image: grafana/promtail:3.5.0
     container_name: promtail
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
@@ -115,10 +115,10 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:10.4.2
+    image: grafana/grafana:11.6.5
     container_name: grafana
     environment:
-      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app
     ports:
       - "3000:3000"
     volumes:
