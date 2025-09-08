@@ -15,3 +15,8 @@ scrape_configs:
         labels:
           job: mmn
           __path__: /var/log/mmn/*.log
+    pipeline_stages:
+      - regex:
+          expression: '\[(?P<level>[A-Z]+)\]'
+      - labels:
+          level:

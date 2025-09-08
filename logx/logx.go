@@ -35,7 +35,7 @@ func getLogFilename() string {
 
 func Info(category string, content ...interface{}) {
 	message := fmt.Sprint(content...)
-	coloredCategory := fmt.Sprintf("%s[%s]%s", ColorGreen, category, ColorReset)
+	coloredCategory := fmt.Sprintf("%s[INFO][%s]%s", ColorGreen, category, ColorReset)
 	logger.Printf("%s: %s", coloredCategory, message)
 }
 
