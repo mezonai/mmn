@@ -29,16 +29,16 @@ type APIServer struct {
 	// Transaction submission protection
 	RateLimiter *ratelimit.GlobalRateLimiter
 	// Faucet protection
-	FaucetIPLimiter     *simpleRateLimiter
-	FaucetWalletLimiter *simpleRateLimiter
+	FaucetIPLimiter     *rateLimiter
+	FaucetWalletLimiter *rateLimiter
 	BlacklistedIPs      map[string]struct{}
 }
 
 func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string, rateLimiter *ratelimit.GlobalRateLimiter) *APIServer {
 	// Faucet: per wallet cooldown 1 request / 5 minutes
-	walletLimiter := newSimpleRateLimiter(1, 5*time.Minute)
+	walletLimiter := newRateLimiter(1, 5*time.Minute)
 	// Faucet: per IP cooldown 10 requests / hour
-	ipLimiter := newSimpleRateLimiter(10, time.Hour)
+	ipLimiter := newRateLimiter(10, time.Hour)
 
 	return &APIServer{
 		Mempool:             mp,
@@ -227,18 +227,18 @@ func (s *APIServer) handleFaucet(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-type simpleRateLimiter struct {
+type rateLimiter struct {
 	max     int
 	window  time.Duration
 	mu      sync.Mutex
 	entries map[string][]time.Time
 }
 
-func newSimpleRateLimiter(max int, window time.Duration) *simpleRateLimiter {
-	return &simpleRateLimiter{max: max, window: window, entries: make(map[string][]time.Time)}
+func newRateLimiter(max int, window time.Duration) *rateLimiter {
+	return &rateLimiter{max: max, window: window, entries: make(map[string][]time.Time)}
 }
 
-func (l *simpleRateLimiter) Allow(key string) bool {
+func (l *rateLimiter) Allow(key string) bool {
 	now := time.Now()
 	cutoff := now.Add(-l.window)
 	l.mu.Lock()
