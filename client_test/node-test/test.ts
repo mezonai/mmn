@@ -35,6 +35,7 @@ function generateTestAccounts(count: number) {
 }
 
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
+const HTTP_API_BASE = 'http://127.0.0.1:8001';
 
 interface Tx {
   type: number;
@@ -119,7 +120,7 @@ class TestSuite {
   private testResults: Map<string, boolean> = new Map();
 
   constructor() {
-    this.grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
+    this.grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, false, HTTP_API_BASE);
   }
 
   private logTest(name: string, success: boolean, details?: string) {
