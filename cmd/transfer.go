@@ -77,7 +77,7 @@ func transferToken(transferConfig TransferConfig) error {
 		return fmt.Errorf("failed to load sender private key: %w", err)
 	}
 
-	// Convert private key string to ed25519 private key and get faucet address
+	// Convert private key string to ed25519 private key and get sender address
 	senderAddress, senderPrivateKey, err := parsePrivateKey(privKeyStr)
 	if err != nil {
 		return fmt.Errorf("failed to parse private key: %w", err)

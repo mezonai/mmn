@@ -85,14 +85,14 @@ go build -o bin/mmn ./cmd
 ./mmn bootnode --bootstrap-p2p-port 9000
 
 
-# Perform transfer from faucet with CLI command
+# Perform transfer with CLI command
 - Build executable mmn
   ```
   go build -o mmn .
   ```
-- Then execute command to perform transfer from faucet to wallet
+- Then execute command to perform transfer to a wallet
   ```
-  ./mmn transfer [-u <node-url>] [-t <recipient-addr>] [-a <amount>] [-p <faucet-private-key>] [-f <faucet-private-key-file>] [-v]
+  ./mmn transfer [-u <node-url>] [-t <recipient-addr>] [-a <amount>] [-p <sender-private-key>] [-f <sender-private-key-file>] [-v]
   ```
   For example:
   ```
