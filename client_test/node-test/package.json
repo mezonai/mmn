@@ -2,7 +2,7 @@
   "name": "sdk",
   "version": "1.0.0",
   "scripts": {
-    "test": "jest",
+    "test": "jest token_transfer_test.test.ts",
     "generate-types": "sh ./generate-types.sh"
   },
   "author": "",
