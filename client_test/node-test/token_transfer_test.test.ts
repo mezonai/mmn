@@ -423,7 +423,7 @@ describe('Token Transfer Tests', () => {
       // Try to send the same transaction again (same nonce)
       const duplicateResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(duplicateResponse.ok).toBe(false);
-      expect(duplicateResponse.error).toContain('nonce too low');
+       expect(duplicateResponse.error).toContain('nonce too low');
 
       // Verify balances remain unchanged after duplicate attempt
       const senderBalanceFinal = await getAccountBalance(grpcClient, sender.publicKeyHex);
@@ -818,7 +818,7 @@ describe('Token Transfer Tests', () => {
       const recipient3 = generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Concurrent Transactions with Different Nonces');
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Concurrent txs (different nonces)');
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender and create transactions with sequential nonces
