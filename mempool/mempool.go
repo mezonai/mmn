@@ -2,6 +2,7 @@ package mempool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -132,10 +133,31 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	txHash := tx.Hash()
-	// With strict sequential nonce enforcement, any accepted tx is ready
-	mp.readyQueue = append(mp.readyQueue, tx)
-	logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d)",
-		txHash, tx.Sender[:8], tx.Nonce))
+	account, err := mp.ledger.GetAccount(tx.Sender)
+	if err != nil {
+		logx.Error("MEMPOOL", fmt.Sprintf("could not get account: %v", err))
+		return // Handle error appropriately based on context
+	}
+	currentNonce := account.Nonce
+	isReady := tx.Nonce == currentNonce+1
+
+	if isReady {
+		// Add to ready queue for immediate processing
+		mp.readyQueue = append(mp.readyQueue, tx)
+		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
+			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
+	} else {
+		// Add to pending transactions
+		if mp.pendingTxs[tx.Sender] == nil {
+			mp.pendingTxs[tx.Sender] = make(map[uint64]*PendingTransaction)
+		}
+		mp.pendingTxs[tx.Sender][tx.Nonce] = &PendingTransaction{
+			Tx:        tx,
+			Timestamp: time.Now(),
+		}
+		logx.Info("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
+			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
+	}
 }
 
 func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
@@ -197,14 +219,49 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}
 
-	// 4. Strict sequential nonce: only accept exactly current+1
+	// 4. Enhanced nonce validation for zero-fee blockchain
+	// Get current nonce (use cached value if available, otherwise from ledger)
 	currentNonce := senderAccount.Nonce
-	expectedNonce := currentNonce + 1
-	if tx.Nonce != expectedNonce {
-		return fmt.Errorf("nonce must be sequential: expected %d, got %d", expectedNonce, tx.Nonce)
+
+	// Reject old transactions (nonce too low)
+	if tx.Nonce <= currentNonce {
+		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
 	}
 
-	// 5. Check for duplicate nonce in ready queue
+	// Prevent spam with reasonable future nonce limit
+	if tx.Nonce > currentNonce+MaxFutureNonce {
+		return fmt.Errorf("nonce too high: max allowed %d, got %d",
+			currentNonce+MaxFutureNonce, tx.Nonce)
+	}
+
+	// 6. Check for duplicate nonce in ALL existing transactions first
+	// This is the most important check - prevent any duplicate nonce regardless of state
+	for _, existingTxBytes := range mp.txsBuf {
+		var existingTx transaction.Transaction
+		if err := json.Unmarshal(existingTxBytes, &existingTx); err != nil {
+			continue // Skip invalid transactions
+		}
+		if existingTx.Sender == tx.Sender && existingTx.Nonce == tx.Nonce {
+			return fmt.Errorf("duplicate nonce %d for sender %s already exists in mempool",
+				tx.Nonce, tx.Sender[:8])
+		}
+	}
+
+	// 7. Check pending transaction limits per sender
+	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
+		if len(pendingNonces) >= MaxPendingPerSender {
+			return fmt.Errorf("too many pending transactions for sender %s: max %d",
+				tx.Sender[:8], MaxPendingPerSender)
+		}
+
+		// 8. Check for duplicate nonce in pending transactions (redundant but safe)
+		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
+			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions",
+				tx.Nonce, tx.Sender[:8])
+		}
+	}
+
+	// 9. Check for duplicate nonce in ready queue (redundant but safe)
 	for _, readyTx := range mp.readyQueue {
 		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
 			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
@@ -212,7 +269,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		}
 	}
 
-	// 6. Validate balance accounting for existing ready transactions
+	// 9. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
 		return err
@@ -389,6 +446,7 @@ func (mp *Mempool) cleanupStaleTransactions() {
 	now := time.Now()
 	staleThreshold := now.Add(-StaleTimeout)
 
+	// Clean up stale pending transactions
 	for sender, pendingMap := range mp.pendingTxs {
 		for nonce, pendingTx := range pendingMap {
 			if pendingTx.Timestamp.Before(staleThreshold) {
@@ -403,6 +461,20 @@ func (mp *Mempool) cleanupStaleTransactions() {
 			delete(mp.pendingTxs, sender)
 		}
 	}
+
+	// Clean up stale ready queue transactions
+	newReadyQueue := make([]*transaction.Transaction, 0, len(mp.readyQueue))
+	for _, tx := range mp.readyQueue {
+		// Check if transaction is too old (using a shorter timeout for ready queue)
+		if now.Sub(time.Unix(int64(tx.Timestamp)/1000, 0)) < StaleTimeout {
+			newReadyQueue = append(newReadyQueue, tx)
+		} else {
+			mp.removeTransaction(tx)
+			logx.Info("MEMPOOL", fmt.Sprintf("Removed stale ready transaction (sender: %s, nonce: %d)",
+				tx.Sender[:8], tx.Nonce))
+		}
+	}
+	mp.readyQueue = newReadyQueue
 }
 
 func (mp *Mempool) BlockCleanup(block *block.Block) {
@@ -456,18 +528,17 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 	logx.Info("BlockCleanup completed", "removed_transactions", removedCount, "block_slot", block.Slot)
 }
 
-// This should be called periodically by the node to maintain mempool health
+// PeriodicCleanup should be called periodically by the node to maintain mempool health
 func (mp *Mempool) PeriodicCleanup() {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
-	fmt.Println("Starting periodic mempool cleanup...")
+	logx.Info("MEMPOOL", "Starting periodic mempool cleanup...")
 
 	// Clean up stale transactions
 	mp.cleanupStaleTransactions()
 
 	// Promote any newly ready transactions
-	// Clean up any outdated transactions and promote ready ones
 	mp.cleanupOutdatedTransactions()
 
 	// Log current mempool state
@@ -476,8 +547,8 @@ func (mp *Mempool) PeriodicCleanup() {
 		totalPending += len(pendingMap)
 	}
 
-	fmt.Printf("Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
-		len(mp.readyQueue), totalPending, len(mp.txsBuf))
+	logx.Info("MEMPOOL", fmt.Sprintf("Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d",
+		len(mp.readyQueue), totalPending, len(mp.txsBuf)))
 }
 
 func (mp *Mempool) cleanupOutdatedTransactions() {
