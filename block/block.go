@@ -103,7 +103,7 @@ func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
 }
 
 func (b *BroadcastedBlock) VerifyPoH() error {
-	return poh.VerifyEntries(b.PrevHash, b.Entries)
+	return poh.VerifyEntries(b.PrevHash, b.Entries, b.Slot)
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {
