@@ -8,6 +8,7 @@ import (
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/store"
@@ -26,13 +27,17 @@ func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, t
 }
 
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
+	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
+		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
-	// align with grpc: server-side timestamp
+
+	// Generate server-side timestamp for security
+	// Todo: remove from input and update client
 	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
-	// add
+
 	txHash, err := s.mempool.AddTx(tx, true)
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
@@ -46,62 +51,122 @@ func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashReque
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
+
+	txInfo := &pb.TxInfo{
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    amount,
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+		Slot:      txMeta.Slot,
+		Blockhash: txMeta.BlockHash,
+		Status:    txMeta.Status,
+		ErrMsg:    txMeta.Error,
+		ExtraInfo: tx.ExtraInfo,
+	}
 	return &pb.GetTxByHashResponse{
-		Tx: &pb.TxInfo{
-			Sender:    tx.Sender,
-			Recipient: tx.Recipient,
-			Amount:    amount,
-			Timestamp: tx.Timestamp,
-			TextData:  tx.TextData,
-			Nonce:     tx.Nonce,
-			Slot:      txMeta.Slot,
-			Blockhash: txMeta.BlockHash,
-			Status:    txMeta.Status,
-			ErrMsg:    txMeta.Error,
-			ExtraInfo: tx.ExtraInfo,
-		},
+		Tx:       txInfo,
 		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
 }
 
 func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
 	txHash := in.TxHash
+
+	// 1) Check mempool
 	if s.mempool != nil {
 		if data, ok := s.mempool.GetTransaction(txHash); ok {
 			tx, err := utils.ParseTx(data)
 			if err == nil && tx.Hash() == txHash {
-				return &pb.TransactionStatusInfo{TxHash: txHash, Status: pb.TransactionStatus_PENDING, Confirmations: 0, Timestamp: uint64(time.Now().Unix()), ExtraInfo: tx.ExtraInfo}, nil
+				return &pb.TransactionStatusInfo{
+					TxHash:        txHash,
+					Status:        pb.TransactionStatus_PENDING,
+					Confirmations: 0, // No confirmations for mempool transactions
+					Timestamp:     uint64(time.Now().Unix()),
+					ExtraInfo:     tx.ExtraInfo,
+					Amount:        utils.Uint256ToString(tx.Amount),
+					TextData:      tx.TextData,
+				}, nil
 			}
 		}
 	}
+
+	// 2) Search in stored blocks
 	if s.blockStore != nil {
 		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
 		if found {
 			confirmations := s.blockStore.GetConfirmations(slot)
 			status := pb.TransactionStatus_CONFIRMED
-			if confirmations > 1 { status = pb.TransactionStatus_FINALIZED }
+			if confirmations > 1 {
+				status = pb.TransactionStatus_FINALIZED
+			}
 			tx, _, err := s.ledger.GetTxByHash(txHash)
-			if err != nil { return nil, err }
-			return &pb.TransactionStatusInfo{TxHash: txHash, Status: status, BlockSlot: slot, BlockHash: blk.HashString(), Confirmations: confirmations, Timestamp: uint64(time.Now().Unix()), ExtraInfo: tx.ExtraInfo}, nil
+			if err != nil {
+				return nil, err
+			}
+			return &pb.TransactionStatusInfo{
+				TxHash:        txHash,
+				Status:        status,
+				BlockSlot:     slot,
+				BlockHash:     blk.HashString(),
+				Confirmations: confirmations,
+				Timestamp:     uint64(time.Now().Unix()),
+				ExtraInfo:     tx.ExtraInfo,
+				Amount:        utils.Uint256ToString(tx.Amount),
+				TextData:      tx.TextData,
+			}, nil
 		}
 	}
+
+	// 3) Transaction not found anywhere -> return nil and error
 	return nil, fmt.Errorf("transaction not found: %s", txHash)
 }
 
 func (s *TxServiceImpl) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
 	if s.mempool == nil {
-		return &pb.GetPendingTransactionsResponse{TotalCount: 0, PendingTxs: []*pb.TransactionData{}, Error: "mempool not available"}, nil
+		return &pb.GetPendingTransactionsResponse{
+			TotalCount: 0,
+			PendingTxs: []*pb.TransactionData{},
+			Error:      "mempool not available",
+		}, nil
 	}
-	ordered := s.mempool.GetOrderedTransactions()
-	var out []*pb.TransactionData
-	for _, h := range ordered {
-		if data, ok := s.mempool.GetTransaction(h); ok {
-			tx, err := utils.ParseTx(data)
-			if err != nil { continue }
-			out = append(out, &pb.TransactionData{TxHash: h, Sender: tx.Sender, Recipient: tx.Recipient, Amount: utils.Uint256ToString(tx.Amount), Nonce: tx.Nonce, Timestamp: tx.Timestamp, Status: pb.TransactionStatus_PENDING, TextData: tx.TextData})
+
+	// Get all ordered transaction hashes from mempool
+	orderedTxHashes := s.mempool.GetOrderedTransactions()
+	totalCount := uint64(len(orderedTxHashes))
+
+	// Convert transaction hashes to detailed transaction info
+	var pendingTxs []*pb.TransactionData
+	for _, txHash := range orderedTxHashes {
+		// Get transaction data from mempool
+		txData, exists := s.mempool.GetTransaction(txHash)
+		if !exists {
+			continue // Skip if transaction not found
 		}
+
+		// Parse transaction to get details
+		tx, err := utils.ParseTx(txData)
+		if err != nil {
+			continue // Skip if parsing fails
+		}
+		// Create pending transaction info
+		pendingTx := &pb.TransactionData{
+			TxHash:    txHash,
+			Sender:    tx.Sender,
+			Recipient: tx.Recipient,
+			Amount:    utils.Uint256ToString(tx.Amount),
+			Nonce:     tx.Nonce,
+			Timestamp: tx.Timestamp,
+			Status:    pb.TransactionStatus_PENDING,
+		}
+
+		pendingTxs = append(pendingTxs, pendingTx)
 	}
-	return &pb.GetPendingTransactionsResponse{TotalCount: uint64(len(ordered)), PendingTxs: out}, nil
+
+	return &pb.GetPendingTransactionsResponse{
+		TotalCount: totalCount,
+		PendingTxs: pendingTxs,
+		Error:      "",
+	}, nil
 }
-
-

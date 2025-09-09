@@ -140,7 +140,8 @@ waitLoop:
 
 func (v *Validator) onLeaderSlotEnd() {
 	logx.Info("LEADER", "onLeaderSlotEnd")
-	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+	// TODO: temporary fix bug race condition
+	// v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.leaderStartAtSlot = NoSlot
 }
 
@@ -190,16 +191,12 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		blk.Sign(v.PrivKey)
 		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
-		// Persist then broadcast
-		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+		// Reset buffer
+		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
-			return
 		}
-
-		// Reset buffer
-		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	} else if v.IsLeader(currentSlot) {
 		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)

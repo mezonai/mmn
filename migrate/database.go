@@ -48,11 +48,11 @@ func ConnectDatabase(databaseURL string) (*sql.DB, error) {
 // CreateUserKeysTable creates the mmn_user_keys table if it doesn't exist
 func CreateUserKeysTable(db *sql.DB) error {
 	// Drop existing table to ensure schema is up to date
-	dropTableSQL := `DROP TABLE IF EXISTS mmn_user_keys;`
-	_, err := db.Exec(dropTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to drop existing mmn_user_keys table: %v", err)
-	}
+	// dropTableSQL := `DROP TABLE IF EXISTS mmn_user_keys;`
+	// _, err := db.Exec(dropTableSQL)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to drop existing mmn_user_keys table: %v", err)
+	// }
 
 	createTableSQL := `
 	CREATE TABLE IF NOT EXISTS mmn_user_keys (
@@ -64,7 +64,7 @@ func CreateUserKeysTable(db *sql.DB) error {
 	);
 	`
 
-	_, err = db.Exec(createTableSQL)
+	_, err := db.Exec(createTableSQL)
 	if err != nil {
 		return fmt.Errorf("failed to create mmn_user_keys table: %v", err)
 	}
@@ -75,7 +75,7 @@ func CreateUserKeysTable(db *sql.DB) error {
 
 // GetUsers retrieves all users from the users table
 func GetUsers(db *sql.DB) ([]map[string]interface{}, error) {
-	rows, err := db.Query("SELECT id, name, wallet FROM users ORDER BY id")
+	rows, err := db.Query("SELECT id, username, wallet FROM users ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query users: %v", err)
 	}
@@ -84,14 +84,14 @@ func GetUsers(db *sql.DB) ([]map[string]interface{}, error) {
 	var users []map[string]interface{}
 	for rows.Next() {
 		var id int
-		var name string
-		var wallet uint64
-		if err := rows.Scan(&id, &name, &wallet); err != nil {
+		var username string
+		var wallet int64
+		if err := rows.Scan(&id, &username, &wallet); err != nil {
 			return nil, fmt.Errorf("failed to scan user row: %v", err)
 		}
 		users = append(users, map[string]interface{}{
 			"id":      id,
-			"name":    name,
+			"name":    username,
 			"balance": wallet,
 		})
 	}
@@ -117,4 +117,27 @@ func CountExistingWallets(db *sql.DB) (int, error) {
 		return 0, fmt.Errorf("failed to count existing wallets: %v", err)
 	}
 	return count, nil
+}
+
+// GetUserWalletAddress gets the wallet address for a user
+func GetUserWalletAddress(db *sql.DB, userID int) (string, error) {
+	var address string
+	err := db.QueryRow("SELECT address FROM mmn_user_keys WHERE user_id = $1", userID).Scan(&address)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // No wallet exists
+		}
+		return "", fmt.Errorf("failed to get wallet address: %v", err)
+	}
+	return address, nil
+}
+
+// GetTotalUsersWallet calculates the total wallet balance of all users
+func GetTotalUsersWallet(db *sql.DB) (int64, error) {
+	var total int64
+	err := db.QueryRow("SELECT COALESCE(SUM(wallet), 0) FROM users").Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate total users wallet: %v", err)
+	}
+	return total, nil
 }

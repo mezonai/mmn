@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/utils"
@@ -28,12 +30,25 @@ func (s *AccountServiceImpl) GetAccount(ctx context.Context, in *pb.GetAccountRe
 	addr := in.Address
 	acc, err := s.ledger.GetAccount(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
 	}
 	if acc == nil {
-		return &pb.GetAccountResponse{Address: addr, Balance: "0", Nonce: 0, Decimals: uint32(config.GetDecimalsFactor())}, nil
+		return &pb.GetAccountResponse{
+			Address:  addr,
+			Balance:  "0",
+			Nonce:    0,
+			Decimals: uint32(config.GetDecimalsFactor()),
+		}, nil
 	}
-	return &pb.GetAccountResponse{Address: addr, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce, Decimals: uint32(config.GetDecimalsFactor())}, nil
+	balance := utils.Uint256ToString(acc.Balance)
+	logx.Info("GRPC", fmt.Sprintf("GetAccount response for address: %s, nonce: %d, balance: %s", addr, acc.Nonce, balance))
+
+	return &pb.GetAccountResponse{
+		Address:  addr,
+		Balance:  balance,
+		Nonce:    acc.Nonce,
+		Decimals: uint32(config.GetDecimalsFactor()),
+	}, nil
 }
 
 func (s *AccountServiceImpl) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
@@ -50,29 +65,70 @@ func (s *AccountServiceImpl) GetTxHistory(ctx context.Context, in *pb.GetTxHisto
 func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
 	addr := in.Address
 	tag := in.Tag
+	logx.Info("GRPC", fmt.Sprintf("GetCurrentNonce request for address: %s, tag: %s", addr, tag))
+
+	// Validate tag parameter
 	if tag != "latest" && tag != "pending" {
-		return &pb.GetCurrentNonceResponse{Error: "invalid tag: must be 'latest' or 'pending'"}, nil
+		return &pb.GetCurrentNonceResponse{
+			Error: "invalid tag: must be 'latest' or 'pending'",
+		}, nil
 	}
+
+	// Get account from ledger
+	// TODO: verify this segment
 	acc, err := s.ledger.GetAccount(addr)
 	if err != nil {
-		return &pb.GetCurrentNonceResponse{Address: addr, Nonce: 0, Tag: tag, Error: err.Error()}, nil
+		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
+		return &pb.GetCurrentNonceResponse{
+			Address: addr,
+			Nonce:   0,
+			Tag:     tag,
+			Error:   err.Error(),
+		}, nil
 	}
 	if acc == nil {
-		return &pb.GetCurrentNonceResponse{Address: addr, Nonce: 0, Tag: tag}, nil
+		logx.Warn("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
+		return &pb.GetCurrentNonceResponse{
+			Address: addr,
+			Nonce:   0,
+			Tag:     tag,
+		}, nil
 	}
-	current := acc.Nonce
-	if tag == "pending" {
+
+	var currentNonce uint64
+
+	if tag == "latest" {
+		// For "latest", return the current nonce from the most recent mined block
+		currentNonce = acc.Nonce
+		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
+	} else { // tag == "pending"
+		// For "pending", return the largest nonce among pending transactions, processing transactions, or current ledger nonce
 		ledgerNonce := acc.Nonce
-		pendingNonce := s.mempool.GetLargestPendingNonce(addr)
-		var processing uint64
+		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
+
+		var largestProcessingNonce uint64
 		if s.tracker != nil {
-			processing = s.tracker.GetLargestProcessingNonce(addr)
+			largestProcessingNonce = s.tracker.GetLargestProcessingNonce(addr)
 		}
-		current = ledgerNonce
-		if pendingNonce > current { current = pendingNonce }
-		if processing > current { current = processing }
+
+		// Find the maximum nonce across all sources
+		currentNonce = ledgerNonce
+		if largestPendingNonce > currentNonce {
+			currentNonce = largestPendingNonce
+		}
+		if largestProcessingNonce > currentNonce {
+			currentNonce = largestProcessingNonce
+		}
+
+		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
+			addr, ledgerNonce, largestPendingNonce, largestProcessingNonce, currentNonce))
 	}
-	return &pb.GetCurrentNonceResponse{Address: addr, Nonce: current, Tag: tag}, nil
+
+	return &pb.GetCurrentNonceResponse{
+		Address: addr,
+		Nonce:   currentNonce,
+		Tag:     tag,
+	}, nil
 }
 
 func (s *AccountServiceImpl) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
@@ -88,6 +144,3 @@ func (s *AccountServiceImpl) GetAccountByAddress(ctx context.Context, in *pb.Get
 	}
 	return &pb.GetAccountByAddressResponse{Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce}}, nil
 }
-
-
-
