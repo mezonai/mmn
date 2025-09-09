@@ -228,6 +228,9 @@ func addHistory(acc *types.Account, tx *transaction.Transaction) {
 
 func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error) {
 	tx, err := l.txStore.GetByHash(hash)
+	if err != nil {
+		return nil, nil, err
+	}
 	txMeta, err := l.txMetaStore.GetByHash(hash)
 	if err != nil {
 		return nil, nil, err

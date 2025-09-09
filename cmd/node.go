@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mezonai/mmn/abuse"
 	"github.com/mezonai/mmn/api"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
@@ -348,6 +350,15 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		log.Fatalf("Failed to load private key for gRPC server: %v", err)
 	}
 
+	// Create rate limiter for transaction submission protection
+	rateLimiterConfig := ratelimit.DefaultGlobalConfig()
+	rateLimiter := ratelimit.NewGlobalRateLimiter(rateLimiterConfig)
+	defer rateLimiter.Stop()
+
+	// Create abuse detector for tracking and flagging
+	abuseConfig := abuse.DefaultAbuseConfig()
+	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
+
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
 		nodeConfig.GRPCAddr,
@@ -362,10 +373,12 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		mp,
 		eventRouter,
 		txTracker,
+		rateLimiter,
+		abuseDetector,
 	)
 	_ = grpcSrv // Keep server running
 
 	// Start API server on a different port
-	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
+	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr, rateLimiter)
 	apiSrv.Start()
 }
