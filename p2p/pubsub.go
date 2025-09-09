@@ -92,7 +92,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			// Add transaction to mempool
 			_, err := mp.AddTx(txData, false)
 			if err != nil {
-				fmt.Printf("Failed to add transaction from P2P: %v\n", err)
+				logx.Error("NETWORK: SYNC TRANS", "Failed to add transaction from P2P to mempool: ", err)
 			}
 			return nil
 		},

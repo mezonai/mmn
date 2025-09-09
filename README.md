@@ -56,7 +56,7 @@ Note: Faucet amount is now configured in the genesis configuration file (config/
 
 # Run with docker
 ## Build and run nodes
-
+- To override configs inside `docker-compose.yaml`, create `.env` file with variables declared in `.env.example`
   ```
   docker compose build
   docker compose up
@@ -87,3 +87,8 @@ go build -o bin/mmn ./cmd
 # uses cases
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
+
+## Monitoring stack (Grafana + Loki + Promtail)
+
+- Open grafana at http://localhost:3000 (admin / admin)
+- Navigate to [Drilldown > Logs](http://localhost:3000/a/grafana-lokiexplore-app/explore)

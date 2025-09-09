@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -57,7 +58,7 @@ func TransferTokens(faucetAddress, toAddress string, amount *uint256.Int, faucet
 		return fmt.Errorf("failed to submit transaction: %v", err)
 	}
 
-	fmt.Printf("✅ Transaction successful! Hash: %s\n", res.TxHash)
+	logx.Info("MIGRATE:TRANSFER TOKEN", "Transaction successful! Hash: ", res.TxHash)
 	return nil
 }
 
