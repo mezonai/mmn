@@ -30,7 +30,7 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
-		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
+		logx.Error("GRPC ADD TX", "FromProtoSignedTx error ", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
 

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"io"
 	"io/fs"
 	"os"
@@ -37,7 +38,7 @@ func GetFaucetAccount() (string, ed25519.PrivateKey) {
 	faucetPrivateKeyHex := "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 	faucetPrivateKeyDer, err := hex.DecodeString(faucetPrivateKeyHex)
 	if err != nil {
-		fmt.Println("err", err)
+		logx.Error("MIGRATE:GET FAUCET ACCOUNT", err)
 		panic(err)
 	}
 
@@ -89,11 +90,11 @@ func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
 	err := p.db.QueryRow(`SELECT address, enc_privkey FROM mmn_user_keys WHERE user_id=$1`, uid).
 		Scan(&addr, &enc)
 	if errors.Is(err, sql.ErrNoRows) {
-		fmt.Printf("LoadKey ErrNoRows %d %s %s %v\n", uid, addr, enc, err)
+		logx.Error("MIGRATE:PGSTORE", fmt.Sprintf("LoadKey ErrNoRows %d %s %s %v", uid, addr, enc, err))
 		return "", nil, mmnClient.ErrKeyNotFound
 	}
 	if err != nil {
-		fmt.Printf("LoadKey Err %d %s %s %v\n", uid, addr, enc, err)
+		logx.Error("MIGRATE:PGSTORE", fmt.Sprintf("LoadKey Err %d %s %s %v", uid, addr, enc, err))
 		return "", nil, err
 	}
 
@@ -102,7 +103,7 @@ func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
 }
 
 func (p *pgStore) CreateKey(uid uint64, isSave bool) (string, []byte, error) {
-	fmt.Printf("CreateKey start %d\n", uid)
+	logx.Debug("MIGRATE:PGSTORE", "CreateKey start ", uid)
 
 	// Generate Ed25519 seed (32 bytes)
 	seed := make([]byte, ed25519.SeedSize)
@@ -131,7 +132,7 @@ func (p *pgStore) CreateKey(uid uint64, isSave bool) (string, []byte, error) {
 		)
 	}
 
-	fmt.Printf("CreateKey done %d %s\n", uid, addr)
+	logx.Debug("MIGRATE:PGSTORE", "CreateKey done ", uid, " ", addr)
 	return addr, seed, err
 }
 
