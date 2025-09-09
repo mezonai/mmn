@@ -212,10 +212,9 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	if sender.Balance.Cmp(tx.Amount) < 0 {
 		return fmt.Errorf("insufficient balance")
 	}
-	// Flexible nonce validation to prevent duplicate transactions
-	// Allow nonce gaps but ensure nonce is greater than current
-	if tx.Nonce <= sender.Nonce {
-		return fmt.Errorf("invalid nonce: must be > %d, got %d", sender.Nonce, tx.Nonce)
+	// Strict nonce validation to prevent duplicate transactions
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
@@ -326,10 +325,9 @@ func (lv *LedgerView) ApplyTx(tx *transaction.Transaction) error {
 	if sender.Balance.Cmp(tx.Amount) < 0 {
 		return fmt.Errorf("insufficient balance")
 	}
-	// Flexible nonce validation to prevent duplicate transactions
-	// Allow nonce gaps but ensure nonce is greater than current
-	if tx.Nonce <= sender.Nonce {
-		return fmt.Errorf("invalid nonce: must be > %d, got %d", sender.Nonce, tx.Nonce)
+	// Strict nonce validation to prevent duplicate transactions (Ethereum standard)
+	if tx.Nonce != sender.Nonce+1 {
+		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
 	}
 
 	sender.Balance.Sub(sender.Balance, tx.Amount)

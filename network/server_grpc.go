@@ -96,11 +96,16 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 		}
 	}
 
+	// Validate input before parsing to prevent serialization errors
+	if in.TxMsg == nil {
+		return &pb.AddTxResponse{Ok: false, Error: "missing transaction data"}, nil
+	}
+
 	// Parse transaction to get sender for wallet-based rate limiting
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
-		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
-		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
+		logx.Error("GRPC", fmt.Sprintf("FromProtoSignedTx error from IP %s: %v", clientIP, err))
+		return &pb.AddTxResponse{Ok: false, Error: "invalid transaction format"}, nil
 	}
 
 	// Apply rate limiting if rate limiter is configured
