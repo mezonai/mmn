@@ -135,6 +135,7 @@ func (s *AccountServiceImpl) GetAccountByAddress(ctx context.Context, in *pb.Get
 	if in == nil || in.Address == "" {
 		return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
 	}
+
 	acc, err := s.ledger.GetAccount(in.Address)
 	if err != nil {
 		return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
@@ -142,5 +143,7 @@ func (s *AccountServiceImpl) GetAccountByAddress(ctx context.Context, in *pb.Get
 	if acc == nil {
 		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
 	}
-	return &pb.GetAccountByAddressResponse{Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce}}, nil
+	return &pb.GetAccountByAddressResponse{
+		Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
+	}, nil
 }
