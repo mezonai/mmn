@@ -15,6 +15,7 @@ import {
 } from './utils';
 
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
+const HTTP_API_BASE = 'http://127.0.0.1:8001';
 
 // Helper function to verify transaction history
 async function verifyTransactionHistory(
@@ -91,7 +92,7 @@ describe('Token Transfer Tests', () => {
   let transactionTracker: TransactionTracker;
 
   beforeAll(() => {
-    grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
+    grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, false, HTTP_API_BASE);
     transactionTracker = new TransactionTracker({
       serverAddress: GRPC_SERVER_ADDRESS,
       debug: true,
@@ -1312,6 +1313,35 @@ describe('Token Transfer Tests', () => {
         overflowTestsCount: overflowNonces.filter((n) => isFinite(n)).length,
         underflowTestsCount: underflowNonces.filter((n) => isFinite(n)).length,
       });
+    });
+  });
+
+  describe('Faucet Protection', () => {
+    test('Faucet per-wallet cooldown enforced', async () => {
+      const recipient = generateTestAccount();
+      const faucetClient = new GrpcClient(GRPC_SERVER_ADDRESS, false, HTTP_API_BASE);
+
+      const first = await faucetClient.requestFaucet(recipient.publicKeyHex);
+      expect(first.status).toBe('ok');
+
+      const second = await faucetClient.requestFaucet(recipient.publicKeyHex);
+      expect(second.status).toBe('error');
+      expect((second.error || '').toLowerCase()).toContain('cooldown');
+
+      faucetClient.close();
+    });
+
+    test('Faucet per-IP limit enforced (simulate bursts)', async () => {
+      const faucetClient = new GrpcClient(GRPC_SERVER_ADDRESS, false, HTTP_API_BASE);
+      let ok = 0, failed = 0;
+      for (let i = 0; i < 12; i++) {
+        const acc = generateTestAccount();
+        const res = await faucetClient.requestFaucet(acc.publicKeyHex);
+        if (res.status === 'ok') ok++; else failed++;
+      }
+      expect(ok).toBeLessThanOrEqual(10);
+      expect(failed).toBeGreaterThanOrEqual(2);
+      faucetClient.close();
     });
   });
 });

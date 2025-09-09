@@ -1,3 +1,4 @@
+const HTTP_API_BASE = 'http://127.0.0.1:8001';
 import { GrpcClient } from './grpc_client';
 import { TransactionTracker } from './transaction_tracker';
 import {
@@ -94,7 +95,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
   beforeAll(async () => {
     // Initialize connections to all three nodes
     for (const config of NODE_CONFIGS) {
-      const client = new GrpcClient(config.address);
+      const client = new GrpcClient(config.address, false, HTTP_API_BASE);
       nodeClients.push({
         name: config.name,
         client: client,
