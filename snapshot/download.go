@@ -13,10 +13,15 @@ import (
 
 	"strconv"
 
-	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
 )
+
+// AccountStoreInterface defines the interface for account store operations
+// This interface is defined here to avoid import cycle with store package
+type AccountStoreInterface interface {
+	StoreBatch(accounts []*types.Account) error
+}
 
 // TransferProtocol defines the protocol used for snapshot transfer
 type TransferProtocol string
@@ -52,7 +57,7 @@ type SnapshotChunk struct {
 
 // SnapshotDownloader handles downloading snapshots when new nodes join the network
 type SnapshotDownloader struct {
-	provider        db.DatabaseProvider
+	accountStore    AccountStoreInterface
 	snapshotDir     string
 	udpConn         *net.UDPConn
 	mu              sync.RWMutex
@@ -80,9 +85,9 @@ type DownloadTask struct {
 }
 
 // NewSnapshotDownloader creates a new snapshot downloader
-func NewSnapshotDownloader(provider db.DatabaseProvider, snapshotDir string) *SnapshotDownloader {
+func NewSnapshotDownloader(accountStore AccountStoreInterface, snapshotDir string) *SnapshotDownloader {
 	return &SnapshotDownloader{
-		provider:        provider,
+		accountStore:    accountStore,
 		snapshotDir:     snapshotDir,
 		activeDownloads: make(map[string]*DownloadTask),
 		stopCh:          make(chan struct{}),
@@ -344,21 +349,14 @@ func generateDownloadTaskID(peerID string, slot uint64) string {
 	return fmt.Sprintf("%x", hash[:8])
 }
 
-// storeAccountsBatch writes accounts to the underlying DB using a batch for efficiency
+// storeAccountsBatch writes accounts to the account store using batch for efficiency
 func (sd *SnapshotDownloader) storeAccountsBatch(accounts []types.Account) error {
-	batch := sd.provider.Batch()
-	for _, account := range accounts {
-		data, err := json.Marshal(account)
-		if err != nil {
-			return fmt.Errorf("marshal account %s: %w", account.Address, err)
-		}
-		key := []byte("account:" + account.Address)
-		batch.Put(key, data)
+	accountPtrs := make([]*types.Account, len(accounts))
+	for i := range accounts {
+		accountPtrs[i] = &accounts[i]
 	}
-	if err := batch.Write(); err != nil {
-		return fmt.Errorf("batch write accounts: %w", err)
-	}
-	return nil
+
+	return sd.accountStore.StoreBatch(accountPtrs)
 }
 
 // GetActiveDownloads returns all active download tasks
