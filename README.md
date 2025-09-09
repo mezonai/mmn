@@ -91,3 +91,4 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 ## Monitoring stack (Grafana + Loki + Promtail)
 
 - Open grafana at http://localhost:3000 (admin / admin)
+- Navigate to [Drilldown > Logs](http://localhost:3000/a/grafana-lokiexplore-app/explore)

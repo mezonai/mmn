@@ -14,7 +14,9 @@ services:
     volumes:
       - logs_data:/app/logs
     environment:
-      - LOG_FILE=mmn-bootnode.log
+      - LOGFILE=mmn-bootnode.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
@@ -37,7 +39,9 @@ services:
       - node_data:/app/node-data
       - logs_data:/app/logs
     environment:
-      - LOG_FILE=mmn-node1.log
+      - LOGFILE=mmn-node1.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
@@ -60,7 +64,9 @@ services:
       - node_data:/app/node-data
       - logs_data:/app/logs
     environment:
-      - LOG_FILE=mmn-node2.log
+      - LOGFILE=mmn-node2.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
@@ -83,7 +89,9 @@ services:
       - node_data:/app/node-data
       - logs_data:/app/logs
     environment:
-      - LOG_FILE=mmn-node3.log
+      - LOGFILE=mmn-node3.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
