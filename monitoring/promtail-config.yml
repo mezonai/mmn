@@ -16,7 +16,18 @@ scrape_configs:
           job: mmn
           __path__: /var/log/mmn/*.log
     pipeline_stages:
+      # extract service name from log filename
+      - regex:
+          source: filename
+          expression: '.*/(?P<node>[a-zA-Z0-9_-]+?)(?:-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}(?:-\d{2}(?:\.\d+)?)?)?\.log$'
+      - labels:
+          node:
+
+      # extract log level from log line
       - regex:
           expression: '\[(?P<level>[A-Z]+)\]'
+      - template:
+          source: level
+          template: '{{ ToLower .Value }}'
       - labels:
           level:
