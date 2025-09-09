@@ -40,9 +40,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
-			if len(ln.host.Network().Peers()) > 0 {
-				go ln.checkForMissingBlocksAround(bs, blk.Slot)
-			}
+			// Temporary comment to save bandwidth for main flow
+			// if len(ln.host.Network().Peers()) > 0 {
+			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
+			// }
+
 			// Reset poh to sync poh clock with leader
 			if blk.Slot > bs.GetLatestSlot() {
 				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
@@ -146,10 +148,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 	go ln.startInitialSync(bs)
 
-	go ln.startPeriodicSyncCheck(bs)
+	// Temporary comment to save bandwidth for main flow
+	// go ln.startPeriodicSyncCheck(bs)
 
 	// Start continuous gap detection
-	go ln.startContinuousGapDetection(bs)
+	// Temporary comment to save bandwidth for main flow
+	// go ln.startContinuousGapDetection(bs)
 
 	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
