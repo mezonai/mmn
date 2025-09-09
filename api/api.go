@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/logx"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"io"
 	"net/http"
 	"strconv"
@@ -33,6 +34,7 @@ func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIS
 }
 
 func (s *APIServer) Start() {
+	http.Handle("/metrics", promhttp.Handler())
 	http.HandleFunc("/txs", s.handleTxs)
 	http.HandleFunc("/account", s.handleAccount)
 	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)

@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+  - job_name: prometheus
+    scrape_interval: 1m
+    static_configs:
+      - targets: [localhost:9090]
+
+  - job_name: mmn-node
+    static_configs:
+      - targets: [localhost:9100]
