@@ -195,8 +195,9 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
-	if err != nil {
+	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
+	if errTx != nil || errTxMeta != nil {
+		err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
@@ -279,8 +280,9 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			if confirmations > 1 {
 				status = pb.TransactionStatus_FINALIZED
 			}
-			tx, _, err := s.ledger.GetTxByHash(txHash)
-			if err != nil {
+			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
+			if errTx != nil || errTxMeta != nil {
+				err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
 				return nil, err
 			}
 
@@ -582,10 +584,11 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, _, err := s.ledger.GetTxByHash(txHash)
+			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
 
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			if errTx != nil || errTxMeta != nil {
+				errMsg := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
+				return nil, status.Errorf(codes.NotFound, "tx %s not found: %v", txHash, errMsg)
 			}
 
 			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
