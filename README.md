@@ -86,24 +86,29 @@ go build -o bin/mmn ./cmd
 
 
 # Perform transfer from faucet with CLI command
-- If node runs inside docker container with docker compose, execute the following command first
+- Build executable mmn
   ```
-  docker compose exec -it <node_service_name> bash
-  ```
-  Or directly access container
-  ```
-  docker exec -it <node_container> bash
+  go build -o mmn .
   ```
 - Then execute command to perform transfer from faucet to wallet
   ```
-  ./mmn fund [--verbose] [--p <private-key>] [--f <private-key-file>] [--u <node-url>] <address> <amount>
+  ./mmn transfer [-u <node-url>] [-t <recipient-addr>] [-a <amount>] [-p <faucet-private-key>] [-f <faucet-private-key-file>] [-v]
   ```
   For example:
   ```
-  ./mmn fund EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx 1000 -v -f /path/to/private -u node1:9001
-  ./mmn fund EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx 1000 -v -p 302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee -u node1:9001
+  ./mmn transfer -v \
+      -u localhost:9001 \
+      -t EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx \
+      -a 1000 \
+      -p 302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee
+  
+  ./mmn transfer -v \
+      -u localhost:9001 \
+      -t EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx \
+      -a 1000 \
+      -f ./private.txt
   ```
-- For more details about command, run `./mmn fund --help`
+- For more details about command, run `./mmn transfer --help`
 
 
 # uses cases
