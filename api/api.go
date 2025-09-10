@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/logx"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/mezonai/mmn/monitoring"
 	"io"
 	"net/http"
 	"strconv"
@@ -34,11 +35,12 @@ func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIS
 }
 
 func (s *APIServer) Start() {
-	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/txs", s.handleTxs)
-	http.HandleFunc("/account", s.handleAccount)
+	mux := http.NewServeMux()
+	monitoring.RegisterMetrics(mux, s.ListenAddr)
+	mux.HandleFunc("/txs", s.handleTxs)
+	mux.HandleFunc("/account", s.handleAccount)
 	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)
-	go http.ListenAndServe(s.ListenAddr, nil)
+	go http.ListenAndServe(s.ListenAddr, mux)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package mempool
 import (
 	"context"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"sync"
 	"time"
 
@@ -127,6 +128,8 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
+	monitoring.SetMempoolSize(mp.Size())
+
 	return txHash, nil
 }
 
@@ -296,6 +299,7 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 		}
 		// Check if any pending transactions became ready after processing
 		mp.promotePendingTransactions(readyTxs)
+		monitoring.SetMempoolSize(mp.Size())
 	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
