@@ -143,20 +143,20 @@ export class MmnClient {
 		sender: string;
 		recipient: string;
 		amount: string;
+		nonce: number;
 		timestamp?: number;
 		textData?: string;
 		extraInfo?: string;
 		privateKey: string;
 	}): Promise<AddTxResponse> {
-		const nonce = await this.getCurrentNonce(params.sender, 'pending');
-		const signedTx = this.createAndSignTx({ ...params, nonce: nonce.nonce + 1, type: 1 }); // transfer type is always 1 for now
+		const signedTx = this.createAndSignTx({ ...params, type: 1 }); // transfer type is always 1 for now
 		return this.addTx(signedTx);
 	}
 
 	/**
 	 * Get current nonce for an account
 	 */
-	private async getCurrentNonce(address: string, tag: 'latest' | 'pending' = 'latest'): Promise<GetCurrentNonceResponse> {
+	async getCurrentNonce(address: string, tag: 'latest' | 'pending' = 'latest'): Promise<GetCurrentNonceResponse> {
 		return this.makeRequest<GetCurrentNonceResponse>('account.getcurrentnonce', { address, tag });
 	}
 }
