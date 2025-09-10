@@ -85,6 +85,8 @@ func getRandomFreePort() (string, error) {
 }
 
 func runNode() {
+	initializeFileLogger()
+
 	logx.Info("NODE", "Running node")
 
 	// Handle Docker stop or Ctrl+C

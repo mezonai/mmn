@@ -2,11 +2,9 @@ package logx
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"strconv"
-
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -17,45 +15,10 @@ const (
 	ColorBlue   = "\033[34m"
 )
 
-var (
-	lumberjackLogger = &lumberjack.Logger{
-		Filename: getLogFilename(),
-		MaxSize:  getMaxSize(), // megabytes
-		MaxAge:   getMaxAge(),  // days
-	}
+var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
-	logger = log.New(lumberjackLogger, "", log.Ldate|log.Ltime|log.Lmicroseconds)
-)
-
-func getLogFilename() string {
-	if logFile := os.Getenv("LOGFILE"); logFile != "" {
-		return "./logs/" + logFile
-	}
-	return "./logs/mmn.log"
-}
-
-func getMaxSize() int {
-	maxSizeConfig := os.Getenv("LOGFILE_MAX_SIZE_MB")
-	if maxSizeConfig == "" {
-		panic("LOGFILE_MAX_SIZE_MB env variable not set")
-	}
-	maxSizeMB, err := strconv.Atoi(maxSizeConfig)
-	if err != nil {
-		panic("Invalid value for LOGFILE_MAX_SIZE_MB" + err.Error())
-	}
-	return maxSizeMB
-}
-
-func getMaxAge() int {
-	maxAgeConfig := os.Getenv("LOGFILE_MAX_AGE_DAYS")
-	if maxAgeConfig == "" {
-		panic("LOGFILE_MAX_AGE_DAYS env variable not set")
-	}
-	maxAgeDays, err := strconv.Atoi(maxAgeConfig)
-	if err != nil {
-		panic("Invalid value for LOGFILE_MAX_AGE_DAYS" + err.Error())
-	}
-	return maxAgeDays
+func InitWithOutput(output io.Writer) {
+	logger.SetOutput(output)
 }
 
 func Info(category string, content ...interface{}) {
