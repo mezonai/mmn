@@ -71,6 +71,7 @@ func NewValidator(
 	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
+	lastSlot uint64,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -88,7 +89,7 @@ func NewValidator(
 		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
-		lastSlot:                  0,
+		lastSlot:                  lastSlot + 1,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
