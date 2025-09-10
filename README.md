@@ -115,6 +115,26 @@ go build -o bin/mmn ./cmd
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
 
+## Performance Testing (TPS)
+
+### TPS Benchmark Results (300 TX per test)
+
+The blockchain network has been tested for Transactions Per Second (TPS) performance using parallel transaction submission (submission TPS):
+
+| Test Case | Users | Total TXs | TPS | Total Time | Average Latency |
+|-----------|-------|-----------|-----|------------|-----------------|
+| **5 Users** | 5 | 300 | **11.70** | 25.64s | 86.15ms |
+| **10 Users** | 10 | 300 | **11.87** | 25.28s | 83.71ms |
+| **20 Users** | 20 | 300 | **11.55** | 25.98s | 85.68ms |
+
+### Key Performance Metrics
+
+- **Current TPS**: ~11–12 TPS (stable across 5, 10, 20 users with 300 TX total)
+- **Measurement mode**: Submission TPS (parallel send; does not wait for on-chain confirmation)
+- **Average RPC submission latency**: ~80–90 ms
+- **Success Rate**: ~100% in the runs shown
+
+
 ## Monitoring stack (Grafana + Loki + Promtail)
 
 - Open grafana at http://localhost:3000 (admin / admin)
