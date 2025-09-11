@@ -34,7 +34,7 @@ services:
       - bootnode
     ports:
       - "8001:8001"
-      - "8080:8080"
+      - "8081:8081"
       - "9001:9001"
     volumes:
       - node_data:/app/node-data
@@ -63,7 +63,7 @@ services:
       - bootnode
     ports:
       - "8002:8002"
-      - "8081:8081"
+      - "8082:8082"
       - "9002:9002"
     volumes:
       - node_data:/app/node-data
@@ -91,7 +91,7 @@ services:
       - bootnode
     ports:
       - "8003:8003"
-      - "8082:8082"
+      - "8083:8083"
       - "9003:9003"
     volumes:
       - node_data:/app/node-data
