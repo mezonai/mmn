@@ -8,9 +8,21 @@ import (
 	"net/http"
 )
 
+type TxRejectedReason string
+
+var (
+	TxInvalidSignature    TxRejectedReason = "invalid_signature"
+	TxSenderNotExist      TxRejectedReason = "sender_not_exist"
+	TxInvalidNonce        TxRejectedReason = "invalid_nonce"
+	TxTooManyPending      TxRejectedReason = "too_many_pending"
+	TxInsufficientBalance TxRejectedReason = "insufficient_balance"
+	TxRejectedUnknown     TxRejectedReason = "other"
+)
+
 type nodePromMetrics struct {
 	mempoolSize        prometheus.Gauge
 	txFinalizationTime prometheus.Histogram
+	rejectedTxCount    *prometheus.CounterVec
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -26,6 +38,13 @@ func newNodePromMetrics() *nodePromMetrics {
 				Name: "mmn_node_tx_finalization_time",
 				Help: "Latency from submission to inclusion in block",
 			},
+		),
+		rejectedTxCount: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "mmn_node_rejected_tx_count",
+				Help: "The total number of rejected transactions",
+			},
+			[]string{"reason"},
 		),
 	}
 }
@@ -44,4 +63,10 @@ func SetMempoolSize(size int) {
 
 func RecordTxFinalizationTime(durationInSec float64) {
 	nodeMetrics.txFinalizationTime.Observe(durationInSec)
+}
+
+func RecordRejectedTx(reason TxRejectedReason) {
+	nodeMetrics.rejectedTxCount.With(prometheus.Labels{
+		"reason": string(reason),
+	}).Inc()
 }

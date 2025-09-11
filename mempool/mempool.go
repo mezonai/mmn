@@ -195,24 +195,29 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
 	if !tx.Verify() {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
 		return fmt.Errorf("invalid signature")
 	}
 
 	// 2. Check for zero amount
 	if tx.Amount == nil || tx.Amount.IsZero() {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("zero amount not allowed")
 	}
 
 	// 3. Check sender account exists and get current state
 	if mp.ledger == nil {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("ledger not available for validation")
 	}
 
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("could not get sender account %s", tx.Sender)
 	}
 	if senderAccount == nil {
+		monitoring.RecordRejectedTx(monitoring.TxSenderNotExist)
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}
 
@@ -222,11 +227,13 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 
 	// Reject old transactions (nonce too low)
 	if tx.Nonce <= currentNonce {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
 	}
 
 	// Prevent spam with reasonable future nonce limit
 	if tx.Nonce > currentNonce+MaxFutureNonce {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return fmt.Errorf("nonce too high: max allowed %d, got %d",
 			currentNonce+MaxFutureNonce, tx.Nonce)
 	}
@@ -234,12 +241,14 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 6. Check pending transaction limits per sender
 	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
 		if len(pendingNonces) >= MaxPendingPerSender {
+			monitoring.RecordRejectedTx(monitoring.TxTooManyPending)
 			return fmt.Errorf("too many pending transactions for sender %s: max %d",
 				tx.Sender[:8], MaxPendingPerSender)
 		}
 
 		// 7. Check for duplicate nonce in pending transactions
 		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions",
 				tx.Nonce, tx.Sender[:8])
 		}
@@ -248,6 +257,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 8. Check for duplicate nonce in ready queue
 	for _, readyTx := range mp.readyQueue {
 		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
 				tx.Nonce, tx.Sender[:8])
 		}
@@ -255,6 +265,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 
 	// 9. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
+		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
 		return err
 	}
