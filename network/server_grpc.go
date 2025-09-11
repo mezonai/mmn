@@ -346,18 +346,14 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, _, err := s.ledger.GetTxByHash(txHash)
+			tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
 
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			if errTx != nil || errTxMeta != nil {
+				errMsg := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
+				return nil, status.Errorf(codes.NotFound, "tx %s not found: %v", txHash, errMsg)
 			}
 
-			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
-			}
-
-			txStatus := info.Status
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,

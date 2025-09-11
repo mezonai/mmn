@@ -46,8 +46,9 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 }
 
 func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
-	if err != nil {
+	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
+	if errTx != nil || errTxMeta != nil {
+		err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
@@ -101,8 +102,9 @@ func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTran
 			if confirmations > 1 {
 				status = pb.TransactionStatus_FINALIZED
 			}
-			tx, _, err := s.ledger.GetTxByHash(txHash)
-			if err != nil {
+			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
+			if errTx != nil || errTxMeta != nil {
+				err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
 				return nil, err
 			}
 			return &pb.TransactionStatusInfo{
