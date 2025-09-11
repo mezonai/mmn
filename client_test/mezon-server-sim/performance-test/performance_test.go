@@ -409,12 +409,6 @@ func sendTokenWithAccount(t *testing.T, service *service.TxService, key int, wg 
 	atomic.AddInt64(success, 1)
 }
 
-// Helper function to decode hex
-func hexDecode(s string) []byte {
-	data, _ := hex.DecodeString(s)
-	return data
-}
-
 func writeResultToFile(t *testing.T, result TestResult, filename string) error {
 	// Marshal result to JSON
 	data, err := json.MarshalIndent(result, "", "  ")
