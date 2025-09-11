@@ -3,10 +3,10 @@ package performance_test
 import (
 	"context"
 	"crypto/ed25519"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -14,133 +14,321 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
-	_ "github.com/lib/pq" // PostgreSQL driver
-	mmnClient "github.com/mezonai/mmn/client"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
-	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
+	mmnclient "github.com/mezonai/mmn/client"
+	mmnpb "github.com/mezonai/mmn/proto"
 	"github.com/mr-tron/base58"
+	"google.golang.org/grpc"
 )
 
-func init() {
-	// Set required environment variables before any package initialization
-	os.Setenv("LOGFILE_MAX_SIZE_MB", "100")
-	os.Setenv("LOGFILE_MAX_AGE_DAYS", "7")
-}
+const faucetSeedHex = "8e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 
-const (
-	defaultMainnetEndpoints = "localhost:9001" // Your local mainnet gRPC endpoint
-	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
-	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
-	// Faucet seed from realistic_tps_test.go
-	faucetSeedHex = "8e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
-)
-
-const totalRequests = 600
-const concurrency = 10
-const accountsCount = 10
-
-type TestResult struct {
-	TotalTime      string  `json:"total_time"`
-	TotalRequests  int     `json:"total_requests"`
-	Concurrency    int     `json:"concurrency"`
-	SuccessCount   int64   `json:"success_count"`
-	FailureCount   int64   `json:"failure_count"`
-	AverageLatency string  `json:"average_latency"`
-	Throughput     float64 `json:"throughput"`
-}
-
-type ErrorLog struct {
-	Timestamp string `json:"timestamp"`
-	RequestID int    `json:"request_id"`
-	Error     string `json:"error"`
-	TextData  string `json:"text_data"`
-}
-
-// TestSetup_AccountsAndSeed - Test to create accounts and seed tokens
-func TestSetup_AccountsAndSeed(t *testing.T) {
-	service, cleanup := setupIntegrationTest(t)
-	defer cleanup()
-
-	accounts, _ := createMultipleAccounts(t, service, accountsCount)
-
-	t.Logf("Created %d accounts successfully", len(accounts))
-	for i, addr := range accounts {
-		t.Logf("Account %d: %s", i, addr)
-	}
-}
-
-// TestPerformance_SendToken - Test performance of sending tokens (only test send, no account creation)
 func TestPerformance_SendToken(t *testing.T) {
-	service, cleanup := setupIntegrationTest(t)
-	defer cleanup()
+	ctx := context.Background()
 
-	// Only run performance test, no account creation (assume accounts already exist)
-	runPerformanceTestSendToken(t, service)
-}
+	endpoints := []string{"localhost:9001", "localhost:9002", "localhost:9003"}
+	clients := make([]*mmnclient.MmnClient, 0, len(endpoints))
+	for _, ep := range endpoints {
+		c, err := mmnclient.NewClient(mmnclient.Config{Endpoint: ep})
+		if err != nil {
+			t.Fatalf("create client %s: %v", ep, err)
+		}
+		clients = append(clients, c)
+	}
+	defer func() {
+		for _, c := range clients {
+			_ = c.Close()
+		}
+	}()
 
-func setupIntegrationTest(t *testing.T) (*service.TxService, func()) {
-	t.Helper()
+	seedBytes, _ := hex.DecodeString(faucetSeedHex)
+	faucetAddr := deriveAddressFromSeed(seedBytes)
+	t.Logf("Connected. Faucet: %s", faucetAddr)
 
-	// Get config from environment or use defaults
-	endpoint := getEnvOrDefault("MMN_ENDPOINT", defaultMainnetEndpoints)
-	dbURL := getEnvOrDefault("DATABASE_URL", defaultDbURL)
-	masterKey := getEnvOrDefault("MASTER_KEY", defaultMasterKey)
+	// Lower burst by using more users and fewer tx per user; allow override via env
+	usersCount := 60
+	txPerUser := 20
 
-	fmt.Println("endpoint", endpoint)
-	fmt.Println("dbURL", dbURL)
-	fmt.Println("masterKey", masterKey)
+	type goUser struct {
+		publicKeyBase58 string
+		seed            []byte
+	}
+	derive := func(seed []byte) string {
+		pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+		return base58.Encode(pub)
+	}
 
-	// Setup database connection
-	db, err := sql.Open("postgres", dbURL)
+	users := make([]goUser, usersCount)
+	for i := 0; i < usersCount; i++ {
+		seed := make([]byte, 32)
+		copy(seed, []byte(fmt.Sprintf("test_user_%02d_seed________________", i)))
+		users[i] = goUser{publicKeyBase58: derive(seed), seed: seed}
+	}
+	recipients := make([]goUser, usersCount)
+	for i := 0; i < usersCount; i++ {
+		seed := make([]byte, 32)
+		copy(seed, []byte(fmt.Sprintf("test_rcp_%02d_seed_________________", i)))
+		recipients[i] = goUser{publicKeyBase58: derive(seed), seed: seed}
+	}
+
+	// fund users sequentially with batch confirm to avoid faucet pending overflow
+	batchSize := 20
+	batchTimeoutSec := 20
+	batch := make([]string, 0, batchSize)
+	for i, u := range users {
+		h, err := fundAccountWithRetry(ctx, clients[i%len(clients)], seedBytes, u.publicKeyBase58, 100, fmt.Sprintf("test fund %d", i), 5)
+		if err != nil {
+			t.Fatalf("fund user %d failed: %v", i, err)
+		}
+		batch = append(batch, h)
+		if len(batch) == batchSize {
+			waitBatchFundConfirmed(ctx, clients[i%len(clients)], batch, time.Duration(batchTimeoutSec)*time.Second)
+			batch = batch[:0]
+		}
+		// light pacing
+		time.Sleep(2 * time.Millisecond)
+	}
+	if len(batch) > 0 {
+		waitBatchFundConfirmed(ctx, clients[(len(users)-1)%len(clients)], batch, time.Duration(batchTimeoutSec)*time.Second)
+	}
+
+	stream, err := clients[0].SubscribeTransactionStatus(ctx)
 	if err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
+		t.Fatalf("subscribe transaction status: %v", err)
+	}
+	// short warm-up to ensure stream readiness without affecting measurement window
+	time.Sleep(200 * time.Millisecond)
+
+	type stageTimes struct {
+		sentAt      time.Time
+		ackAt       time.Time
+		pendingAt   time.Time
+		confirmedAt time.Time
+		finalizedAt time.Time
+	}
+	txTimes := make(map[string]*stageTimes, usersCount*txPerUser)
+	mu := &sync.Mutex{}
+
+	doneCh := make(chan struct{})
+	go func() {
+		defer close(doneCh)
+		for {
+			msg, recvErr := stream.Recv()
+			if recvErr != nil {
+				return
+			}
+			if msg == nil || msg.TxHash == "" {
+				continue
+			}
+			mu.Lock()
+			rec := txTimes[msg.TxHash]
+			if rec == nil {
+				rec = &stageTimes{}
+				txTimes[msg.TxHash] = rec
+			}
+			if msg.Status == mmnpb.TransactionStatus_PENDING {
+				if rec.pendingAt.IsZero() {
+					rec.pendingAt = time.Now()
+				}
+			}
+			if msg.Status == mmnpb.TransactionStatus_CONFIRMED {
+				if rec.confirmedAt.IsZero() {
+					rec.confirmedAt = time.Now()
+				}
+			}
+			if msg.Status == mmnpb.TransactionStatus_FINALIZED {
+				if rec.finalizedAt.IsZero() {
+					rec.finalizedAt = time.Now()
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	perUserBaseNonce := make(map[string]uint64)
+	for ui, u := range users {
+		c := clients[ui%len(clients)]
+		base, gerr := getCurrentNonce(ctx, c.Conn(), u.publicKeyBase58)
+		if gerr != nil {
+			base = 0
+		}
+		perUserBaseNonce[u.publicKeyBase58] = base
 	}
 
-	// Configure connection pool to prevent "too many clients" error
-	db.SetMaxOpenConns(50)                 // Maximum number of open connections
-	db.SetMaxIdleConns(10)                 // Maximum number of idle connections
-	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
-	db.SetConnMaxIdleTime(2 * time.Minute) // Maximum idle time of a connection
+	var sentOk int64
+	var sentFail int64
+	var wg sync.WaitGroup
 
-	// Test database connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := db.PingContext(ctx); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
+	for ui := 0; ui < usersCount; ui++ {
+		from := users[ui]
+		for j := 0; j < txPerUser; j++ {
+			wg.Add(1)
+			go func(userIdx, txIdx int, from goUser) {
+				defer wg.Done()
+				c := clients[userIdx%len(clients)]
+				to := recipients[rand.Intn(len(recipients))]
+				for attempt := 1; attempt <= 3; attempt++ {
+					nextNonce := perUserBaseNonce[from.publicKeyBase58] + uint64(txIdx+1)
+					amount := uint256.NewInt(1)
+					tx, berr := mmnclient.BuildTransferTx(mmnclient.TxTypeTransfer, from.publicKeyBase58, to.publicKeyBase58, amount, nextNonce, 0, fmt.Sprintf("test_%d_%d", userIdx, txIdx), nil)
+					if berr != nil {
+						atomic.AddInt64(&sentFail, 1)
+						return
+					}
+					sigTx, serr := mmnclient.SignTx(tx, from.seed)
+					if serr != nil {
+						atomic.AddInt64(&sentFail, 1)
+						return
+					}
+
+					sentAt := time.Now()
+					res, aerr := c.AddTx(ctx, sigTx)
+					if aerr != nil {
+						if contains(aerr.Error(), "nonce") || contains(aerr.Error(), "invalid nonce") {
+							base, gerr := getCurrentNonce(ctx, c.Conn(), from.publicKeyBase58)
+							if gerr == nil {
+								perUserBaseNonce[from.publicKeyBase58] = base
+							}
+							time.Sleep(2 * time.Millisecond)
+							continue
+						}
+						atomic.AddInt64(&sentFail, 1)
+						return
+					}
+					ackAt := time.Now()
+					mu.Lock()
+					st := txTimes[res.TxHash]
+					if st == nil {
+						st = &stageTimes{}
+						txTimes[res.TxHash] = st
+					}
+					if st.sentAt.IsZero() {
+						st.sentAt = sentAt
+					}
+					st.ackAt = ackAt
+					mu.Unlock()
+
+					atomic.AddInt64(&sentOk, 1)
+					return
+				}
+				atomic.AddInt64(&sentFail, 1)
+			}(ui, j, from)
+		}
 	}
 
-	// Setup keystore with encryption
-	walletManager, err := keystore.NewPgEncryptedStore(db, masterKey)
-	if err != nil {
-		t.Fatalf("Failed to create wallet manager: %v", err)
+	start := time.Now()
+	wg.Wait()
+
+	timeout := time.After(300 * time.Second)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			goto compute
+		case <-ticker.C:
+			mu.Lock()
+			confirmed := 0
+			finalized := 0
+			for _, st := range txTimes {
+				if !st.confirmedAt.IsZero() {
+					confirmed++
+				}
+				if !st.finalizedAt.IsZero() {
+					finalized++
+				}
+			}
+			mu.Unlock()
+			if int(sentOk) > 0 && confirmed >= int(sentOk) && finalized >= int(sentOk) {
+				goto compute
+			}
+		case <-doneCh:
+			goto compute
+		}
 	}
 
-	// Setup mainnet client
-	config := mmnClient.Config{
-		Endpoint: endpoint,
+compute:
+	mu.Lock()
+	var firstSent, lastPending, lastConfirmed, lastFinalized time.Time
+	ingressCount := 0
+	executedCount := 0
+	finalizedCount := 0
+	for _, st := range txTimes {
+		if st.sentAt.IsZero() {
+			continue
+		}
+		if firstSent.IsZero() || st.sentAt.Before(firstSent) {
+			firstSent = st.sentAt
+		}
+		if !st.pendingAt.IsZero() {
+			ingressCount++
+			if st.pendingAt.After(lastPending) {
+				lastPending = st.pendingAt
+			}
+		}
+		if !st.confirmedAt.IsZero() {
+			executedCount++
+			if st.confirmedAt.After(lastConfirmed) {
+				lastConfirmed = st.confirmedAt
+			}
+		}
+		if !st.finalizedAt.IsZero() {
+			finalizedCount++
+			if st.finalizedAt.After(lastFinalized) {
+				lastFinalized = st.finalizedAt
+			}
+		}
+	}
+	mu.Unlock()
+
+	if firstSent.IsZero() {
+		firstSent = start
+	}
+	ingressWindow := lastPending.Sub(firstSent)
+	executedWindow := lastConfirmed.Sub(firstSent)
+	finalizedWindow := lastFinalized.Sub(firstSent)
+	if ingressWindow <= 0 {
+		ingressWindow = time.Since(start)
+	}
+	if executedWindow <= 0 {
+		executedWindow = time.Since(start)
+	}
+	if finalizedWindow <= 0 {
+		finalizedWindow = time.Since(start)
 	}
 
-	mainnetClient, err := mmnClient.NewClient(config)
-	if err != nil {
-		t.Fatalf("Failed to create mainnet client: %v", err)
+	ingressTPS := float64(ingressCount) / ingressWindow.Seconds()
+	executedTPS := float64(executedCount) / executedWindow.Seconds()
+	finalizedTPS := float64(finalizedCount) / finalizedWindow.Seconds()
+
+	t.Logf("Sent ok=%d fail=%d", sentOk, sentFail)
+	t.Logf("Ingress: count=%d window=%.2fs TPS=%.2f", ingressCount, ingressWindow.Seconds(), ingressTPS)
+	t.Logf("Executed: count=%d window=%.2fs TPS=%.2f", executedCount, executedWindow.Seconds(), executedTPS)
+	t.Logf("Finalized: count=%d window=%.2fs TPS=%.2f", finalizedCount, finalizedWindow.Seconds(), finalizedTPS)
+
+	// Write summarized results to JSON file
+	results := map[string]any{
+		"timestamp":          time.Now().Format(time.RFC3339Nano),
+		"usersCount":         usersCount,
+		"txPerUser":          txPerUser,
+		"sentOk":             sentOk,
+		"sentFail":           sentFail,
+		"ingressWindowSec":   ingressWindow.Seconds(),
+		"executedWindowSec":  executedWindow.Seconds(),
+		"finalizedWindowSec": finalizedWindow.Seconds(),
+		"ingressTPS":         ingressTPS,
+		"executedTPS":        executedTPS,
+		"finalizedTPS":       finalizedTPS,
+	}
+	if b, err := json.MarshalIndent(results, "", "  "); err == nil {
+		_ = os.WriteFile("performance_results.json", b, 0644)
+	} else {
+		t.Logf("failed to marshal results json: %v", err)
 	}
 
-	// Create TxService with real implementations
-	service := service.NewTxService(mainnetClient, walletManager, db)
-
-	// Cleanup function
-	cleanup := func() {
-		db.Close()
+	if sentOk == 0 {
+		t.Fatalf("no transactions sent successfully")
 	}
-
-	return service, cleanup
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 func deriveAddressFromSeed(seed []byte) string {
@@ -148,262 +336,93 @@ func deriveAddressFromSeed(seed []byte) string {
 	return base58.Encode(pub)
 }
 
-// Get existing accounts (assume they were created previously)
-func getExistingAccounts(t *testing.T, service *service.TxService, count int) ([]string, [][]byte) {
-	accounts := make([]string, count)
-	seeds := make([][]byte, count)
-
-	// Use faucet account as first account
-	faucetSeed, _ := hex.DecodeString(faucetSeedHex)
-	accounts[0] = deriveAddressFromSeed(faucetSeed)
-	seeds[0] = faucetSeed
-
-	// Create other accounts with different seeds (assume they already exist)
-	for i := 1; i < count; i++ {
-		// Create different seed for each account
-		seed := make([]byte, 32)
-		for j := 0; j < 32; j++ {
-			seed[j] = byte(i*100 + j) // Create different seeds
-		}
-		accounts[i] = deriveAddressFromSeed(seed)
-		seeds[i] = seed
-	}
-
-	return accounts, seeds
-}
-
-// Create multiple accounts with different seeds and seed tokens from faucet
-func createMultipleAccounts(t *testing.T, service *service.TxService, count int) ([]string, [][]byte) {
-	accounts := make([]string, count)
-	seeds := make([][]byte, count)
-	ctx := context.Background()
-
-	// Use faucet account as first account
-	faucetSeed, _ := hex.DecodeString(faucetSeedHex)
-	accounts[0] = deriveAddressFromSeed(faucetSeed)
-	seeds[0] = faucetSeed
-
-	// Create other accounts with different seeds and seed tokens from faucet
-	for i := 1; i < count; i++ {
-		// Create different seed for each account
-		seed := make([]byte, 32)
-		for j := 0; j < 32; j++ {
-			seed[j] = byte(i*100 + j) // Create different seeds
-		}
-		accounts[i] = deriveAddressFromSeed(seed)
-		seeds[i] = seed
-
-		// Seed tokens from faucet for new account
-		seedAmount := uint256.NewInt(1000) // Seed 1000 tokens
-		_, err := seedAccountFromFaucet(t, ctx, service, accounts[i], seedAmount)
+func fundAccountWithRetry(ctx context.Context, c *mmnclient.MmnClient, faucetSeed []byte, recipient string, amount int64, note string, maxAttempts int) (string, error) {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		currentNonce, err := getCurrentNonce(ctx, c.Conn(), deriveAddressFromSeed(faucetSeed))
 		if err != nil {
-			t.Logf("Warning: Failed to seed account %d: %v", i, err)
-		} else {
-			t.Logf("Successfully seeded account %d with %d tokens", i, seedAmount)
+			if attempt == maxAttempts {
+				return "", fmt.Errorf("get nonce failed: %w", err)
+			}
+			time.Sleep(time.Duration(50+attempt*20) * time.Millisecond)
+			continue
 		}
-	}
-
-	return accounts, seeds
-}
-
-// seedAccountFromFaucet sends initial tokens from faucet to a given address
-func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.TxService, toAddress string, amount *uint256.Int) (string, error) {
-	faucetSeed, _ := hex.DecodeString(faucetSeedHex)
-	faucetAddr := deriveAddressFromSeed(faucetSeed)
-
-	// Get faucet account info
-	faucetAccount, err := service.GetAccountByAddress(ctx, faucetAddr)
-	if err != nil {
-		return "", fmt.Errorf("failed to get faucet account: %w", err)
-	}
-
-	// Send tokens from faucet to recipient
-	txHash, err := service.SendTokenWithoutDatabase(
-		ctx,
-		faucetAccount.Nonce+1,
-		faucetAddr,
-		toAddress,
-		faucetSeed,
-		amount,
-		"Seed amount from faucet",
-		mmnClient.TxTypeTransfer,
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed to send tokens from faucet: %w", err)
-	}
-
-	t.Logf("Seeding transaction sent: %s", txHash[:16])
-
-	// No need to wait for processing - just submit to mempool for performance test
-	// time.Sleep(2 * time.Second)
-
-	return txHash, nil
-}
-
-func runPerformanceTestSendToken(t *testing.T, service *service.TxService) {
-	t.Logf("Starting performance test with totalRequests=%d, concurrency=%d", totalRequests, concurrency)
-	result := runTest(t, service)
-
-	// Write result to file
-	if err := writeResultToFile(t, result, "performance_results.json"); err != nil {
-		t.Errorf("Failed to write result to file: %v", err)
-	}
-
-	fmt.Println("------------------Result------------------------")
-	fmt.Println("total_time:", result.TotalTime)
-	fmt.Println("total_requests:", result.TotalRequests)
-	fmt.Println("concurrency: ", result.Concurrency)
-	fmt.Println("success_count:", result.SuccessCount)
-	fmt.Println("failure_count:", result.FailureCount)
-	fmt.Println("TPS:", result.Throughput)
-}
-
-func runTest(t *testing.T, service *service.TxService) TestResult {
-	var successCount, failureCount int64
-	var latencies []time.Duration
-	var mu sync.Mutex
-	var errorLogs []ErrorLog
-	var errorMu sync.Mutex
-
-	// Use existing accounts (assume they were created previously)
-	accounts, seeds := getExistingAccounts(t, service, accountsCount)
-
-	// Create nonce for each account
-	accountNonces := make([]uint64, accountsCount)
-	ctx := context.Background()
-
-	for i, addr := range accounts {
-		account, err := service.GetAccountByAddress(ctx, addr)
+		nextNonce := currentNonce + 1
+		amountU := uint256.NewInt(uint64(amount))
+		fromAddr := deriveAddressFromSeed(faucetSeed)
+		tx, err := mmnclient.BuildTransferTx(mmnclient.TxTypeTransfer, fromAddr, recipient, amountU, nextNonce, 0, note, nil)
 		if err != nil {
-			t.Fatalf("Failed to get account %d: %v", i, err)
+			return "", err
 		}
-		accountNonces[i] = account.Nonce + 1
-	}
-
-	// Start measuring REAL performance test time
-	start := time.Now()
-
-	// Run requests with concurrency using different accounts
-	var wg sync.WaitGroup
-	for i := 0; i < totalRequests; i++ {
-		// Select account based on index (round-robin)
-		accountIndex := i % accountsCount
-
-		if i%concurrency == 0 && i > 0 {
-			wg.Wait() // Wait for previous batch to complete
+		sigTx, err := mmnclient.SignTx(tx, faucetSeed)
+		if err != nil {
+			return "", err
 		}
-		wg.Add(1)
-		go sendTokenWithAccount(t, service, i, &wg, &successCount, &failureCount, &latencies, &mu, &errorLogs, &errorMu, accounts[accountIndex], seeds[accountIndex], &accountNonces[accountIndex])
-	}
-	wg.Wait()
-
-	totalTime := time.Since(start)
-
-	// Write error logs to file
-	if len(errorLogs) > 0 {
-		if err := writeErrorLogsToFile(t, errorLogs, "error_logs.json"); err != nil {
-			t.Errorf("Failed to write error logs to file: %v", err)
+		res, err := c.AddTx(ctx, sigTx)
+		if err == nil {
+			return res.TxHash, nil
+		}
+		if attempt < maxAttempts && (contains(err.Error(), "nonce") || contains(err.Error(), "invalid nonce")) {
+			time.Sleep(time.Duration(40+randBetween(0, 200)) * time.Millisecond)
+			continue
+		}
+		if attempt == maxAttempts {
+			return "", err
 		}
 	}
+	return "", fmt.Errorf("unreachable")
+}
 
-	// Calculate metrics
-	var totalLatency time.Duration
-	for _, latency := range latencies {
-		totalLatency += latency
+func waitBatchFundConfirmed(ctx context.Context, client *mmnclient.MmnClient, hashes []string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	confirmed := make(map[string]bool, len(hashes))
+	for _, h := range hashes {
+		confirmed[h] = false
 	}
-	averageLatency := time.Duration(0)
-	if len(latencies) > 0 {
-		averageLatency = totalLatency / time.Duration(len(latencies))
-	}
-	// TPS = successful transactions / real time
-	throughput := float64(successCount) / totalTime.Seconds()
-
-	return TestResult{
-		TotalTime:      fmt.Sprintf("%f(s)", totalTime.Seconds()),
-		TotalRequests:  totalRequests,
-		Concurrency:    concurrency,
-		SuccessCount:   successCount,
-		FailureCount:   failureCount,
-		AverageLatency: fmt.Sprintf("%f(s)", averageLatency.Seconds()),
-		Throughput:     throughput,
+	for {
+		if time.Now().After(deadline) {
+			return
+		}
+		pending := 0
+		for h := range confirmed {
+			if confirmed[h] {
+				continue
+			}
+			info, err := client.GetTxByHash(ctx, h)
+			if err == nil && (info.Status == 1 || info.Status == 2) { // CONFIRMED or FINALIZED
+				confirmed[h] = true
+				continue
+			}
+			pending++
+		}
+		if pending == 0 {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-func sendTokenWithAccount(t *testing.T, service *service.TxService, key int, wg *sync.WaitGroup, success, failure *int64, latencies *[]time.Duration, mu *sync.Mutex, errorLogs *[]ErrorLog, errorMu *sync.Mutex, fromAddr string, fromSeed []byte, currentNonce *uint64) {
-	defer wg.Done()
-
-	// Create recipient account (toAddr) - use different account
-	toSeed := []byte{9, 189, 142, 19, 102, 139, 30, 93, 243, 70, 182, 102, 197, 21, 69, 65, 211, 71, 101, 154, 247, 185, 57, 236, 250, 50, 0, 159, 75, 186, 124, 255}
-	toAddr := deriveAddressFromSeed(toSeed)
-
-	amount := uint256.NewInt(1) // Send minimal amount for testing
-	textData := fmt.Sprintf("Integration test transfer %d", key)
-
-	ctx := context.Background()
-
-	// Use nonce that has been updated for this account
-	myNonce := *currentNonce
-	*currentNonce++ // Increment nonce for next time
-
-	start := time.Now()
-	_, err := service.SendTokenWithoutDatabase(ctx, myNonce, fromAddr, toAddr, fromSeed, amount, textData, mmnClient.TxTypeTransfer)
-	latency := time.Since(start)
-
-	mu.Lock()
-	*latencies = append(*latencies, latency)
-	mu.Unlock()
-
+func getCurrentNonce(ctx context.Context, conn *grpc.ClientConn, address string) (uint64, error) {
+	acc := mmnpb.NewAccountServiceClient(conn)
+	resp, err := acc.GetCurrentNonce(ctx, &mmnpb.GetCurrentNonceRequest{Address: address, Tag: "pending"})
 	if err != nil {
-		// Log error to file
-		errorLog := ErrorLog{
-			Timestamp: time.Now().Format("2006-01-02 15:04:05.000"),
-			RequestID: key,
-			Error:     err.Error(),
-			TextData:  textData,
+		return 0, err
+	}
+	return resp.Nonce, nil
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (stringIndex(s, sub) >= 0)
+}
+
+func stringIndex(haystack, needle string) int {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return i
 		}
-
-		errorMu.Lock()
-		*errorLogs = append(*errorLogs, errorLog)
-		errorMu.Unlock()
-
-		t.Errorf("Send token failed for: %v, %v", err, textData)
-		atomic.AddInt64(failure, 1)
-		return
 	}
-
-	atomic.AddInt64(success, 1)
+	return -1
 }
 
-func writeResultToFile(t *testing.T, result TestResult, filename string) error {
-	// Marshal result to JSON
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal result to JSON: %w", err)
-	}
-
-	// Write to file
-	err = os.WriteFile(filename, data, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write result to file %s: %w", filename, err)
-	}
-
-	t.Logf("Test result written to %s", filename)
-	return nil
-}
-
-func writeErrorLogsToFile(t *testing.T, errorLogs []ErrorLog, filename string) error {
-	// Marshal error logs to JSON
-	data, err := json.MarshalIndent(errorLogs, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal error logs to JSON: %w", err)
-	}
-
-	// Write to file
-	err = os.WriteFile(filename, data, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write error logs to file %s: %w", filename, err)
-	}
-
-	t.Logf("Error logs written to %s (total errors: %d)", filename, len(errorLogs))
-	return nil
+func randBetween(min, max int) int {
+	return (int(time.Now().UnixNano()/1e6) % (max - min + 1)) + min
 }

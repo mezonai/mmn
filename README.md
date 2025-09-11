@@ -117,23 +117,16 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 
 ## Performance Testing (TPS)
 
-### TPS Benchmark Results (300 TX per test)
+### Latest TPS Results (60 users x 20 tx)
 
-The blockchain network has been tested for Transactions Per Second (TPS) performance using parallel transaction submission (submission TPS):
+| Users | Total TXs | Ingress TPS | Executed TPS | Finalized TPS | Sent OK | Total Time |
+|-------|-----------|-------------|--------------|---------------|---------|------------|
+| 60    | 1200      | 1895.42     | 48.51        | 48.51         | 1200    | ~49.74s    |
 
-| Test Case | Users | Total TXs | TPS | Total Time | Average Latency |
-|-----------|-------|-----------|-----|------------|-----------------|
-| **5 Users** | 5 | 300 | **11.70** | 25.64s | 86.15ms |
-| **10 Users** | 10 | 300 | **11.87** | 25.28s | 83.71ms |
-| **20 Users** | 20 | 300 | **11.55** | 25.98s | 85.68ms |
-
-### Key Performance Metrics
-
-- **Current TPS**: ~11–12 TPS (stable across 5, 10, 20 users with 300 TX total)
-- **Measurement mode**: Submission TPS (parallel send; does not wait for on-chain confirmation)
-- **Average RPC submission latency**: ~80–90 ms
-- **Success Rate**: ~100% in the runs shown
-
+listen SubscribeTransactionStatus
+- Ingress TPS: numPending / (lastPending - firstSent)
+- Executed TPS: numConfirmed / (lastConfirmed - firstSent)
+- Finalized TPS: numFinalized / (lastFinalized - firstSent)
 
 ## Monitoring stack (Grafana + Loki + Promtail)
 
