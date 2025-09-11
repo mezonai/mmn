@@ -207,10 +207,14 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
+// Leader to validator to reset poh
 func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) error {
 	logx.Info("VALIDATOR", fmt.Sprintf("Received latest slot %d", slot))
 	currentSlot := v.Recorder.CurrentSlot()
-	if v.IsFollower(currentSlot) {
+	// Just reset if
+	// - Incoming block is from other leader
+	// - This node is follower for current slot
+	if v.IsFollower(currentSlot) && v.IsFollower(slot) {
 		logx.Info("VALIDATOR", fmt.Sprintf("Follower received latest slot %d", slot))
 		v.Recorder.Reset(seedHash, slot)
 	}

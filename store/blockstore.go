@@ -248,6 +248,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
+	logx.Info("BLOCKSTORE", "Adding pending block at slot", b.Slot)
 
 	slotLock := s.getSlotLock(b.Slot)
 	slotLock.Lock()
@@ -273,6 +274,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
+	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
 
 	// Store block tsx
 	// TODO: storing block & its tsx should be atomic operation. Consider use batch or db transaction (if supported)
@@ -283,7 +285,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.txStore.StoreBatch(txs); err != nil {
 		return fmt.Errorf("failed to store txs: %w", err)
 	}
-
+	logx.Info("BLOCKSTORE", "Stored txs at slot", b.Slot)
 	// Store block txs meta
 	txsMeta := make([]*types.TransactionMeta, 0)
 	for _, entry := range b.Entries {
@@ -294,7 +296,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.txMetaStore.StoreBatch(txsMeta); err != nil {
 		return fmt.Errorf("failed to store txs meta: %w", err)
 	}
-
+	logx.Info("BLOCKSTORE", "Stored txs meta at slot", b.Slot)
 	// Publish transaction inclusion events if event router is provided
 	if s.eventRouter != nil {
 		blockHashHex := b.HashString()
