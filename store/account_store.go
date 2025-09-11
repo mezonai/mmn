@@ -3,10 +3,11 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
-	"sync"
 )
 
 type AccountStore interface {
@@ -33,8 +34,8 @@ func NewGenericAccountStore(dbProvider db.DatabaseProvider) (*GenericAccountStor
 }
 
 func (as *GenericAccountStore) Store(account *types.Account) error {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
+	as.mu.Lock()
+	defer as.mu.Unlock()
 
 	accountData, err := json.Marshal(account)
 	if err != nil {
