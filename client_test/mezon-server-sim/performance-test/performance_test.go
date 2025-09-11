@@ -240,41 +240,6 @@ func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.T
 	return txHash, nil
 }
 
-func createTestAccounts(t *testing.T, service *service.TxService) {
-	ctx := context.Background()
-
-	// Use faucet account as sender (should exist and have balance)
-	faucetSeed, err := hex.DecodeString(faucetSeedHex)
-	if err != nil {
-		t.Fatalf("Failed to decode faucet seed: %v", err)
-	}
-	faucetAddr := deriveAddressFromSeed(faucetSeed)
-
-	// Create recipient account (toAddr)
-	toSeed := []byte{9, 189, 142, 19, 102, 139, 30, 93, 243, 70, 182, 102, 197, 21, 69, 65, 211, 71, 101, 154, 247, 185, 57, 236, 250, 50, 0, 159, 75, 186, 124, 255}
-	toAddr := deriveAddressFromSeed(toSeed)
-
-	t.Logf("Using faucet account as sender...")
-	t.Logf("Faucet address: %s", faucetAddr)
-	t.Logf("Recipient address: %s", toAddr)
-
-	// Check if faucet account exists
-	_, err = service.GetAccountByAddress(ctx, faucetAddr)
-	if err != nil {
-		t.Logf("Faucet account does not exist: %v", err)
-	} else {
-		t.Logf("Faucet account exists and ready to use")
-	}
-
-	// Check recipient account
-	_, err = service.GetAccountByAddress(ctx, toAddr)
-	if err != nil {
-		t.Logf("Recipient account does not exist, will be created during transaction")
-	} else {
-		t.Logf("Recipient account exists")
-	}
-}
-
 func runPerformanceTestSendToken(t *testing.T, service *service.TxService) {
 	t.Logf("Starting performance test with totalRequests=%d, concurrency=%d", totalRequests, concurrency)
 	result := runTest(t, service)
