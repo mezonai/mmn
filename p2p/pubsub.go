@@ -214,9 +214,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 										ln.applyLeaderSchedule(ls)
 										logx.Info("SNAPSHOT:DOWNLOAD", "Applied leader schedule from snapshot")
 									}
-									if recorder != nil {
-										recorder.SetLeaderSchedule(ls)
-									}
+									// TODO: enable when support dynamic leader schedule
+									// if recorder != nil {
+									// 	recorder.SetLeaderSchedule(ls)
+									// }
 								}
 							}
 						}

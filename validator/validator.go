@@ -100,13 +100,13 @@ func NewValidator(
 	return v
 }
 
-// SetLeaderSchedule allows updating the leader schedule at runtime (e.g., from snapshot)
-func (v *Validator) SetLeaderSchedule(schedule *poh.LeaderSchedule) {
-	v.Schedule = schedule
-	if v.Recorder != nil {
-		v.Recorder.SetLeaderSchedule(schedule)
-	}
-}
+// TODO: enable when support dynamic leader schedule
+// func (v *Validator) SetLeaderSchedule(schedule *poh.LeaderSchedule) {
+// 	v.Schedule = schedule
+// 	if v.Recorder != nil {
+// 		v.Recorder.SetLeaderSchedule(schedule)
+// 	}
+// }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
