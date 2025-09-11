@@ -1,8 +1,10 @@
-package main
+package performance_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,19 +14,30 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	_ "github.com/lib/pq" // PostgreSQL driver
 	mmnClient "github.com/mezonai/mmn/client"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/service"
+	"github.com/mr-tron/base58"
 )
+
+func init() {
+	// Set required environment variables before any package initialization
+	os.Setenv("LOGFILE_MAX_SIZE_MB", "100")
+	os.Setenv("LOGFILE_MAX_AGE_DAYS", "7")
+}
 
 const (
 	defaultMainnetEndpoints = "localhost:9001" // Your local mainnet gRPC endpoint
 	defaultDbURL            = "postgres://mezon:m3z0n@localhost:5432/mezon?sslmode=disable"
 	defaultMasterKey        = "bWV6b25fdGVzdF9tYXN0ZXJfa2V5XzEyMzQ1Njc4OTA=" // base64 of "mezon_test_master_key_1234567890"
+	// Faucet seed from realistic_tps_test.go
+	faucetSeedHex = "8e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 )
 
-const totalRequests = 2000
-const concurrency = 2000 // Number of concurrent requests
+const totalRequests = 600
+const concurrency = 10
+const accountsCount = 10
 
 type TestResult struct {
 	TotalTime      string  `json:"total_time"`
@@ -43,10 +56,25 @@ type ErrorLog struct {
 	TextData  string `json:"text_data"`
 }
 
+// TestSetup_AccountsAndSeed - Test to create accounts and seed tokens
+func TestSetup_AccountsAndSeed(t *testing.T) {
+	service, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	accounts, _ := createMultipleAccounts(t, service, accountsCount)
+
+	t.Logf("Created %d accounts successfully", len(accounts))
+	for i, addr := range accounts {
+		t.Logf("Account %d: %s", i, addr)
+	}
+}
+
+// TestPerformance_SendToken - Test performance of sending tokens (only test send, no account creation)
 func TestPerformance_SendToken(t *testing.T) {
 	service, cleanup := setupIntegrationTest(t)
 	defer cleanup()
 
+	// Only run performance test, no account creation (assume accounts already exist)
 	runPerformanceTestSendToken(t, service)
 }
 
@@ -115,6 +143,138 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
+func deriveAddressFromSeed(seed []byte) string {
+	pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	return base58.Encode(pub)
+}
+
+// Get existing accounts (assume they were created previously)
+func getExistingAccounts(t *testing.T, service *service.TxService, count int) ([]string, [][]byte) {
+	accounts := make([]string, count)
+	seeds := make([][]byte, count)
+
+	// Use faucet account as first account
+	faucetSeed, _ := hex.DecodeString(faucetSeedHex)
+	accounts[0] = deriveAddressFromSeed(faucetSeed)
+	seeds[0] = faucetSeed
+
+	// Create other accounts with different seeds (assume they already exist)
+	for i := 1; i < count; i++ {
+		// Create different seed for each account
+		seed := make([]byte, 32)
+		for j := 0; j < 32; j++ {
+			seed[j] = byte(i*100 + j) // Create different seeds
+		}
+		accounts[i] = deriveAddressFromSeed(seed)
+		seeds[i] = seed
+	}
+
+	return accounts, seeds
+}
+
+// Create multiple accounts with different seeds and seed tokens from faucet
+func createMultipleAccounts(t *testing.T, service *service.TxService, count int) ([]string, [][]byte) {
+	accounts := make([]string, count)
+	seeds := make([][]byte, count)
+	ctx := context.Background()
+
+	// Use faucet account as first account
+	faucetSeed, _ := hex.DecodeString(faucetSeedHex)
+	accounts[0] = deriveAddressFromSeed(faucetSeed)
+	seeds[0] = faucetSeed
+
+	// Create other accounts with different seeds and seed tokens from faucet
+	for i := 1; i < count; i++ {
+		// Create different seed for each account
+		seed := make([]byte, 32)
+		for j := 0; j < 32; j++ {
+			seed[j] = byte(i*100 + j) // Create different seeds
+		}
+		accounts[i] = deriveAddressFromSeed(seed)
+		seeds[i] = seed
+
+		// Seed tokens from faucet for new account
+		seedAmount := uint256.NewInt(1000) // Seed 1000 tokens
+		_, err := seedAccountFromFaucet(t, ctx, service, accounts[i], seedAmount)
+		if err != nil {
+			t.Logf("Warning: Failed to seed account %d: %v", i, err)
+		} else {
+			t.Logf("Successfully seeded account %d with %d tokens", i, seedAmount)
+		}
+	}
+
+	return accounts, seeds
+}
+
+// seedAccountFromFaucet sends initial tokens from faucet to a given address
+func seedAccountFromFaucet(t *testing.T, ctx context.Context, service *service.TxService, toAddress string, amount *uint256.Int) (string, error) {
+	faucetSeed, _ := hex.DecodeString(faucetSeedHex)
+	faucetAddr := deriveAddressFromSeed(faucetSeed)
+
+	// Get faucet account info
+	faucetAccount, err := service.GetAccountByAddress(ctx, faucetAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to get faucet account: %w", err)
+	}
+
+	// Send tokens from faucet to recipient
+	txHash, err := service.SendTokenWithoutDatabase(
+		ctx,
+		faucetAccount.Nonce+1,
+		faucetAddr,
+		toAddress,
+		faucetSeed,
+		amount,
+		"Seed amount from faucet",
+		mmnClient.TxTypeTransfer,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to send tokens from faucet: %w", err)
+	}
+
+	t.Logf("Seeding transaction sent: %s", txHash[:16])
+
+	// No need to wait for processing - just submit to mempool for performance test
+	// time.Sleep(2 * time.Second)
+
+	return txHash, nil
+}
+
+func createTestAccounts(t *testing.T, service *service.TxService) {
+	ctx := context.Background()
+
+	// Use faucet account as sender (should exist and have balance)
+	faucetSeed, err := hex.DecodeString(faucetSeedHex)
+	if err != nil {
+		t.Fatalf("Failed to decode faucet seed: %v", err)
+	}
+	faucetAddr := deriveAddressFromSeed(faucetSeed)
+
+	// Create recipient account (toAddr)
+	toSeed := []byte{9, 189, 142, 19, 102, 139, 30, 93, 243, 70, 182, 102, 197, 21, 69, 65, 211, 71, 101, 154, 247, 185, 57, 236, 250, 50, 0, 159, 75, 186, 124, 255}
+	toAddr := deriveAddressFromSeed(toSeed)
+
+	t.Logf("Using faucet account as sender...")
+	t.Logf("Faucet address: %s", faucetAddr)
+	t.Logf("Recipient address: %s", toAddr)
+
+	// Check if faucet account exists
+	_, err = service.GetAccountByAddress(ctx, faucetAddr)
+	if err != nil {
+		t.Logf("Faucet account does not exist: %v", err)
+	} else {
+		t.Logf("Faucet account exists and ready to use")
+	}
+
+	// Check recipient account
+	_, err = service.GetAccountByAddress(ctx, toAddr)
+	if err != nil {
+		t.Logf("Recipient account does not exist, will be created during transaction")
+	} else {
+		t.Logf("Recipient account exists")
+	}
+}
+
 func runPerformanceTestSendToken(t *testing.T, service *service.TxService) {
 	t.Logf("Starting performance test with totalRequests=%d, concurrency=%d", totalRequests, concurrency)
 	result := runTest(t, service)
@@ -134,22 +294,41 @@ func runPerformanceTestSendToken(t *testing.T, service *service.TxService) {
 }
 
 func runTest(t *testing.T, service *service.TxService) TestResult {
-	var wg sync.WaitGroup
 	var successCount, failureCount int64
 	var latencies []time.Duration
 	var mu sync.Mutex
 	var errorLogs []ErrorLog
 	var errorMu sync.Mutex
 
+	// Use existing accounts (assume they were created previously)
+	accounts, seeds := getExistingAccounts(t, service, accountsCount)
+
+	// Create nonce for each account
+	accountNonces := make([]uint64, accountsCount)
+	ctx := context.Background()
+
+	for i, addr := range accounts {
+		account, err := service.GetAccountByAddress(ctx, addr)
+		if err != nil {
+			t.Fatalf("Failed to get account %d: %v", i, err)
+		}
+		accountNonces[i] = account.Nonce + 1
+	}
+
+	// Start measuring REAL performance test time
 	start := time.Now()
 
-	// Run Set requests
+	// Run requests with concurrency using different accounts
+	var wg sync.WaitGroup
 	for i := 0; i < totalRequests; i++ {
+		// Select account based on index (round-robin)
+		accountIndex := i % accountsCount
+
 		if i%concurrency == 0 && i > 0 {
 			wg.Wait() // Wait for previous batch to complete
 		}
 		wg.Add(1)
-		go sendToken(t, service, i, &wg, &successCount, &failureCount, &latencies, &mu, &errorLogs, &errorMu)
+		go sendTokenWithAccount(t, service, i, &wg, &successCount, &failureCount, &latencies, &mu, &errorLogs, &errorMu, accounts[accountIndex], seeds[accountIndex], &accountNonces[accountIndex])
 	}
 	wg.Wait()
 
@@ -171,7 +350,8 @@ func runTest(t *testing.T, service *service.TxService) TestResult {
 	if len(latencies) > 0 {
 		averageLatency = totalLatency / time.Duration(len(latencies))
 	}
-	throughput := float64(totalRequests) / totalTime.Seconds()
+	// TPS = successful transactions / real time
+	throughput := float64(successCount) / totalTime.Seconds()
 
 	return TestResult{
 		TotalTime:      fmt.Sprintf("%f(s)", totalTime.Seconds()),
@@ -184,22 +364,24 @@ func runTest(t *testing.T, service *service.TxService) TestResult {
 	}
 }
 
-func sendToken(t *testing.T, service *service.TxService, key int, wg *sync.WaitGroup, success, failure *int64, latencies *[]time.Duration, mu *sync.Mutex, errorLogs *[]ErrorLog, errorMu *sync.Mutex) {
+func sendTokenWithAccount(t *testing.T, service *service.TxService, key int, wg *sync.WaitGroup, success, failure *int64, latencies *[]time.Duration, mu *sync.Mutex, errorLogs *[]ErrorLog, errorMu *sync.Mutex, fromAddr string, fromSeed []byte, currentNonce *uint64) {
 	defer wg.Done()
 
-	// Test data
-	// fromUID := uint64(1)
-	// toUID := uint64(2)
-	fromAddr := "0b341da31ed91c8aa159d1dfeff1761795c84f70d00bddff2fa58147e6e3b493"
-	toAddr := "9bd8e13668b1e5df346b666c5154541d3476591af7b13939ecfa32009f4bba7c"
-	fromPriv := []byte{216, 225, 123, 4, 170, 149, 32, 216, 126, 223, 75, 46, 184, 101, 133, 247, 98, 166, 96, 57, 12, 104, 188, 249, 247, 23, 108, 201, 37, 25, 40, 231}
+	// Create recipient account (toAddr) - use different account
+	toSeed := []byte{9, 189, 142, 19, 102, 139, 30, 93, 243, 70, 182, 102, 197, 21, 69, 65, 211, 71, 101, 154, 247, 185, 57, 236, 250, 50, 0, 159, 75, 186, 124, 255}
+	toAddr := deriveAddressFromSeed(toSeed)
+
 	amount := uint256.NewInt(1) // Send minimal amount for testing
 	textData := fmt.Sprintf("Integration test transfer %d", key)
 
 	ctx := context.Background()
+
+	// Use nonce that has been updated for this account
+	myNonce := *currentNonce
+	*currentNonce++ // Increment nonce for next time
+
 	start := time.Now()
-	// _, err := service.SendToken(ctx, 0, fromUID, toUID, amount, textData)
-	_, err := service.SendTokenWithoutDatabase(ctx, 0, fromAddr, toAddr, fromPriv, amount, textData, mmnClient.TxTypeTransfer)
+	_, err := service.SendTokenWithoutDatabase(ctx, myNonce, fromAddr, toAddr, fromSeed, amount, textData, mmnClient.TxTypeTransfer)
 	latency := time.Since(start)
 
 	mu.Lock()
@@ -225,6 +407,12 @@ func sendToken(t *testing.T, service *service.TxService, key int, wg *sync.WaitG
 	}
 
 	atomic.AddInt64(success, 1)
+}
+
+// Helper function to decode hex
+func hexDecode(s string) []byte {
+	data, _ := hex.DecodeString(s)
+	return data
 }
 
 func writeResultToFile(t *testing.T, result TestResult, filename string) error {
