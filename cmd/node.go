@@ -72,7 +72,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().BoolVar(&joinAfterSync, "sync-snapshot", false, "Join the network after syncing blocks")
+	runCmd.Flags().BoolVar(&joinAfterSync, "sync", false, "Join the network after syncing blocks")
 	runCmd.Flags().StringVar(&snapshotUDPPort, "udp-port", ":9100", "UDP port for snapshot streaming :<port>")
 
 }
@@ -376,14 +376,6 @@ func startServices(ctx context.Context, cfg *config.GenesisConfig, nodeConfig co
 		txTracker,
 	)
 	_ = grpcSrv // Keep server running
-
-	// provide a runtime hook for applying snapshot leader schedule without import cycles
-	// p2pClient.SetApplyLeaderSchedule(func(ls *poh.LeaderSchedule) {
-	// 	if ls == nil || val == nil {
-	// 		return
-	// 	}
-	// 	val.SetLeaderSchedule(ls)
-	// })
 
 	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)

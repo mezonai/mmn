@@ -120,7 +120,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				}
 
 				// Add to ordering queue - this will process blocks in order
-				if err := ln.AddBlockToOrderingQueue(blk, bs); err != nil {
+				if err := ln.AddBlockToOrderingQueue(blk, bs, ld); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to add block to ordering queue: ", err)
 					continue
 				}
@@ -180,10 +180,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if accountStore == nil {
 				return nil
 			}
-			provider := accountStore.GetDatabaseProvider()
-			if provider == nil {
-				return nil
-			}
 
 			// Ensure snapshot directory exists before creating downloader
 			if err := snapshot.EnsureSnapshotDirectory(); err != nil {
@@ -192,7 +188,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Use single snapshot directory
-			down := snapshot.NewSnapshotDownloader(provider, snapshot.SnapshotDirectory)
+			down := snapshot.NewSnapshotDownloader(accountStore, snapshot.SnapshotDirectory)
 			logx.Info("SNAPSHOT:DOWNLOAD", "start", ann.UDPAddr)
 			go func() {
 				logx.Info("SNAPSHOT:DEBUG", "Starting download from peer: ", ann.PeerID, " UDP: ", ann.UDPAddr, " Slot: ", ann.Slot)

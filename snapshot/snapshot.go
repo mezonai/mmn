@@ -96,6 +96,68 @@ func ComputeFullBankHash(provider db.DatabaseProvider) ([32]byte, error) {
 	return out, nil
 }
 
+// ComputeFullBankHashFromAccounts computes the full bank hash from a list of accounts
+func ComputeFullBankHashFromAccounts(accounts []*types.Account) ([32]byte, error) {
+	h := sha256.New()
+	buf := make([]byte, 8)
+	for _, acc := range accounts {
+		h.Write([]byte(acc.Address))
+		binary.BigEndian.PutUint64(buf, acc.Balance.Uint64())
+		h.Write(buf)
+		binary.BigEndian.PutUint64(buf, acc.Nonce)
+		h.Write(buf)
+	}
+	var out [32]byte
+	copy(out[:], h.Sum(nil))
+	return out, nil
+}
+
+// WriteSnapshotFromAccounts writes a snapshot from a list of accounts
+func WriteSnapshotFromAccounts(dir string, accounts []*types.Account, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
+	// Convert []*types.Account to []types.Account
+	accountList := make([]types.Account, len(accounts))
+	for i, acc := range accounts {
+		accountList[i] = *acc
+	}
+
+	file := SnapshotFile{
+		Meta: SnapshotMeta{
+			Slot:     slot,
+			BankHash: bankHash,
+		},
+		Accounts: accountList,
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("create snapshot directory: %w", err)
+	}
+
+	// Write to file
+	filename := fmt.Sprintf("snapshot-%d.json", slot)
+	path := filepath.Join(dir, filename)
+	data, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal snapshot: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return "", fmt.Errorf("write snapshot file: %w", err)
+	}
+
+	// Create symlink to latest
+	latestPath := filepath.Join(dir, "snapshot-latest.json")
+	os.Remove(latestPath) // Remove existing symlink if any
+	if err := os.Symlink(filename, latestPath); err != nil {
+		// If symlink fails, just copy the file
+		if err := os.WriteFile(latestPath, data, 0644); err != nil {
+			return "", fmt.Errorf("create latest snapshot link: %w", err)
+		}
+	}
+
+	return path, nil
+}
+
 // WriteSnapshot writes a full snapshot of all accounts with given slot and bank hash
 func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
 	iterable, ok := provider.(db.IterableProvider)
