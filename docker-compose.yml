@@ -28,13 +28,13 @@ services:
       sh -c '
         rm -rf ./node-data/node1 &&
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8080" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
     ports:
       - "8001:8001"
-      - "8080:8080"
+      - "8081:8081"
       - "9001:9001"
     volumes:
       - node_data:/app/node-data
@@ -57,13 +57,13 @@ services:
       sh -c '
         rm -rf ./node-data/node2 &&
         ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8081" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
     ports:
       - "8002:8002"
-      - "8081:8081"
+      - "8082:8082"
       - "9002:9002"
     volumes:
       - node_data:/app/node-data
@@ -85,13 +85,13 @@ services:
       sh -c '
         rm -rf ./node-data/node3 &&
         ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8082" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
     ports:
       - "8003:8003"
-      - "8082:8082"
+      - "8083:8083"
       - "9003:9003"
     volumes:
       - node_data:/app/node-data
