@@ -9,25 +9,23 @@ import (
 )
 
 type nodePromMetrics struct {
-	mempoolSize        *prometheus.GaugeVec
-	txFinalizationTime *prometheus.HistogramVec
+	mempoolSize        prometheus.Gauge
+	txFinalizationTime prometheus.Histogram
 }
 
 func newNodePromMetrics() *nodePromMetrics {
 	return &nodePromMetrics{
-		mempoolSize: promauto.NewGaugeVec(
+		mempoolSize: promauto.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "mmn_node_mempool_size",
 				Help: "The total pending transactions queued in node's mempool",
 			},
-			[]string{},
 		),
-		txFinalizationTime: promauto.NewHistogramVec(
+		txFinalizationTime: promauto.NewHistogram(
 			prometheus.HistogramOpts{
 				Name: "mmn_node_tx_finalization_time",
 				Help: "Latency from submission to inclusion in block",
 			},
-			[]string{},
 		),
 	}
 }
@@ -41,9 +39,9 @@ func RegisterMetrics(mux *http.ServeMux) {
 }
 
 func SetMempoolSize(size int) {
-	nodeMetrics.mempoolSize.With(prometheus.Labels{}).Set(float64(size))
+	nodeMetrics.mempoolSize.Set(float64(size))
 }
 
 func RecordTxFinalizationTime(durationInSec float64) {
-	nodeMetrics.txFinalizationTime.With(prometheus.Labels{}).Observe(durationInSec)
+	nodeMetrics.txFinalizationTime.Observe(durationInSec)
 }

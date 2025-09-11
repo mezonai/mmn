@@ -4,8 +4,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/mezonai/mmn/db"
 	"sync"
+	"time"
+
+	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -257,6 +260,10 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 			for _, tx := range txs {
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+
+				// Record metric time to finalize
+				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
+				monitoring.RecordTxFinalizationTime(utils.SecondsBetween(txTimestamp, time.Now()))
 			}
 		}
 	}

@@ -108,7 +108,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -124,13 +124,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "(1 - avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\", node=~\"$node\"}[5m]))) * 100",
+          "expr": "(1 - avg (rate(node_cpu_seconds_total{mode=\"idle\", node=\"$node\"}[5m]))) * 100",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "System CPU Usage",
+      "title": "CPU Usage",
       "type": "timeseries"
     },
     {
@@ -207,7 +207,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "timezone": [
           ""
@@ -226,7 +226,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "100 * (1 - (node_memory_MemAvailable_bytes{node=~\"$node\"}) / node_memory_MemTotal_bytes{node=~\"$node\"})",
+          "expr": "100 * (1 - (node_memory_MemAvailable_bytes{node=\"$node\"}) / node_memory_MemTotal_bytes{node=\"$node\"})",
           "hide": false,
           "instant": false,
           "legendFormat": "{{node}}",
@@ -234,7 +234,7 @@
           "refId": "A"
         }
       ],
-      "title": "System Memory Usage",
+      "title": "Memory Usage",
       "type": "timeseries"
     },
     {
@@ -311,7 +311,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -327,13 +327,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "(100 * (1 - (sum by (node) (node_filesystem_avail_bytes{node=~\"$node\",fstype!=\"tmpfs\",fstype!=\"overlay\"}) / sum by (node) (node_filesystem_size_bytes{node=~\"$node\",fstype!=\"tmpfs\",fstype!=\"overlay\"}))))",
+          "expr": "(100 * (1 - (sum (node_filesystem_avail_bytes{node=\"$node\",fstype!=\"tmpfs\",fstype!=\"overlay\"}) / sum (node_filesystem_size_bytes{node=\"$node\",fstype!=\"tmpfs\",fstype!=\"overlay\"}))))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "System Disk Usage",
+      "title": "Disk Usage",
       "type": "timeseries"
     },
     {
@@ -420,7 +420,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -436,7 +436,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "mmn_node_mempool_size{node=~\"$node\"}",
+          "expr": "mmn_node_mempool_size{node=\"$node\"}",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -517,7 +517,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -533,7 +533,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(mmn_node_tx_finalization_time_sum{node=~\"$node\"}[5m]) / rate(mmn_node_tx_finalization_time_count{node=~\"$node\"}[5m])",
+          "expr": "rate(mmn_node_tx_finalization_time_sum{node=\"$node\"}[5m]) / rate(mmn_node_tx_finalization_time_count{node=\"$node\"}[5m])",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -551,17 +551,13 @@
     "list": [
       {
         "allowCustomValue": false,
-        "current": {
-          "text": "All",
-          "value": "$__all"
-        },
         "datasource": {
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
         },
         "definition": "label_values(node)",
         "description": "MMN blockchain node",
-        "includeAll": true,
+        "includeAll": false,
         "label": "Node",
         "name": "node",
         "options": [],
@@ -577,12 +573,12 @@
     ]
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "MMN Blockchain Nodes",
+  "title": "MMN Node",
   "uid": "bexqdzc2ufrpcf",
   "version": 1
 }
