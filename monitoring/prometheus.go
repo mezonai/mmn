@@ -1,11 +1,12 @@
 package monitoring
 
 import (
+	"net/http"
+
 	"github.com/mezonai/mmn/logx"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
 )
 
 type TxRejectedReason string
@@ -23,6 +24,8 @@ type nodePromMetrics struct {
 	mempoolSize        prometheus.Gauge
 	txFinalizationTime prometheus.Histogram
 	rejectedTxCount    *prometheus.CounterVec
+	blockHeight        prometheus.Gauge
+	finalizedTxCount   prometheus.Counter
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -45,6 +48,18 @@ func newNodePromMetrics() *nodePromMetrics {
 				Help: "The total number of rejected transactions",
 			},
 			[]string{"reason"},
+		),
+		blockHeight: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "mmn_node_block_height",
+				Help: "The current block height",
+			},
+		),
+		finalizedTxCount: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_finalized_tx_count",
+				Help: "The total number of transactions processed",
+			},
 		),
 	}
 }
@@ -69,4 +84,12 @@ func RecordRejectedTx(reason TxRejectedReason) {
 	nodeMetrics.rejectedTxCount.With(prometheus.Labels{
 		"reason": string(reason),
 	}).Inc()
+}
+
+func SetBlockHeight(blockHeight uint64) {
+	nodeMetrics.blockHeight.Set(float64(blockHeight))
+}
+
+func IncrementFinalizedTxCount() {
+	nodeMetrics.finalizedTxCount.Inc()
 }

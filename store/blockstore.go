@@ -92,6 +92,10 @@ func (s *GenericBlockStore) loadLatestFinalized() error {
 	}
 
 	s.latestFinalized = binary.BigEndian.Uint64(value)
+
+	// Initialize block height metric with current finalized slot
+	monitoring.SetBlockHeight(s.latestFinalized)
+
 	return nil
 }
 
@@ -261,9 +265,10 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
 
-				// Record metric time to finalize
+				// Record metrics
 				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
 				monitoring.RecordTxFinalizationTime(utils.SecondsBetween(txTimestamp, time.Now()))
+				monitoring.IncrementFinalizedTxCount()
 			}
 		}
 	}
@@ -280,6 +285,9 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 		if err := s.provider.Put(metaKey, metaValue); err != nil {
 			return fmt.Errorf("failed to update latest finalized: %w", err)
 		}
+
+		// Update block height metric
+		monitoring.SetBlockHeight(slot)
 	}
 
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
