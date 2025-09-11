@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mezonai/mmn/logx"
 	"io"
+	_ "net/http/pprof"
 	"net/http"
 	"strconv"
 
