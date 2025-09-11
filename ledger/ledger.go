@@ -4,7 +4,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"sync"
+	"time"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
@@ -179,6 +181,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				return err
 			}
+
+			// Record metric time to finalize
+			txTimestamp := time.UnixMilli(int64(tx.Timestamp))
+			monitoring.RecordTxFinalizationTime(utils.SecondsBetween(txTimestamp, time.Now()))
 		}
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)

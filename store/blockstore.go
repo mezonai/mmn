@@ -4,9 +4,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"sync"
-
 	"github.com/mezonai/mmn/db"
+	"sync"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
