@@ -8,8 +8,8 @@ import (
 )
 
 func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
-	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash: %x", prev))
-	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries", len(entries)))
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash=%x slot=%d", prev, slot))
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries in slot=%d", len(entries), slot))
 	cur := prev
 
 	for i, e := range entries {

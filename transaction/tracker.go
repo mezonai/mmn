@@ -11,30 +11,29 @@ import (
 // Only tracks transactions after they are pulled from mempool until they are applied to ledger
 type TransactionTracker struct {
 	// processingTxs maps transaction hash to transaction
-	processingTxs map[string]*Transaction
+	processingTxs sync.Map
 
 	// senderTxs maps sender address to list of transaction hashes
-	senderTxs map[string][]string
-
-	mu sync.RWMutex
+	senderTxs sync.Map
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
 func NewTransactionTracker() *TransactionTracker {
-	return &TransactionTracker{
-		processingTxs: make(map[string]*Transaction),
-		senderTxs:     make(map[string][]string),
-	}
+	return &TransactionTracker{}
 }
 
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	txHash := tx.Hash()
-	t.processingTxs[txHash] = tx
-	t.senderTxs[tx.Sender] = append(t.senderTxs[tx.Sender], txHash)
+	t.processingTxs.Store(txHash, tx)
+
+	// Update sender transaction list
+	var txHashes []string
+	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
+		txHashes = existing.([]string)
+	}
+	txHashes = append(txHashes, txHash)
+	t.senderTxs.Store(tx.Sender, txHashes)
 
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
@@ -42,34 +41,45 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 
 // RemoveTransaction removes a transaction from tracking
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	tx, exists := t.processingTxs[txHash]
+	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
 		return
 	}
 
-	delete(t.processingTxs, txHash)
-	t.senderTxs[tx.Sender] = remove(t.senderTxs[tx.Sender], txHash)
+	tx := txInterface.(*Transaction)
+
+	// Update sender transaction list
+	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
+		txHashes := existing.([]string)
+		updatedHashes := remove(txHashes, txHash)
+		if len(updatedHashes) == 0 {
+			t.senderTxs.Delete(tx.Sender)
+		} else {
+			t.senderTxs.Store(tx.Sender, updatedHashes)
+		}
+	}
 }
 
 // GetLargestProcessingNonce returns the largest nonce currently being processed for a sender
 // This is used by getCurrentNonce to account for transactions in the pipeline
 func (t *TransactionTracker) GetLargestProcessingNonce(sender string) uint64 {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	txHashesInterface, ok := t.senderTxs.Load(sender)
+	if !ok {
+		return 0
+	}
 
-	txHashes := t.senderTxs[sender]
+	txHashes := txHashesInterface.([]string)
 	if len(txHashes) == 0 {
 		return 0
 	}
 
 	largestNonce := uint64(0)
 	for _, txHash := range txHashes {
-		tx := t.processingTxs[txHash]
-		if tx.Nonce > largestNonce {
-			largestNonce = tx.Nonce
+		if txInterface, exists := t.processingTxs.Load(txHash); exists {
+			tx := txInterface.(*Transaction)
+			if tx.Nonce > largestNonce {
+				largestNonce = tx.Nonce
+			}
 		}
 	}
 

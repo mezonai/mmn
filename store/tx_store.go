@@ -3,10 +3,10 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
-	"log"
-	"sync"
 
 	"github.com/mezonai/mmn/transaction"
 )
@@ -44,6 +44,12 @@ func (ts *GenericTxStore) Store(tx *transaction.Transaction) error {
 
 // StoreBatch stores a batch of transactions in the database
 func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
+	if len(txs) == 0 {
+		logx.Info("TX_STORE", "StoreBatch: no transactions to store")
+		return nil
+	}
+	logx.Info("TX_STORE", "StoreBatch: storing", len(txs), "transactions")
+
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
@@ -62,14 +68,12 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 		return fmt.Errorf("failed to write transaction to database: %w", err)
 	}
 
+	logx.Info("TX_STORE", "StoreBatch: stored", len(txs), "transactions")
 	return nil
 }
 
 // GetByHash retrieves a transaction by its hash
 func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, error) {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
 	data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
 	if err != nil {
 		return nil, fmt.Errorf("could not get transaction %s from db: %w", txHash, err)
@@ -87,22 +91,31 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, er
 
 // GetBatch retrieves multiple transactions by their hashes
 func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transaction, error) {
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
-
 	if len(txHashes) == 0 {
 		return []*transaction.Transaction{}, nil
 	}
 
-	// TODO: implement batch get
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
 	transactions := make([]*transaction.Transaction, 0, len(txHashes))
 	for _, txHash := range txHashes {
-		t, err := ts.GetByHash(txHash)
+		// Direct database access without nested locking
+		data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
 		if err != nil {
-			log.Printf("Could not get transaction %s from database: %s", txHash, err.Error())
+			logx.Warn("TX_STORE", fmt.Sprintf("Could not get transaction %s from database: %s", txHash, err.Error()))
 			continue
 		}
-		transactions = append(transactions, t)
+
+		// Deserialize transaction
+		var tx transaction.Transaction
+		err = json.Unmarshal(data, &tx)
+		if err != nil {
+			logx.Warn("TX_STORE", fmt.Sprintf("Failed to unmarshal transaction %s: %s", txHash, err.Error()))
+			continue
+		}
+
+		transactions = append(transactions, &tx)
 	}
 
 	return transactions, nil
