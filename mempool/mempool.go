@@ -443,7 +443,7 @@ func (mp *Mempool) cleanupStaleTransactions() {
 	}
 }
 
-func (mp *Mempool) BlockCleanup(block *block.Block) {
+func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -452,7 +452,14 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 
 	// Iterate through all entries in the block and clean up all transaction references
 	for _, entry := range block.Entries {
-		for _, txHash := range entry.TxHashes {
+		for _, tx := range entry.Transactions {
+			// Track transaction as processing when remove from mempool
+			if mp.txTracker != nil {
+				mp.txTracker.TrackProcessingTransaction(tx)
+			}
+
+			txHash := tx.Hash()
+
 			// Remove from main transaction buffer
 			if _, exists := mp.txsBuf[txHash]; exists {
 				delete(mp.txsBuf, txHash)
