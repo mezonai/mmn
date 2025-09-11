@@ -3,6 +3,7 @@ package jsonrpc
 import (
 	"context"
 	"fmt"
+	_ "net/http/pprof"
 	"net/http"
 	"os"
 	"strconv"
