@@ -40,6 +40,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
+			// Remove transactions in block from mempool and add tx tracker if node is follower
+			if self.PubKey != blk.LeaderID {
+				go mp.BlockCleanup(blk)
+			}
+
 			// Temporary comment to save bandwidth for main flow
 			// if len(ln.host.Network().Peers()) > 0 {
 			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
@@ -186,7 +191,6 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
-	go mp.BlockCleanup(block)
 	return nil
 }
 
