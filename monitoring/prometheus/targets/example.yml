@@ -1,0 +1,7 @@
+- targets: ['node1:8001', 'node-exporter:9100']
+  labels:
+    node: node1
+
+- targets: ['node2:8002', 'node-exporter:9100']
+  labels:
+    node: node2

@@ -12,12 +12,9 @@ scrape_configs:
   - job_name: prometheus
     scrape_interval: 1m
     static_configs:
-      - targets:
-        - "localhost:9090"
+      - targets: ["localhost:9090"]
 
   - job_name: mmn-node
     scrape_interval: 5s
-    static_configs:
-      - targets:
-        - "node-exporter:9100"
-        - "node1:8001"
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/*.yml"]

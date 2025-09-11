@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/logx"
-
 	"github.com/mezonai/mmn/monitoring"
+
 	"io"
 	"net/http"
 	"strconv"
@@ -44,8 +44,8 @@ func (s *APIServer) Start() {
 	go http.ListenAndServe(s.ListenAddr, s.mux)
 }
 
-func (s *APIServer) ExposePromMetrics(nodeName string) {
-	monitoring.RegisterMetrics(s.mux, nodeName)
+func (s *APIServer) ExposePromMetrics() {
+	monitoring.RegisterMetrics(s.mux)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {
