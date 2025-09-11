@@ -17,7 +17,6 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/snapshot"
 )
 
 const (
@@ -29,9 +28,6 @@ type SlotBoundary struct {
 	Slot uint64
 	Hash [32]byte
 }
-
-// BlockFinalizedCallback is called when a block is finalized
-type BlockFinalizedCallback func(slot uint64, bankHash [32]byte)
 
 // BlockStore abstracts the block storage backend (filesystem, RocksDB, ...).
 // It is the minimal interface required by validator and network layers.
@@ -46,8 +42,6 @@ type BlockStore interface {
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
-	GetProvider() db.DatabaseProvider
-	SetBlockFinalizedCallback(callback BlockFinalizedCallback)
 }
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
@@ -62,10 +56,9 @@ type GenericBlockStore struct {
 	// Slot-specific lock: Key: slot number, Value: *sync.RWMutex
 	slotLocks sync.Map
 
-	txStore                TxStore
-	txMetaStore            TxMetaStore
-	eventRouter            *events.EventRouter
-	blockFinalizedCallback BlockFinalizedCallback
+	txStore     TxStore
+	txMetaStore TxMetaStore
+	eventRouter *events.EventRouter
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
@@ -399,20 +392,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
 
-	// Call block finalized callback if set
-	if s.blockFinalizedCallback != nil {
-		// Calculate bank hash from current state
-		bankHash, err := snapshot.ComputeFullBankHash(s.provider)
-		if err != nil {
-			logx.Error("BLOCKSTORE", "Failed to compute bank hash for snapshot:", err)
-			// Use zero hash as fallback
-			var zeroHash [32]byte
-			s.blockFinalizedCallback(slot, zeroHash)
-		} else {
-			s.blockFinalizedCallback(slot, bankHash)
-		}
-	}
-
 	return nil
 }
 
@@ -456,16 +435,4 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 	}
 
 	return txMeta.Slot, blk, blk.Status == block.BlockFinalized, true
-}
-
-// GetProvider returns the underlying database provider
-func (bs *GenericBlockStore) GetProvider() db.DatabaseProvider {
-	return bs.provider
-}
-
-// SetBlockFinalizedCallback sets the callback for when blocks are finalized
-func (bs *GenericBlockStore) SetBlockFinalizedCallback(callback BlockFinalizedCallback) {
-	bs.metaMu.Lock()
-	defer bs.metaMu.Unlock()
-	bs.blockFinalizedCallback = callback
 }

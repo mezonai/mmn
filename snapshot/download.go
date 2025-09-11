@@ -281,7 +281,7 @@ func (sd *SnapshotDownloader) assembleAndVerifySnapshot(task *DownloadTask) erro
 	}
 
 	// Create snapshot file
-	snapshotPath := filepath.Join(sd.snapshotDir, "snapshot-latest.json")
+	snapshotPath := filepath.Join(sd.snapshotDir, FileName)
 	file, err := os.Create(snapshotPath)
 	if err != nil {
 		return fmt.Errorf("failed to create snapshot file: %w", err)
@@ -311,7 +311,7 @@ func (sd *SnapshotDownloader) assembleAndVerifySnapshot(task *DownloadTask) erro
 
 // applyAndLoadSnapshot applies and loads a downloaded snapshot
 func (sd *SnapshotDownloader) applyAndLoadSnapshot(task *DownloadTask) error {
-	snapshotPath := filepath.Join(sd.snapshotDir, "snapshot-latest.json")
+	snapshotPath := filepath.Join(sd.snapshotDir, FileName)
 
 	// Read snapshot
 	snapshotFile, err := ReadSnapshot(snapshotPath)

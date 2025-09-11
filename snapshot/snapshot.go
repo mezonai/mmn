@@ -18,7 +18,7 @@ import (
 
 const accountPrefix = "account:"
 const folder = "./snapshots"
-const fileName = "snapshot-latest.json"
+const FileName = "snapshot-latest.json"
 
 var SnapshotDirectory = getSnapshotDirectory()
 
@@ -28,7 +28,7 @@ func getSnapshotDirectory() string {
 }
 
 func GetSnapshotPath() string {
-	return filepath.Join(SnapshotDirectory, fileName)
+	return filepath.Join(SnapshotDirectory, FileName)
 }
 
 func EnsureSnapshotDirectory() error {
@@ -53,51 +53,10 @@ type SnapshotFile struct {
 	Accounts []types.Account `json:"accounts"`
 }
 
-func ComputeFullBankHash(provider db.DatabaseProvider) ([32]byte, error) {
-	iterable, ok := provider.(db.IterableProvider)
-	if !ok {
-		return [32]byte{}, fmt.Errorf("provider does not support iteration")
-	}
-
-	type item struct {
-		addr string
-		acc  types.Account
-	}
-	items := make([]item, 0, 1024)
-	err := iterable.IteratePrefix([]byte(accountPrefix), func(key, value []byte) bool {
-		var acc types.Account
-		if err := json.Unmarshal(value, &acc); err != nil {
-			return false
-		}
-		items = append(items, item{addr: acc.Address, acc: acc})
-		return true
-	})
-	if err != nil {
-		return [32]byte{}, err
-	}
-
-	sort.Slice(items, func(i, j int) bool { return items[i].addr < items[j].addr })
-
-	h := sha256.New()
-	buf := make([]byte, 8)
-	for _, it := range items {
-		addr := it.addr
-		acc := it.acc
-		binary.BigEndian.PutUint64(buf, uint64(len(addr)))
-		h.Write(buf)
-		h.Write([]byte(addr))
-		binary.BigEndian.PutUint64(buf, acc.Balance.Uint64())
-		h.Write(buf)
-		binary.BigEndian.PutUint64(buf, acc.Nonce)
-		h.Write(buf)
-	}
-	var out [32]byte
-	copy(out[:], h.Sum(nil))
-	return out, nil
-}
-
 // ComputeFullBankHashFromAccounts computes the full bank hash from a list of accounts
 func ComputeFullBankHashFromAccounts(accounts []*types.Account) ([32]byte, error) {
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].Address < accounts[j].Address })
+
 	h := sha256.New()
 	buf := make([]byte, 8)
 	for _, acc := range accounts {
@@ -133,29 +92,23 @@ func WriteSnapshotFromAccounts(dir string, accounts []*types.Account, slot uint6
 		return "", fmt.Errorf("create snapshot directory: %w", err)
 	}
 
-	// Write to file
-	filename := fmt.Sprintf("snapshot-%d.json", slot)
-	path := filepath.Join(dir, filename)
+	// Always write only one file: snapshot-latest.json
+	latestPath := filepath.Join(dir, FileName)
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal snapshot: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(latestPath, data, 0644); err != nil {
 		return "", fmt.Errorf("write snapshot file: %w", err)
 	}
 
-	// Create symlink to latest
-	latestPath := filepath.Join(dir, "snapshot-latest.json")
-	os.Remove(latestPath) // Remove existing symlink if any
-	if err := os.Symlink(filename, latestPath); err != nil {
-		// If symlink fails, just copy the file
-		if err := os.WriteFile(latestPath, data, 0644); err != nil {
-			return "", fmt.Errorf("create latest snapshot link: %w", err)
-		}
+	// Ensure no other snapshot JSONs linger in directory
+	if err := cleanupOldSnapshots(dir, latestPath); err != nil {
+		logx.Error("SNAPSHOT", "Failed to cleanup old snapshots:", err)
 	}
 
-	return path, nil
+	return latestPath, nil
 }
 
 // WriteSnapshot writes a full snapshot of all accounts with given slot and bank hash
@@ -195,7 +148,7 @@ func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHa
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir snapshot dir: %w", err)
 	}
-	path := filepath.Join(dir, fileName)
+	path := filepath.Join(dir, FileName)
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return "", fmt.Errorf("write snapshot file: %w", err)
 	}

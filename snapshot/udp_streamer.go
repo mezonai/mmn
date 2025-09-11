@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -17,7 +16,7 @@ const (
 	DEFALU_CHUNK_SIZE = 16 * 1024
 )
 
-func StartSnapshotUDPStreamer(provider db.DatabaseProvider, snapshotDir string, listenAddr string) error {
+func StartSnapshotUDPStreamer(snapshotDir string, listenAddr string) error {
 	addr, err := net.ResolveUDPAddr("udp", listenAddr)
 	if err != nil {
 		return fmt.Errorf("resolve udp addr: %w", err)
@@ -42,7 +41,7 @@ func StartSnapshotUDPStreamer(provider db.DatabaseProvider, snapshotDir string, 
 				continue
 			}
 			receiver := &net.UDPAddr{IP: remote.IP, Port: req.ReceiverPort}
-			path := filepath.Join(snapshotDir, fileName)
+			path := filepath.Join(snapshotDir, FileName)
 			fileInfo, err := os.Stat(path)
 			if err != nil {
 				logx.Error("SNAPSHOT:STREAMER", "stat snapshot-latest.json:", err)

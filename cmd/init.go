@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"

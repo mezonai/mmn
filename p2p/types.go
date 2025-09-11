@@ -214,8 +214,4 @@ type SnapshotAnnounce struct {
 }
 
 type SnapshotRequest struct {
-	PeerID       string `json:"peer_id"`
-	WantSlot     uint64 `json:"want_slot"`
-	ReceiverAddr string `json:"receiver_addr"` // host:port UDP
-	ChunkSize    int    `json:"chunk_size"`
 }

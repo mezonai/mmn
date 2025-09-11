@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/logx"
@@ -195,8 +194,6 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Reset buffer
 		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
-		writeSnapshotIfDue(v.ledger, currentSlot)
-
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
 		}
@@ -347,35 +344,4 @@ func (v *Validator) mempoolCleanupLoop() {
 			v.Mempool.PeriodicCleanup()
 		}
 	}
-}
-
-func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
-	if slot%p2p.SnapshotRangeFor != 0 {
-		return
-	}
-	accountStore := ld.GetAccountStore()
-	if accountStore == nil {
-		return
-	}
-
-	// Get all accounts using AccountStore instead of provider
-	accounts, err := accountStore.GetAll()
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to get all accounts at slot %d: %v", slot, err))
-		return
-	}
-
-	bankHash, err := snapshot.ComputeFullBankHashFromAccounts(accounts)
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
-		return
-	}
-	dir := snapshot.SnapshotDirectory
-	saved, err := snapshot.WriteSnapshotFromAccounts(dir, accounts, slot, bankHash, nil)
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
-		return
-	}
-
-	logx.Info("SNAPSHOT", fmt.Sprintf("Created snapshot: %s (slot %d)", saved, slot))
 }

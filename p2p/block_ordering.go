@@ -45,31 +45,10 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 		}
 	}
 
-	if len(processedBlocks) == 0 {
-		if len(ln.blockOrderingQueue) > 0 {
-			var lowestSlot uint64
-			first := true
-			for slot := range ln.blockOrderingQueue {
-				if first || slot < lowestSlot {
-					lowestSlot = slot
-					first = false
-				}
-			}
-
-			// If there's a large gap (> BatchSize slots), adjust nextExpectedSlot
-			if lowestSlot > ln.nextExpectedSlot+SyncBlocksBatchSize {
-				logx.Warn("BLOCK:ORDERING", "Large gap detected! Adjusting nextExpectedSlot from", ln.nextExpectedSlot, "to", lowestSlot)
-				ln.nextExpectedSlot = lowestSlot
-				// Try processing again with adjusted slot
-				return ln.processConsecutiveBlocks(bs, ld)
-			}
-		}
-	}
-
 	// Process all consecutive blocks
 	for _, blk := range processedBlocks {
 		if err := ln.processBlock(blk, bs, ld); err != nil {
-			// Continue processing other blocks even if one fails
+			logx.Warn("CONSECUTIVE", "Failed to process block at slot", err.Error())
 			continue
 		}
 	}
@@ -85,6 +64,10 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 	// Verify PoH
 	if err := blk.VerifyPoH(); err != nil {
 		return fmt.Errorf("invalid PoH for block at slot %d: %w", blk.Slot, err)
+	}
+
+	if err := bs.AddBlockPending(blk); err != nil {
+		return fmt.Errorf("add pending block error: %w", err)
 	}
 
 	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {

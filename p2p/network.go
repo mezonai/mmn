@@ -127,6 +127,9 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
 	ln.SetupPubSubSyncTopics(ctx)
+
+	go ln.RequestLatestSlotFromPeers(ln.ctx)
+
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
 		if bootstrapPeer == "" {
