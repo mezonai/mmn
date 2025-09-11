@@ -130,7 +130,10 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
-	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData)
+	extraInfo := map[string]string{
+		"type": "unlock_item",
+	}
+	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo)
 	if err != nil {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
@@ -158,6 +161,20 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	}
 
 	t.Logf("Account %s balance: %s tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
+
+	// verify tx extra
+	actualTxInfo, err := client.GetTxByHash(ctx, res.TxHash)
+	if err != nil {
+		t.Fatalf("Failed to get tx by hash: %v", err)
+	}
+	t.Logf("Transaction info: %+v", actualTxInfo)
+	actualTxExtra, err := actualTxInfo.DeserializedExtraInfo()
+	if err != nil {
+		t.Fatalf("Failed to deserialize tx extra info: %v", err)
+	}
+	if actualTxExtra == nil || actualTxExtra["type"] != "unlock_item" {
+		t.Errorf("Unmatched tx extra info: expected: %+v, actual: %+v", extraInfo, actualTxExtra)
+	}
 }
 
 func TestClient_GetListTransactionsFaucet(t *testing.T) {

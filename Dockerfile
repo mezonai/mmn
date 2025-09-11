@@ -1,4 +1,4 @@
-FROM golang:1.23-bookworm AS builder
+FROM golang:1.24-bookworm AS builder
 
 # Build argument for database selection
 ARG DB_VENDOR=rocksdb

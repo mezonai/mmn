@@ -45,9 +45,16 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
-			if len(ln.host.Network().Peers()) > 0 {
-				go ln.checkForMissingBlocksAround(bs, blk.Slot)
+			// Remove transactions in block from mempool and add tx tracker if node is follower
+			if self.PubKey != blk.LeaderID {
+				go mp.BlockCleanup(blk)
 			}
+
+			// Temporary comment to save bandwidth for main flow
+			// if len(ln.host.Network().Peers()) > 0 {
+			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
+			// }
+
 			// Reset poh to sync poh clock with leader
 			if blk.Slot > bs.GetLatestSlot() {
 				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
@@ -97,7 +104,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			// Add transaction to mempool
 			_, err := mp.AddTx(txData, false)
 			if err != nil {
-				fmt.Printf("Failed to add transaction from P2P: %v\n", err)
+				logx.Error("NETWORK: SYNC TRANS", "Failed to add transaction from P2P to mempool: ", err)
 			}
 			return nil
 		},
@@ -150,10 +157,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 	// go ln.startInitialSync(bs)
 
-	go ln.startPeriodicSyncCheck(bs)
+	// Temporary comment to save bandwidth for main flow
+	// go ln.startPeriodicSyncCheck(bs)
 
 	// Start continuous gap detection
-	go ln.startContinuousGapDetection(bs)
+	// Temporary comment to save bandwidth for main flow
+	// go ln.startContinuousGapDetection(bs)
 
 	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
@@ -186,7 +195,6 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
-	go mp.BlockCleanup(block)
 	return nil
 }
 

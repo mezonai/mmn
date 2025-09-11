@@ -1,10 +1,11 @@
 module github.com/mezonai/mmn
 
-go 1.23.8
+go 1.24
 
 toolchain go1.24.5
 
 require (
+	github.com/creachadair/jrpc2 v1.3.2
 	github.com/holiman/uint256 v1.3.2
 	github.com/lib/pq v1.10.9
 	github.com/libp2p/go-libp2p v0.43.0
@@ -17,12 +18,14 @@ require (
 	github.com/syndtr/goleveldb v1.0.0
 	google.golang.org/grpc v1.74.2
 	google.golang.org/protobuf v1.36.6
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
+	github.com/creachadair/mds v0.25.1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dgraph-io/badger v1.6.2 // indirect
 	github.com/dgraph-io/ristretto v0.0.2 // indirect

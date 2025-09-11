@@ -443,7 +443,7 @@ func (mp *Mempool) cleanupStaleTransactions() {
 	}
 }
 
-func (mp *Mempool) BlockCleanup(block *block.Block) {
+func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
@@ -452,7 +452,14 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 
 	// Iterate through all entries in the block and clean up all transaction references
 	for _, entry := range block.Entries {
-		for _, txHash := range entry.TxHashes {
+		for _, tx := range entry.Transactions {
+			// Track transaction as processing when remove from mempool
+			if mp.txTracker != nil {
+				mp.txTracker.TrackProcessingTransaction(tx)
+			}
+
+			txHash := tx.Hash()
+
 			// Remove from main transaction buffer
 			if _, exists := mp.txsBuf[txHash]; exists {
 				delete(mp.txsBuf, txHash)
@@ -499,7 +506,7 @@ func (mp *Mempool) PeriodicCleanup() {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
-	fmt.Println("Starting periodic mempool cleanup...")
+	logx.Info("MEMPOOL", "Starting periodic mempool cleanup...")
 
 	// Clean up stale transactions
 	mp.cleanupStaleTransactions()
@@ -514,15 +521,17 @@ func (mp *Mempool) PeriodicCleanup() {
 		totalPending += len(pendingMap)
 	}
 
-	fmt.Printf("Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
-		len(mp.readyQueue), totalPending, len(mp.txsBuf))
+	logx.Info("MEMPOOL", fmt.Sprintf(
+		"Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
+		len(mp.readyQueue), totalPending, len(mp.txsBuf),
+	))
 }
 
 func (mp *Mempool) cleanupOutdatedTransactions() {
 	for sender, pendingMap := range mp.pendingTxs {
 		account, err := mp.ledger.GetAccount(sender)
 		if err != nil {
-			fmt.Printf("Error getting account for sender %s: %v\n", sender, err)
+			logx.Error("MEMPOOL", "Error getting account for sender ", sender, ": ", err)
 			continue
 		}
 		currentNonce := account.Nonce
@@ -559,7 +568,7 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 		account, err := mp.ledger.GetAccount(tx.Sender)
 		if err != nil {
 			// Skip this transaction if we can't get the account
-			fmt.Printf("Error getting account for sender %s: %v\n", tx.Sender, err)
+			logx.Error("MEMPOOL", "Error getting account for sender ", tx.Sender, ": ", err)
 			continue
 		}
 		currentNonce := account.Nonce

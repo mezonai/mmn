@@ -37,6 +37,8 @@ func init() {
 }
 
 func runBootstrap() {
+	initializeFileLogger()
+	
 	ctx := context.Background()
 
 	var priv crypto.PrivKey

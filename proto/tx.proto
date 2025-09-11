@@ -20,6 +20,7 @@ message TransactionData {
   uint64 nonce = 5; // nonce
   uint64 timestamp = 6;
   TransactionStatus status = 7;
+  string text_data = 8;
 }
 
 message TxMsg { 
@@ -30,6 +31,7 @@ message TxMsg {
   uint64 timestamp = 5;
   string text_data = 6;
   uint64 nonce = 7;
+  string extra_info = 8;
 }
 
 message SignedTxMsg {
@@ -63,6 +65,7 @@ message TxInfo {
   string blockhash = 8;
   int32 status = 9;
   string err_msg = 10;
+  string extra_info = 11;
 }
 
 message GetTxByHashResponse {
@@ -77,6 +80,7 @@ message GetTransactionStatusRequest {
 }
 
 // Unified transaction status message used for both unary and streaming responses
+// TODO: consider to have single field as wrapper for all original transaction attributes (amount, text data, extra...) to avoid code duplication
 message TransactionStatusInfo {
   string tx_hash = 1;
   TransactionStatus status = 2;
@@ -85,6 +89,9 @@ message TransactionStatusInfo {
   uint64 confirmations = 5;     // Number of confirmations
   string error_message = 6;     // Error message if failed
   uint64 timestamp = 7;         // Timestamp when status was last updated
+  string extra_info = 8;        // Extra info that was attached to transaction on creation
+  string amount = 9;            // Transaction amount
+  string text_data = 10;        // Transaction text data
 }
 
 // Request to subscribe to all transaction status updates

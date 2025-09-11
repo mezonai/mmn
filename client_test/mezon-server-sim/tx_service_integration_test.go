@@ -739,3 +739,20 @@ func TestHealthCheck_Integration(t *testing.T) {
 		}
 	})
 }
+
+// TestGetAccountByAddress verifies that balances are updated correctly after the transfer
+func TestGetAccountByAddress(t *testing.T) {
+	svc, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Get updated balances after transfer
+	acc, err := svc.AccountService.GetAccountByAddress(ctx, "2e569886f40b7324282e55d725f724573176f2d196bb1f9b52cd8bee6d924588")
+	if err != nil {
+		fmt.Printf("Failed to get updated from account: %v", err)
+	}
+
+	fmt.Printf("Account %s balance: %d tokens, nonce: %d", acc.Address, acc.Balance, acc.Nonce)
+
+}

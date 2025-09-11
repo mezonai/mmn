@@ -36,8 +36,8 @@ func NewGenericAccountStore(dbProvider db.DatabaseProvider) (*GenericAccountStor
 }
 
 func (as *GenericAccountStore) Store(account *types.Account) error {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
+	as.mu.Lock()
+	defer as.mu.Unlock()
 
 	accountData, err := json.Marshal(account)
 	if err != nil {

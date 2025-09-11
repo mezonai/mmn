@@ -159,7 +159,8 @@ waitLoop:
 
 func (v *Validator) onLeaderSlotEnd() {
 	logx.Info("LEADER", "onLeaderSlotEnd")
-	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+	// TODO: temporary fix bug race condition
+	// v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.leaderStartAtSlot = NoSlot
 }
 
@@ -195,9 +196,9 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
 
-		// Retrieve previous block hash from blockStore
-		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-		prevHash := lastEntry.Hash
+		// Retrieve previous hash from recorder
+		prevHash := v.Recorder.GetSlotHash(v.lastSlot - 1)
+		logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", v.lastSlot-1, prevHash))
 
 		blk := block.AssembleBlock(
 			v.lastSlot,
@@ -209,18 +210,12 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		blk.Sign(v.PrivKey)
 		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
-		// Persist then broadcast
-		logx.Info("VALIDATOR", fmt.Sprintf("Adding block pending: %d", blk.Slot))
+		// Reset buffer
+		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
-			return
 		}
-
-		writeSnapshotIfDue(v.ledger, currentSlot)
-
-		// Reset buffer
-		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	} else if v.IsLeader(currentSlot) {
 		// Buffer entries only if leader of current slot
 		v.collectedEntries = append(v.collectedEntries, entries...)
@@ -231,10 +226,14 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
+// Leader to validator to reset poh
 func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) error {
 	logx.Info("VALIDATOR", fmt.Sprintf("Received latest slot %d", slot))
 	currentSlot := v.Recorder.CurrentSlot()
-	if v.IsFollower(currentSlot) {
+	// Just reset if
+	// - Incoming block is from other leader
+	// - This node is follower for current slot
+	if v.IsFollower(currentSlot) && v.IsFollower(slot) {
 		logx.Info("VALIDATOR", fmt.Sprintf("Follower received latest slot %d", slot))
 		v.Recorder.Reset(seedHash, slot)
 	}
@@ -353,12 +352,10 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
-				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
-				// fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot != NoSlot {
 					v.onLeaderSlotEnd()
 				}
