@@ -1,7 +1,7 @@
 package poh
 
 import (
-	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"time"
 
 	"github.com/mezonai/mmn/exception"
@@ -33,7 +33,7 @@ func (s *PohService) Stop() {
 }
 
 func (s *PohService) tickAndFlush() {
-	fmt.Println("Ticking and flushing")
+	logx.Info("POH SERVICE", "Ticking and flushing")
 	ticker := time.NewTicker(s.TickInterval)
 	defer ticker.Stop()
 	for {
@@ -47,7 +47,7 @@ func (s *PohService) tickAndFlush() {
 				s.OnEntry(entries)
 			}
 		case <-s.stopCh:
-			fmt.Println("Ticking and flushing stop")
+			logx.Info("POH SERVICE", "Ticking and flushing stopped")
 			return
 		}
 	}

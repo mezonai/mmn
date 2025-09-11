@@ -71,13 +71,13 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Printf("[gRPC] Failed to listen on %s: %v\n", addr, err)
+		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", addr, err))
 		return nil
 	}
 	exception.SafeGo("Grpc Server", func() {
 		grpcSrv.Serve(lis)
 	})
-	fmt.Printf("[gRPC] server listening on %s\n", addr)
+	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
 }
 
@@ -85,7 +85,7 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	if err != nil {
-		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
+		logx.Error("GRPC ADD TX", "FromProtoSignedTx error ", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
 	}
 
@@ -195,8 +195,9 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
-	if err != nil {
+	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
+	if errTx != nil || errTxMeta != nil {
+		err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
 		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
@@ -262,6 +263,8 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 						Confirmations: 0, // No confirmations for mempool transactions
 						Timestamp:     uint64(time.Now().Unix()),
 						ExtraInfo:     tx.ExtraInfo,
+						Amount:        utils.Uint256ToString(tx.Amount),
+						TextData:      tx.TextData,
 					}, nil
 				}
 			}
@@ -277,8 +280,9 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 			if confirmations > 1 {
 				status = pb.TransactionStatus_FINALIZED
 			}
-			tx, _, err := s.ledger.GetTxByHash(txHash)
-			if err != nil {
+			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
+			if errTx != nil || errTxMeta != nil {
+				err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
 				return nil, err
 			}
 
@@ -290,6 +294,8 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 				Confirmations: confirmations,
 				Timestamp:     uint64(time.Now().Unix()),
 				ExtraInfo:     tx.ExtraInfo,
+				Amount:        utils.Uint256ToString(tx.Amount),
+				TextData:      tx.TextData,
 			}, nil
 		}
 	}
@@ -382,6 +388,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.Transaction().ExtraInfo,
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionIncludedInBlock:
@@ -396,6 +404,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionFinalized:
@@ -410,6 +420,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionFailed:
@@ -420,6 +432,8 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
 			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 	}
 
@@ -570,18 +584,14 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, _, err := s.ledger.GetTxByHash(txHash)
+			tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
 
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			if errTx != nil || errTxMeta != nil {
+				errMsg := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
+				return nil, status.Errorf(codes.NotFound, "tx %s not found: %v", txHash, errMsg)
 			}
 
-			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
-			}
-
-			txStatus := info.Status
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,

@@ -3,8 +3,11 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/poh"
@@ -147,7 +150,7 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
 		var err error
 		amount, err = uint256.FromDecimal(pbTx.TxMsg.Amount)
 		if err != nil {
-			fmt.Println("Error parsing amount:", err)
+			logx.Error("UTIL", "Error parsing amount: ", err)
 			return nil, err
 		}
 	}
@@ -203,4 +206,16 @@ func Uint256FromString(value string) *uint256.Int {
 		return nil
 	}
 	return amount
+}
+
+func TxMetaStatusToProtoTxStatus(status int32) pb.TransactionStatus {
+	switch status {
+	case types.TxStatusFailed:
+		return pb.TransactionStatus_FAILED
+	case types.TxStatusSuccess:
+		return pb.TransactionStatus_FINALIZED
+	case types.TxStatusProcessed:
+		return pb.TransactionStatus_CONFIRMED
+	}
+	return pb.TransactionStatus_PENDING
 }

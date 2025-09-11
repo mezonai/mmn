@@ -2,6 +2,7 @@ package logx
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -17,9 +18,13 @@ const (
 
 var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
+func InitWithOutput(output io.Writer) {
+	logger.SetOutput(output)
+}
+
 func Info(category string, content ...interface{}) {
 	message := strings.TrimSuffix(fmt.Sprintln(content...), "\n")
-	coloredCategory := fmt.Sprintf("%s[%s]%s", ColorGreen, category, ColorReset)
+	coloredCategory := fmt.Sprintf("%s[INFO][%s]%s", ColorGreen, category, ColorReset)
 	logger.Printf("%s: %s", coloredCategory, message)
 }
 

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"io"
 	"net/http"
 	"strconv"
@@ -34,12 +35,11 @@ func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIS
 func (s *APIServer) Start() {
 	http.HandleFunc("/txs", s.handleTxs)
 	http.HandleFunc("/account", s.handleAccount)
-	fmt.Printf("API listen on %s\n", s.ListenAddr)
+	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)
 	go http.ListenAndServe(s.ListenAddr, nil)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Handling txs", r.Method)
 	switch r.Method {
 	case http.MethodPost:
 		s.submitTxHandler(w, r)
@@ -61,7 +61,6 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 	var req TxReq
 	if err := json.Unmarshal(body, &req); err != nil || len(req.Data) == 0 {
 		req.Data = body
-		fmt.Println("Raw tx", string(req.Data))
 	}
 	tx, err := utils.ParseTx(req.Data)
 	if err != nil {
@@ -102,8 +101,6 @@ func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		filter = 0
 	}
-
-	fmt.Println("limit", limit, "offset", offset, "filter", filter)
 
 	result := struct {
 		Total uint32

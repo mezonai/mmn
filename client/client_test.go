@@ -130,7 +130,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
-	extraInfo := map[string]any{
+	extraInfo := map[string]string{
 		"type": "unlock_item",
 	}
 	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo)

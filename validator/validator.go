@@ -192,9 +192,9 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
 
-		// Retrieve previous block hash from blockStore
-		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-		prevHash := lastEntry.Hash
+		// Retrieve previous hash from recorder
+		prevHash := v.Recorder.GetSlotHash(v.lastSlot - 1)
+		logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", v.lastSlot-1, prevHash))
 
 		blk := block.AssembleBlock(
 			v.lastSlot,
@@ -336,12 +336,10 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
-				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
-				// fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot != NoSlot {
 					v.onLeaderSlotEnd()
 				}

@@ -1,19 +1,26 @@
-version: "3.8"
+name: mmn
 
 services:
   bootnode:
     build:
       context: .
       args:
-        DB_VENDOR: ${DB_VENDOR:-rocksdb}  #rocksdb or leveldb
+        DB_VENDOR: ${DB_VENDOR:-rocksdb} #rocksdb or leveldb
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: bootnode
     command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
     ports:
       - "9000:9000"
+    volumes:
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-bootnode.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
+
   node1:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node1
@@ -30,9 +37,15 @@ services:
       - "9001:9001"
     volumes:
       - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-node1.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
+
   node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node2
@@ -49,6 +62,11 @@ services:
       - "9002:9002"
     volumes:
       - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-node2.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
@@ -69,10 +87,62 @@ services:
       - "9003:9003"
     volumes:
       - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-node3.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
       - mezon
     restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.5.0
+    container_name: loki
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.5.0
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - logs_data:/var/log/mmn:ro
+    depends_on:
+      - loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.5
+    container_name: grafana
+    environment:
+      - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app
+    ports:
+      - "3300:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
 networks:
   mezon:
+
 volumes:
   node_data:
+  loki_data:
+  grafana_data:
+  logs_data:
