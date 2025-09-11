@@ -367,5 +367,6 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 
 	// Start API server on a different port
 	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
+	apiSrv.ExposePromMetrics(nodeConfig.Libp2pAddr)
 	apiSrv.Start()
 }

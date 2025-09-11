@@ -21,13 +21,16 @@ type TxReq struct {
 }
 
 type APIServer struct {
+	mux        *http.ServeMux
 	Mempool    *mempool.Mempool
 	Ledger     *ledger.Ledger
 	ListenAddr string
 }
 
 func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIServer {
+	mux := http.NewServeMux()
 	return &APIServer{
+		mux:        mux,
 		Mempool:    mp,
 		Ledger:     ledger,
 		ListenAddr: addr,
@@ -35,12 +38,14 @@ func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIS
 }
 
 func (s *APIServer) Start() {
-	mux := http.NewServeMux()
-	monitoring.RegisterMetrics(mux, s.ListenAddr)
-	mux.HandleFunc("/txs", s.handleTxs)
-	mux.HandleFunc("/account", s.handleAccount)
+	s.mux.HandleFunc("/txs", s.handleTxs)
+	s.mux.HandleFunc("/account", s.handleAccount)
 	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)
-	go http.ListenAndServe(s.ListenAddr, mux)
+	go http.ListenAndServe(s.ListenAddr, s.mux)
+}
+
+func (s *APIServer) ExposePromMetrics(nodeName string) {
+	monitoring.RegisterMetrics(s.mux, nodeName)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {

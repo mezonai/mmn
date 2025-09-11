@@ -107,6 +107,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Always add to txsBuf and txOrder for compatibility
 	mp.txsBuf[txHash] = tx.Bytes()
+	monitoring.SetMempoolSize(mp.Size())
 	mp.txOrder = append(mp.txOrder, txHash)
 
 	// Publish event for transaction status tracking
@@ -128,7 +129,6 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
-	monitoring.SetMempoolSize(mp.Size())
 
 	return txHash, nil
 }
@@ -299,7 +299,6 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 		}
 		// Check if any pending transactions became ready after processing
 		mp.promotePendingTransactions(readyTxs)
-		monitoring.SetMempoolSize(mp.Size())
 	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
@@ -334,10 +333,8 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 	}
 }
 
-// Size uses read lock for better concurrency
+// Size returns current size of mempool without locking
 func (mp *Mempool) Size() int {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
 	return len(mp.txsBuf)
 }
 
@@ -416,6 +413,7 @@ func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 
 	// Remove from txsBuf
 	delete(mp.txsBuf, txHash)
+	monitoring.SetMempoolSize(mp.Size())
 
 	// Remove from txOrder
 	for i, hash := range mp.txOrder {
@@ -460,6 +458,7 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 			// Remove from main transaction buffer
 			if _, exists := mp.txsBuf[txHash]; exists {
 				delete(mp.txsBuf, txHash)
+				monitoring.SetMempoolSize(mp.Size())
 
 				// Remove from txOrder
 				for i, hash := range mp.txOrder {
