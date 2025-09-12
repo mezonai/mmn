@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -45,7 +46,7 @@ func TestPerformance_SendToken(t *testing.T) {
 	t.Logf("Connected. Faucet: %s", faucetAddr)
 
 	// Lower burst by using more users and fewer tx per user; allow override via env
-	usersCount := 60
+	usersCount := 120
 	txPerUser := 20
 
 	type goUser struct {
@@ -320,6 +321,54 @@ compute:
 		"executedTPS":        executedTPS,
 		"finalizedTPS":       finalizedTPS,
 	}
+
+	// Additionally, compute steady-state TPS over a fixed window after a warm-up
+	getEnvInt := func(key string, def int) int {
+		v := os.Getenv(key)
+		if v == "" {
+			return def
+		}
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+		return def
+	}
+
+	warmupSec := getEnvInt("MEASURE_WARMUP_SEC", 1)
+	windowSec := getEnvInt("MEASURE_WINDOW_SEC", 10)
+	startWindow := firstSent.Add(time.Duration(warmupSec) * time.Second)
+	endWindow := startWindow.Add(time.Duration(windowSec) * time.Second)
+
+	pendingInWindow := 0
+	confirmedInWindow := 0
+	finalizedInWindow := 0
+	mu.Lock()
+	for _, st := range txTimes {
+		if !st.pendingAt.IsZero() && (st.pendingAt.Equal(startWindow) || st.pendingAt.After(startWindow)) && st.pendingAt.Before(endWindow) {
+			pendingInWindow++
+		}
+		if !st.confirmedAt.IsZero() && (st.confirmedAt.Equal(startWindow) || st.confirmedAt.After(startWindow)) && st.confirmedAt.Before(endWindow) {
+			confirmedInWindow++
+		}
+		if !st.finalizedAt.IsZero() && (st.finalizedAt.Equal(startWindow) || st.finalizedAt.After(startWindow)) && st.finalizedAt.Before(endWindow) {
+			finalizedInWindow++
+		}
+	}
+	mu.Unlock()
+
+	steadyIngressTPS := float64(pendingInWindow) / (float64(windowSec))
+	steadyExecutedTPS := float64(confirmedInWindow) / (float64(windowSec))
+	steadyFinalizedTPS := float64(finalizedInWindow) / (float64(windowSec))
+
+	// steady window/ingress logs removed per request
+	t.Logf("Steady Executed: count=%d TPS=%.2f", confirmedInWindow, steadyExecutedTPS)
+	t.Logf("Steady Finalized: count=%d TPS=%.2f", finalizedInWindow, steadyFinalizedTPS)
+
+	results["steadyWarmupSec"] = warmupSec
+	results["steadyWindowSec"] = windowSec
+	results["steadyIngressTPS"] = steadyIngressTPS
+	results["steadyExecutedTPS"] = steadyExecutedTPS
+	results["steadyFinalizedTPS"] = steadyFinalizedTPS
 	if b, err := json.MarshalIndent(results, "", "  "); err == nil {
 		_ = os.WriteFile("performance_results.json", b, 0644)
 	} else {

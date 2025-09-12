@@ -78,6 +78,24 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 	mp.mu.RUnlock()
 
+	// Perform stateless validation outside of any locks
+	if !tx.Verify() {
+		return "", fmt.Errorf("invalid signature")
+	}
+	if tx.Amount == nil || tx.Amount.IsZero() {
+		return "", fmt.Errorf("zero amount not allowed")
+	}
+
+	// Create a read-only snapshot for the sender to validate concurrently
+	snap, snapErr := mp.snapshotSenderState(tx.Sender)
+	if snapErr != nil {
+		return "", snapErr
+	}
+	if err := mp.validateWithSnapshot(tx, snap); err != nil {
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
+		return "", err
+	}
+
 	// Now acquire write lock for validation and insertion
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
@@ -93,9 +111,9 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 		return "", fmt.Errorf("mempool full")
 	}
 
-	// Validate transaction INSIDE the write lock
-	if err := mp.validateTransaction(tx); err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
+	// Re-check constraints under the write lock to avoid races since snapshot
+	if err := mp.recheckSenderConstraints(tx); err != nil {
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s after recheck: %v", txHash, err))
 		return "", err
 	}
 
@@ -256,6 +274,118 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return err
 	}
 
+	return nil
+}
+
+// senderSnapshot captures read-only state for a specific sender to validate concurrently
+type senderSnapshot struct {
+	currentNonce     uint64
+	pendingNonces    map[uint64]struct{}
+	readyNonces      map[uint64]struct{}
+	availableBalance *uint256.Int
+}
+
+// snapshotSenderState collects sender-related mempool and ledger data under a read lock
+func (mp *Mempool) snapshotSenderState(sender string) (*senderSnapshot, error) {
+	if mp.ledger == nil {
+		return nil, fmt.Errorf("ledger not available for validation")
+	}
+
+	mp.mu.RLock()
+	defer mp.mu.RUnlock()
+
+	senderAccount, err := mp.ledger.GetAccount(sender)
+	if err != nil {
+		return nil, fmt.Errorf("could not get sender account %s", sender)
+	}
+	if senderAccount == nil {
+		return nil, fmt.Errorf("sender account %s does not exist", sender)
+	}
+
+	snap := &senderSnapshot{
+		currentNonce:     senderAccount.Nonce,
+		pendingNonces:    make(map[uint64]struct{}),
+		readyNonces:      make(map[uint64]struct{}),
+		availableBalance: new(uint256.Int).Set(senderAccount.Balance),
+	}
+
+	if pending, ok := mp.pendingTxs[sender]; ok {
+		for nonce, p := range pending {
+			snap.pendingNonces[nonce] = struct{}{}
+			snap.availableBalance.Sub(snap.availableBalance, p.Tx.Amount)
+		}
+	}
+	for _, rtx := range mp.readyQueue {
+		if rtx.Sender == sender {
+			snap.readyNonces[rtx.Nonce] = struct{}{}
+			snap.availableBalance.Sub(snap.availableBalance, rtx.Amount)
+		}
+	}
+
+	return snap, nil
+}
+
+// validateWithSnapshot performs nonce and balance checks using a read-only snapshot
+func (mp *Mempool) validateWithSnapshot(tx *transaction.Transaction, snap *senderSnapshot) error {
+	// Nonce bounds
+	if tx.Nonce <= snap.currentNonce {
+		return fmt.Errorf("nonce too low: expected > %d, got %d", snap.currentNonce, tx.Nonce)
+	}
+	if tx.Nonce > snap.currentNonce+MaxFutureNonce {
+		return fmt.Errorf("nonce too high: max allowed %d, got %d", snap.currentNonce+MaxFutureNonce, tx.Nonce)
+	}
+
+	// Pending per-sender limits and duplicate nonce
+	if len(snap.pendingNonces) >= MaxPendingPerSender {
+		return fmt.Errorf("too many pending transactions for sender %s: max %d", tx.Sender[:8], MaxPendingPerSender)
+	}
+	if _, ok := snap.pendingNonces[tx.Nonce]; ok {
+		return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions", tx.Nonce, tx.Sender[:8])
+	}
+	if _, ok := snap.readyNonces[tx.Nonce]; ok {
+		return fmt.Errorf("duplicate nonce %d for sender %s in ready queue", tx.Nonce, tx.Sender[:8])
+	}
+
+	// Balance check using snapshot
+	if snap.availableBalance.Cmp(tx.Amount) < 0 {
+		return fmt.Errorf("insufficient available balance: need %s, have(after pending/ready) %s", tx.Amount.String(), snap.availableBalance.String())
+	}
+
+	return nil
+}
+
+// recheckSenderConstraints repeats critical checks under write lock to avoid races
+func (mp *Mempool) recheckSenderConstraints(tx *transaction.Transaction) error {
+	// Account must exist
+	if mp.ledger == nil {
+		return fmt.Errorf("ledger not available for validation")
+	}
+	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
+	if err != nil || senderAccount == nil {
+		return fmt.Errorf("could not get sender account %s", tx.Sender)
+	}
+	currentNonce := senderAccount.Nonce
+
+	if tx.Nonce <= currentNonce {
+		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
+	}
+	if tx.Nonce > currentNonce+MaxFutureNonce {
+		return fmt.Errorf("nonce too high: max allowed %d, got %d", currentNonce+MaxFutureNonce, tx.Nonce)
+	}
+
+	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
+		if len(pendingNonces) >= MaxPendingPerSender {
+			return fmt.Errorf("too many pending transactions for sender %s: max %d", tx.Sender[:8], MaxPendingPerSender)
+		}
+		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
+			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions", tx.Nonce, tx.Sender[:8])
+		}
+	}
+	for _, readyTx := range mp.readyQueue {
+		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
+			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue", tx.Nonce, tx.Sender[:8])
+		}
+	}
 	return nil
 }
 
