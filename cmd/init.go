@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -52,7 +53,8 @@ func init() {
 	initCmd.Flags().StringVar(&initPrivKeyPath, "privkey-path", "", "Path to existing private key file (optional)")
 }
 
-// initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data
+// initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data.
+// This method is idempotent and safe to run multiple time
 func initializeNode() {
 	initializeFileLogger()
 

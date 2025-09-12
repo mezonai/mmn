@@ -22,11 +22,11 @@ type PohRecorder struct {
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
-func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule) *PohRecorder {
+func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule, latestSlot uint64) *PohRecorder {
 	return &PohRecorder{
 		poh:            poh,
 		ticksPerSlot:   ticksPerSlot,
-		tickHeight:     0,
+		tickHeight:     latestSlot * ticksPerSlot,
 		entries:        []Entry{},
 		slotHashQueue:  NewSlotHashQueue(100),
 		leaderSchedule: schedule,
