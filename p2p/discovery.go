@@ -62,6 +62,13 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64, error) {
 	logx.Info("NETWORK:LATEST SLOT", "Requesting latest slot from peers")
 
+	// Check connected peers
+	peers := ln.host.Network().Peers()
+	logx.Info("NETWORK:LATEST SLOT", "Connected peers count:", len(peers))
+	for _, peerID := range peers {
+		logx.Info("NETWORK:LATEST SLOT", "Connected peer:", peerID.String())
+	}
+
 	req := LatestSlotRequest{
 		RequesterID: ln.host.ID().String(),
 		Addrs:       ln.host.Addrs(),
@@ -73,12 +80,18 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		return 0, err
 	}
 
+	if ln.topicLatestSlot == nil {
+		logx.Error("NETWORK:LATEST SLOT", "topicLatestSlot is nil, cannot publish request")
+		return 0, fmt.Errorf("topicLatestSlot is nil")
+	}
+
 	err = ln.topicLatestSlot.Publish(ctx, data)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to publish request:", err)
 		return 0, err
 	}
 
+	logx.Info("NETWORK:LATEST SLOT", "Latest slot request published successfully")
 	return 0, nil
 }
 
@@ -107,8 +120,7 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 	}
 
 	if ln.topicBlockSyncReq == nil {
-		errMsg := "sync request topic is not initialized"
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("sync request topic is not initialized")
 	}
 
 	err = ln.topicBlockSyncReq.Publish(ctx, data)

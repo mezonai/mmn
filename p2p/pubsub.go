@@ -5,7 +5,6 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -145,6 +144,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
+			logx.Info("world Latest Slot", "data: ", latestSlot, "peerId", peerID)
 			ln.worldLatestSlot = latestSlot
 			return nil
 		},
@@ -347,10 +347,13 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 	ln.startSnapshotAnnouncer()
 
 	if !ln.joinAfterSync {
-		ln.SetupPubSubTopics(ln.ctx)
+		go func() {
+			time.Sleep(6 * time.Second)
+			ln.SetupPubSubTopics(ln.ctx)
+		}()
+	} else {
+		go ln.requestSnapshotOnJoin()
 	}
-
-	go ln.requestSnapshotOnJoin()
 
 }
 
@@ -546,13 +549,12 @@ func (ln *Libp2pNetwork) requestSnapshotOnJoin() {
 }
 
 func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
-	log.Printf("SNAPSHOT:GOSSIP")
 	if ln.topicSnapshotAnnounce == nil {
 		logx.Info("SNAPSHOT:GOSSIP", "announce topic not ready; skip announcer")
 		return
 	}
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(2 * time.Hour)
 		defer ticker.Stop()
 		for {
 			select {
@@ -562,7 +564,6 @@ func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
 				path := snapshot.GetSnapshotPath()
 				fi, err := os.Stat(path)
 				if err != nil {
-					// wait for snapshot download and block sync
 					continue
 				}
 

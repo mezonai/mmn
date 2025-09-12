@@ -126,9 +126,10 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
-	ln.SetupPubSubSyncTopics(ctx)
+	// Start latest slot request mechanism
+	ln.startLatestSlotRequestMechanism()
 
-	go ln.RequestLatestSlotFromPeers(ln.ctx)
+	ln.SetupPubSubSyncTopics(ctx)
 
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
@@ -251,4 +252,26 @@ func (ln *Libp2pNetwork) IsNodeReady() bool {
 
 func (ln *Libp2pNetwork) setNodeReady() {
 	ln.ready.Store(true)
+}
+
+func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
+	// Request latest slot after a delay to allow peers to connect
+	go func() {
+		time.Sleep(3 * time.Second) // Wait for peers to connect
+		ln.RequestLatestSlotFromPeers(ln.ctx)
+	}()
+
+	// Periodic latest slot request every 30 seconds
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ln.RequestLatestSlotFromPeers(ln.ctx)
+			case <-ln.ctx.Done():
+				return
+			}
+		}
+	}()
 }

@@ -239,13 +239,15 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 	}
 	defer stream.Close()
 
+	// create json encoder
 	encoder := json.NewEncoder(stream)
+	// use json encoder convert req to json and send json to stream
 	if err := encoder.Encode(req); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to send request ID:", err)
 		return
 	}
 
-	// Cclose when done
+	// Close when done
 	defer func() {
 		ln.syncTrackerMu.Lock()
 		if tracker, exists := ln.syncRequests[req.RequestID]; exists {
@@ -290,23 +292,6 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		totalBlocksSent += len(batch)
 	}
 
-	if req.ToSlot < localLatestSlot {
-		nextFromSlot := req.ToSlot + 1
-		nextToSlot := nextFromSlot + SyncBlocksBatchSize - 1
-		if nextToSlot > localLatestSlot {
-			nextToSlot = localLatestSlot
-		}
-
-		nextReq := SyncRequest{
-			RequestID: fmt.Sprintf("auto_sync_%d_%d_%s", nextFromSlot, nextToSlot, targetPeer.String()),
-			FromSlot:  nextFromSlot,
-			ToSlot:    nextToSlot,
-		}
-
-		go func() {
-			ln.sendBlocksOverStream(nextReq, targetPeer)
-		}()
-	}
 }
 
 func (ln *Libp2pNetwork) RequestContinuousBlockSync(fromSlot, toSlot uint64, targetPeer peer.ID) {
