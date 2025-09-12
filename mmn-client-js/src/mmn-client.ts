@@ -4,7 +4,17 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
-import { AddTxResponse, GetCurrentNonceResponse, JsonRpcRequest, JsonRpcResponse, MmnClientConfig, SignedTx, TxMsg } from './types';
+import {
+	AddTxResponse,
+	ExtraInfo,
+	GetAccountByAddressResponse,
+	GetCurrentNonceResponse,
+	JsonRpcRequest,
+	JsonRpcResponse,
+	MmnClientConfig,
+	SignedTx,
+	TxMsg
+} from './types';
 
 // --- MMN Client ---
 
@@ -83,7 +93,7 @@ export class MmnClient {
 		timestamp?: number;
 		textData?: string;
 		nonce: number;
-		extraInfo?: string;
+		extraInfo?: ExtraInfo;
 		privateKey: string;
 	}): SignedTx {
 		const txMsg: TxMsg = {
@@ -94,7 +104,7 @@ export class MmnClient {
 			timestamp: params.timestamp || Date.now(),
 			text_data: params.textData || '',
 			nonce: params.nonce,
-			extra_info: params.extraInfo || ''
+			extra_info: JSON.stringify(params.extraInfo) || ''
 		};
 
 		const signature = this.signTransaction(txMsg, params.privateKey);
@@ -146,7 +156,7 @@ export class MmnClient {
 		nonce: number;
 		timestamp?: number;
 		textData?: string;
-		extraInfo?: string;
+		extraInfo?: ExtraInfo;
 		privateKey: string;
 	}): Promise<AddTxResponse> {
 		const signedTx = this.createAndSignTx({ ...params, type: 1 }); // transfer type is always 1 for now
@@ -158,6 +168,18 @@ export class MmnClient {
 	 */
 	async getCurrentNonce(address: string, tag: 'latest' | 'pending' = 'latest'): Promise<GetCurrentNonceResponse> {
 		return this.makeRequest<GetCurrentNonceResponse>('account.getcurrentnonce', { address, tag });
+	}
+
+	async getAccountByAddress(address: string): Promise<GetAccountByAddressResponse> {
+		return this.makeRequest<GetAccountByAddressResponse>('account.getaccount', { address });
+	}
+
+	scaleAmountToDecimals(originalAmount: string | number, decimals: number): string {
+		let scaledAmount = BigInt(originalAmount);
+		for (let i = 0; i < decimals; i++) {
+			scaledAmount = scaledAmount * BigInt(10);
+		}
+		return scaledAmount.toString();
 	}
 }
 

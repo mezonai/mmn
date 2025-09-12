@@ -24,6 +24,24 @@ export interface JsonRpcResponse<T = unknown> {
 
 // --- Transaction Types ---
 
+export enum ETransferType {
+	GiveCoffee = 'give_coffee',
+	TransferToken = 'transfer_token',
+	UnlockItem = 'unlock_item'
+}
+
+export interface ExtraInfo {
+	type: ETransferType;
+	ItemId?: string;
+	ItemType?: string;
+	ClanId?: string;
+	UserSenderId: string;
+	UserSenderUsername: string;
+	UserReceiverId: string;
+	ChannelId?: string;
+	MessageRefId?: string;
+}
+
 export interface TxMsg {
 	type: number;
 	sender: string;
@@ -51,6 +69,13 @@ export interface GetCurrentNonceResponse {
 	nonce: number;
 	tag: string;
 	error: string;
+}
+
+export interface GetAccountByAddressResponse {
+	address: string;
+	balance: string;
+	nonce: number;	
+	decimals: number;
 }
 
 // --- Client Configuration ---
