@@ -198,6 +198,12 @@ func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
 
 // Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
 func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
+	if tx == nil {
+		return fmt.Errorf("transaction cannot be nil")
+	}
+	if tx.Amount == nil {
+		return fmt.Errorf("transaction amount cannot be nil")
+	}
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: uint256.NewInt(0), Nonce: 0}

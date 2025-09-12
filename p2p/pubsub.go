@@ -35,6 +35,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("invalid PoH")
 			}
 
+			// Reset poh to sync poh clock with leader
+			if blk.Slot > bs.GetLatestStoreSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
+
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
@@ -43,19 +51,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			// Remove transactions in block from mempool and add tx tracker if node is follower
 			if self.PubKey != blk.LeaderID {
 				go mp.BlockCleanup(blk)
-			}
-
-			// Temporary comment to save bandwidth for main flow
-			// if len(ln.host.Network().Peers()) > 0 {
-			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
-			// }
-
-			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
 			}
 
 			vote := &consensus.Vote{
@@ -137,7 +132,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
 
-			localLatestSlot := bs.GetLatestSlot()
+			localLatestSlot := bs.GetLatestFinalizedSlot()
 			if latestSlot > localLatestSlot {
 				fromSlot := localLatestSlot + 1
 				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
@@ -294,7 +289,7 @@ func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte,
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false
 	}
-	latest := ln.blockStore.GetLatestSlot()
+	latest := ln.blockStore.GetLatestFinalizedSlot()
 	if latest == 0 {
 		return 0, [32]byte{}, false
 	}

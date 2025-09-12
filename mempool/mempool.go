@@ -160,22 +160,38 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 }
 
 func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
+	if tx == nil {
+		return fmt.Errorf("transaction cannot be nil")
+	}
+	if tx.Amount == nil {
+		return fmt.Errorf("transaction amount cannot be nil")
+	}
+
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil || senderAccount == nil {
 		return fmt.Errorf("could not get sender accont: %w", err)
 	}
+
+	// Add nil check for balance
+	if senderAccount.Balance == nil {
+		logx.Warn("MEMPOOL", fmt.Sprintf("Sender account %s has nil balance, treating as zero", tx.Sender[:8]))
+		return fmt.Errorf("sender account has invalid balance")
+	}
+
 	availableBalance := new(uint256.Int).Set(senderAccount.Balance)
 
 	// Subtract amounts from pending transactions to get true available balance
 	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
 		for _, pendingTx := range pendingNonces {
-			availableBalance.Sub(availableBalance, pendingTx.Tx.Amount)
+			if pendingTx != nil && pendingTx.Tx != nil && pendingTx.Tx.Amount != nil {
+				availableBalance.Sub(availableBalance, pendingTx.Tx.Amount)
+			}
 		}
 	}
 
 	// Also subtract amounts from ready queue transactions for this sender
 	for _, readyTx := range mp.readyQueue {
-		if readyTx.Sender == tx.Sender {
+		if readyTx != nil && readyTx.Sender == tx.Sender && readyTx.Amount != nil {
 			availableBalance.Sub(availableBalance, readyTx.Amount)
 		}
 	}
