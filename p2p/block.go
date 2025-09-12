@@ -292,6 +292,24 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		totalBlocksSent += len(batch)
 	}
 
+	// must auto send here if want the request node catch up
+	if req.ToSlot < localLatestSlot {
+		nextFromSlot := req.ToSlot + 1
+		nextToSlot := nextFromSlot + SyncBlocksBatchSize - 1
+		if nextToSlot > localLatestSlot {
+			nextToSlot = localLatestSlot
+		}
+
+		nextReq := SyncRequest{
+			RequestID: fmt.Sprintf("auto_sync_%d_%d_%s", nextFromSlot, nextToSlot, targetPeer.String()),
+			FromSlot:  nextFromSlot,
+			ToSlot:    nextToSlot,
+		}
+
+		go func() {
+			ln.sendBlocksOverStream(nextReq, targetPeer)
+		}()
+	}
 }
 
 func (ln *Libp2pNetwork) RequestContinuousBlockSync(fromSlot, toSlot uint64, targetPeer peer.ID) {

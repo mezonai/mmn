@@ -136,8 +136,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 						ln.SetupPubSubTopics(ln.ctx)
 						ln.setNodeReady()
 					})
-				} else {
-					ln.RequestBlockSync(ln.ctx, blocks[len(blocks)-1].Slot+1)
 				}
 			}
 
@@ -348,8 +346,14 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 	if !ln.joinAfterSync {
 		go func() {
+			// wait network connect
 			time.Sleep(6 * time.Second)
-			ln.SetupPubSubTopics(ln.ctx)
+			localLatestSlot := ln.getLocalLatestSlot()
+			if localLatestSlot < ln.worldLatestSlot {
+				ln.RequestBlockSyncFromLatest(ln.ctx)
+			} else {
+				ln.SetupPubSubTopics(ln.ctx)
+			}
 		}()
 	} else {
 		go ln.requestSnapshotOnJoin()
@@ -534,6 +538,8 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 
 // requestSnapshotOnJoin sends a snapshot request when node joins the network
 func (ln *Libp2pNetwork) requestSnapshotOnJoin() {
+	// wait network connect
+	time.Sleep(6 * time.Second)
 	logx.Info("SNAPSHOT:REQUEST", "request snapshot on join")
 	if ln.topicSnapshotRequest == nil {
 		logx.Info("SNAPSHOT:REQUEST", "request topic not ready; skip request")
@@ -665,7 +671,7 @@ func (ln *Libp2pNetwork) handleSnapshotRequest(ctx context.Context, sub *pubsub.
 			return
 		}
 
-		if msg.ReceivedFrom.String() != ln.selfPubKey {
+		if msg.ReceivedFrom.String() == ln.host.ID().String() {
 			continue
 		}
 
