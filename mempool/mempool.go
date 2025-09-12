@@ -108,7 +108,6 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	// Always add to txsBuf and txOrder for compatibility
 	mp.txsBuf[txHash] = tx.Bytes()
 	monitoring.SetMempoolSize(mp.Size())
-	monitoring.IncreaseIngressTxCount()
 	mp.txOrder = append(mp.txOrder, txHash)
 
 	// Publish event for transaction status tracking

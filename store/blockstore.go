@@ -107,9 +107,6 @@ func (s *GenericBlockStore) loadLatestFinalized() error {
 
 	s.latestFinalized.Store(binary.BigEndian.Uint64(value))
 
-	// Initialize block height metric with current finalized slot
-	monitoring.SetBlockHeight(s.latestFinalized.Load())
-
 	return nil
 }
 
@@ -358,6 +355,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	// Publish transaction finalization events if event router is provided
 	if s.eventRouter != nil && blk != nil {
 		blockHashHex := blk.HashString()
+		now := time.Now()
 
 		for _, entry := range blk.Entries {
 			txs, err := s.txStore.GetBatch(entry.TxHashes)
@@ -366,13 +364,12 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 				continue
 			}
 			for _, tx := range txs {
-				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
-				s.eventRouter.PublishTransactionEvent(event)
-
 				// Record metrics
 				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
-				monitoring.RecordTxFinalizationTime(utils.SecondsBetween(txTimestamp, time.Now()))
-				monitoring.IncreaseFinalizedTxCount()
+				monitoring.RecordTxFinalizationTime(now.Sub(txTimestamp).Seconds())
+
+				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
+				s.eventRouter.PublishTransactionEvent(event)
 			}
 		}
 	}

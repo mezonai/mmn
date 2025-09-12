@@ -29,6 +29,162 @@
         "x": 0,
         "y": 0
       },
+      "id": 10,
+      "panels": [],
+      "title": "Basic",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Stopped"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Running"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "valueSize": 40
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.5",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "up{node=\"$node\",job=\"node\"}",
+          "legendFormat": "Node State",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Node State",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 1
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "valueSize": 40
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.5",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "mmn_node_block_height{node=\"$node\"}",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Block Height",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "id": 5,
       "panels": [],
       "title": "System",
@@ -101,7 +257,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 1
+        "y": 6
       },
       "id": 2,
       "options": {
@@ -125,7 +281,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "(1 - avg (rate(node_cpu_seconds_total{mode=\"idle\", node=\"$node\"}[5m]))) * 100",
+          "expr": "(1 - avg (rate(node_cpu_seconds_total{mode=\"idle\", node=\"$node\"}[$__rate_interval]))) * 100",
           "legendFormat": "Usage",
           "range": true,
           "refId": "A"
@@ -200,7 +356,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 1
+        "y": 6
       },
       "id": 3,
       "options": {
@@ -304,7 +460,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 1
+        "y": 6
       },
       "id": 4,
       "options": {
@@ -343,7 +499,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 7
+        "y": 12
       },
       "id": 6,
       "panels": [],
@@ -414,7 +570,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 13
       },
       "id": 1,
       "options": {
@@ -512,7 +668,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 13
       },
       "id": 7,
       "options": {
@@ -536,13 +692,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(mmn_node_tx_finalization_time_sum{node=\"$node\"}[5m]) / rate(mmn_node_tx_finalization_time_count{node=\"$node\"}[5m])",
+          "expr": "rate(mmn_node_tx_finalization_time_sum{node=\"$node\"}[$__rate_interval]) / rate(mmn_node_tx_finalization_time_count{node=\"$node\"}[$__rate_interval])",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Average Transaction Finalization Time",
+      "title": "Time To Finality",
       "type": "timeseries"
     }
   ],
@@ -554,10 +710,6 @@
     "list": [
       {
         "allowCustomValue": false,
-        "current": {
-          "text": "node1",
-          "value": "node1"
-        },
         "datasource": {
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
@@ -580,7 +732,7 @@
     ]
   },
   "time": {
-    "from": "now-30m",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},

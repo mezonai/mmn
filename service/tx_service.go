@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"time"
 
 	"github.com/mezonai/mmn/config"
@@ -39,6 +40,7 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 
 	txHash, err := s.mempool.AddTx(tx, true)
+	monitoring.IncreaseIngressTxCount()
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 	}
