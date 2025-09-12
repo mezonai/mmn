@@ -346,13 +346,40 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 	if !ln.joinAfterSync {
 		go func() {
-			// wait network connect
-			time.Sleep(6 * time.Second)
+			// wait until network has more than 1 peer, max 3 seconds
+			startTime := time.Now()
+			maxWaitTime := 3 * time.Second
+
+			for {
+				peerCount := ln.GetPeersConnected()
+				if peerCount > 1 {
+					break
+				}
+				// Check if we've waited too long
+				if time.Since(startTime) > maxWaitTime {
+					break
+				}
+
+			}
+
 			localLatestSlot := ln.getLocalLatestSlot()
-			if localLatestSlot < ln.worldLatestSlot {
-				ln.RequestBlockSyncFromLatest(ln.ctx)
-			} else {
+
+			// Determine if this is a fresh start or restart from panic
+			if localLatestSlot == 0 {
 				ln.SetupPubSubTopics(ln.ctx)
+			} else {
+
+				for {
+					if ln.worldLatestSlot > 0 {
+						break
+					}
+					time.Sleep(1 * time.Second)
+				}
+				if localLatestSlot < ln.worldLatestSlot {
+					ln.RequestBlockSyncFromLatest(ln.ctx)
+				} else {
+					ln.SetupPubSubTopics(ln.ctx)
+				}
 			}
 		}()
 	} else {

@@ -196,7 +196,8 @@ func (ln *Libp2pNetwork) Close() {
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
-	return len(ln.peers)
+	peers := ln.host.Network().Peers()
+	return len(peers)
 }
 
 func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
