@@ -268,7 +268,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 				// Record metrics
 				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
 				monitoring.RecordTxFinalizationTime(utils.SecondsBetween(txTimestamp, time.Now()))
-				monitoring.IncrementFinalizedTxCount()
+				monitoring.IncreaseFinalizedTxCount()
 			}
 		}
 	}

@@ -25,6 +25,7 @@ type nodePromMetrics struct {
 	txFinalizationTime prometheus.Histogram
 	rejectedTxCount    *prometheus.CounterVec
 	blockHeight        prometheus.Gauge
+	ingressTxCount     prometheus.Counter
 	finalizedTxCount   prometheus.Counter
 }
 
@@ -55,10 +56,16 @@ func newNodePromMetrics() *nodePromMetrics {
 				Help: "The current block height",
 			},
 		),
+		ingressTxCount: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_ingress_tx_count",
+				Help: "The total number of ingress transactions (received and added to mempool)",
+			},
+		),
 		finalizedTxCount: promauto.NewCounter(
 			prometheus.CounterOpts{
 				Name: "mmn_node_finalized_tx_count",
-				Help: "The total number of transactions processed",
+				Help: "The total number of transactions finalized since the start of node",
 			},
 		),
 	}
@@ -90,6 +97,10 @@ func SetBlockHeight(blockHeight uint64) {
 	nodeMetrics.blockHeight.Set(float64(blockHeight))
 }
 
-func IncrementFinalizedTxCount() {
+func IncreaseFinalizedTxCount() {
 	nodeMetrics.finalizedTxCount.Inc()
+}
+
+func IncreaseIngressTxCount() {
+	nodeMetrics.ingressTxCount.Inc()
 }
