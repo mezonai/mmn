@@ -7,6 +7,7 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 
 	"io"
+	_ "net/http/pprof"
 	"net/http"
 	"strconv"
 

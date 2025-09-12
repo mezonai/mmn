@@ -71,6 +71,7 @@ func NewValidator(
 	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
+	lastSlot uint64,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -88,7 +89,7 @@ func NewValidator(
 		netClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
-		lastSlot:                  0,
+		lastSlot:                  lastSlot + 1,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
@@ -177,9 +178,9 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
 
-		// Retrieve previous block hash from blockStore
-		lastEntry, _ := v.blockStore.LastEntryInfoAtSlot(v.lastSlot - 1)
-		prevHash := lastEntry.Hash
+		// Retrieve previous hash from recorder
+		prevHash := v.Recorder.GetSlotHash(v.lastSlot - 1)
+		logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", v.lastSlot-1, prevHash))
 
 		blk := block.AssembleBlock(
 			v.lastSlot,
@@ -207,10 +208,14 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	v.lastSlot = currentSlot
 }
 
+// Leader to validator to reset poh
 func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) error {
 	logx.Info("VALIDATOR", fmt.Sprintf("Received latest slot %d", slot))
 	currentSlot := v.Recorder.CurrentSlot()
-	if v.IsFollower(currentSlot) {
+	// Just reset if
+	// - Incoming block is from other leader
+	// - This node is follower for current slot
+	if v.IsFollower(currentSlot) && v.IsFollower(slot) {
 		logx.Info("VALIDATOR", fmt.Sprintf("Follower received latest slot %d", slot))
 		v.Recorder.Reset(seedHash, slot)
 	}
@@ -319,12 +324,10 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			if v.IsLeader(slot) {
-				// fmt.Println("Switched to LEADER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
 				}
 			} else {
-				// fmt.Println("Switched to FOLLOWER for slot", slot, "at", time.Now().Format(time.RFC3339))
 				if v.leaderStartAtSlot != NoSlot {
 					v.onLeaderSlotEnd()
 				}

@@ -7,9 +7,9 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-func VerifyEntries(prev [32]byte, entries []Entry) error {
-	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash: %x", prev))
-	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries", len(entries)))
+func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash=%x slot=%d", prev, slot))
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries in slot=%d", len(entries), slot))
 	cur := prev
 
 	for i, e := range entries {
@@ -26,7 +26,7 @@ func VerifyEntries(prev [32]byte, entries []Entry) error {
 		}
 
 		if cur != e.Hash {
-			return fmt.Errorf("PoH mismatch at entry %d", i)
+			return fmt.Errorf("PoH mismatch at entry=%d, slot=%d", i, slot)
 		}
 	}
 	return nil
