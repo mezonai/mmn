@@ -98,7 +98,7 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
 			// probe checkpoint every tick
-			latest := bs.GetLatestSlot()
+			latest := bs.GetLatestFinalizedSlot()
 			if latest >= MaxScanRange {
 				checkpoint := (latest / MaxScanRange) * MaxScanRange
 				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)

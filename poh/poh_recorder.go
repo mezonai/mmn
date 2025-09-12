@@ -28,7 +28,7 @@ func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *Le
 		ticksPerSlot:   ticksPerSlot,
 		tickHeight:     0,
 		entries:        []Entry{},
-		slotHashQueue:  NewSlotHashQueue(100),
+		slotHashQueue:  NewSlotHashQueue(),
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
 	}
@@ -127,4 +127,9 @@ func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {
 		return [32]byte{}
 	}
 	return hash
+}
+
+// GetSlotHashFromQueue returns slot hash from in-memory queue if available
+func (r *PohRecorder) GetSlotHashFromQueue(slot uint64) ([32]byte, bool) {
+	return r.slotHashQueue.Get(slot)
 }

@@ -4,9 +4,11 @@ package store
 const (
 	PrefixAccount = "account:"
 
-	PrefixBlockMeta      = "blk_meta:"
-	PrefixBlock          = "blk:"
-	PrefixBlockFinalized = "blk_finalized:"
+	PrefixBlockMeta             = "blk_meta:"
+	PrefixBlock                 = "blk:"
+	PrefixBlockFinalized        = "blk_finalized:"
+	BlockMetaKeyLatestFinalized = "latest_finalized"
+	BlockMetaKeyLatestStore     = "latest_store"
 
 	PrefixTx     = "tx:"
 	PrefixTxMeta = "tx_meta:"

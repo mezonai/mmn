@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
 )
 
@@ -33,6 +34,10 @@ type Block struct {
 }
 
 func (b *Block) LastEntryHash() [32]byte {
+	if len(b.Entries) == 0 {
+		logx.Warn("BLOCK", "LastEntryHash called on block with no entries, returning zero hash")
+		return [32]byte{}
+	}
 	return b.Entries[len(b.Entries)-1].Hash
 }
 
@@ -107,5 +112,9 @@ func (b *BroadcastedBlock) VerifyPoH() error {
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {
+	if len(b.Entries) == 0 {
+		logx.Warn("BLOCK", "LastEntryHash called on broadcasted block with no entries, returning zero hash")
+		return [32]byte{}
+	}
 	return b.Entries[len(b.Entries)-1].Hash
 }
