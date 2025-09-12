@@ -276,6 +276,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
+	monitoring.RecordBlockSizeBytes(uint64(len(value)))
 	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
 
 	// Store block tsx
@@ -366,7 +367,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 			for _, tx := range txs {
 				// Record metrics
 				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
-				monitoring.RecordTxFinalizationTime(now.Sub(txTimestamp).Seconds())
+				monitoring.RecordTimeToFinality(now.Sub(txTimestamp))
 
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)

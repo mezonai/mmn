@@ -21,7 +21,7 @@ type BlockCore struct {
 	Slot      uint64
 	PrevHash  [32]byte // hash of the last entry in the previous block
 	LeaderID  string
-	Timestamp uint64
+	Timestamp uint64 // unix nanos
 	Hash      [32]byte
 	Signature []byte
 	Status    BlockStatus
@@ -49,6 +49,10 @@ func (b *BlockCore) HashString() string {
 // PrevHashString returns the previous block hash as a hex string
 func (b *BlockCore) PrevHashString() string {
 	return hex.EncodeToString(b.PrevHash[:])
+}
+
+func (b *BlockCore) CreationTimestamp() time.Time {
+	return time.Unix(0, int64(b.Timestamp))
 }
 
 func AssembleBlock(

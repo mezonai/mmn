@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,11 +22,13 @@ var (
 )
 
 type nodePromMetrics struct {
-	mempoolSize        prometheus.Gauge
-	txFinalizationTime prometheus.Histogram
-	rejectedTxCount    *prometheus.CounterVec
-	blockHeight        prometheus.Gauge
-	ingressTxCount     prometheus.Counter
+	mempoolSize     prometheus.Gauge
+	timeToFinality  prometheus.Histogram
+	blockTime       prometheus.Histogram
+	rejectedTxCount *prometheus.CounterVec
+	blockHeight     prometheus.Gauge
+	blockSizeBytes  prometheus.Histogram
+	ingressTxCount  prometheus.Counter
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -36,10 +39,16 @@ func newNodePromMetrics() *nodePromMetrics {
 				Help: "The total pending transactions queued in node's mempool",
 			},
 		),
-		txFinalizationTime: promauto.NewHistogram(
+		timeToFinality: promauto.NewHistogram(
 			prometheus.HistogramOpts{
-				Name: "mmn_node_tx_finalization_time",
-				Help: "Latency from submission to inclusion in block",
+				Name: "mmn_node_time_to_finality",
+				Help: "Latency in second from tx submission until being finalized and will not be reverted",
+			},
+		),
+		blockTime: promauto.NewHistogram(
+			prometheus.HistogramOpts{
+				Name: "mmn_node_block_time",
+				Help: "Duration in second between assembling of two consecutive blocks",
 			},
 		),
 		rejectedTxCount: promauto.NewCounterVec(
@@ -53,6 +62,12 @@ func newNodePromMetrics() *nodePromMetrics {
 			prometheus.GaugeOpts{
 				Name: "mmn_node_block_height",
 				Help: "The current block height",
+			},
+		),
+		blockSizeBytes: promauto.NewHistogram(
+			prometheus.HistogramOpts{
+				Name: "mmn_node_block_size_bytes",
+				Help: "The block size in bytes",
 			},
 		),
 		ingressTxCount: promauto.NewCounter(
@@ -76,8 +91,12 @@ func SetMempoolSize(size int) {
 	nodeMetrics.mempoolSize.Set(float64(size))
 }
 
-func RecordTxFinalizationTime(durationInSec float64) {
-	nodeMetrics.txFinalizationTime.Observe(durationInSec)
+func RecordTimeToFinality(duration time.Duration) {
+	nodeMetrics.timeToFinality.Observe(duration.Seconds())
+}
+
+func RecordBlockTime(duration time.Duration) {
+	nodeMetrics.blockTime.Observe(duration.Seconds())
 }
 
 func RecordRejectedTx(reason TxRejectedReason) {
@@ -88,6 +107,10 @@ func RecordRejectedTx(reason TxRejectedReason) {
 
 func SetBlockHeight(blockHeight uint64) {
 	nodeMetrics.blockHeight.Set(float64(blockHeight))
+}
+
+func RecordBlockSizeBytes(sizeBytes uint64) {
+	nodeMetrics.blockSizeBytes.Observe(float64(sizeBytes))
 }
 
 func IncreaseIngressTxCount() {

@@ -195,7 +195,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "System CPU",
+      "description": "System CPU usage",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -295,6 +295,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
+      "description": "System memory usage",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -399,6 +400,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
+      "description": "System disk usage",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -511,6 +513,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
+      "description": "Node mempool size",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -609,6 +612,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
+      "description": "Average time to finalize transaction",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -692,7 +696,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "rate(mmn_node_tx_finalization_time_sum{node=\"$node\"}[$__rate_interval]) / rate(mmn_node_tx_finalization_time_count{node=\"$node\"}[$__rate_interval])",
+          "expr": "rate(mmn_node_time_to_finality_sum{node=\"$node\"}[$__rate_interval]) / rate(mmn_node_time_to_finality_count{node=\"$node\"}[$__rate_interval])",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -710,6 +714,10 @@
     "list": [
       {
         "allowCustomValue": false,
+        "current": {
+          "text": "node1",
+          "value": "node1"
+        },
         "datasource": {
           "type": "prometheus",
           "uid": "PBFA97CFB590B2093"
