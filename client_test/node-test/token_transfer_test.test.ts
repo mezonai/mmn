@@ -14,6 +14,13 @@ import {
   waitForTransaction
 } from './utils';
 
+// Transaction multiplier - change this to increase/decrease transaction count
+const TX_MULTIPLIER = (() => {
+  const fromEnv = process.env.TX_MULTIPLIER || process.env.npm_config_TX_MULTIPLIER;
+  return fromEnv ? Number(fromEnv) : 1;
+})();
+console.log(`Using TX_MULTIPLIER=${TX_MULTIPLIER}`);
+
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
 
 // Helper function to verify transaction history
@@ -441,8 +448,8 @@ describe('Token Transfer Tests', () => {
       const recipient2 = generateTestAccount();
       const recipient3 = generateTestAccount();
 
-      // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000, 'Multiple Sequential Transfers');
+      // Fund sender account using fundAccount (which now uses GetCurrentNonce internally) - increased funding for TX_MULTIPLIER transactions
+      const fundResponse = await fundAccount(grpcClient, sender.publicKeyHex, 1000 * TX_MULTIPLIER, 'Multiple Sequential Transfers');
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender account was created and funded properly
@@ -456,14 +463,17 @@ describe('Token Transfer Tests', () => {
       }
 
       const initialSenderBalance = await getAccountBalance(grpcClient, sender.publicKeyHex);
-      expect(initialSenderBalance).toBe(1000);
+      expect(initialSenderBalance).toBe(1000 * TX_MULTIPLIER);
 
-      // Perform multiple sequential transfers with correct nonces
-      const transfers = [
-        { recipient: recipient1.publicKeyHex, amount: 100 },
-        { recipient: recipient2.publicKeyHex, amount: 200 },
-        { recipient: recipient3.publicKeyHex, amount: 300 },
-      ];
+      // Perform multiple sequential transfers with correct nonces (increased by TX_MULTIPLIER)
+      const transfers = [];
+      for (let i = 0; i < TX_MULTIPLIER; i++) {
+        transfers.push(
+          { recipient: recipient1.publicKeyHex, amount: 100 },
+          { recipient: recipient2.publicKeyHex, amount: 200 },
+          { recipient: recipient3.publicKeyHex, amount: 300 }
+        );
+      }
       // Todo: support send multiple transaction for one user or not. pending transaction => continue send others
       for (let i = 0; i < transfers.length; i++) {
         const transfer = transfers[i];
@@ -493,27 +503,34 @@ describe('Token Transfer Tests', () => {
       const recipient2Balance = await getAccountBalance(grpcClient, recipient2.publicKeyHex);
       const recipient3Balance = await getAccountBalance(grpcClient, recipient3.publicKeyHex);
 
-      expect(senderBalance).toBe(400); // 1000 - 100 - 200 - 300
-      expect(recipient1Balance).toBe(100);
-      expect(recipient2Balance).toBe(200);
-      expect(recipient3Balance).toBe(300);
+      expect(senderBalance).toBe(1000 * TX_MULTIPLIER - (TX_MULTIPLIER * 100) - (TX_MULTIPLIER * 200) - (TX_MULTIPLIER * 300)); // 1000*TX_MULTIPLIER - TX_MULTIPLIER*600
+      expect(recipient1Balance).toBe(TX_MULTIPLIER * 100);
+      expect(recipient2Balance).toBe(TX_MULTIPLIER * 200);
+      expect(recipient3Balance).toBe(TX_MULTIPLIER * 300);
 
-      // Verify transaction history for sender (funding + 3 transfers) with detailed verification
+      // Verify transaction history for sender (funding + TX_MULTIPLIER*3 transfers) with detailed verification
       const expectedSenderTransactions = [
-        { sender: faucetPublicKeyBase58, recipient: sender.publicKeyHex, amount: 1000 }, // funding
-        { sender: sender.publicKeyHex, recipient: recipient1.publicKeyHex, amount: 100 }, // transfer 1
-        { sender: sender.publicKeyHex, recipient: recipient2.publicKeyHex, amount: 200 }, // transfer 2
-        { sender: sender.publicKeyHex, recipient: recipient3.publicKeyHex, amount: 300 }, // transfer 3
+        { sender: faucetPublicKeyBase58, recipient: sender.publicKeyHex, amount: 1000 * TX_MULTIPLIER }, // funding
       ];
+      
+      // Add expected transfers dynamically
+      for (let i = 0; i < TX_MULTIPLIER; i++) {
+        expectedSenderTransactions.push(
+          { sender: sender.publicKeyHex, recipient: recipient1.publicKeyHex, amount: 100 },
+          { sender: sender.publicKeyHex, recipient: recipient2.publicKeyHex, amount: 200 },
+          { sender: sender.publicKeyHex, recipient: recipient3.publicKeyHex, amount: 300 }
+        );
+      }
+      
       const senderHasHistory = await verifyTransactionHistory(
         grpcClient,
         sender.publicKeyHex,
-        4,
+        1 + TX_MULTIPLIER * 3, // 1 funding + TX_MULTIPLIER*3 transfers
         undefined, // We don't have the tx_hashes stored in this test
         expectedSenderTransactions
       );
       expect(senderHasHistory).toBe(true);
-    });
+    }, 60000 + TX_MULTIPLIER * 6000); // Base 60s + 6s per TX_MULTIPLIER
 
     test('Transfer to Self', async () => {
       const account = generateTestAccount();

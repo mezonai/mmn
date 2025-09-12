@@ -34,6 +34,13 @@ function generateTestAccounts(count: number) {
   return Array.from({ length: count }, () => generateTestAccount());
 }
 
+// Transaction multiplier - change this to increase/decrease transaction count
+const TX_MULTIPLIER = (() => {
+  const fromEnv = process.env.TX_MULTIPLIER || process.env.npm_config_TX_MULTIPLIER;
+  return fromEnv ? Number(fromEnv) : 1;
+})();
+console.log(`Using TX_MULTIPLIER=${TX_MULTIPLIER}`);
+
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
 
 interface Tx {
@@ -285,7 +292,7 @@ class TestSuite {
     // Create a chain of transfers: A -> B -> C -> D
     const accounts = generateTestAccounts(4);
 
-    // Fund all accounts first to ensure they exist
+    // Fund all accounts first to ensure they exist (increased funding for 5x transactions)
     console.log('Funding all accounts for chain transfer test...');
     for (let i = 0; i < accounts.length; i++) {
       const faucetTx = buildTx(faucetPublicKeyBase58, accounts[i].publicKeyBase58, 100, `Fund account ${i}`, 0, FaucetTxType);
@@ -293,8 +300,8 @@ class TestSuite {
       await sendTxViaGrpc(this.grpcClient, faucetTx);
     }
 
-    // Fund first account with additional amount for transfers
-    const additionalFundTx = buildTx(faucetPublicKeyBase58, accounts[0].publicKeyBase58, 900, 'Additional fund for chain', 1, FaucetTxType);
+    // Fund first account with additional amount for transfers (increased for TX_MULTIPLIER transactions)
+    const additionalFundTx = buildTx(faucetPublicKeyBase58, accounts[0].publicKeyBase58, 900 * TX_MULTIPLIER, 'Additional fund for chain', 1, FaucetTxType);
     additionalFundTx.signature = signTx(additionalFundTx, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, additionalFundTx);
 
@@ -302,33 +309,46 @@ class TestSuite {
     console.log('Waiting for funding transactions to be processed...');
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    // Chain transfers
-    for (let i = 0; i < accounts.length - 1; i++) {
-      const tx = buildTx(
-        accounts[i].publicKeyBase58,
-        accounts[i + 1].publicKeyBase58,
-        200,
-        `Chain transfer ${i}`,
-        i + 2, // Start from nonce 2 since we already sent funding transactions
-        TransferTxType
-      );
-      tx.signature = signTx(tx, accounts[i].privateKey);
+    // Chain transfers (increased by TX_MULTIPLIER)
+    for (let round = 0; round < TX_MULTIPLIER; round++) {
+      for (let i = 0; i < accounts.length - 1; i++) {
+        const tx = buildTx(
+          accounts[i].publicKeyBase58,
+          accounts[i + 1].publicKeyBase58,
+          200,
+          `Chain transfer round ${round + 1} tx ${i}`,
+          round * (accounts.length - 1) + i + 2, // Start from nonce 2 since we already sent funding transactions
+          TransferTxType
+        );
+        tx.signature = signTx(tx, accounts[i].privateKey);
 
-      const response = await sendTxViaGrpc(this.grpcClient, tx);
-      if (!response.ok) throw new Error(`Chain transfer ${i} failed`);
+        const response = await sendTxViaGrpc(this.grpcClient, tx);
+        if (!response.ok) throw new Error(`Chain transfer round ${round + 1} tx ${i} failed`);
+        
+        // Add delay between transactions to reduce nonce conflicts (scale with TX_MULTIPLIER)
+        if (i < accounts.length - 2 || round < TX_MULTIPLIER - 1) { // Don't delay after the last transaction of the last round
+          const delay = Math.min(500, 10 + TX_MULTIPLIER * 5); // Scale delay with TX_MULTIPLIER, max 500ms
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
     }
 
     // Wait for transactions to be processed
     await new Promise((resolve) => setTimeout(resolve, 10000));
 
-    // Verify balances after chain transfers
+    // Verify balances after chain transfers (TX_MULTIPLIER rounds of 3 transfers each)
     // Expected balances:
-    // Account 0: 100 (initial) + 900 (additional) - 200 (sent) = 800
-    // Account 1: 100 (initial) + 200 (received) - 200 (sent) = 100
-    // Account 2: 100 (initial) + 200 (received) - 200 (sent) = 100
-    // Account 3: 100 (initial) + 200 (received) = 300
+    // Account 0: 100 (initial) + 900*TX_MULTIPLIER (additional) - TX_MULTIPLIER*200 (sent) = 100 + 900*TX_MULTIPLIER - TX_MULTIPLIER*200
+    // Account 1: 100 (initial) + TX_MULTIPLIER*200 (received) - TX_MULTIPLIER*200 (sent) = 100
+    // Account 2: 100 (initial) + TX_MULTIPLIER*200 (received) - TX_MULTIPLIER*200 (sent) = 100
+    // Account 3: 100 (initial) + TX_MULTIPLIER*200 (received) = 100 + TX_MULTIPLIER*200
 
-    const expectedBalances = [800, 100, 100, 300];
+    const expectedBalances = [
+      100 + 900 * TX_MULTIPLIER - TX_MULTIPLIER * 200, // Account 0
+      100, // Account 1
+      100, // Account 2
+      100 + TX_MULTIPLIER * 200 // Account 3
+    ];
 
     for (let i = 0; i < accounts.length; i++) {
       const accountInfo = await this.grpcClient.getAccount(accounts[i].publicKeyBase58);
@@ -392,8 +412,8 @@ class TestSuite {
     const account = generateTestAccount();
     const recipient = generateTestAccount();
 
-    // Fund both accounts
-    const faucetTx1 = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 1000, 'Fund for pagination', 0, FaucetTxType);
+    // Fund both accounts (increased funding for TX_MULTIPLIER transactions)
+    const faucetTx1 = buildTx(faucetPublicKeyBase58, account.publicKeyBase58, 1000 * TX_MULTIPLIER, 'Fund for pagination', 0, FaucetTxType);
     faucetTx1.signature = signTx(faucetTx1, faucetPrivateKey);
     await sendTxViaGrpc(this.grpcClient, faucetTx1);
 
@@ -404,8 +424,8 @@ class TestSuite {
     // Wait for funding transactions
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
-    // Create multiple transactions
-    for (let i = 0; i < 5; i++) {
+    // Create multiple transactions (increased by TX_MULTIPLIER)
+    for (let i = 0; i < 5 * TX_MULTIPLIER; i++) {
       const tx = buildTx(
         account.publicKeyBase58,
         recipient.publicKeyBase58,
@@ -416,6 +436,12 @@ class TestSuite {
       );
       tx.signature = signTx(tx, account.privateKey);
       await sendTxViaGrpc(this.grpcClient, tx);
+      
+      // Add delay between transactions to reduce nonce conflicts (scale with TX_MULTIPLIER)
+      if (i < 5 * TX_MULTIPLIER - 1) { // Don't delay after the last transaction
+        const delay = Math.min(200, 5 + TX_MULTIPLIER * 2); // Scale delay with TX_MULTIPLIER, max 200ms
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
 
     // Wait for processing
