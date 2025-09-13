@@ -178,7 +178,7 @@ func runNode() {
 	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
 
 	// Initialize PoH components
-	latestSlot := bs.GetLatestSlot()
+	latestSlot := bs.GetLatestFinalizedSlot()
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
