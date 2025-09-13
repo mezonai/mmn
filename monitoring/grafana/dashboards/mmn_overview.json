@@ -191,7 +191,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "Average ingress rate for transaction in a specified window size, might not reflect actual TPS at spikes",
+      "description": "Average ingress TPS over last ${__rate_interval} minutes",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -284,7 +284,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "Rejected transaction rate over last ...",
+      "description": "Rejected transaction rate over last ${__rate_interval} minutes",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -364,7 +364,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(rate(mmn_node_rejected_tx_count[$__rate_interval])) / sum(rate(mmn_node_ingress_tx_count[$__rate_interval]))",
+          "expr": "sum(rate(mmn_node_rejected_tx_count[$__rate_interval])) / sum(rate(mmn_node_received_tx_count[$__rate_interval]))",
           "legendFormat": "Value",
           "range": true,
           "refId": "A"

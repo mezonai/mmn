@@ -91,6 +91,7 @@ func getRandomFreePort() (string, error) {
 
 func runNode() {
 	initializeFileLogger()
+	monitoring.InitMetrics()
 
 	logx.Info("NODE", "Running node")
 

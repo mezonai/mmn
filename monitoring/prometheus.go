@@ -30,6 +30,7 @@ type nodePromMetrics struct {
 	blockHeight       prometheus.Gauge
 	blockSizeBytes    prometheus.Histogram
 	ingressTxCount    prometheus.Counter
+	receivedTxCount   prometheus.Counter
 	peerCount         prometheus.Gauge
 }
 
@@ -81,7 +82,13 @@ func newNodePromMetrics() *nodePromMetrics {
 		ingressTxCount: promauto.NewCounter(
 			prometheus.CounterOpts{
 				Name: "mmn_node_ingress_tx_count",
-				Help: "The total number of ingress transactions (received and added to mempool)",
+				Help: "The total number of ingress transactions (received from client)",
+			},
+		),
+		receivedTxCount: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_received_tx_count",
+				Help: "The total number of received transactions (received from broadcast or client)",
 			},
 		),
 		peerCount: promauto.NewGauge(
@@ -134,6 +141,10 @@ func RecordBlockSizeBytes(sizeBytes uint64) {
 
 func IncreaseIngressTxCount() {
 	nodeMetrics.ingressTxCount.Inc()
+}
+
+func IncreaseReceivedTxCount() {
+	nodeMetrics.receivedTxCount.Inc()
 }
 
 func SetPeerCount(peers int) {

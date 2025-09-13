@@ -62,6 +62,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, error) {
 	// Generate hash first (read-only operation)
 	txHash := tx.Hash()
+	monitoring.IncreaseReceivedTxCount()
 
 	// Quick check for duplicate using read lock
 	mp.mu.RLock()

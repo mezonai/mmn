@@ -30,6 +30,7 @@ func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, t
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
+	monitoring.IncreaseIngressTxCount()
 	if err != nil {
 		logx.Error("GRPC ADD TX", "FromProtoSignedTx error ", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
@@ -40,7 +41,6 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 
 	txHash, err := s.mempool.AddTx(tx, true)
-	monitoring.IncreaseIngressTxCount()
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 	}
