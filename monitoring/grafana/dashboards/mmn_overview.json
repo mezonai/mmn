@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 1,
   "links": [],
   "panels": [
     {
@@ -289,7 +289,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "Average ingress rate for transaction in a specified window size, might not reflect actual TPS",
+      "description": "Average ingress rate for transaction in a specified window size, might not reflect actual TPS at spikes",
       "fieldConfig": {
         "defaults": {
           "color": {

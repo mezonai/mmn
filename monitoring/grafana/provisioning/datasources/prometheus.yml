@@ -7,6 +7,3 @@ datasources:
     url: http://prometheus:9090
     basicAuth: false
     editable: true
-    jsonData:
-      httpMethod: POST
-      timeInterval: 30s

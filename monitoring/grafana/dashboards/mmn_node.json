@@ -38,6 +38,7 @@
       "datasource": {
         "uid": "PBFA97CFB590B2093"
       },
+      "description": "Node running state",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -116,6 +117,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
+      "description": "Node block height",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -135,7 +137,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 16,
+        "w": 12,
         "x": 8,
         "y": 1
       },
@@ -175,6 +177,73 @@
         }
       ],
       "title": "Block Height",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "description": "Number of peer connections",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "valueSize": 40
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.5",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "mmn_node_peer_count{node=\"$node\"}",
+          "legendFormat": "Peers",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Peers Count",
       "type": "stat"
     },
     {
