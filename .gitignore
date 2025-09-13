@@ -45,4 +45,3 @@ mmn*.log
 
 # Prometheus config
 /monitoring/prometheus/targets/nodes.yml
-/monitoring/prometheus/targets/exporters.yml

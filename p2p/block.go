@@ -257,7 +257,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		ln.syncTrackerMu.Unlock()
 	}()
 
-	localLatestSlot := ln.blockStore.GetLatestSlot()
+	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 	if localLatestSlot > 0 && req.FromSlot > localLatestSlot {
 		return
 	}
@@ -400,7 +400,7 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 }
 
 func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
-	return ln.blockStore.GetLatestSlot()
+	return ln.blockStore.GetLatestFinalizedSlot()
 }
 
 func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot uint64) {

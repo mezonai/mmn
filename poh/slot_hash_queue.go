@@ -18,11 +18,7 @@ type SlotHashQueue struct {
 }
 
 // NewSlotHashQueue creates a new slot hash queue with the specified maximum size
-func NewSlotHashQueue(maxSize int) *SlotHashQueue {
-	if maxSize <= 0 {
-		maxSize = 100 // Default to keep last 100 slots
-	}
-
+func NewSlotHashQueue() *SlotHashQueue {
 	// Seed for slot 0
 	zeroHash := [32]byte{}
 	slotMap := make(map[uint64][32]byte)
@@ -30,7 +26,7 @@ func NewSlotHashQueue(maxSize int) *SlotHashQueue {
 
 	return &SlotHashQueue{
 		slotMap: slotMap,
-		maxSize: maxSize,
+		maxSize: 1000,
 	}
 }
 

@@ -314,7 +314,7 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 	currentBlock := uint64(0)
 
 	if s.blockStore != nil {
-		currentBlock = s.blockStore.GetLatestSlot()
+		currentBlock = s.blockStore.GetLatestFinalizedSlot()
 	}
 
 	return &pb.GetBlockNumberResponse{

@@ -108,32 +108,44 @@ func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	deadline := time.NewTimer(v.leaderTimeout)
 	defer ticker.Stop()
 	defer deadline.Stop()
-
-	var seed store.SlotBoundary
+	var seedHash [32]byte
 
 waitLoop:
 	for {
 		select {
 		case <-ticker.C:
 			if v.blockStore.HasCompleteBlock(prevSlot) {
-				logx.Info("LEADER", fmt.Sprintf("Found complete block for slot %d", prevSlot))
-				seed, _ = v.blockStore.LastEntryInfoAtSlot(prevSlot)
+				logx.Info("LEADER", fmt.Sprintf("Found complete block in database for slot %d", prevSlot))
+				seedSlot, _ := v.blockStore.LastEntryInfoAtSlot(prevSlot)
+				seedHash = seedSlot.Hash
 				break waitLoop
 			} else {
 				logx.Info("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
 			}
 		case <-deadline.C:
 			logx.Info("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
-			lastSeenSlot := v.blockStore.GetLatestSlot()
+			lastSeenSlot := v.blockStore.GetLatestStoreSlot()
+
+			// Try POH recorder for latest slot too
+			if hash, ok := v.Recorder.GetSlotHashFromQueue(lastSeenSlot); ok {
+				logx.Info("LEADER", fmt.Sprintf("Using POH recorder hash for latest slot %d at deadline", lastSeenSlot))
+				seedSlot := v.fastForwardTicks(hash, lastSeenSlot, prevSlot)
+				seedHash = seedSlot.Hash
+				break waitLoop
+			}
+
+			// Fallback to database
 			lastSeenEntry, _ := v.blockStore.LastEntryInfoAtSlot(lastSeenSlot)
-			seed = v.fastForwardTicks(lastSeenEntry.Hash, lastSeenEntry.Slot, prevSlot)
+			seedSlot := v.fastForwardTicks(lastSeenEntry.Hash, lastSeenEntry.Slot, prevSlot)
+			seedHash = seedSlot.Hash
 			break waitLoop
 		case <-v.stopCh:
 			return
 		}
 	}
 
-	v.Recorder.Reset(seed.Hash, prevSlot)
+	logx.Info("LEADER", fmt.Sprintf("Reset POH recorder with hash %x for slot %d", seedHash, prevSlot))
+	v.Recorder.Reset(seedHash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 	v.leaderStartAtSlot = currentSlot
@@ -178,30 +190,36 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
+		copyCollectedEntries := make([]poh.Entry, len(v.collectedEntries))
+		copy(copyCollectedEntries, v.collectedEntries)
 
-		// Retrieve previous hash from recorder
-		prevSlot := v.lastSlot - 1
-		prevHash := v.Recorder.GetSlotHash(prevSlot)
-		logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", v.lastSlot-1, prevHash))
+		// Assemble block if we have entries
+		if len(copyCollectedEntries) > 0 {
+			// Retrieve previous hash from recorder
+			prevSlot := v.lastSlot - 1
+			prevHash := v.Recorder.GetSlotHash(prevSlot)
+			logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", v.lastSlot-1, prevHash))
 
-		blk := block.AssembleBlock(
-			v.lastSlot,
-			prevHash,
-			v.Pubkey,
-			v.collectedEntries,
-		)
+			blk := block.AssembleBlock(
+				v.lastSlot,
+				prevHash,
+				v.Pubkey,
+				copyCollectedEntries,
+			)
 
-		blk.Sign(v.PrivKey)
-		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
-		prevBlock := v.blockStore.Block(prevSlot)
-		fmt.Println("Prev slot", fmt.Sprintf("%d - %s", prevBlock.Slot, prevBlock.Hash))
-		monitoring.RecordBlockTime(blk.CreationTimestamp().Sub(prevBlock.CreationTimestamp()))
+			blk.Sign(v.PrivKey)
+			logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
+			prevBlock := v.blockStore.Block(prevSlot)
+			monitoring.RecordBlockTime(blk.CreationTimestamp().Sub(prevBlock.CreationTimestamp()))
 
-		// Reset buffer
-		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+			// Reset buffer
+			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
-		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
+			if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
+				logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
+			}
+		} else {
+			logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", v.lastSlot))
 		}
 	} else if v.IsLeader(currentSlot) {
 		// Buffer entries only if leader of current slot

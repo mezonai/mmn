@@ -83,7 +83,6 @@ func NewNetWork(
 		selfPrivKey:            selfPrivKey,
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
-		syncStreams:            make(map[peer.ID]network.Stream),
 		blockStore:             blockStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
