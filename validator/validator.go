@@ -210,7 +210,9 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			blk.Sign(v.PrivKey)
 			logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 			prevBlock := v.blockStore.Block(prevSlot)
-			monitoring.RecordBlockTime(blk.CreationTimestamp().Sub(prevBlock.CreationTimestamp()))
+			if prevBlock != nil {
+				monitoring.RecordBlockTime(blk.CreationTimestamp().Sub(prevBlock.CreationTimestamp()))
+			}
 
 			// Reset buffer
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)

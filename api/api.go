@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/monitoring"
-
 	"io"
-	_ "net/http/pprof"
 	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 
 	"github.com/mezonai/mmn/ledger"
@@ -43,10 +41,6 @@ func (s *APIServer) Start() {
 	s.mux.HandleFunc("/account", s.handleAccount)
 	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)
 	go http.ListenAndServe(s.ListenAddr, s.mux)
-}
-
-func (s *APIServer) ExposePromMetrics() {
-	monitoring.RegisterMetrics(s.mux)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {

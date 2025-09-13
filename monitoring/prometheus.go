@@ -22,18 +22,25 @@ var (
 )
 
 type nodePromMetrics struct {
-	mempoolSize     prometheus.Gauge
-	timeToFinality  prometheus.Histogram
-	blockTime       prometheus.Histogram
-	rejectedTxCount *prometheus.CounterVec
-	blockHeight     prometheus.Gauge
-	blockSizeBytes  prometheus.Histogram
-	ingressTxCount  prometheus.Counter
-	peerCount       prometheus.Gauge
+	nodeUpUnixSeconds prometheus.Gauge
+	mempoolSize       prometheus.Gauge
+	timeToFinality    prometheus.Histogram
+	blockTime         prometheus.Histogram
+	rejectedTxCount   *prometheus.CounterVec
+	blockHeight       prometheus.Gauge
+	blockSizeBytes    prometheus.Histogram
+	ingressTxCount    prometheus.Counter
+	peerCount         prometheus.Gauge
 }
 
 func newNodePromMetrics() *nodePromMetrics {
 	return &nodePromMetrics{
+		nodeUpUnixSeconds: promauto.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "mmn_node_up_timestamp_unix_seconds",
+				Help: "Unix timestamp of the node",
+			},
+		),
 		mempoolSize: promauto.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "mmn_node_mempool_size",
@@ -88,9 +95,14 @@ func newNodePromMetrics() *nodePromMetrics {
 
 var nodeMetrics *nodePromMetrics
 
+// InitMetrics initialize metrics for node but not expose to api yet, and return metrics cleanup function
+func InitMetrics() {
+	nodeMetrics = newNodePromMetrics()
+	nodeMetrics.nodeUpUnixSeconds.SetToCurrentTime()
+}
+
 func RegisterMetrics(mux *http.ServeMux) {
 	logx.Info("Registering prometheus metrics")
-	nodeMetrics = newNodePromMetrics()
 	mux.Handle("/metrics", promhttp.Handler())
 }
 

@@ -179,9 +179,6 @@ func runNode() {
 
 	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
 
-	// Expose metrics for monitoring
-	serveMetricsApi(nodeConfig.ListenAddr)
-
 	// Initialize PoH components
 	latestSlot := bs.GetLatestFinalizedSlot()
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
@@ -388,14 +385,14 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	}
 
 	rpcSrv.Start()
+	serveMetricsApi(nodeConfig.ListenAddr)
 }
 
 func serveMetricsApi(listenAddr string) {
 	mux := http.NewServeMux()
 	monitoring.RegisterMetrics(mux)
 	go func() {
-		var err error
-		err = http.ListenAndServe(listenAddr, mux)
+		err := http.ListenAndServe(listenAddr, mux)
 		if err != nil {
 			logx.Error("NODE", fmt.Sprintf("Failed to expose metrics for monitoring: %v", err))
 			os.Exit(1)
