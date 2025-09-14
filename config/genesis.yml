@@ -14,14 +14,14 @@ config:
       - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
         amount: 100000000000000000
   poh:
-    hashes_per_tick: 10
-    ticks_per_slot: 4
-    tick_interval_ms: 100
+    hashes_per_tick: 20
+    ticks_per_slot: 2
+    tick_interval_ms: 50
   mempool:
     max_txs: 100000
   validator:
-    batch_size: 750
-    leader_timeout: 50
-    leader_timeout_loop_interval: 5
+    batch_size: 2000
+    leader_timeout: 25
+    leader_timeout_loop_interval: 2
   native_currency:
     decimals: 6  

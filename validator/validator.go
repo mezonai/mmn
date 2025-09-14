@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/mezonai/mmn/store"
@@ -25,7 +24,7 @@ import (
 
 const NoSlot = ^uint64(0)
 
-// Validator encapsulates leader/follower behavior with optimizations.
+// Validator encapsulates leader/follower behavior.
 type Validator struct {
 	Pubkey       string
 	PrivKey      ed25519.PrivateKey
@@ -46,41 +45,15 @@ type Validator struct {
 	blockStore store.BlockStore
 	ledger     *ledger.Ledger
 	collector  *consensus.Collector
-
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
 	pendingTxs        []*transaction.Transaction
 	stopCh            chan struct{}
-
-	// Optimization components
-	batchProcessor *BatchProcessor
-	entryBuffer    chan []poh.Entry
-	processingPool sync.Pool
-	metrics        *PerformanceMetrics
 }
 
-// BatchProcessor handles batch transaction processing
-type BatchProcessor struct {
-	batchSize    int
-	timeout      time.Duration
-	entryChannel chan []poh.Entry
-	stopChannel  chan struct{}
-	wg           sync.WaitGroup
-}
-
-// PerformanceMetrics tracks validator performance
-type PerformanceMetrics struct {
-	mu                  sync.RWMutex
-	blocksProduced      int64
-	txsProcessed        int64
-	avgBlockTime        time.Duration
-	avgTxProcessingTime time.Duration
-	lastBlockTime       time.Time
-}
-
-// NewValidator constructs a Validator with dependencies and optimizations.
+// NewValidator constructs a Validator with dependencies, including blockStore.
 func NewValidator(
 	pubkey string,
 	privKey ed25519.PrivateKey,
@@ -99,25 +72,6 @@ func NewValidator(
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
 ) *Validator {
-	// Initialize optimization components
-	entryBuffer := make(chan []poh.Entry, 1000) // Large buffer
-	metrics := &PerformanceMetrics{}
-
-	// Initialize batch processor with optimized settings
-	batchProcessor := &BatchProcessor{
-		batchSize:    batchSize * 2,         // Double the batch size for optimization
-		timeout:      50 * time.Millisecond, // Faster timeout
-		entryChannel: entryBuffer,
-		stopChannel:  make(chan struct{}),
-	}
-
-	// Initialize processing pool
-	processingPool := sync.Pool{
-		New: func() interface{} {
-			return make([]poh.Entry, 0, batchSize*2)
-		},
-	}
-
 	v := &Validator{
 		Pubkey:                    pubkey,
 		PrivKey:                   privKey,
@@ -139,21 +93,9 @@ func NewValidator(
 		collectedEntries:          make([]poh.Entry, 0),
 		collector:                 collector,
 		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
-
-		// Optimization components
-		batchProcessor: batchProcessor,
-		entryBuffer:    entryBuffer,
-		processingPool: processingPool,
-		metrics:        metrics,
 	}
-
-	// Set up optimized entry handling
-	svc.OnEntry = v.handleEntryOptimized
+	svc.OnEntry = v.handleEntry
 	p2pClient.OnSyncPohFromLeader = v.handleResetPohFromLeader
-
-	// Start optimization components
-	v.startOptimizations()
-
 	return v
 }
 
@@ -400,185 +342,6 @@ func (v *Validator) mempoolCleanupLoop() {
 		case <-cleanupTicker.C:
 			logx.Info("VALIDATOR", "Running periodic mempool cleanup")
 			v.Mempool.PeriodicCleanup()
-		}
-	}
-}
-
-// startOptimizations starts all optimization components
-func (v *Validator) startOptimizations() {
-	v.batchProcessor.Start()
-	go v.processEntriesOptimized()
-	go v.metricsCollector()
-}
-
-// handleEntryOptimized processes entries with batch optimization
-func (v *Validator) handleEntryOptimized(entries []poh.Entry) {
-	start := time.Now()
-
-	// Process immediately using optimized logic
-	v.processEntriesImmediate(entries)
-
-	// Update metrics
-	v.metrics.mu.Lock()
-	v.metrics.txsProcessed += int64(len(entries))
-	v.metrics.avgTxProcessingTime = time.Since(start)
-	v.metrics.mu.Unlock()
-}
-
-// processEntriesOptimized processes entries in optimized batches
-func (v *Validator) processEntriesOptimized() {
-	for {
-		select {
-		case entries := <-v.entryBuffer:
-			v.processEntriesImmediate(entries)
-		case <-v.batchProcessor.stopChannel:
-			return
-		}
-	}
-}
-
-// processEntriesImmediate processes entries immediately with optimizations
-func (v *Validator) processEntriesImmediate(entries []poh.Entry) {
-	currentSlot := v.Recorder.CurrentSlot()
-
-	// When slot advances, assemble block for lastSlot if we were leader
-	if currentSlot > v.lastSlot && v.IsLeader(v.lastSlot) {
-		v.assembleBlockOptimized(v.lastSlot, entries)
-	} else if v.IsLeader(currentSlot) {
-		// Buffer entries only if leader of current slot
-		v.collectedEntries = append(v.collectedEntries, entries...)
-		logx.Info("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
-	}
-
-	// Update lastSlot
-	v.lastSlot = currentSlot
-}
-
-// assembleBlockOptimized assembles blocks with optimizations
-func (v *Validator) assembleBlockOptimized(slot uint64, entries []poh.Entry) {
-	start := time.Now()
-
-	// Buffer entries
-	v.collectedEntries = append(v.collectedEntries, entries...)
-
-	// Retrieve previous hash from recorder
-	prevHash := v.Recorder.GetSlotHash(slot - 1)
-	logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", slot-1, prevHash))
-
-	// Use optimized block assembly
-	blk := block.AssembleBlock(
-		slot,
-		prevHash,
-		v.Pubkey,
-		v.collectedEntries,
-	)
-
-	blk.Sign(v.PrivKey)
-	logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", slot, len(v.collectedEntries)))
-
-	// Reset buffer with capacity using object pool
-	v.collectedEntries = v.processingPool.Get().([]poh.Entry)
-	v.collectedEntries = v.collectedEntries[:0]
-
-	// Broadcast block
-	if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-		logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
-	}
-
-	// Update metrics
-	v.metrics.mu.Lock()
-	v.metrics.blocksProduced++
-	v.metrics.avgBlockTime = time.Since(start)
-	v.metrics.lastBlockTime = time.Now()
-	v.metrics.mu.Unlock()
-}
-
-// Start starts the batch processor
-func (bp *BatchProcessor) Start() {
-	bp.wg.Add(1)
-	go bp.run()
-}
-
-// run processes batches with timeout
-func (bp *BatchProcessor) run() {
-	defer bp.wg.Done()
-
-	ticker := time.NewTicker(bp.timeout)
-	defer ticker.Stop()
-
-	var batch []poh.Entry
-
-	for {
-		select {
-		case entries := <-bp.entryChannel:
-			batch = append(batch, entries...)
-			if len(batch) >= bp.batchSize {
-				bp.processBatch(batch)
-				batch = batch[:0] // Reset slice
-			}
-		case <-ticker.C:
-			if len(batch) > 0 {
-				bp.processBatch(batch)
-				batch = batch[:0] // Reset slice
-			}
-		case <-bp.stopChannel:
-			if len(batch) > 0 {
-				bp.processBatch(batch)
-			}
-			return
-		}
-	}
-}
-
-// processBatch processes a batch of entries
-func (bp *BatchProcessor) processBatch(batch []poh.Entry) {
-	// Process batch in parallel
-	var wg sync.WaitGroup
-	chunkSize := len(batch) / 4 // Process in 4 chunks
-
-	for i := 0; i < len(batch); i += chunkSize {
-		end := i + chunkSize
-		if end > len(batch) {
-			end = len(batch)
-		}
-
-		wg.Add(1)
-		go func(chunk []poh.Entry) {
-			defer wg.Done()
-			// Process chunk
-			_ = chunk
-		}(batch[i:end])
-	}
-	wg.Wait()
-}
-
-// GetMetrics returns performance metrics
-func (v *Validator) GetMetrics() map[string]interface{} {
-	v.metrics.mu.RLock()
-	defer v.metrics.mu.RUnlock()
-
-	return map[string]interface{}{
-		"blocks_produced":      v.metrics.blocksProduced,
-		"txs_processed":        v.metrics.txsProcessed,
-		"avg_block_time_ms":    v.metrics.avgBlockTime.Milliseconds(),
-		"avg_tx_processing_ms": v.metrics.avgTxProcessingTime.Milliseconds(),
-		"last_block_time":      v.metrics.lastBlockTime,
-		"buffer_size":          len(v.entryBuffer),
-	}
-}
-
-// metricsCollector collects and logs performance metrics
-func (v *Validator) metricsCollector() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			metrics := v.GetMetrics()
-			logx.Info("VALIDATOR_METRICS", fmt.Sprintf("Performance: %+v", metrics))
-		case <-v.batchProcessor.stopChannel:
-			return
 		}
 	}
 }

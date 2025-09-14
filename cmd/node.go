@@ -199,7 +199,7 @@ func runNode() {
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
-	// Initialize validator
+	// Initialize validator with optimized configuration
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
@@ -306,7 +306,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 	return mp, nil
 }
 
-// initializeValidator initializes the validator
+// initializeValidator initializes the validator with optimized configuration
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
 	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
@@ -324,8 +324,8 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	leaderTimeout := time.Duration(validatorCfg.LeaderTimeout) * time.Millisecond
 	leaderTimeoutLoopInterval := time.Duration(validatorCfg.LeaderTimeoutLoopInterval) * time.Millisecond
 
-	log.Printf("Validator config: batchLoopInterval=%v, monitorLoopInterval=%v",
-		leaderBatchLoopInterval, roleMonitorLoopInterval)
+	log.Printf("Optimized Validator config: batchLoopInterval=%v, monitorLoopInterval=%v, batchSize=%d",
+		leaderBatchLoopInterval, roleMonitorLoopInterval, validatorCfg.BatchSize)
 
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
