@@ -45,7 +45,7 @@ func TestPerformance_SendToken(t *testing.T) {
 	t.Logf("Connected. Faucet: %s", faucetAddr)
 
 	// Lower burst by using more users and fewer tx per user; allow override via env
-	usersCount := 60
+	usersCount := 120
 	txPerUser := 20
 
 	type goUser struct {
@@ -301,24 +301,85 @@ compute:
 	executedTPS := float64(executedCount) / executedWindow.Seconds()
 	finalizedTPS := float64(finalizedCount) / finalizedWindow.Seconds()
 
+	// Calculate efficiency metrics
+	ingressToExecutedRatio := float64(executedCount) / float64(ingressCount) * 100
+	executedToFinalizedRatio := float64(finalizedCount) / float64(executedCount) * 100
+	overallEfficiency := float64(finalizedCount) / float64(ingressCount) * 100
+
+	// Calculate bottleneck analysis
+	ingressBottleneck := ingressTPS / executedTPS
+	executionBottleneck := executedTPS / finalizedTPS
+
+	t.Logf("=== PERFORMANCE RESULTS ===")
 	t.Logf("Sent ok=%d fail=%d", sentOk, sentFail)
-	t.Logf("Ingress: count=%d window=%.2fs TPS=%.2f", ingressCount, ingressWindow.Seconds(), ingressTPS)
-	t.Logf("Executed: count=%d window=%.2fs TPS=%.2f", executedCount, executedWindow.Seconds(), executedTPS)
-	t.Logf("Finalized: count=%d window=%.2fs TPS=%.2f", finalizedCount, finalizedWindow.Seconds(), finalizedTPS)
+	t.Logf("")
+	t.Logf("=== TPS METRICS ===")
+	t.Logf("Ingress TPS:  %.2f (count=%d, window=%.2fs)", ingressTPS, ingressCount, ingressWindow.Seconds())
+	t.Logf("Executed TPS: %.2f (count=%d, window=%.2fs)", executedTPS, executedCount, executedWindow.Seconds())
+	t.Logf("Finalized TPS: %.2f (count=%d, window=%.2fs)", finalizedTPS, finalizedCount, finalizedWindow.Seconds())
+	t.Logf("")
+	t.Logf("=== EFFICIENCY ANALYSIS ===")
+	t.Logf("Ingress → Executed: %.1f%% (%d/%d)", ingressToExecutedRatio, executedCount, ingressCount)
+	t.Logf("Executed → Finalized: %.1f%% (%d/%d)", executedToFinalizedRatio, finalizedCount, executedCount)
+	t.Logf("Overall Efficiency: %.1f%% (%d/%d)", overallEfficiency, finalizedCount, ingressCount)
+	t.Logf("")
+	t.Logf("=== BOTTLENECK ANALYSIS ===")
+	t.Logf("Ingress/Executed Ratio: %.2fx (%.1f%% bottleneck)", ingressBottleneck, (1-1/ingressBottleneck)*100)
+	t.Logf("Executed/Finalized Ratio: %.2fx (%.1f%% bottleneck)", executionBottleneck, (1-1/executionBottleneck)*100)
+
+	// Performance assessment
+	t.Logf("")
+	t.Logf("=== PERFORMANCE ASSESSMENT ===")
+	if ingressTPS > 1000 {
+		t.Logf("✅ Ingress TPS: EXCELLENT (>1000 TPS)")
+	} else if ingressTPS > 500 {
+		t.Logf("🟡 Ingress TPS: GOOD (500-1000 TPS)")
+	} else {
+		t.Logf("❌ Ingress TPS: NEEDS IMPROVEMENT (<500 TPS)")
+	}
+
+	if executedTPS > 500 {
+		t.Logf("✅ Executed TPS: EXCELLENT (>500 TPS)")
+	} else if executedTPS > 100 {
+		t.Logf("🟡 Executed TPS: GOOD (100-500 TPS)")
+	} else {
+		t.Logf("❌ Executed TPS: NEEDS IMPROVEMENT (<100 TPS)")
+	}
+
+	if overallEfficiency > 90 {
+		t.Logf("✅ Overall Efficiency: EXCELLENT (>90%%)")
+	} else if overallEfficiency > 70 {
+		t.Logf("🟡 Overall Efficiency: GOOD (70-90%%)")
+	} else {
+		t.Logf("❌ Overall Efficiency: NEEDS IMPROVEMENT (<70%%)")
+	}
 
 	// Write summarized results to JSON file
 	results := map[string]any{
-		"timestamp":          time.Now().Format(time.RFC3339Nano),
-		"usersCount":         usersCount,
-		"txPerUser":          txPerUser,
-		"sentOk":             sentOk,
-		"sentFail":           sentFail,
-		"ingressWindowSec":   ingressWindow.Seconds(),
-		"executedWindowSec":  executedWindow.Seconds(),
-		"finalizedWindowSec": finalizedWindow.Seconds(),
-		"ingressTPS":         ingressTPS,
-		"executedTPS":        executedTPS,
-		"finalizedTPS":       finalizedTPS,
+		"timestamp":                time.Now().Format(time.RFC3339Nano),
+		"usersCount":               usersCount,
+		"txPerUser":                txPerUser,
+		"sentOk":                   sentOk,
+		"sentFail":                 sentFail,
+		"ingressWindowSec":         ingressWindow.Seconds(),
+		"executedWindowSec":        executedWindow.Seconds(),
+		"finalizedWindowSec":       finalizedWindow.Seconds(),
+		"ingressCount":             ingressCount,
+		"executedCount":            executedCount,
+		"finalizedCount":           finalizedCount,
+		"ingressTPS":               ingressTPS,
+		"executedTPS":              executedTPS,
+		"finalizedTPS":             finalizedTPS,
+		"ingressToExecutedRatio":   ingressToExecutedRatio,
+		"executedToFinalizedRatio": executedToFinalizedRatio,
+		"overallEfficiency":        overallEfficiency,
+		"ingressBottleneck":        ingressBottleneck,
+		"executionBottleneck":      executionBottleneck,
+		"performanceAssessment": map[string]string{
+			"ingressTPS":  getPerformanceLevel(ingressTPS, 1000, 500),
+			"executedTPS": getPerformanceLevel(executedTPS, 500, 100),
+			"efficiency":  getEfficiencyLevel(overallEfficiency),
+		},
 	}
 	if b, err := json.MarshalIndent(results, "", "  "); err == nil {
 		_ = os.WriteFile("performance_results.json", b, 0644)
@@ -328,6 +389,60 @@ compute:
 
 	if sentOk == 0 {
 		t.Fatalf("no transactions sent successfully")
+	}
+}
+
+// TestTPSCalculation demonstrates TPS calculation with sample data
+func TestTPSCalculation(t *testing.T) {
+	// Sample data based on your terminal output
+	ingressCount := 933
+	executedCount := 2400
+	finalizedCount := 2400
+
+	ingressWindow := time.Duration(0.27 * float64(time.Second))
+	executedWindow := time.Duration(24.70 * float64(time.Second))
+	finalizedWindow := time.Duration(24.70 * float64(time.Second))
+
+	summary := CalculateTPSSummary(ingressCount, executedCount, finalizedCount,
+		ingressWindow, executedWindow, finalizedWindow)
+
+	t.Logf("=== TPS CALCULATION DEMO ===")
+	t.Logf("Sample Data:")
+	t.Logf("  Ingress: %d transactions in %.2fs", ingressCount, ingressWindow.Seconds())
+	t.Logf("  Executed: %d transactions in %.2fs", executedCount, executedWindow.Seconds())
+	t.Logf("  Finalized: %d transactions in %.2fs", finalizedCount, finalizedWindow.Seconds())
+	t.Logf("")
+
+	tps := summary["tps"].(map[string]float64)
+	t.Logf("Calculated TPS:")
+	t.Logf("  Ingress TPS: %.2f", tps["ingress"])
+	t.Logf("  Executed TPS: %.2f", tps["executed"])
+	t.Logf("  Finalized TPS: %.2f", tps["finalized"])
+	t.Logf("")
+
+	efficiency := summary["efficiency"].(map[string]float64)
+	t.Logf("Efficiency Metrics:")
+	t.Logf("  Ingress → Executed: %.1f%%", efficiency["ingress_to_executed"])
+	t.Logf("  Executed → Finalized: %.1f%%", efficiency["executed_to_finalized"])
+	t.Logf("  Overall Efficiency: %.1f%%", efficiency["overall"])
+	t.Logf("")
+
+	bottlenecks := summary["bottlenecks"].(map[string]float64)
+	t.Logf("Bottleneck Analysis:")
+	t.Logf("  Ingress/Executed Ratio: %.2fx", bottlenecks["ingress_ratio"])
+	t.Logf("  Executed/Finalized Ratio: %.2fx", bottlenecks["execution_ratio"])
+	t.Logf("")
+
+	assessment := summary["assessment"].(map[string]string)
+	t.Logf("Performance Assessment:")
+	t.Logf("  Ingress TPS: %s", assessment["ingress_tps"])
+	t.Logf("  Executed TPS: %s", assessment["executed_tps"])
+	t.Logf("  Overall Efficiency: %s", assessment["efficiency"])
+
+	// Write demo results to JSON
+	if b, err := json.MarshalIndent(summary, "", "  "); err == nil {
+		_ = os.WriteFile("performance_results.json", b, 0644)
+		t.Logf("Demo results written to performance_results.json")
 	}
 }
 
@@ -425,4 +540,73 @@ func stringIndex(haystack, needle string) int {
 
 func randBetween(min, max int) int {
 	return (int(time.Now().UnixNano()/1e6) % (max - min + 1)) + min
+}
+
+// Helper functions for performance assessment
+func getPerformanceLevel(tps float64, excellentThreshold, goodThreshold float64) string {
+	if tps > excellentThreshold {
+		return "EXCELLENT"
+	} else if tps > goodThreshold {
+		return "GOOD"
+	}
+	return "NEEDS_IMPROVEMENT"
+}
+
+func getEfficiencyLevel(efficiency float64) string {
+	if efficiency > 90 {
+		return "EXCELLENT"
+	} else if efficiency > 70 {
+		return "GOOD"
+	}
+	return "NEEDS_IMPROVEMENT"
+}
+
+// CalculateTPSSummary calculates and returns a summary of TPS metrics
+func CalculateTPSSummary(ingressCount, executedCount, finalizedCount int,
+	ingressWindow, executedWindow, finalizedWindow time.Duration) map[string]interface{} {
+
+	ingressTPS := float64(ingressCount) / ingressWindow.Seconds()
+	executedTPS := float64(executedCount) / executedWindow.Seconds()
+	finalizedTPS := float64(finalizedCount) / finalizedWindow.Seconds()
+
+	// Calculate efficiency metrics
+	ingressToExecutedRatio := float64(executedCount) / float64(ingressCount) * 100
+	executedToFinalizedRatio := float64(finalizedCount) / float64(executedCount) * 100
+	overallEfficiency := float64(finalizedCount) / float64(ingressCount) * 100
+
+	// Calculate bottleneck analysis
+	ingressBottleneck := ingressTPS / executedTPS
+	executionBottleneck := executedTPS / finalizedTPS
+
+	return map[string]interface{}{
+		"tps": map[string]float64{
+			"ingress":   ingressTPS,
+			"executed":  executedTPS,
+			"finalized": finalizedTPS,
+		},
+		"counts": map[string]int{
+			"ingress":   ingressCount,
+			"executed":  executedCount,
+			"finalized": finalizedCount,
+		},
+		"windows": map[string]float64{
+			"ingress":   ingressWindow.Seconds(),
+			"executed":  executedWindow.Seconds(),
+			"finalized": finalizedWindow.Seconds(),
+		},
+		"efficiency": map[string]float64{
+			"ingress_to_executed":   ingressToExecutedRatio,
+			"executed_to_finalized": executedToFinalizedRatio,
+			"overall":               overallEfficiency,
+		},
+		"bottlenecks": map[string]float64{
+			"ingress_ratio":   ingressBottleneck,
+			"execution_ratio": executionBottleneck,
+		},
+		"assessment": map[string]string{
+			"ingress_tps":  getPerformanceLevel(ingressTPS, 1000, 500),
+			"executed_tps": getPerformanceLevel(executedTPS, 500, 100),
+			"efficiency":   getEfficiencyLevel(overallEfficiency),
+		},
+	}
 }
