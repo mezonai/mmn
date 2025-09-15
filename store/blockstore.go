@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
+	"sync/atomic"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -310,6 +311,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
+	monitoring.RecordBlockSizeBytes(len(value))
 	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
 
 	// Update latest store slot if the block slot is greater than the latest store slot
@@ -325,6 +327,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
 	}
+	monitoring.RecordTxInBlock(len(txs))
 	if err := s.txStore.StoreBatch(txs); err != nil {
 		return fmt.Errorf("failed to store txs: %w", err)
 	}
@@ -396,6 +399,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 	// Publish transaction finalization events if event router is provided
 	if s.eventRouter != nil && blk != nil {
 		blockHashHex := blk.HashString()
+		now := time.Now()
 
 		for _, entry := range blk.Entries {
 			txs, err := s.txStore.GetBatch(entry.TxHashes)
@@ -404,6 +408,10 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 				continue
 			}
 			for _, tx := range txs {
+				// Record metrics
+				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
+				monitoring.RecordTimeToFinality(now.Sub(txTimestamp))
+
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
 			}
@@ -433,6 +441,9 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 		if err := s.provider.Put(metaKey, metaValue); err != nil {
 			return fmt.Errorf("failed to update latest finalized: %w", err)
 		}
+
+		// Update block height metric
+		monitoring.SetBlockHeight(slot)
 	}
 
 	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)

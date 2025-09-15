@@ -106,7 +106,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey", faucetPublicKey)
-	toAddress := "HTSs3Qztt9PwdsENiguF9GctKzmFg8FSrXnYprPKuerg" // dummy base58 for test
+	toAddress := "FmyRGSQU4aswUJTu3eeLiMNZZXgUEzGLTHyU9kD8eMm7" // dummy base58 for test
 
 	// Get current faucet account to get the next nonce
 	faucetAccount, err := client.GetAccount(ctx, faucetPublicKey)
@@ -126,7 +126,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	}
 
 	toAddr := toAddress
-	amount := uint256.NewInt(1)
+	amount := uint256.NewInt(10)
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
@@ -175,6 +175,76 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	if actualTxExtra == nil || actualTxExtra["type"] != "unlock_item" {
 		t.Errorf("Unmatched tx extra info: expected: %+v, actual: %+v", extraInfo, actualTxExtra)
 	}
+}
+
+func TestClient_SendToken(t *testing.T) {
+	client, err := defaultClient()
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+
+	fromAddress := "FmyRGSQU4aswUJTu3eeLiMNZZXgUEzGLTHyU9kD8eMm7" // dummy base58 for test
+	fromPrivateKeyHex := "302e020100300506032b65700422042026ecff75c084f52a7acbf7b2f26b5f7ea46c9b8451dcad9fe2f889855c7dcf69"
+	toAddress := "CanBzWYv7Rf21DYZR5oDoon7NJmhLQ32eUvmyDGkeyK7" // dummy base58 for test
+
+	fromPrivateKeyDer, err := hex.DecodeString(fromPrivateKeyHex)
+	if err != nil {
+		t.Fatalf("Failed to decode from private key: %v", err)
+	}
+	fromSeed := fromPrivateKeyDer[len(fromPrivateKeyDer)-32:]
+	fromPrivateKey := ed25519.NewKeyFromSeed(fromSeed)
+
+	fromAccount, err := client.GetAccount(ctx, fromAddress)
+	if err != nil {
+		t.Fatalf("Failed to get account: %v", err)
+	}
+	nextNonce := fromAccount.Nonce + 1
+	t.Logf("From account nonce: %d, using next nonce: %d", fromAccount.Nonce, nextNonce)
+
+	amount := uint256.NewInt(1)
+	nonce := fromAccount.Nonce + 1
+	textData := "Integration test transfer"
+
+	extraInfo := map[string]string{
+		"type": "transfer",
+	}
+	unsigned, err := BuildTransferTx(TxTypeTransfer, fromAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo)
+	if err != nil {
+		t.Fatalf("Failed to build transfer tx: %v", err)
+	}
+
+	signedRaw, err := SignTx(unsigned, fromPrivateKey.Seed())
+	if err != nil {
+		t.Fatalf("Failed to sign tx: %v", err)
+	}
+
+	if !Verify(unsigned, signedRaw.Sig) {
+		t.Fatalf("Self verify failed")
+	}
+
+	res, err := client.AddTx(ctx, signedRaw)
+	if err != nil {
+		t.Fatalf("Failed to add tx: %v", err)
+	}
+
+	t.Logf("Transaction successful! Hash: %s", res.TxHash)
+
+	time.Sleep(5 * time.Second)
+	fromAccount, err = client.GetAccount(ctx, fromAddress)
+	if err != nil {
+		t.Fatalf("Failed to get account balance: %v", err)
+	}
+
+	t.Logf("Account %s balance: %s tokens, nonce: %d", fromAddress, fromAccount.Balance, fromAccount.Nonce)
+
+	toAccount, err := client.GetAccount(ctx, toAddress)
+	if err != nil {
+		t.Fatalf("Failed to get account: %v", err)
+	}
+
+	t.Logf("Account %s balance: %s tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
 }
 
 func TestClient_GetListTransactionsFaucet(t *testing.T) {

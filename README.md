@@ -115,7 +115,9 @@ go build -o bin/mmn ./cmd
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
 
-## Monitoring stack (Grafana + Loki + Promtail)
+## Monitoring stack (Grafana + Loki + Promtail + Prometheus)
 
-- Open grafana at http://localhost:3000 (admin / admin)
-- Navigate to [Drilldown > Logs](http://localhost:3000/a/grafana-lokiexplore-app/explore)
+- Create prometheus targets config file named `nodes.yaml` inside `./monitoring/prometheus/targets`, take a look at [example file](monitoring/prometheus/targets/nodes.example.yml)
+- Open grafana at http://localhost:3300 (admin / admin)
+- Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
+- Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs

@@ -8,6 +8,7 @@ import (
 
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -54,6 +55,8 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 				}
 			}
 
+			// Update peer count metric after each discovery cycle
+			monitoring.SetPeerCount(ln.GetPeersConnected())
 			time.Sleep(30 * time.Second)
 		}
 	}()

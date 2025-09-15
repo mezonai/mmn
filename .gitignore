@@ -43,4 +43,6 @@ node-data
 # Log files
 mmn*.log
 
-include
+# Prometheus config
+/monitoring/prometheus/targets/nodes.yml
+

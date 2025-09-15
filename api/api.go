@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"github.com/mezonai/mmn/logx"
 	"io"
-	_ "net/http/pprof"
 	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 
 	"github.com/mezonai/mmn/ledger"
@@ -20,13 +20,16 @@ type TxReq struct {
 }
 
 type APIServer struct {
+	mux        *http.ServeMux
 	Mempool    *mempool.Mempool
 	Ledger     *ledger.Ledger
 	ListenAddr string
 }
 
 func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIServer {
+	mux := http.NewServeMux()
 	return &APIServer{
+		mux:        mux,
 		Mempool:    mp,
 		Ledger:     ledger,
 		ListenAddr: addr,
@@ -34,10 +37,10 @@ func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIS
 }
 
 func (s *APIServer) Start() {
-	http.HandleFunc("/txs", s.handleTxs)
-	http.HandleFunc("/account", s.handleAccount)
+	s.mux.HandleFunc("/txs", s.handleTxs)
+	s.mux.HandleFunc("/account", s.handleAccount)
 	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)
-	go http.ListenAndServe(s.ListenAddr, nil)
+	go http.ListenAndServe(s.ListenAddr, s.mux)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {
