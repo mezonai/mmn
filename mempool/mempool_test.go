@@ -248,12 +248,22 @@ func TestNewMempool(t *testing.T) {
 		t.Error("Broadcaster not set correctly")
 	}
 
-	if mempool.txsBuf == nil {
-		t.Error("txsBuf map not initialized")
+	// Check sharded storage initialization
+	if mempool.shardTxsBuf == nil {
+		t.Error("shardTxsBuf not initialized")
 	}
 
-	if len(mempool.txsBuf) != 0 {
-		t.Error("txsBuf should be empty initially")
+	if len(mempool.shardTxsBuf) != mempool.shardCount {
+		t.Error("shardTxsBuf should have correct number of shards")
+	}
+
+	// Check that all shards are empty initially
+	totalTxs := 0
+	for i := 0; i < mempool.shardCount; i++ {
+		totalTxs += len(mempool.shardTxsBuf[i])
+	}
+	if totalTxs != 0 {
+		t.Error("All shards should be empty initially")
 	}
 }
 

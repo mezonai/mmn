@@ -17,6 +17,9 @@ import (
 )
 
 func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subscription) {
+	// Worker pool for parallel block processing
+	workerPool := make(chan struct{}, 5) // 5 concurrent workers for blocks
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -32,16 +35,22 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 				continue
 			}
 
-			var blk *block.BroadcastedBlock
-			if err := json.Unmarshal(msg.Data, &blk); err != nil {
-				logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)
-				continue
-			}
+			// Process block message in parallel
+			workerPool <- struct{}{}
+			go func(message *pubsub.Message) {
+				defer func() { <-workerPool }()
 
-			if blk != nil && ln.onBlockReceived != nil {
-				logx.Info("NETWORK:BLOCK", "Received block from peer:", msg.ReceivedFrom.String(), "slot:", blk.Slot)
-				ln.onBlockReceived(blk)
-			}
+				var blk *block.BroadcastedBlock
+				if err := json.Unmarshal(message.Data, &blk); err != nil {
+					logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)
+					return
+				}
+
+				if blk != nil && ln.onBlockReceived != nil {
+					logx.Info("NETWORK:BLOCK", "Received block from peer:", message.ReceivedFrom.String(), "slot:", blk.Slot)
+					ln.onBlockReceived(blk)
+				}
+			}(msg)
 		}
 	}
 }

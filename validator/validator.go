@@ -191,8 +191,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		blk.Sign(v.PrivKey)
 		logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
 
-		// Reset buffer
-		v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+		// Reset buffer while preserving capacity
+		v.collectedEntries = v.collectedEntries[:0]
 
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
@@ -228,11 +228,7 @@ func (v *Validator) peekPendingTxs(size int) []*transaction.Transaction {
 	if len(v.pendingTxs) < size {
 		size = len(v.pendingTxs)
 	}
-
-	result := make([]*transaction.Transaction, size)
-	copy(result, v.pendingTxs[:size])
-
-	return result
+	return v.pendingTxs[:size]
 }
 
 func (v *Validator) dropPendingTxs(size int) {
@@ -240,9 +236,7 @@ func (v *Validator) dropPendingTxs(size int) {
 		v.pendingTxs = v.pendingTxs[:0]
 		return
 	}
-
-	copy(v.pendingTxs, v.pendingTxs[size:])
-	v.pendingTxs = v.pendingTxs[:len(v.pendingTxs)-size]
+	v.pendingTxs = v.pendingTxs[size:]
 }
 
 func (v *Validator) Run() {
