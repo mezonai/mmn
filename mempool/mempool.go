@@ -69,6 +69,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	if _, exists := mp.txsBuf[txHash]; exists {
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
+		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
@@ -76,6 +77,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	if len(mp.txsBuf) >= mp.max {
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", "Dropping full mempool")
+		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
 		return "", fmt.Errorf("mempool full")
 	}
 	mp.mu.RUnlock()
@@ -87,11 +89,13 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.txsBuf[txHash]; exists {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
+		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
 	if len(mp.txsBuf) >= mp.max {
 		logx.Error("MEMPOOL", "Dropping full mempool (double-check)")
+		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
 		return "", fmt.Errorf("mempool full")
 	}
 

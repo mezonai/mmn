@@ -18,6 +18,8 @@ var (
 	TxInvalidNonce        TxRejectedReason = "invalid_nonce"
 	TxTooManyPending      TxRejectedReason = "too_many_pending"
 	TxInsufficientBalance TxRejectedReason = "insufficient_balance"
+	TxMempoolFull         TxRejectedReason = "mempool_full"
+	TxDuplicated          TxRejectedReason = "duplicated"
 	TxRejectedUnknown     TxRejectedReason = "other"
 )
 
