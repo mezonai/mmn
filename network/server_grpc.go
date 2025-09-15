@@ -104,10 +104,6 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 	return s.txSvc.GetTxByHash(ctx, in)
 }
 
-func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
-	return s.acctSvc.GetTxHistory(ctx, in)
-}
-
 func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
 	return s.txSvc.GetTransactionStatus(ctx, in)
 }
