@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -57,6 +58,7 @@ func init() {
 // This method is idempotent and safe to run multiple time
 func initializeNode() {
 	initializeFileLogger()
+	monitoring.InitMetrics()
 
 	// Ensure data directory exists
 	if err := os.MkdirAll(initDataDir, 0755); err != nil {

@@ -3,6 +3,7 @@ package mempool
 import (
 	"context"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"sync"
 	"time"
 
@@ -61,12 +62,14 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, error) {
 	// Generate hash first (read-only operation)
 	txHash := tx.Hash()
+	monitoring.IncreaseReceivedTxCount()
 
 	// Quick check for duplicate using read lock
 	mp.mu.RLock()
 	if _, exists := mp.txsBuf[txHash]; exists {
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
+		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
@@ -74,6 +77,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	if len(mp.txsBuf) >= mp.max {
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", "Dropping full mempool")
+		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
 		return "", fmt.Errorf("mempool full")
 	}
 	mp.mu.RUnlock()
@@ -85,11 +89,13 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.txsBuf[txHash]; exists {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
+		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", fmt.Errorf("duplicate transaction")
 	}
 
 	if len(mp.txsBuf) >= mp.max {
 		logx.Error("MEMPOOL", "Dropping full mempool (double-check)")
+		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
 		return "", fmt.Errorf("mempool full")
 	}
 
@@ -106,6 +112,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Always add to txsBuf and txOrder for compatibility
 	mp.txsBuf[txHash] = tx.Bytes()
+	monitoring.SetMempoolSize(mp.Size())
 	mp.txOrder = append(mp.txOrder, txHash)
 
 	// Publish event for transaction status tracking
@@ -127,6 +134,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
+
 	return txHash, nil
 }
 
@@ -208,24 +216,29 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
 	if !tx.Verify() {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
 		return fmt.Errorf("invalid signature")
 	}
 
 	// 2. Check for zero amount
 	if tx.Amount == nil || tx.Amount.IsZero() {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("zero amount not allowed")
 	}
 
 	// 3. Check sender account exists and get current state
 	if mp.ledger == nil {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("ledger not available for validation")
 	}
 
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("could not get sender account %s", tx.Sender)
 	}
 	if senderAccount == nil {
+		monitoring.RecordRejectedTx(monitoring.TxSenderNotExist)
 		return fmt.Errorf("sender account %s does not exist", tx.Sender)
 	}
 
@@ -235,11 +248,13 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 
 	// Reject old transactions (nonce too low)
 	if tx.Nonce <= currentNonce {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
 	}
 
 	// Prevent spam with reasonable future nonce limit
 	if tx.Nonce > currentNonce+MaxFutureNonce {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return fmt.Errorf("nonce too high: max allowed %d, got %d",
 			currentNonce+MaxFutureNonce, tx.Nonce)
 	}
@@ -247,12 +262,14 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 6. Check pending transaction limits per sender
 	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
 		if len(pendingNonces) >= MaxPendingPerSender {
+			monitoring.RecordRejectedTx(monitoring.TxTooManyPending)
 			return fmt.Errorf("too many pending transactions for sender %s: max %d",
 				tx.Sender[:8], MaxPendingPerSender)
 		}
 
 		// 7. Check for duplicate nonce in pending transactions
 		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions",
 				tx.Nonce, tx.Sender[:8])
 		}
@@ -261,6 +278,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 8. Check for duplicate nonce in ready queue
 	for _, readyTx := range mp.readyQueue {
 		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
 				tx.Nonce, tx.Sender[:8])
 		}
@@ -268,6 +286,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 
 	// 9. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
+		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
 		return err
 	}
@@ -346,10 +365,8 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 	}
 }
 
-// Size uses read lock for better concurrency
+// Size returns current size of mempool without locking
 func (mp *Mempool) Size() int {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
 	return len(mp.txsBuf)
 }
 
@@ -428,6 +445,7 @@ func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 
 	// Remove from txsBuf
 	delete(mp.txsBuf, txHash)
+	monitoring.SetMempoolSize(mp.Size())
 
 	// Remove from txOrder
 	for i, hash := range mp.txOrder {
@@ -479,6 +497,7 @@ func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
 			// Remove from main transaction buffer
 			if _, exists := mp.txsBuf[txHash]; exists {
 				delete(mp.txsBuf, txHash)
+				monitoring.SetMempoolSize(mp.Size())
 
 				// Remove from txOrder
 				for i, hash := range mp.txOrder {
