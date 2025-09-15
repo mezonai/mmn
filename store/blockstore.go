@@ -311,7 +311,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
-	monitoring.RecordBlockSizeBytes(uint64(len(value)))
+	monitoring.RecordBlockSizeBytes(len(value))
 	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
 
 	// Update latest store slot if the block slot is greater than the latest store slot
@@ -327,6 +327,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	for _, entry := range b.Entries {
 		txs = append(txs, entry.Transactions...)
 	}
+	monitoring.RecordTxInBlock(len(txs))
 	if err := s.txStore.StoreBatch(txs); err != nil {
 		return fmt.Errorf("failed to store txs: %w", err)
 	}

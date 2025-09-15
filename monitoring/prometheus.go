@@ -29,6 +29,7 @@ type nodePromMetrics struct {
 	rejectedTxCount   *prometheus.CounterVec
 	blockHeight       prometheus.Gauge
 	blockSizeBytes    prometheus.Histogram
+	txInBlock         prometheus.Histogram
 	ingressTxCount    prometheus.Counter
 	receivedTxCount   prometheus.Counter
 	peerCount         prometheus.Gauge
@@ -77,6 +78,12 @@ func newNodePromMetrics() *nodePromMetrics {
 			prometheus.HistogramOpts{
 				Name: "mmn_node_block_size_bytes",
 				Help: "The block size in bytes",
+			},
+		),
+		txInBlock: promauto.NewHistogram(
+			prometheus.HistogramOpts{
+				Name: "mmn_node_tx_in_block",
+				Help: "Number of tx in block",
 			},
 		),
 		ingressTxCount: promauto.NewCounter(
@@ -135,8 +142,12 @@ func SetBlockHeight(blockHeight uint64) {
 	nodeMetrics.blockHeight.Set(float64(blockHeight))
 }
 
-func RecordBlockSizeBytes(sizeBytes uint64) {
+func RecordBlockSizeBytes(sizeBytes int) {
 	nodeMetrics.blockSizeBytes.Observe(float64(sizeBytes))
+}
+
+func RecordTxInBlock(txCount int) {
+	nodeMetrics.txInBlock.Observe(float64(txCount))
 }
 
 func IncreaseIngressTxCount() {
