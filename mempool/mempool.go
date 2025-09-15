@@ -3,9 +3,10 @@ package mempool
 import (
 	"context"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/block"
@@ -18,9 +19,9 @@ import (
 
 // Constants for zero-fee blockchain optimization
 const (
-	MaxPendingPerSender = 60               // Max future transactions per sender
-	StaleTimeout        = 60 * time.Minute // Remove old pending transactions
-	MaxFutureNonce      = 64               // Max nonce distance from current
+	MaxPendingPerSender = 60              // Max future transactions per sender
+	StaleTimeout        = 5 * time.Minute // Remove old pending transactions
+	MaxFutureNonce      = 64              // Max nonce distance from current
 )
 
 // PendingTransaction wraps a transaction with timestamp for timeout management
