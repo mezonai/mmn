@@ -22,6 +22,12 @@ export interface JsonRpcResponse<T = unknown> {
 	id: string | number;
 }
 
+export interface IWallet {
+  address: string;
+  privateKey: string;
+  recoveryPhrase: string;
+}
+
 // --- Transaction Types ---
 
 export enum ETransferType {
