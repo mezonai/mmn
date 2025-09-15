@@ -12,9 +12,6 @@ import (
 )
 
 func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub.Subscription) {
-	// Worker pool for parallel message processing
-	workerPool := make(chan struct{}, 10) // 10 concurrent workers
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -35,21 +32,15 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 				continue
 			}
 
-			// Process message in parallel
-			workerPool <- struct{}{}
-			go func(message *pubsub.Message) {
-				defer func() { <-workerPool }()
+			var tx *transaction.Transaction
+			if err := json.Unmarshal(msg.Data, &tx); err != nil {
+				logx.Warn("NETWORK:TX", "Unmarshal error:", err)
+				continue
+			}
 
-				var tx *transaction.Transaction
-				if err := json.Unmarshal(message.Data, &tx); err != nil {
-					logx.Warn("NETWORK:TX", "Unmarshal error:", err)
-					return
-				}
-
-				if tx != nil && ln.onTransactionReceived != nil {
-					ln.onTransactionReceived(tx)
-				}
-			}(msg)
+			if tx != nil && ln.onTransactionReceived != nil {
+				ln.onTransactionReceived(tx)
+			}
 		}
 	}
 }

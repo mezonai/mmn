@@ -20,6 +20,7 @@ const (
 	MaxPendingPerSender = 60               // Max future transactions per sender
 	StaleTimeout        = 60 * time.Minute // Remove old pending transactions
 	MaxFutureNonce      = 64               // Max nonce distance from current
+	AccountCacheTTL     = 10 * time.Minute // Evict cached account state after TTL
 )
 
 // PendingTransaction wraps a transaction with timestamp for timeout management
@@ -692,6 +693,18 @@ func (mp *Mempool) PeriodicCleanup() {
 		totalTransactions += len(mp.shardTxsBuf[i])
 		mp.shardMutexes[i].RUnlock()
 	}
+
+	// Evict stale account cache entries
+	now := time.Now()
+	evicted := 0
+	mp.cacheMutex.Lock()
+	for addr, cached := range mp.accountCache {
+		if now.Sub(cached.LastUpdated) > AccountCacheTTL {
+			delete(mp.accountCache, addr)
+			evicted++
+		}
+	}
+	mp.cacheMutex.Unlock()
 
 	logx.Info("MEMPOOL", fmt.Sprintf(
 		"Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
