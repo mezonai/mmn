@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"time"
 
 	"github.com/mezonai/mmn/store"
@@ -195,7 +196,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		// Assemble block if we have entries
 		if len(copyCollectedEntries) > 0 {
 			// Retrieve previous hash from recorder
-			prevHash := v.Recorder.GetSlotHash(v.lastSlot - 1)
+			prevSlot := v.lastSlot - 1
+			prevHash := v.Recorder.GetSlotHash(prevSlot)
 			logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", v.lastSlot-1, prevHash))
 
 			blk := block.AssembleBlock(
@@ -207,6 +209,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 
 			blk.Sign(v.PrivKey)
 			logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", v.lastSlot, len(v.collectedEntries)))
+			prevBlock := v.blockStore.Block(prevSlot)
+			if prevBlock != nil {
+				monitoring.RecordBlockTime(blk.CreationTimestamp().Sub(prevBlock.CreationTimestamp()))
+			}
 
 			// Reset buffer
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)

@@ -63,10 +63,10 @@ func setupIntegrationTest(t *testing.T) (*TestService, func()) {
 
 	// Create MMN user keys table if not exists (for testing)
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS mmn_user_keys (
+		CREATE TABLE IF NOT EXISTS mmn_wallet (
 			user_id      BIGINT PRIMARY KEY,
 			address      VARCHAR(255) NOT NULL,
-			enc_privkey  BYTEA NOT NULL,
+			enc_privkey  TEXT NOT NULL,
 			created_at   TIMESTAMPTZ DEFAULT now(),
 			updated_at   TIMESTAMPTZ DEFAULT now()
 		);
@@ -88,7 +88,7 @@ func setupIntegrationTest(t *testing.T) (*TestService, func()) {
 		);
 	`)
 	if err != nil {
-		t.Fatalf("Failed to create mmn_user_keys table: %v", err)
+		t.Fatalf("Failed to create mmn_wallet table: %v", err)
 	}
 
 	// Setup keystore with encryption

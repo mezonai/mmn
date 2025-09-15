@@ -138,10 +138,43 @@ services:
     ports:
       - "3300:3000"
     volumes:
-      - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
     depends_on:
       - loki
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/targets:/etc/prometheus/targets:ro
+      - prom_data:/prometheus
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
     networks:
       - mezon
     restart: unless-stopped
@@ -151,6 +184,7 @@ networks:
 
 volumes:
   node_data:
+  logs_data:
   loki_data:
   grafana_data:
-  logs_data:
+  prom_data:
