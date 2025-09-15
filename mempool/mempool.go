@@ -60,6 +60,10 @@ type Mempool struct {
 	// Account state cache for faster validation
 	accountCache map[string]*CachedAccountState
 	cacheMutex   sync.RWMutex
+
+	// Per-sender locks to serialize nonce-sensitive updates while allowing cross-sender parallelism
+	senderLocks   map[string]*sync.Mutex
+	senderLocksMu sync.Mutex
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Mempool {
@@ -91,7 +95,34 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		eventRouter:  eventRouter,
 		txTracker:    txTracker,
 		accountCache: make(map[string]*CachedAccountState),
+		senderLocks:  make(map[string]*sync.Mutex),
 	}
+}
+
+func (mp *Mempool) getSenderLock(sender string) *sync.Mutex {
+	mp.senderLocksMu.Lock()
+	defer mp.senderLocksMu.Unlock()
+	lk, ok := mp.senderLocks[sender]
+	if !ok {
+		lk = &sync.Mutex{}
+		mp.senderLocks[sender] = lk
+	}
+	return lk
+}
+
+// remove sender lock if no pending and no ready transactions remain for this sender
+func (mp *Mempool) cleanupSenderLockIfIdle(sender string) {
+	if pending, ok := mp.pendingTxs[sender]; ok && len(pending) > 0 {
+		return
+	}
+	for _, tx := range mp.readyQueue {
+		if tx.Sender == sender {
+			return
+		}
+	}
+	mp.senderLocksMu.Lock()
+	delete(mp.senderLocks, sender)
+	mp.senderLocksMu.Unlock()
 }
 
 // getShard returns the shard index for a given transaction hash
@@ -240,16 +271,14 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	// Generate hash first (read-only operation)
 	txHash := tx.Hash()
 	shardIndex := mp.getShard(txHash)
-
-	// Quick check for duplicate using shard read lock
+	// Quick duplicate check
 	mp.shardMutexes[shardIndex].RLock()
 	if _, exists := mp.shardTxsBuf[shardIndex][txHash]; exists {
 		mp.shardMutexes[shardIndex].RUnlock()
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
 		return "", fmt.Errorf("duplicate transaction")
 	}
-
-	// Check if mempool is full (approximate check)
+	// approximate capacity check
 	totalSize := 0
 	for i := 0; i < mp.shardCount; i++ {
 		totalSize += len(mp.shardTxsBuf[i])
@@ -261,40 +290,36 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 	mp.shardMutexes[shardIndex].RUnlock()
 
-	// Validate transaction first (before acquiring locks)
+	// Validate transaction first
 	if err := mp.validateTransactionOptimized(tx); err != nil {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
 		return "", err
 	}
 
-	// Now acquire shard write lock for insertion
+	// Insert into shard storage
 	mp.shardMutexes[shardIndex].Lock()
 	defer mp.shardMutexes[shardIndex].Unlock()
-
-	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.shardTxsBuf[shardIndex][txHash]; exists {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
 		return "", fmt.Errorf("duplicate transaction")
 	}
-
-	logx.Info("MEMPOOL", fmt.Sprintf("Adding tx %+v", tx))
-
-	// Determine if transaction is ready or pending
-	mp.processTransactionToQueue(tx)
-
-	// Add to sharded storage
 	mp.shardTxsBuf[shardIndex][txHash] = tx.Bytes()
 	mp.shardTxOrder[shardIndex][txHash] = len(mp.shardTxsBuf[shardIndex])
 
-	// Publish event for transaction status tracking
+	// Per-sender critical section: enqueue to ready/pending respecting nonce order
+	senderLock := mp.getSenderLock(tx.Sender)
+	senderLock.Lock()
+	mp.processTransactionToQueue(tx)
+	senderLock.Unlock()
+
+	// Publish event
 	if mp.eventRouter != nil {
 		event := events.NewTransactionAddedToMempool(txHash, tx)
 		mp.eventRouter.PublishTransactionEvent(event)
 	}
 
-	// Handle broadcast safely
+	// Broadcast if requested
 	if broadcast && mp.broadcaster != nil {
-		// Use goroutine to avoid blocking the critical path
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -655,6 +680,7 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 						// Clean up empty sender map
 						if len(nonceTxs) == 0 {
 							delete(mp.pendingTxs, sender)
+							mp.cleanupSenderLockIfIdle(sender)
 						}
 						break
 					}
@@ -680,20 +706,6 @@ func (mp *Mempool) PeriodicCleanup() {
 	// Clean up any outdated transactions and promote ready ones
 	mp.cleanupOutdatedTransactions()
 
-	// Log current mempool state
-	totalPending := 0
-	for _, pendingMap := range mp.pendingTxs {
-		totalPending += len(pendingMap)
-	}
-
-	// Calculate total transactions across all shards
-	totalTransactions := 0
-	for i := 0; i < mp.shardCount; i++ {
-		mp.shardMutexes[i].RLock()
-		totalTransactions += len(mp.shardTxsBuf[i])
-		mp.shardMutexes[i].RUnlock()
-	}
-
 	// Evict stale account cache entries
 	now := time.Now()
 	evicted := 0
@@ -706,9 +718,37 @@ func (mp *Mempool) PeriodicCleanup() {
 	}
 	mp.cacheMutex.Unlock()
 
+	// Cleanup idle sender locks (no pending and no ready)
+	mp.senderLocksMu.Lock()
+	senders := make([]string, 0, len(mp.senderLocks))
+	for sender := range mp.senderLocks {
+		senders = append(senders, sender)
+	}
+	mp.senderLocksMu.Unlock()
+	for _, sender := range senders {
+		mp.cleanupSenderLockIfIdle(sender)
+	}
+
+	// Log current mempool state
+	totalPending := 0
+	for _, pendingMap := range mp.pendingTxs {
+		totalPending += len(pendingMap)
+	}
+	// Calculate total transactions across all shards
+	totalTransactions := 0
+	for i := 0; i < mp.shardCount; i++ {
+		mp.shardMutexes[i].RLock()
+		totalTransactions += len(mp.shardTxsBuf[i])
+		mp.shardMutexes[i].RUnlock()
+	}
+
 	logx.Info("MEMPOOL", fmt.Sprintf(
 		"Mempool cleanup complete - Ready: %d, Pending: %d, Total: %d\n",
 		len(mp.readyQueue), totalPending, totalTransactions,
+	))
+	logx.Info("MEMPOOL", fmt.Sprintf(
+		"Account cache - Evicted: %d, Size: %d\n",
+		evicted, len(mp.accountCache),
 	))
 }
 
@@ -800,58 +840,50 @@ func (mp *Mempool) AddBatchTx(transactions []*transaction.Transaction, broadcast
 	if len(transactions) == 0 {
 		return nil, nil
 	}
-
-	// Use global lock for batch operations to maintain consistency
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
 	results := make([]string, len(transactions))
 	errors := make([]error, len(transactions))
 
-	// Validate all transactions in batch first
 	validationErrors := mp.validateBatchTransactions(transactions)
 
-	// Process valid transactions
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, mp.shardCount) // Limit concurrent operations
-
+	semaphore := make(chan struct{}, mp.shardCount)
 	for i, tx := range transactions {
-		// Skip invalid transactions
 		if validationErrors[i] != nil {
 			errors[i] = validationErrors[i]
 			continue
 		}
-
 		wg.Add(1)
+		semaphore <- struct{}{}
 		go func(index int, transaction *transaction.Transaction) {
 			defer wg.Done()
-			semaphore <- struct{}{}        // Acquire semaphore
-			defer func() { <-semaphore }() // Release semaphore
+			defer func() { <-semaphore }()
 
-			// Add to sharded storage
+			// shard insert
 			txHash := transaction.Hash()
 			shardIndex := mp.getShard(txHash)
-
 			mp.shardMutexes[shardIndex].Lock()
 			mp.shardTxsBuf[shardIndex][txHash] = transaction.Serialize()
 			mp.shardTxOrder[shardIndex][txHash] = len(mp.shardTxsBuf[shardIndex])
 			mp.shardMutexes[shardIndex].Unlock()
 
-			// Process to queue
+			// per-sender enqueue
+			lk := mp.getSenderLock(transaction.Sender)
+			lk.Lock()
 			mp.processTransactionToQueue(transaction)
+			lk.Unlock()
 
-			// Broadcast if requested
 			if broadcast {
 				ctx := context.Background()
 				if err := mp.broadcaster.TxBroadcast(ctx, transaction); err != nil {
 					logx.Error("MEMPOOL", "Failed to broadcast transaction:", err)
 				}
 			}
-
 			results[index] = txHash
 		}(i, tx)
 	}
-
 	wg.Wait()
 	return results, errors
 }
