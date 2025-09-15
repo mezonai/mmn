@@ -11,6 +11,7 @@ import (
 
 	"github.com/holiman/uint256"
 	mmnClient "github.com/mezonai/mmn/client"
+	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	mmnpb "github.com/mezonai/mmn/proto"
 )
 
@@ -18,11 +19,11 @@ import (
 
 type TxService struct {
 	client mmnClient.MainnetClient
-	ks     mmnClient.WalletManager
+	ks     keystore.WalletManager
 	db     *sql.DB
 }
 
-func NewTxService(client mmnClient.MainnetClient, ks mmnClient.WalletManager, db *sql.DB) *TxService {
+func NewTxService(client mmnClient.MainnetClient, ks keystore.WalletManager, db *sql.DB) *TxService {
 	return &TxService{client: client, ks: ks, db: db}
 }
 
