@@ -115,6 +115,19 @@ go build -o bin/mmn ./cmd
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
 
+## Performance Testing (TPS)
+
+### Latest TPS Results (60 users x 20 tx)
+
+| Users | Total TXs | Ingress TPS | Executed TPS | Finalized TPS | Sent OK | Total Time |
+|-------|-----------|-------------|--------------|---------------|---------|------------|
+| 60    | 1200      | 1895.42     | 48.51        | 48.51         | 1200    | ~49.74s    |
+
+listen SubscribeTransactionStatus
+- Ingress TPS: numPending / (lastPending - firstSent)
+- Executed TPS: numConfirmed / (lastConfirmed - firstSent)
+- Finalized TPS: numFinalized / (lastFinalized - firstSent)
+
 ## Monitoring stack (Grafana + Loki + Promtail)
 
 - Open grafana at http://localhost:3000 (admin / admin)
