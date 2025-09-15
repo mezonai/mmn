@@ -1,6 +1,8 @@
 name: mmn
 
 services:
+  # ==================== BOOTSTRAP NODE ====================
+  # Bootstrap node that help new node to join blockchain network
   bootnode:
     build:
       context: .
@@ -20,7 +22,12 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - bootstrap
 
+  # ==================== CORE BLOCKCHAIN NODE ====================
+  # End users (nodes) will always run this
   node1:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node1
@@ -48,6 +55,10 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - node
+      - monitored-node
       
   node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
@@ -76,6 +87,11 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - node
+      - monitored-node
+
   node3:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node3
@@ -103,33 +119,13 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - node
+      - monitored-node
 
-  loki:
-    image: grafana/loki:3.5.0
-    container_name: loki
-    command: ["-config.file=/etc/loki/config.yml"]
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
-      - loki_data:/loki
-    networks:
-      - mezon
-    restart: unless-stopped
-
-  promtail:
-    image: grafana/promtail:3.5.0
-    container_name: promtail
-    command: ["-config.file=/etc/promtail/config.yml"]
-    volumes:
-      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
-      - logs_data:/var/log/mmn:ro
-    depends_on:
-      - loki
-    networks:
-      - mezon
-    restart: unless-stopped
-
+  # ==================== MONITORING SERVICES ====================
+  # Services that help monitor blockchain and individual nodes
   grafana:
     image: grafana/grafana:11.6.5
     container_name: grafana
@@ -146,11 +142,30 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
+
+  loki:
+    image: grafana/loki:3.5.0
+    container_name: loki
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks:
+      - mezon
+    restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
 
   prometheus:
     image: prom/prometheus:v3.5.0
     container_name: prometheus
-    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    command: [ "--config.file=/etc/prometheus/prometheus.yml" ]
     ports:
       - "9090:9090"
     volumes:
@@ -160,6 +175,25 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
+
+  promtail:
+    image: grafana/promtail:3.5.0
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - logs_data:/var/log/mmn:ro
+    depends_on:
+      - loki
+    networks:
+      - mezon
+    restart: unless-stopped
+    profiles:
+      - dev
+      - monitored-node
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
@@ -178,6 +212,9 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - monitored-node
 
 networks:
   mezon:
