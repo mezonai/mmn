@@ -14,7 +14,9 @@ func NewEventRouter(eventBus *EventBus) *EventRouter {
 
 // PublishTransactionEvent publishes a transaction-specific event
 func (er *EventRouter) PublishTransactionEvent(event BlockchainEvent) {
-	er.eventBus.Publish(event)
+	exception.SafeGo("PublishTransactionEvent", func() {
+		er.eventBus.Publish(event)
+	})
 }
 
 // Subscribe subscribes to all transaction events
