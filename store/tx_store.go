@@ -54,6 +54,8 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 	defer ts.mu.Unlock()
 
 	batch := ts.dbProvider.Batch()
+	defer batch.Close()
+
 	for _, tx := range txs {
 		txData, err := json.Marshal(tx)
 		if err != nil {

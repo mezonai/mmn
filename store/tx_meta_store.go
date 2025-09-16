@@ -54,6 +54,8 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 	defer tms.mu.Unlock()
 
 	batch := tms.dbProvider.Batch()
+	defer batch.Close()
+
 	for _, txMeta := range txMetas {
 		data, err := json.Marshal(txMeta)
 		if err != nil {

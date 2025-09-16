@@ -55,6 +55,8 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 	defer as.mu.Unlock()
 
 	batch := as.dbProvider.Batch()
+	defer batch.Close()
+
 	for _, account := range accounts {
 		accountData, err := json.Marshal(account)
 		if err != nil {
