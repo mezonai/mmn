@@ -16,10 +16,6 @@ import (
 	"time"
 
 	"github.com/mr-tron/base58"
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
-	"github.com/shirou/gopsutil/v3/net"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -47,16 +43,6 @@ type Account struct {
 	Balance    uint64
 }
 
-// SystemMetrics holds system resource metrics
-type SystemMetrics struct {
-	CPUPercent    float64
-	MemoryPercent float64
-	DiskRead      uint64
-	DiskWrite     uint64
-	NetworkRx     uint64
-	NetworkTx     uint64
-	Timestamp     time.Time
-}
 
 // LoadTester handles the load testing
 type LoadTester struct {
@@ -79,6 +65,9 @@ type LoadTester struct {
 	lastMetrics     *SystemMetrics
 	metricsTicker   *time.Ticker
 	
+	// Logger
+	logger *Logger
+	
 	// Faucet account (hardcoded from genesis)
 	faucetPrivateKey ed25519.PrivateKey
 	faucetPublicKey  string
@@ -87,128 +76,16 @@ type LoadTester struct {
 // Faucet private key from genesis (same as in TypeScript tests)
 const faucetPrivateKeyHex = "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 
-// collectSystemMetrics collects current system metrics
-func collectSystemMetrics() (*SystemMetrics, error) {
-	metrics := &SystemMetrics{
-		Timestamp: time.Now(),
-	}
-
-	// CPU usage
-	cpuPercent, err := cpu.Percent(0, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get CPU metrics: %v", err)
-	}
-	if len(cpuPercent) > 0 {
-		metrics.CPUPercent = cpuPercent[0]
-	}
-
-	// Memory usage
-	memInfo, err := mem.VirtualMemory()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get memory metrics: %v", err)
-	}
-	metrics.MemoryPercent = memInfo.UsedPercent
-
-	// Disk I/O
-	diskStats, err := disk.IOCounters()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get disk metrics: %v", err)
-	}
-	
-	// Sum up all disk I/O
-	for _, stat := range diskStats {
-		metrics.DiskRead += stat.ReadBytes
-		metrics.DiskWrite += stat.WriteBytes
-	}
-
-	// Network I/O
-	netStats, err := net.IOCounters(false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get network metrics: %v", err)
-	}
-	
-	if len(netStats) > 0 {
-		metrics.NetworkRx = netStats[0].BytesRecv
-		metrics.NetworkTx = netStats[0].BytesSent
-	}
-
-	return metrics, nil
-}
-
-// formatBytes formats bytes into human readable format
-func formatBytes(bytes uint64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
 
 // logRealTimeMetrics logs current system metrics and transaction stats
 func (lt *LoadTester) logRealTimeMetrics() {
-	// Get current metrics
-	currentMetrics, err := collectSystemMetrics()
-	if err != nil {
-		log.Printf("Failed to collect system metrics: %v", err)
-		return
-	}
-
 	// Get current transaction stats
 	totalTxs := atomic.LoadInt64(&lt.totalTxsSent)
 	successTxs := atomic.LoadInt64(&lt.totalTxsSuccess)
 	failedTxs := atomic.LoadInt64(&lt.totalTxsFailed)
 	
-	// Calculate rates
-	testDuration := time.Since(lt.testStartTime)
-	actualRate := float64(totalTxs) / testDuration.Seconds()
-	successRate := float64(successTxs) / float64(totalTxs) * 100
-	if totalTxs == 0 {
-		successRate = 0
-	}
-
-	// Peak/sustained removed
-
-	// Calculate I/O deltas if we have previous metrics
-	var diskReadDelta, diskWriteDelta, netRxDelta, netTxDelta uint64
-	if lt.lastMetrics != nil {
-		diskReadDelta = currentMetrics.DiskRead - lt.lastMetrics.DiskRead
-		diskWriteDelta = currentMetrics.DiskWrite - lt.lastMetrics.DiskWrite
-		netRxDelta = currentMetrics.NetworkRx - lt.lastMetrics.NetworkRx
-		netTxDelta = currentMetrics.NetworkTx - lt.lastMetrics.NetworkTx
-	}
-
-	// Log metrics
-	fmt.Printf("\n=== REAL-TIME METRICS [%s] ===\n", currentMetrics.Timestamp.Format("15:04:05"))
-	fmt.Printf("Transactions: %d sent, %d success, %d failed (avg %.2f tx/s, %.1f%% success)\n", 
-		totalTxs, successTxs, failedTxs, actualRate, successRate)
-	
-	// Show remaining time if using minutes option
-	if lt.config.RunMinutes > 0 {
-		elapsed := time.Since(lt.testStartTime)
-		remaining := time.Duration(lt.config.RunMinutes)*time.Minute - elapsed
-		if remaining > 0 {
-			fmt.Printf("Time: %v elapsed, %v remaining\n", 
-				elapsed.Round(time.Second), remaining.Round(time.Second))
-		} else {
-			fmt.Printf("Time: %v elapsed (test should stop soon)\n", 
-				elapsed.Round(time.Second))
-		}
-	}
-	
-	fmt.Printf("System: CPU %.1f%%, RAM %.1f%%\n", 
-		currentMetrics.CPUPercent, currentMetrics.MemoryPercent)
-	fmt.Printf("I/O: Disk R/W %s/%s, Network Rx/Tx %s/%s\n", 
-		formatBytes(diskReadDelta), formatBytes(diskWriteDelta),
-		formatBytes(netRxDelta), formatBytes(netTxDelta))
-	fmt.Printf("=====================================\n")
-
-	// Update last metrics for next calculation
-	lt.lastMetrics = currentMetrics
+	// Use logger to write real-time metrics
+	lt.logger.LogRealTimeMetrics(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
 }
 
 func main() {
@@ -228,17 +105,17 @@ func main() {
 	// Start load testing in a goroutine
 	go func() {
 		if err := tester.Run(); err != nil {
-			log.Printf("Load test error: %v", err)
+			tester.logger.LogError("Load test error: %v", err)
 		}
 	}()
 
 	// Wait for signal or completion
 	select {
 	case <-sigChan:
-		log.Println("Received shutdown signal, stopping load test...")
+		tester.logger.LogInfo("Received shutdown signal, stopping load test...")
 		tester.Stop()
 	case <-tester.ctx.Done():
-		log.Println("Load test completed")
+		tester.logger.LogInfo("Load test completed")
 	}
 
 	// Print final statistics
@@ -249,8 +126,8 @@ func parseFlags() Config {
 	var config Config
 	
 	flag.StringVar(&config.ServerAddress, "server", "127.0.0.1:9001", "gRPC server address")
-	flag.IntVar(&config.AccountCount, "accounts", 200, "Number of accounts to create")
-	flag.IntVar(&config.TxPerSecond, "rate", 200, "Transactions per second")
+	flag.IntVar(&config.AccountCount, "accounts", 100, "Number of accounts to create")
+	flag.IntVar(&config.TxPerSecond, "rate", 50, "Transactions per second")
 	flag.IntVar(&config.SwitchAfterTx, "switch", 10, "Switch account after N transactions")
 	flag.IntVar(&config.Workers, "workers", 100, "Number of concurrent send workers")
 	flag.Uint64Var(&config.FundAmount, "fund", 10000000000, "Amount to fund each account")
@@ -282,10 +159,18 @@ func NewLoadTester(config Config) (*LoadTester, error) {
 	
 	ctx, cancel := context.WithCancel(context.Background())
 	
+	// Initialize logger
+	logger, err := NewLogger(config)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create logger: %v", err)
+	}
+	
 	tester := &LoadTester{
 		config:           config,
 		ctx:              ctx,
 		cancel:           cancel,
+		logger:           logger,
 		faucetPrivateKey: faucetPrivateKey,
 		faucetPublicKey:  faucetPublicKey,
 		fundingStartTime: time.Now(),
@@ -342,24 +227,24 @@ func (lt *LoadTester) generateAccounts() error {
 		}
 	}
 	
-	log.Printf("Generated %d accounts", lt.config.AccountCount)
+	lt.logger.LogInfo("Generated %d accounts", lt.config.AccountCount)
 	return nil
 }
 
 func (lt *LoadTester) fundAccounts() error {
-	log.Printf("Funding %d accounts with %d tokens each...", lt.config.AccountCount, lt.config.FundAmount)
+	lt.logger.LogInfo("Funding %d accounts with %d tokens each...", lt.config.AccountCount, lt.config.FundAmount)
 	
 	// Sequential funding to avoid duplicate nonce issues
 	for i := range lt.accounts {
 		if err := lt.fundAccount(i); err != nil {
-			log.Printf("Failed to fund account %d: %v", i, err)
+			lt.logger.LogError("Failed to fund account %d: %v", i, err)
 			// Continue with other accounts even if one fails
 		}
 		// Small delay between funding transactions to avoid conflicts
 		time.Sleep(300 * time.Millisecond)
 	}
 	
-	log.Println("Account funding completed")
+	lt.logger.LogInfo("Account funding completed")
 	return nil
 }
 
@@ -421,7 +306,7 @@ func (lt *LoadTester) fundAccount(accountIndex int) error {
 			// Check if it's a nonce error and retry
 			if attempt < maxRetries && (resp.Error == "duplicate nonce" || 
 				(resp.Error != "" && resp.Error == "duplicate nonce")) {
-				log.Printf("Nonce conflict for account %d, retrying... (attempt %d/%d)", 
+				lt.logger.LogInfo("Nonce conflict for account %d, retrying... (attempt %d/%d)", 
 					accountIndex, attempt, maxRetries)
 				time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
 				continue
@@ -432,8 +317,8 @@ func (lt *LoadTester) fundAccount(accountIndex int) error {
 		// Assume success locally to accelerate funding
 		account.Nonce = 0
 		account.Balance = lt.config.FundAmount
-		log.Printf("Funded account %d (%s...): %d tokens", 
-			accountIndex, account.PublicKey[:8], account.Balance)
+		// lt.logger.LogInfo("Funded account %d (%s...): %d tokens", 
+		// 	accountIndex, account.PublicKey[:8], account.Balance)
 		return nil
 	}
 	
@@ -490,7 +375,7 @@ func (lt *LoadTester) refillAccount(accountIndex int) error {
 	// Wait for transaction to be processed
 	time.Sleep(500 * time.Millisecond)
 	
-	log.Printf("Refilled account %d (%s...): %d tokens", 
+	lt.logger.LogInfo("Refilled account %d (%s...): %d tokens", 
 		accountIndex, account.PublicKey[:8], lt.config.FundAmount)
 	
 	return nil
@@ -499,10 +384,10 @@ func (lt *LoadTester) refillAccount(accountIndex int) error {
 func (lt *LoadTester) Run() error {
 	// Log test configuration
 	if lt.config.RunMinutes > 0 {
-		log.Printf("Starting load test: %d accounts, %d tx/s, switch after %d txs, run for %d minutes", 
+		lt.logger.LogInfo("Starting load test: %d accounts, %d tx/s, switch after %d txs, run for %d minutes", 
 			lt.config.AccountCount, lt.config.TxPerSecond, lt.config.SwitchAfterTx, lt.config.RunMinutes)
 	} else {
-		log.Printf("Starting load test: %d accounts, %d tx/s, switch after %d txs", 
+		lt.logger.LogInfo("Starting load test: %d accounts, %d tx/s, switch after %d txs", 
 			lt.config.AccountCount, lt.config.TxPerSecond, lt.config.SwitchAfterTx)
 	}
 	
@@ -544,9 +429,9 @@ func (lt *LoadTester) Run() error {
 			return nil
 		case <-timeout:
 			if lt.config.RunMinutes > 0 {
-				log.Printf("Test completed after %d minutes", lt.config.RunMinutes)
+				lt.logger.LogInfo("Test completed after %d minutes", lt.config.RunMinutes)
 			} else {
-				log.Println("Test duration completed")
+				lt.logger.LogInfo("Test duration completed")
 			}
 			// Print final statistics before quitting
 			lt.PrintStats()
@@ -595,7 +480,7 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 		Address: account.PublicKey,
 	})
 	if err != nil {
-		log.Printf("Failed to get account info for account %d: %v", accountIndex, err)
+		lt.logger.LogError("Failed to get account info for account %d: %v", accountIndex, err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
@@ -605,12 +490,12 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 	
 	// Check if account has sufficient balance
 	if currentBalance < lt.config.TransferAmount {
-		log.Printf("Insufficient balance for account %d: have %d, need %d. Refilling...", 
+		lt.logger.LogInfo("Insufficient balance for account %d: have %d, need %d. Refilling...", 
 			accountIndex, currentBalance, lt.config.TransferAmount)
 		
 		// Try to refill the account
 		if err := lt.refillAccount(accountIndex); err != nil {
-			log.Printf("Failed to refill account %d: %v", accountIndex, err)
+			lt.logger.LogError("Failed to refill account %d: %v", accountIndex, err)
 			atomic.AddInt64(&lt.totalTxsFailed, 1)
 			return
 		}
@@ -625,7 +510,7 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 		Tag:     "pending",
 	})
 	if err != nil {
-		log.Printf("Failed to get nonce for account %d: %v", accountIndex, err)
+		lt.logger.LogError("Failed to get nonce for account %d: %v", accountIndex, err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
@@ -651,7 +536,7 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 	// Sign transaction
 	signature, err := lt.signTransaction(txMsg, account.PrivateKey)
 	if err != nil {
-		log.Printf("Failed to sign transaction for account %d: %v", accountIndex, err)
+		lt.logger.LogError("Failed to sign transaction for account %d: %v", accountIndex, err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
@@ -664,7 +549,7 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 	
 	resp, err := lt.client.AddTx(lt.ctx, signedTx)
 	if err != nil {
-		log.Printf("Failed to send transaction for account %d: %v", accountIndex, err)
+		lt.logger.LogError("Failed to send transaction for account %d: %v", accountIndex, err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
@@ -676,7 +561,7 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 		account.Balance = currentBalance - lt.config.TransferAmount
 	} else {
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
-		log.Printf("Transaction failed for account %d: %s", accountIndex, resp.Error)
+		lt.logger.LogError("Transaction failed for account %d: %s", accountIndex, resp.Error)
 	}
 }
 
@@ -707,31 +592,16 @@ func (lt *LoadTester) Close() {
 	if lt.conn != nil {
 		lt.conn.Close()
 	}
+	if lt.logger != nil {
+		lt.logger.Close()
+	}
 }
 
 func (lt *LoadTester) PrintStats() {
-	// Calculate test duration (excluding funding time)
-	testDuration := time.Since(lt.testStartTime)
-	// fundingDuration := lt.testStartTime.Sub(lt.fundingStartTime)
-	
 	totalTxs := atomic.LoadInt64(&lt.totalTxsSent)
 	successTxs := atomic.LoadInt64(&lt.totalTxsSuccess)
 	failedTxs := atomic.LoadInt64(&lt.totalTxsFailed)
 	
-	actualRate := float64(totalTxs) / testDuration.Seconds()
-
-	// Peak/sustained removed
-	successRate := float64(successTxs) / float64(totalTxs) * 100
-	
-	fmt.Println("\n=== LOAD TEST STATISTICS ===")
-	// fmt.Printf("Funding duration: %v\n", fundingDuration.Round(time.Second))
-	fmt.Printf("Test duration: %v\n", testDuration.Round(time.Second))
-	fmt.Printf("Total transactions sent: %d\n", totalTxs)
-	fmt.Printf("Successful transactions: %d\n", successTxs)
-	fmt.Printf("Failed transactions: %d\n", failedTxs)
-	fmt.Printf("Actual rate: %.2f tx/s\n", actualRate)
-	fmt.Printf("Success rate: %.2f%%\n", successRate)
-	fmt.Printf("Accounts used: %d\n", lt.config.AccountCount)
-	fmt.Printf("Switch after: %d transactions\n", lt.config.SwitchAfterTx)
-	fmt.Println("=============================")
+	// Use logger to write final stats
+	lt.logger.LogFinalStats(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
 }
