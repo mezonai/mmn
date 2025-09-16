@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/holiman/uint256"
@@ -64,6 +65,13 @@ type Mempool struct {
 	// Per-sender locks to serialize nonce-sensitive updates while allowing cross-sender parallelism
 	senderLocks   map[string]*sync.Mutex
 	senderLocksMu sync.Mutex
+
+	// Fast size tracking to avoid O(shardCount) scans on hot paths
+	totalTxs int64
+
+	// Broadcast queue to avoid spawning a goroutine per transaction
+	broadcastCh      chan *transaction.Transaction
+	broadcastWorkers int
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Mempool {
@@ -79,7 +87,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		shardTxOrder[i] = make(map[string]int)
 	}
 
-	return &Mempool{
+	mp := &Mempool{
 		mu:           sync.RWMutex{},
 		shardMutexes: shardMutexes,
 		shardCount:   shardCount,
@@ -90,13 +98,30 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		ledger:       ledger,
 
 		// Initialize zero-fee optimization fields
-		pendingTxs:   make(map[string]map[uint64]*PendingTransaction),
-		readyQueue:   make([]*transaction.Transaction, 0),
-		eventRouter:  eventRouter,
-		txTracker:    txTracker,
-		accountCache: make(map[string]*CachedAccountState),
-		senderLocks:  make(map[string]*sync.Mutex),
+		pendingTxs:       make(map[string]map[uint64]*PendingTransaction),
+		readyQueue:       make([]*transaction.Transaction, 0),
+		eventRouter:      eventRouter,
+		txTracker:        txTracker,
+		accountCache:     make(map[string]*CachedAccountState),
+		senderLocks:      make(map[string]*sync.Mutex),
+		broadcastCh:      make(chan *transaction.Transaction, 10000),
+		broadcastWorkers: 4,
 	}
+
+	// Start broadcast workers if a broadcaster is provided
+	if broadcaster != nil {
+		for i := 0; i < mp.broadcastWorkers; i++ {
+			go func() {
+				for tx := range mp.broadcastCh {
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					_ = mp.broadcaster.TxBroadcast(ctx, tx)
+					cancel()
+				}
+			}()
+		}
+	}
+
+	return mp
 }
 
 func (mp *Mempool) getSenderLock(sender string) *sync.Mutex {
@@ -275,17 +300,13 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.shardMutexes[shardIndex].RLock()
 	if _, exists := mp.shardTxsBuf[shardIndex][txHash]; exists {
 		mp.shardMutexes[shardIndex].RUnlock()
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
+		logx.Debug("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
 		return "", fmt.Errorf("duplicate transaction")
 	}
-	// approximate capacity check
-	totalSize := 0
-	for i := 0; i < mp.shardCount; i++ {
-		totalSize += len(mp.shardTxsBuf[i])
-	}
-	if totalSize >= mp.max {
+	// fast capacity check
+	if int(atomic.LoadInt64(&mp.totalTxs)) >= mp.max {
 		mp.shardMutexes[shardIndex].RUnlock()
-		logx.Error("MEMPOOL", "Dropping full mempool")
+		logx.Debug("MEMPOOL", "Dropping full mempool")
 		return "", fmt.Errorf("mempool full")
 	}
 	mp.shardMutexes[shardIndex].RUnlock()
@@ -300,11 +321,12 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.shardMutexes[shardIndex].Lock()
 	defer mp.shardMutexes[shardIndex].Unlock()
 	if _, exists := mp.shardTxsBuf[shardIndex][txHash]; exists {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
+		logx.Debug("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
 		return "", fmt.Errorf("duplicate transaction")
 	}
 	mp.shardTxsBuf[shardIndex][txHash] = tx.Bytes()
 	mp.shardTxOrder[shardIndex][txHash] = len(mp.shardTxsBuf[shardIndex])
+	atomic.AddInt64(&mp.totalTxs, 1)
 
 	// Per-sender critical section: enqueue to ready/pending respecting nonce order
 	senderLock := mp.getSenderLock(tx.Sender)
@@ -318,18 +340,17 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 		mp.eventRouter.PublishTransactionEvent(event)
 	}
 
-	// Broadcast if requested
+	// Broadcast if requested (enqueue to worker queue)
 	if broadcast && mp.broadcaster != nil {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := mp.broadcaster.TxBroadcast(ctx, tx); err != nil {
-				logx.Error("MEMPOOL", fmt.Sprintf("Broadcast error: %v", err))
-			}
-		}()
+		select {
+		case mp.broadcastCh <- tx:
+		default:
+			// drop if queue is full to apply backpressure
+			logx.Debug("MEMPOOL", "Broadcast queue full, dropping tx broadcast")
+		}
 	}
 
-	logx.Info("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
+	logx.Debug("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
 	return txHash, nil
 }
 
@@ -346,7 +367,7 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	if isReady {
 		// Add to ready queue for immediate processing
 		mp.readyQueue = append(mp.readyQueue, tx)
-		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
+		logx.Debug("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
 			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
 	} else {
 		// Add to pending transactions
@@ -357,7 +378,7 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 			Tx:        tx,
 			Timestamp: time.Now(),
 		}
-		logx.Info("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
+		logx.Debug("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
 			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
 	}
 }
@@ -478,11 +499,11 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	for processedCount < batchSize {
 		readyTxs := mp.findReadyTransactions(batchSize - processedCount)
 		if len(readyTxs) == 0 {
-			logx.Info("MEMPOOL", fmt.Sprintf("No more ready transactions found, processed %d", processedCount))
+			logx.Debug("MEMPOOL", fmt.Sprintf("No more ready transactions found, processed %d", processedCount))
 			break // No more ready transactions
 		}
 
-		logx.Info("MEMPOOL", fmt.Sprintf("Found %d ready transactions", len(readyTxs)))
+		logx.Debug("MEMPOOL", fmt.Sprintf("Found %d ready transactions", len(readyTxs)))
 		for _, tx := range readyTxs {
 			batch = append(batch, tx.Bytes())
 			txHash := tx.Hash()
@@ -495,14 +516,14 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 			mp.removeTransaction(tx)
 			processedCount++
 
-			logx.Info("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
+			logx.Debug("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
 				txHash, tx.Sender[:8], tx.Nonce))
 		}
 		// Check if any pending transactions became ready after processing
 		mp.promotePendingTransactions(readyTxs)
 	}
 
-	logx.Info("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
+	logx.Debug("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
 	return batch
 }
 
@@ -527,7 +548,7 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 					delete(mp.pendingTxs, tx.Sender)
 				}
 
-				logx.Info("MEMPOOL", fmt.Sprintf("Promoted pending tx for sender %s with nonce %d",
+				logx.Debug("MEMPOOL", fmt.Sprintf("Promoted pending tx for sender %s with nonce %d",
 					tx.Sender[:8], expectedNonce))
 			}
 		}
@@ -536,13 +557,7 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 
 // Size returns total number of transactions across all shards
 func (mp *Mempool) Size() int {
-	total := 0
-	for i := 0; i < mp.shardCount; i++ {
-		mp.shardMutexes[i].RLock()
-		total += len(mp.shardTxsBuf[i])
-		mp.shardMutexes[i].RUnlock()
-	}
-	return total
+	return int(atomic.LoadInt64(&mp.totalTxs))
 }
 
 // New method: GetTransactionCount - read-only operation
@@ -619,7 +634,10 @@ func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 
 	// Remove from sharded storage
 	mp.shardMutexes[shardIndex].Lock()
-	delete(mp.shardTxsBuf[shardIndex], txHash)
+	if _, ok := mp.shardTxsBuf[shardIndex][txHash]; ok {
+		delete(mp.shardTxsBuf[shardIndex], txHash)
+		atomic.AddInt64(&mp.totalTxs, -1)
+	}
 	delete(mp.shardTxOrder[shardIndex], txHash)
 	mp.shardMutexes[shardIndex].Unlock()
 }
@@ -661,6 +679,7 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 			if _, exists := mp.shardTxsBuf[shardIndex][txHash]; exists {
 				delete(mp.shardTxsBuf[shardIndex], txHash)
 				delete(mp.shardTxOrder[shardIndex], txHash)
+				atomic.AddInt64(&mp.totalTxs, -1)
 				removedCount++
 			}
 			mp.shardMutexes[shardIndex].Unlock()

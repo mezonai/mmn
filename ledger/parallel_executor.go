@@ -3,7 +3,6 @@ package ledger
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync"
 
 	"github.com/holiman/uint256"
@@ -36,16 +35,30 @@ type ParallelExecutor struct {
 }
 
 func NewParallelExecutor() *ParallelExecutor {
-	workerCount := runtime.NumCPU()
-	if workerCount > 8 {
-		workerCount = 8 // 8 workers to avoid overhead
+	// Default fixed worker count for predictable performance
+	defaultWorkers := 32
+	if defaultWorkers < 1 {
+		defaultWorkers = 1
 	}
 
 	return &ParallelExecutor{
-		workerCount: workerCount,
+		workerCount: defaultWorkers,
 		results:     make(chan ExecutionResult, 1000),
 		errors:      make(chan error, 1000),
 	}
+}
+
+// SetWorkerCount allows tuning executor parallelism at runtime.
+func (pe *ParallelExecutor) SetWorkerCount(n int) {
+	if n <= 0 {
+		return
+	}
+	if n > 64 {
+		n = 64
+	}
+	pe.mu.Lock()
+	pe.workerCount = n
+	pe.mu.Unlock()
 }
 
 func (pe *ParallelExecutor) AnalyzeDependencies(txs []*transaction.Transaction) []TransactionDependency {
