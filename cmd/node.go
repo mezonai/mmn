@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,9 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mezonai/mmn/api"
+	"github.com/mezonai/mmn/monitoring"
+
 	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
@@ -42,6 +46,7 @@ const (
 var (
 	dataDir            string
 	listenAddr         string
+	jsonrpcAddr        string
 	p2pPort            string
 	bootstrapAddresses []string
 	grpcAddr           string
@@ -67,6 +72,7 @@ func init() {
 	// Run command flags
 	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
+	runCmd.Flags().StringVar(&jsonrpcAddr, "jsonrpc-addr", ":8080", "Listen address for JSON-RPC server :<port>")
 	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
 	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
@@ -90,6 +96,7 @@ func getRandomFreePort() (string, error) {
 
 func runNode() {
 	initializeFileLogger()
+	monitoring.InitMetrics()
 
 	logx.Info("NODE", "Running node")
 
@@ -168,6 +175,7 @@ func runNode() {
 		PrivKeyPath:        privKeyPath,
 		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
 		ListenAddr:         listenAddr,
+		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
 		JoinAfterSync:      joinAfterSync,
@@ -178,7 +186,8 @@ func runNode() {
 	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
 
 	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	latestSlot := bs.GetLatestFinalizedSlot()
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
@@ -206,7 +215,7 @@ func runNode() {
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, snapshotUDPPort)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, latestSlot)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -261,7 +270,7 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string, latestSlot uint64) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -279,7 +288,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
-	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule)
+	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule, latestSlot)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
@@ -321,7 +330,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, lastSlot uint64) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -343,7 +352,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector, lastSlot,
 	)
 	val.Run()
 
@@ -377,8 +386,28 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start API server on a different port
-	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
-	apiSrv.Start()
+	// Start JSON-RPC server on dedicated JSON-RPC address using shared services
+	txSvc := service.NewTxService(ld, mp, bs, txTracker)
+	acctSvc := service.NewAccountService(ld, mp, txTracker)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc)
 
+	// Apply CORS from environment variables via jsonrpc helper (default denies all)
+	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
+		rpcSrv.SetCORSConfig(corsCfg)
+	}
+
+	rpcSrv.Start()
+	serveMetricsApi(nodeConfig.ListenAddr)
+}
+
+func serveMetricsApi(listenAddr string) {
+	mux := http.NewServeMux()
+	monitoring.RegisterMetrics(mux)
+	go func() {
+		err := http.ListenAndServe(listenAddr, mux)
+		if err != nil {
+			logx.Error("NODE", fmt.Sprintf("Failed to expose metrics for monitoring: %v", err))
+			os.Exit(1)
+		}
+	}()
 }

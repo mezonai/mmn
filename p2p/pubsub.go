@@ -30,7 +30,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	// Set snapshot UDP port
 	ln.snapshotUDPPort = snapshotUDPPort
 
-	latestSlot := bs.GetLatestSlot()
+	latestSlot := bs.GetLatestFinalizedSlot()
 	ln.SetNextExpectedSlot(latestSlot + 1)
 
 	ln.SetCallbacks(Callbacks{
@@ -46,22 +46,22 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("invalid PoH")
 			}
 
+			// Reset poh to sync poh clock with leader
+			if blk.Slot > bs.GetLatestStoreSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
+
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
 			}
 
-			// Temporary comment to save bandwidth for main flow
-			// if len(ln.host.Network().Peers()) > 0 {
-			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
-			// }
-
-			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
+			// Remove transactions in block from mempool and add tx tracker if node is follower
+			if self.PubKey != blk.LeaderID {
+				go mp.BlockCleanup(blk)
 			}
 
 			vote := &consensus.Vote{
@@ -158,7 +158,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 			// Skip if local is already at or ahead of announced slot
-			localSlot := ln.blockStore.GetLatestSlot()
+			localSlot := ln.blockStore.GetLatestFinalizedSlot()
 			if ann.Slot <= localSlot+SnapshotReadyGapThreshold {
 				logx.Info("SNAPSHOT:DOWNLOAD", "skip announce; local at/above slot", "local=", localSlot, "ann=", ann.Slot)
 				return nil
@@ -298,7 +298,6 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	go writeSnapshotIfDue(ld, vote.Slot)
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
-	go mp.BlockCleanup(block)
 	return nil
 }
 
@@ -470,7 +469,7 @@ func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte,
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false
 	}
-	latest := ln.blockStore.GetLatestSlot()
+	latest := ln.blockStore.GetLatestFinalizedSlot()
 	if latest == 0 {
 		return 0, [32]byte{}, false
 	}
@@ -679,7 +678,7 @@ func (ln *Libp2pNetwork) handleSnapshotAnnounce(ctx context.Context, sub *pubsub
 		if ann.PeerID == ln.selfPubKey {
 			continue
 		}
-		localSlot := ln.blockStore.GetLatestSlot()
+		localSlot := ln.blockStore.GetLatestFinalizedSlot()
 		if ann.Slot > localSlot {
 			if ln.onSnapshotAnnounce != nil {
 				if err := ln.onSnapshotAnnounce(ann); err != nil {

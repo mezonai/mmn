@@ -86,7 +86,6 @@ func NewNetWork(
 		selfPrivKey:            selfPrivKey,
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
-		syncStreams:            make(map[peer.ID]network.Stream),
 		blockStore:             blockStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
@@ -196,8 +195,8 @@ func (ln *Libp2pNetwork) Close() {
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
-	peers := ln.host.Network().Peers()
-	return len(peers)
+	// Minus by 1 to exclude self node in the peer list
+	return len(ln.host.Network().Peers()) - 1
 }
 
 func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {

@@ -143,7 +143,6 @@ func (ml *MockLedger) GetAccount(addr string) (*types.Account, error) {
 		Address: addr,
 		Balance: ml.balances[addr],
 		Nonce:   ml.nonces[addr],
-		History: make([]string, 0),
 	}, nil
 }
 

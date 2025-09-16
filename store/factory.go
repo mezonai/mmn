@@ -111,7 +111,7 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider
 		return db.NewLevelDBProvider(config.Directory)
 
 	case RocksDBStoreType:
-		return db.NewRocksDBProvider(config.Directory)
+		return db.NewOptimizedRocksDBProvider(config.Directory)
 
 	case RedisStoreType:
 		// just for debug

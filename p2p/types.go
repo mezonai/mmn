@@ -49,8 +49,7 @@ type Libp2pNetwork struct {
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
-	syncStreams map[peer.ID]network.Stream
-	maxPeers    int
+	maxPeers int
 
 	activeSyncRequests map[string]*SyncRequestInfo
 	syncMu             sync.RWMutex
