@@ -160,6 +160,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			}
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
+			// Remove successful transaction from tracker
+			if l.txTracker != nil {
+				l.txTracker.RemoveTransaction(txHash)
+			}
 
 			// commit the update
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
