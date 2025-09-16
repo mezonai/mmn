@@ -75,6 +75,9 @@ type Libp2pNetwork struct {
 	// runtime callback to apply leader schedule without import cycles
 	applyLeaderSchedule func(*poh.LeaderSchedule)
 
+	// cached leader schedule for local leader checks
+	leaderSchedule *poh.LeaderSchedule
+
 	// readiness control
 	enableFullModeOnce sync.Once
 	ready              atomic.Bool

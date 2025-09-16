@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
-	"sync/atomic"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"

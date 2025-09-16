@@ -356,6 +356,9 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	)
 	val.Run()
 
+	// Cache leader schedule inside p2p for local leader checks
+	p2pClient.ApplyLeaderSchedule(val.Schedule)
+
 	return val, nil
 }
 

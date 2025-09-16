@@ -246,6 +246,11 @@ func (ln *Libp2pNetwork) SetApplyLeaderSchedule(fn func(*poh.LeaderSchedule)) {
 	ln.applyLeaderSchedule = fn
 }
 
+// ApplyLeaderSchedule stores the schedule locally for leader checks inside p2p
+func (ln *Libp2pNetwork) ApplyLeaderSchedule(ls *poh.LeaderSchedule) {
+	ln.leaderSchedule = ls
+}
+
 func (ln *Libp2pNetwork) IsNodeReady() bool {
 	return ln.ready.Load()
 }
@@ -274,4 +279,31 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 			}
 		}
 	}()
+}
+
+// LeaderSlotsInRange returns all slots in [start, end] where this node is the leader.
+func (ln *Libp2pNetwork) LeaderSlotsInRange(start, end uint64) []uint64 {
+	result := make([]uint64, 0)
+	if start > end || ln.leaderSchedule == nil {
+		return result
+	}
+	entries := ln.leaderSchedule.LeadersInRange(start, end)
+	for _, e := range entries {
+		if e.Leader != ln.selfPubKey {
+			continue
+		}
+		// clamp to [start, end]
+		s := e.StartSlot
+		if s < start {
+			s = start
+		}
+		t := e.EndSlot
+		if t > end {
+			t = end
+		}
+		for slot := s; slot <= t; slot++ {
+			result = append(result, slot)
+		}
+	}
+	return result
 }

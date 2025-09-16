@@ -34,6 +34,8 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) error {
 	var processedBlocks []*block.BroadcastedBlock
 
+	slots := ln.LeaderSlotsInRange(ln.nextExpectedSlot, ln.worldLatestSlot+100)
+	logx.Debug("BLOCK:ORDERING", "Leader slots in range", ln.nextExpectedSlot, "-", ln.worldLatestSlot, ":", slots)
 	// Find consecutive blocks starting from nextExpectedSlot
 	for {
 		if blk, exists := ln.blockOrderingQueue[ln.nextExpectedSlot]; exists {
@@ -113,4 +115,18 @@ func (ln *Libp2pNetwork) ClearOrderingQueue() {
 	defer ln.blockOrderingMu.Unlock()
 
 	ln.blockOrderingQueue = make(map[uint64]*block.BroadcastedBlock)
+}
+
+// GetLeaderSlotsInRange returns all slots in [start, end] where this node is leader.
+func (ln *Libp2pNetwork) GetLeaderSlotsInRange(start, end uint64) []uint64 {
+	if start > end || ln.leaderSchedule == nil {
+		return nil
+	}
+	leaders := make([]uint64, 0, end-start+1)
+	for s := start; s <= end; s++ {
+		if leader, ok := ln.leaderSchedule.LeaderAt(s); ok && leader == ln.selfPubKey {
+			leaders = append(leaders, s)
+		}
+	}
+	return leaders
 }
