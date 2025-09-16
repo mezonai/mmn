@@ -1,18 +1,18 @@
 {
-  "name": "@mezonai/mmn-client-js",
-  "version": "1.0.0",
+  "name": "mmn-client-js",
+  "version": "1.0.1",
   "description": "A comprehensive TypeScript client for interacting with MMN blockchain via JSON-RPC",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "rollup -c rollup.config.cjs",
     "build:watch": "rollup -c -w",
-    "prepublishOnly": "npm run clean && npm run build",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "type-check": "tsc --noEmit"
@@ -32,7 +32,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/mezonai/mmn.git",
-    "directory": "packages/mmn-client"
+    "directory": "mmn-client-js"
   },
   "bugs": {
     "url": "https://github.com/mezonai/mmn/issues"
@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.0.1",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-typescript": "^11.1.5",
     "@types/node": "^20.9.0",
@@ -56,13 +57,18 @@
     "rollup-plugin-dts": "^6.1.0",
     "typescript": "^5.2.2"
   },
-  "peerDependencies": {
-    "crypto": "*"
-  },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "sideEffects": false
 }

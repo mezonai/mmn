@@ -1,4 +1,4 @@
-# @mezon/mmn-client
+# mmn-client-js
 
 A TypeScript client for interacting with the MMN blockchain via JSON-RPC. It supports creating, signing, and submitting transactions, plus basic account and transaction queries.
 
@@ -13,13 +13,13 @@ A TypeScript client for interacting with the MMN blockchain via JSON-RPC. It sup
 ## Installation
 
 ```bash
-npm install @mezonai/mmn-client-js
+npm install mmn-client-js
 ```
 
 ## Quick Start
 
 ```typescript
-import { MmnClient } from '@mezonai/mmn-client-js';
+import { MmnClient } from 'mmn-client-js';
 
 // Create a client instance
 const client = new MmnClient({
@@ -29,7 +29,6 @@ const client = new MmnClient({
 
 // Send a transaction
 const response = await client.sendTransaction({
-  type: 1, // Transfer type
   sender: 'sender-address',
   recipient: 'recipient-address',
   amount: '1000000000000000000',
@@ -68,7 +67,6 @@ Create, sign, and submit a transaction in one call.
 
 ```typescript
 const response = await client.sendTransaction({
-  type: 1,
   sender: 'sender-address',
   recipient: 'recipient-address',
   amount: '1000000000000000000',
