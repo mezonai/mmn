@@ -36,8 +36,6 @@ services:
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
         ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
-    depends_on:
-      - bootnode
     ports:
       - "8001:8001"
       - "8081:8081"
@@ -68,8 +66,6 @@ services:
         ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
         ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
-    depends_on:
-      - bootnode
     ports:
       - "8002:8002"
       - "8082:8082"
@@ -100,8 +96,6 @@ services:
         ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
         ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
-    depends_on:
-      - bootnode
     ports:
       - "8003:8003"
       - "8083:8083"
@@ -137,8 +131,6 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-    depends_on:
-      - loki
     networks:
       - mezon
     restart: unless-stopped
@@ -150,13 +142,28 @@ services:
     image: grafana/loki:3.5.0
     container_name: loki
     command: ["-config.file=/etc/loki/config.yml"]
-    ports:
-      - "3100:3100"
     volumes:
       - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
       - loki_data:/loki
     networks:
       - mezon
+    restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
+
+  loki-guard:
+    image: nginx:alpine
+    container_name: loki-guard
+    volumes:
+      - ./monitoring/loki/nginx.conf:/etc/nginx/conf.d/nginx.conf:ro
+      - ./monitoring/loki/htpasswd:/etc/nginx/.htpasswd
+    ports:
+      - "3100:3100"
+    networks:
+      - mezon
+    depends_on:
+      - loki
     restart: unless-stopped
     profiles:
       - dev
@@ -186,8 +193,6 @@ services:
     volumes:
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
       - logs_data:/var/log/mmn:ro
-    depends_on:
-      - loki
     networks:
       - mezon
     restart: unless-stopped

@@ -9,7 +9,7 @@ dev:
 bootstrap-node:
 	docker compose --profile bootstrap up -d
 
-simple-node:
+regular-node:
 	docker compose --profile node up -d
 
 monitored-node:
@@ -18,4 +18,7 @@ monitored-node:
 monitoring-center:
 	docker compose --profile monitoring-center up -d
 
-.PHONY: protogen
+loki-client:
+	@cd ./monitoring/loki && ./add-client.sh && cd -
+
+.PHONY: protogen dev bootstrap-node regular-node monitored-node monitoring-center loki-client
