@@ -10,7 +10,7 @@ import (
 
 // Vote cleanup constants - these are optimization settings and don't affect consensus
 const (
-	DefaultVoteRetentionSlots  = 1500             // Keep votes for last 1000 slots ~ 10 minutes
+	DefaultVoteRetentionSlots  = 1500             // Keep votes for last 1500 slots ~ 10 minutes
 	DefaultVoteCleanupInterval = 10 * time.Minute // Cleanup every 10 minutes
 )
 
