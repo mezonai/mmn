@@ -1,10 +1,12 @@
 package ledger
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
@@ -24,21 +26,23 @@ var (
 )
 
 type Ledger struct {
-	mu           sync.RWMutex
-	txStore      store.TxStore
-	txMetaStore  store.TxMetaStore
-	accountStore store.AccountStore
-	eventRouter  *events.EventRouter
-	txTracker    interfaces.TransactionTrackerInterface
+	mu               sync.RWMutex
+	txStore          store.TxStore
+	txMetaStore      store.TxMetaStore
+	accountStore     store.AccountStore
+	eventRouter      *events.EventRouter
+	txTracker        interfaces.TransactionTrackerInterface
+	parallelExecutor *ParallelExecutor
 }
 
 func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
 	return &Ledger{
-		txStore:      txStore,
-		txMetaStore:  txMetaStore,
-		accountStore: accountStore,
-		eventRouter:  eventRouter,
-		txTracker:    txTracker,
+		txStore:          txStore,
+		txMetaStore:      txMetaStore,
+		accountStore:     accountStore,
+		eventRouter:      eventRouter,
+		txTracker:        txTracker,
+		parallelExecutor: NewParallelExecutor(),
 	}
 }
 
@@ -112,7 +116,71 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d with parallel execution", b.Slot))
+
+	blockHash := hex.EncodeToString(b.Hash[:])
+
+	for _, entry := range b.Entries {
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		if len(txs) == 0 {
+			continue
+		}
+
+		// Use parallel execution for transactions
+		ctx := context.Background()
+		dependencies := l.parallelExecutor.AnalyzeDependencies(txs)
+
+		startTime := time.Now()
+		results, err := l.parallelExecutor.ExecuteParallel(
+			ctx,
+			dependencies,
+			l.accountStore,
+			l.eventRouter,
+			b.Slot,
+			blockHash,
+		)
+		executionTime := time.Since(startTime)
+
+		if err != nil {
+			logx.Error("LEDGER", fmt.Sprintf("Parallel execution failed: %v", err))
+			return l.applyBlockSequential(b)
+		}
+
+		// Validate and commit results
+		if err := l.parallelExecutor.ValidateAndCommit(results, l.accountStore, l.txMetaStore); err != nil {
+			logx.Error("LEDGER", fmt.Sprintf("Failed to commit parallel execution results: %v", err))
+			return err
+		}
+
+		// Remove failed transactions from tracker
+		for _, result := range results {
+			if !result.Success && l.txTracker != nil {
+				l.txTracker.RemoveTransaction(result.Tx.Hash())
+			}
+		}
+
+		successCount := 0
+		for _, result := range results {
+			if result.Success {
+				successCount++
+			}
+		}
+
+		logx.Info("LEDGER", fmt.Sprintf("Parallel execution completed: %d/%d transactions successful in %v",
+			successCount, len(txs), executionTime))
+	}
+
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied with parallel execution", b.Slot))
+	return nil
+}
+
+// fallback sequential execution method
+func (l *Ledger) applyBlockSequential(b *block.Block) error {
+	logx.Info("LEDGER", fmt.Sprintf("Falling back to sequential execution for block %d", b.Slot))
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -121,130 +189,63 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
-		// Execute in rounds: each round contains non-conflicting txs (no shared sender/recipient)
-		done := make([]bool, len(txs))
-		remaining := len(txs)
-		for remaining > 0 {
-			// Build one round
-			used := make(map[string]bool)
-			idxs := make([]int, 0)
-			for i, tx := range txs {
-				if done[i] {
-					continue
-				}
-				s := tx.Sender
-				r := tx.Recipient
-				if !used[s] && !used[r] {
-					used[s] = true
-					used[r] = true
-					idxs = append(idxs, i)
-					done[i] = true
-					remaining--
-				}
+		for _, tx := range txs {
+			// load account state
+			sender, err := l.accountStore.GetByAddr(tx.Sender)
+			if err != nil {
+				return err
 			}
-
-			// Apply this round in parallel
-			type applyResult struct {
-				idx       int
-				sender    *types.Account
-				recipient *types.Account
-				meta      *types.TransactionMeta
-				err       error
-			}
-			results := make([]applyResult, len(idxs))
-			var wg sync.WaitGroup
-			sem := make(chan struct{}, 8)
-			for j, idx := range idxs {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func(slotIdx int, txIdx int) {
-					defer wg.Done()
-					defer func() { <-sem }()
-					tx := txs[txIdx]
-					// Load or create accounts
-					sender, err := l.accountStore.GetByAddr(tx.Sender)
-					if err != nil {
-						results[slotIdx] = applyResult{idx: txIdx, err: err}
-						return
-					}
-					if sender == nil {
-						if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
-							results[slotIdx] = applyResult{idx: txIdx, err: err}
-							return
-						}
-					}
-					recipient, err := l.accountStore.GetByAddr(tx.Recipient)
-					if err != nil {
-						results[slotIdx] = applyResult{idx: txIdx, err: err}
-						return
-					}
-					if recipient == nil {
-						if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
-							results[slotIdx] = applyResult{idx: txIdx, err: err}
-							return
-						}
-					}
-					state := map[string]*types.Account{
-						sender.Address:    sender,
-						recipient.Address: recipient,
-					}
-					txHash := tx.Hash()
-					if err := applyTx(state, tx); err != nil {
-						if l.eventRouter != nil {
-							event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
-							l.eventRouter.PublishTransactionEvent(event)
-						}
-						logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
-						state[tx.Sender].Nonce++
-						results[slotIdx] = applyResult{
-							idx:  txIdx,
-							meta: types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()),
-							err:  nil,
-						}
-						if l.txTracker != nil {
-							l.txTracker.RemoveTransaction(txHash)
-						}
-						return
-					}
-					logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
-					addHistory(state[tx.Sender], tx)
-					if tx.Recipient != tx.Sender {
-						addHistory(state[tx.Recipient], tx)
-					}
-					results[slotIdx] = applyResult{
-						idx:       txIdx,
-						sender:    sender,
-						recipient: recipient,
-						meta:      types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""),
-						err:       nil,
-					}
-				}(j, idx)
-			}
-			wg.Wait()
-
-			// Commit round results
-			toStore := make([]*types.Account, 0, len(idxs)*2)
-			for _, res := range results {
-				if res.meta != nil {
-					txMetas = append(txMetas, res.meta)
-				}
-				if res.sender != nil && res.recipient != nil {
-					toStore = append(toStore, res.sender, res.recipient)
-				}
-			}
-			if len(toStore) > 0 {
-				if err := l.accountStore.StoreBatch(toStore); err != nil {
-					for _, res := range results {
-						if res.sender != nil {
-							tx := txs[res.idx]
-							if l.eventRouter != nil {
-								event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
-								l.eventRouter.PublishTransactionEvent(event)
-							}
-						}
-					}
+			if sender == nil {
+				if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
 					return err
 				}
+			}
+			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
+			if err != nil {
+				return err
+			}
+			if recipient == nil {
+				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
+					return err
+				}
+			}
+			state := map[string]*types.Account{
+				sender.Address:    sender,
+				recipient.Address: recipient,
+			}
+
+			// try to apply tx
+			txHash := tx.Hash()
+			if err := applyTx(state, tx); err != nil {
+				// Publish specific transaction failure event
+				if l.eventRouter != nil {
+					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
+				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
+				state[tx.Sender].Nonce++
+				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
+				// Remove failed transaction from tracker
+				if l.txTracker != nil {
+					l.txTracker.RemoveTransaction(txHash)
+				}
+				continue
+			}
+			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
+			addHistory(state[tx.Sender], tx)
+			if tx.Recipient != tx.Sender {
+				addHistory(state[tx.Recipient], tx)
+			}
+
+			// commit the update
+			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
+			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
+				if l.eventRouter != nil {
+					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+					l.eventRouter.PublishTransactionEvent(event)
+				}
+				return err
 			}
 		}
 		if len(txMetas) > 0 {
@@ -252,7 +253,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 	}
 
-	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied sequentially", b.Slot))
 	return nil
 }
 

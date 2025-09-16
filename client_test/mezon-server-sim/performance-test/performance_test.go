@@ -384,60 +384,6 @@ compute:
 	}
 }
 
-// TestTPSCalculation demonstrates TPS calculation with sample data
-func TestTPSCalculation(t *testing.T) {
-	// Sample data based on your terminal output
-	ingressCount := 933
-	executedCount := 2400
-	finalizedCount := 2400
-
-	ingressWindow := time.Duration(0.27 * float64(time.Second))
-	executedWindow := time.Duration(24.70 * float64(time.Second))
-	finalizedWindow := time.Duration(24.70 * float64(time.Second))
-
-	summary := CalculateTPSSummary(ingressCount, executedCount, finalizedCount,
-		ingressWindow, executedWindow, finalizedWindow)
-
-	t.Logf("=== TPS CALCULATION DEMO ===")
-	t.Logf("Sample Data:")
-	t.Logf("  Ingress: %d transactions in %.2fs", ingressCount, ingressWindow.Seconds())
-	t.Logf("  Executed: %d transactions in %.2fs", executedCount, executedWindow.Seconds())
-	t.Logf("  Finalized: %d transactions in %.2fs", finalizedCount, finalizedWindow.Seconds())
-	t.Logf("")
-
-	tps := summary["tps"].(map[string]float64)
-	t.Logf("Calculated TPS:")
-	t.Logf("  Ingress TPS: %.2f", tps["ingress"])
-	t.Logf("  Executed TPS: %.2f", tps["executed"])
-	t.Logf("  Finalized TPS: %.2f", tps["finalized"])
-	t.Logf("")
-
-	efficiency := summary["efficiency"].(map[string]float64)
-	t.Logf("Efficiency Metrics:")
-	t.Logf("  Ingress → Executed: %.1f%%", efficiency["ingress_to_executed"])
-	t.Logf("  Executed → Finalized: %.1f%%", efficiency["executed_to_finalized"])
-	t.Logf("  Overall Efficiency: %.1f%%", efficiency["overall"])
-	t.Logf("")
-
-	bottlenecks := summary["bottlenecks"].(map[string]float64)
-	t.Logf("Bottleneck Analysis:")
-	t.Logf("  Ingress/Executed Ratio: %.2fx", bottlenecks["ingress_ratio"])
-	t.Logf("  Executed/Finalized Ratio: %.2fx", bottlenecks["execution_ratio"])
-	t.Logf("")
-
-	assessment := summary["assessment"].(map[string]string)
-	t.Logf("Performance Assessment:")
-	t.Logf("  Ingress TPS: %s", assessment["ingress_tps"])
-	t.Logf("  Executed TPS: %s", assessment["executed_tps"])
-	t.Logf("  Overall Efficiency: %s", assessment["efficiency"])
-
-	// Write demo results to JSON
-	if b, err := json.MarshalIndent(summary, "", "  "); err == nil {
-		_ = os.WriteFile("performance_results.json", b, 0644)
-		t.Logf("Demo results written to performance_results.json")
-	}
-}
-
 func deriveAddressFromSeed(seed []byte) string {
 	pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
 	return base58.Encode(pub)
