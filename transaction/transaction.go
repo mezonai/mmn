@@ -9,6 +9,8 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/common"
+	pb "github.com/mezonai/mmn/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -54,7 +56,19 @@ func (tx *Transaction) Bytes() []byte {
 }
 
 func (tx *Transaction) Hash() string {
-	sum256 := sha256.Sum256(tx.Bytes())
+	// Hash protobuf-encoded TxMsg for compact, stable representation
+	msg := &pb.TxMsg{
+		Type:      tx.Type,
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    uint256ToString(tx.Amount),
+		Timestamp: tx.Timestamp,
+		TextData:  tx.TextData,
+		Nonce:     tx.Nonce,
+		ExtraInfo: tx.ExtraInfo,
+	}
+	b, _ := proto.Marshal(msg)
+	sum256 := sha256.Sum256(b)
 	return hex.EncodeToString(sum256[:])
 }
 

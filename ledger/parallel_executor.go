@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/holiman/uint256"
@@ -32,6 +33,10 @@ type ParallelExecutor struct {
 	results     chan ExecutionResult
 	errors      chan error
 	mu          sync.RWMutex
+
+	// Per-account locks to serialize execution for transactions touching the same account
+	accountLocks   map[string]*sync.Mutex
+	accountLocksMu sync.Mutex
 }
 
 func NewParallelExecutor() *ParallelExecutor {
@@ -42,9 +47,10 @@ func NewParallelExecutor() *ParallelExecutor {
 	}
 
 	return &ParallelExecutor{
-		workerCount: defaultWorkers,
-		results:     make(chan ExecutionResult, 1000),
-		errors:      make(chan error, 1000),
+		workerCount:  defaultWorkers,
+		results:      make(chan ExecutionResult, 1000),
+		errors:       make(chan error, 1000),
+		accountLocks: make(map[string]*sync.Mutex),
 	}
 }
 
@@ -139,6 +145,39 @@ func (pe *ParallelExecutor) ExecuteParallel(
 	}
 
 	return allResults, nil
+}
+
+// getOrderedAccountLocks returns per-account mutexes for the provided addresses.
+// It ensures deterministic ordering by sorting addresses to avoid deadlocks
+// when multiple accounts are locked together.
+func (pe *ParallelExecutor) getOrderedAccountLocks(addresses []string) []*sync.Mutex {
+	// deduplicate addresses
+	uniq := make(map[string]struct{}, len(addresses))
+	for _, a := range addresses {
+		if a == "" {
+			continue
+		}
+		uniq[a] = struct{}{}
+	}
+
+	ordered := make([]string, 0, len(uniq))
+	for a := range uniq {
+		ordered = append(ordered, a)
+	}
+	sort.Strings(ordered)
+
+	locks := make([]*sync.Mutex, 0, len(ordered))
+	pe.accountLocksMu.Lock()
+	for _, a := range ordered {
+		lk, ok := pe.accountLocks[a]
+		if !ok {
+			lk = &sync.Mutex{}
+			pe.accountLocks[a] = lk
+		}
+		locks = append(locks, lk)
+	}
+	pe.accountLocksMu.Unlock()
+	return locks
 }
 
 func (pe *ParallelExecutor) groupByDependencyLevel(graph map[int][]int, totalTxs int) [][]int {
@@ -245,6 +284,19 @@ func (pe *ParallelExecutor) executeTransaction(
 
 	tx := dep.Tx
 	state := make(map[string]*types.Account)
+
+	// Serialize execution for transactions impacting the same accounts
+	// Lock both sender and recipient (write set) in deterministic order
+	accLocks := pe.getOrderedAccountLocks(dep.WriteAccounts)
+	for _, lk := range accLocks {
+		lk.Lock()
+	}
+	defer func() {
+		// unlock in reverse order as a good practice
+		for i := len(accLocks) - 1; i >= 0; i-- {
+			accLocks[i].Unlock()
+		}
+	}()
 
 	// Load account states
 	for _, addr := range dep.ReadAccounts {
