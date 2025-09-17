@@ -3,8 +3,15 @@ package consensus
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mezonai/mmn/logx"
+)
+
+// Vote cleanup constants - these are optimization settings and don't affect consensus
+const (
+	DefaultVoteRetentionSlots  = 1500             // Keep votes for last 1500 slots ~ 10 minutes
+	DefaultVoteCleanupInterval = 10 * time.Minute // Cleanup every 10 minutes
 )
 
 type Collector struct {
@@ -15,8 +22,9 @@ type Collector struct {
 	// Sharded vote storage
 	shardVotes []map[uint64]map[string]*Vote // slot → voterID → Vote
 
-	total     int // total number of validators
-	threshold int // threshold number of votes (2f+1)
+	total     int    // total number of validators
+	threshold int    // threshold number of votes (2f+1)
+	maxSlot   uint64 // highest slot number seen (for cleanup optimization)
 }
 
 func NewCollector(n int) *Collector {
@@ -33,13 +41,17 @@ func NewCollector(n int) *Collector {
 	}
 
 	logx.Info("CONSENSUS", fmt.Sprintf("total=%d threshold=%d shards=%d", n, q, shardCount))
-	return &Collector{
+	collector := &Collector{
 		shardMutexes: shardMutexes,
 		shardCount:   shardCount,
 		shardVotes:   shardVotes,
 		total:        n,
 		threshold:    q,
+		maxSlot:      0,
 	}
+	// Start periodic cleanup to prevent memory leak
+	collector.StartPeriodicCleanup(DefaultVoteRetentionSlots, DefaultVoteCleanupInterval)
+	return collector
 }
 
 // getShard returns the shard index for a given slot
@@ -67,6 +79,11 @@ func (c *Collector) AddVote(v *Vote) (bool, bool, error) {
 	}
 	slotVotes[v.VoterID] = v
 
+	// Update maxSlot for cleanup optimization
+	if v.Slot > c.maxSlot {
+		c.maxSlot = v.Slot
+	}
+
 	count := len(slotVotes)
 	logx.Info("CONSENSUS", fmt.Sprintf("slot=%d votes=%d/%d shard=%d", v.Slot, count, c.threshold, shardIndex))
 	if count >= c.threshold {
@@ -87,4 +104,46 @@ func (c *Collector) VotesForSlot(slot uint64) map[string]*Vote {
 		}
 	}
 	return res
+}
+
+// CleanupOldVotes removes votes for slots older than the specified threshold
+// to prevent memory leak from accumulating votes indefinitely
+func (c *Collector) CleanupOldVotes(currentSlot uint64, keepRecentSlots uint64) {
+	if currentSlot < keepRecentSlots {
+		return // Not enough slots to cleanup
+	}
+
+	cleanupThreshold := currentSlot - keepRecentSlots
+	deletedCount := 0
+	// Iterate shards to clean old slots
+	for si := 0; si < c.shardCount; si++ {
+		c.shardMutexes[si].Lock()
+		for slot := range c.shardVotes[si] {
+			if slot < cleanupThreshold {
+				delete(c.shardVotes[si], slot)
+				deletedCount++
+			}
+		}
+		c.shardMutexes[si].Unlock()
+	}
+	if deletedCount > 0 {
+		logx.Info("CONSENSUS", fmt.Sprintf("Cleaned up votes for %d old slots (older than slot %d)", deletedCount, cleanupThreshold))
+	}
+}
+
+// StartPeriodicCleanup starts a background goroutine that periodically cleans up old votes
+func (c *Collector) StartPeriodicCleanup(keepRecentSlots uint64, cleanupInterval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(cleanupInterval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			// Use maxSlot instead of iterating through all votes
+			currentSlot := c.maxSlot
+
+			if currentSlot > 0 {
+				c.CleanupOldVotes(currentSlot, keepRecentSlots)
+			}
+		}
+	}()
 }

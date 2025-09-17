@@ -65,6 +65,8 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 	defer as.mu.Unlock()
 
 	batch := as.dbProvider.Batch()
+	defer batch.Close()
+
 	for _, account := range accounts {
 		pbAcc := &pb.AccountData{
 			Address: account.Address,

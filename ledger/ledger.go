@@ -237,6 +237,10 @@ func (l *Ledger) applyBlockSequential(b *block.Block) error {
 			if tx.Recipient != tx.Sender {
 				addHistory(state[tx.Recipient], tx)
 			}
+			// Remove successful transaction from tracker
+			if l.txTracker != nil {
+				l.txTracker.RemoveTransaction(txHash)
+			}
 
 			// commit the update
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
