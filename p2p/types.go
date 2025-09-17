@@ -33,6 +33,7 @@ type Libp2pNetwork struct {
 	blockStore store.BlockStore
 
 	topicBlocks            *pubsub.Topic
+	topicEmptyBlocks       *pubsub.Topic
 	topicVotes             *pubsub.Topic
 	topicTxs               *pubsub.Topic
 	topicBlockSyncReq      *pubsub.Topic
@@ -42,6 +43,7 @@ type Libp2pNetwork struct {
 	topicSnapshotRequest   *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
+	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func([]*block.BroadcastedBlock) error
@@ -176,6 +178,7 @@ type SyncRequestTracker struct {
 
 type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
+	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error

@@ -10,6 +10,7 @@ const (
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
 	TopicTxs               = "transactions"
+	TopicEmptyBlocks       = "block-sync/empty-blocks"
 	BlockSyncRequestTopic  = "block-sync/request"
 	BlockSyncResponseTopic = "block-sync/response"
 	TopicSnapshotAnnounce  = "snapshot/announce"

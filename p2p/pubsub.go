@@ -24,6 +24,7 @@ import (
 	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder, snapshotUDPPort string) {
@@ -47,12 +48,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestStoreSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
-			}
+			// if blk.Slot > bs.GetLatestStoreSlot() {
+			// 	logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+			// 	if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+			// 		logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+			// 	}
+			// }
 
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
@@ -73,6 +74,31 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			// verify passed broadcast vote
 			ln.BroadcastVote(context.Background(), vote)
+			return nil
+		},
+		OnEmptyBlockReceived: func(blocks []*block.BroadcastedBlock) error {
+			logx.Info("EMPTY_BLOCK", "Processing", len(blocks), "empty blocks")
+
+			for _, blk := range blocks {
+				if blk == nil {
+					continue
+				}
+
+				if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+					continue
+				}
+
+				if err := bs.AddBlockPending(blk); err != nil {
+					logx.Error("EMPTY_BLOCK", "Failed to save empty block to store:", err)
+					continue
+				}
+
+				if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+					logx.Error("EMPTY_BLOCK", "Failed to apply empty block to ledger:", err)
+					continue
+				}
+			}
+
 			return nil
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
@@ -341,6 +367,15 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		}
 	}
 
+	if t, e := ln.pubsub.Join(TopicEmptyBlocks); e == nil {
+		ln.topicEmptyBlocks = t
+		if sub, e2 := ln.topicEmptyBlocks.Subscribe(); e2 == nil {
+			exception.SafeGoWithPanic("TopicEmptyBlocks", func() {
+				ln.HandleEmptyBlockTopic(ctx, sub)
+			})
+		}
+	}
+
 	ln.startSnapshotAnnouncer()
 
 	if !ln.joinAfterSync {
@@ -361,9 +396,8 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 			}
 
-			localLatestSlot := ln.getLocalLatestSlot()
+			localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 
-			// Determine if this is a fresh start or restart from panic
 			if localLatestSlot == 0 {
 				ln.SetupPubSubTopics(ln.ctx)
 			} else {
@@ -544,6 +578,9 @@ func (ln *Libp2pNetwork) RequestCheckpointHash(ctx context.Context, checkpoint u
 func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	if cbs.OnBlockReceived != nil {
 		ln.onBlockReceived = cbs.OnBlockReceived
+	}
+	if cbs.OnEmptyBlockReceived != nil {
+		ln.onEmptyBlockReceived = cbs.OnEmptyBlockReceived
 	}
 	if cbs.OnVoteReceived != nil {
 		ln.onVoteReceived = cbs.OnVoteReceived
