@@ -85,38 +85,23 @@ func (pe *ParallelExecutor) AnalyzeDependencies(txs []*transaction.Transaction) 
 }
 
 func (pe *ParallelExecutor) BuildDependencyGraph(dependencies []TransactionDependency) map[int][]int {
-	graph := make(map[int][]int)
+	graph := make(map[int][]int, len(dependencies))
+	lastWriter := make(map[string]int)
 
-	for i, dep1 := range dependencies {
+	for i := range dependencies {
 		graph[i] = []int{}
+	}
 
-		for j, dep2 := range dependencies {
-			if i == j {
-				continue
+	for i, dep := range dependencies {
+		for _, acc := range dep.WriteAccounts {
+			if prev, ok := lastWriter[acc]; ok {
+				graph[i] = append(graph[i], prev)
 			}
-
-			if pe.hasWriteWriteConflict(dep1, dep2) {
-				graph[i] = append(graph[i], j)
-			}
+			lastWriter[acc] = i
 		}
 	}
 
 	return graph
-}
-
-func (pe *ParallelExecutor) hasWriteWriteConflict(dep1, dep2 TransactionDependency) bool {
-	writeSet1 := make(map[string]bool)
-	for _, acc := range dep1.WriteAccounts {
-		writeSet1[acc] = true
-	}
-
-	for _, acc := range dep2.WriteAccounts {
-		if writeSet1[acc] {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (pe *ParallelExecutor) ExecuteParallel(
@@ -244,6 +229,21 @@ func (pe *ParallelExecutor) executeGroup(
 	// Create worker pool
 	semaphore := make(chan struct{}, pe.workerCount)
 
+	uniqueRead := make(map[string]struct{})
+	for _, idx := range group {
+		for _, addr := range dependencies[idx].ReadAccounts {
+			if addr == "" {
+				continue
+			}
+			uniqueRead[addr] = struct{}{}
+		}
+	}
+	prefetchList := make([]string, 0, len(uniqueRead))
+	for addr := range uniqueRead {
+		prefetchList = append(prefetchList, addr)
+	}
+	prefetchMap, _ := accountStore.GetBatch(prefetchList)
+
 	for i, txIdx := range group {
 		wg.Add(1)
 		go func(index, txIndex int) {
@@ -257,13 +257,14 @@ func (pe *ParallelExecutor) executeGroup(
 			}
 			defer func() { <-semaphore }()
 
-			// Execute transaction
+			// Execute transaction with prefetch map available
 			result := pe.executeTransaction(
 				dependencies[txIndex],
 				accountStore,
 				eventRouter,
 				slot,
 				blockHash,
+				prefetchMap,
 			)
 
 			results[index] = result
@@ -280,6 +281,7 @@ func (pe *ParallelExecutor) executeTransaction(
 	eventRouter *events.EventRouter,
 	slot uint64,
 	blockHash string,
+	prefetch map[string]*types.Account,
 ) ExecutionResult {
 
 	tx := dep.Tx
@@ -298,25 +300,26 @@ func (pe *ParallelExecutor) executeTransaction(
 		}
 	}()
 
-	// Load account states
+	// Load account states (prefetched at group level in executeGroupPrefetch)
 	for _, addr := range dep.ReadAccounts {
-		acc, err := accountStore.GetByAddr(addr)
-		if err != nil {
-			return ExecutionResult{
-				Tx:      tx,
-				Success: false,
-				Error:   fmt.Errorf("failed to load account %s: %w", addr, err),
+		acc, ok := state[addr]
+		if !ok || acc == nil {
+			if prefetch != nil {
+				if pf, ok2 := prefetch[addr]; ok2 && pf != nil {
+					state[addr] = pf
+					continue
+				}
 			}
-		}
-		if acc == nil {
-			// Create account if doesn't exist
-			acc = &types.Account{
-				Address: addr,
-				Balance: uint256.NewInt(0),
-				Nonce:   0,
+			// fallback fetch individually if not present
+			dbAcc, err := accountStore.GetByAddr(addr)
+			if err != nil {
+				return ExecutionResult{Tx: tx, Success: false, Error: fmt.Errorf("failed to load account %s: %w", addr, err)}
 			}
+			if dbAcc == nil {
+				dbAcc = &types.Account{Address: addr, Balance: uint256.NewInt(0), Nonce: 0}
+			}
+			state[addr] = dbAcc
 		}
-		state[addr] = acc
 	}
 
 	// Apply transaction
@@ -372,6 +375,7 @@ func (pe *ParallelExecutor) ValidateAndCommit(
 	}
 
 	var accountsToStore []*types.Account
+	accountSeen := make(map[string]struct{})
 	var txMetasToStore []*types.TransactionMeta
 
 	for _, result := range results {
@@ -383,7 +387,11 @@ func (pe *ParallelExecutor) ValidateAndCommit(
 		}
 
 		// Collect accounts to store
-		for _, acc := range result.UpdatedState {
+		for addr, acc := range result.UpdatedState {
+			if _, ok := accountSeen[addr]; ok {
+				continue
+			}
+			accountSeen[addr] = struct{}{}
 			accountsToStore = append(accountsToStore, acc)
 		}
 
