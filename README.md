@@ -117,7 +117,7 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 
 ## Performance Testing (TPS)
 
-### Latest TPS Results (60 users x 20 tx)
+### Previous TPS Results (60 users x 20 tx)
 
 | Users | Total TXs | Ingress TPS | Executed TPS | Finalized TPS | Sent OK | Total Time |
 |-------|-----------|-------------|--------------|---------------|---------|------------|
@@ -127,6 +127,12 @@ listen SubscribeTransactionStatus
 - Ingress TPS: numPending / (lastPending - firstSent)
 - Executed TPS: numConfirmed / (lastConfirmed - firstSent)
 - Finalized TPS: numFinalized / (lastFinalized - firstSent)
+
+### Latest TPS Results (120 users x 20 tx) - September 17, 2025
+
+| Users | Total TXs | Ingress TPS | Executed TPS | Finalized TPS | Sent OK | Failed | Success Rate | Total Time |
+|-------|-----------|-------------|--------------|---------------|---------|--------|--------------|------------|
+| 120   | 2400      | 2892.94     | 148.84       | 148.84        | 2400    | 0      | 100%         | ~13.84s    |
 
 ## Monitoring stack (Grafana + Loki + Promtail)
 
