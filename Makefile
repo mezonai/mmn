@@ -9,7 +9,7 @@ dev:
 bootstrap-node:
 	docker compose --profile bootstrap up -d
 
-simple-node:
+single-node:
 	docker compose --profile node up -d
 
 monitored-node:
@@ -18,4 +18,4 @@ monitored-node:
 monitoring-center:
 	docker compose --profile monitoring-center up -d
 
-.PHONY: protogen
+.PHONY: protogen dev bootstrap-node single-node monitored-node monitoring-center
