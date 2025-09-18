@@ -51,13 +51,14 @@ func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 
 	blk := &block.Block{
 		BlockCore: block.BlockCore{
-			Slot:      b.Slot,
-			Status:    block.BlockPending,
-			PrevHash:  b.PrevHash,
-			LeaderID:  b.LeaderID,
-			Timestamp: b.Timestamp,
-			Hash:      b.Hash,
-			Signature: b.Signature,
+			Slot:       b.Slot,
+			Status:     block.BlockPending,
+			PrevHash:   b.PrevHash,
+			LeaderID:   b.LeaderID,
+			Timestamp:  b.Timestamp,
+			Hash:       b.Hash,
+			Signature:  b.Signature,
+			InvalidPoH: b.InvalidPoH,
 		},
 		Entries: entries,
 	}

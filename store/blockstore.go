@@ -7,10 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
-	"sync/atomic"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -336,7 +337,13 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	txsMeta := make([]*types.TransactionMeta, 0)
 	for _, entry := range b.Entries {
 		for _, tx := range entry.Transactions {
-			txsMeta = append(txsMeta, types.NewTxMeta(tx, b.Slot, b.HashString(), types.TxStatusProcessed, ""))
+			status := types.TxStatusProcessed
+			errMsg := ""
+			if b.InvalidPoH {
+				status = types.TxStatusFailed
+				errMsg = "invalid poh"
+			}
+			txsMeta = append(txsMeta, types.NewTxMeta(tx, b.Slot, b.HashString(), int32(status), errMsg))
 		}
 	}
 	if err := s.txMetaStore.StoreBatch(txsMeta); err != nil {

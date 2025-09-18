@@ -109,6 +109,38 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
 
+	// If block has invalid PoH, mark all txs in it as failed
+	if b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d has InvalidPoH. Marking all transactions as failed without applying state changes.", b.Slot))
+		txMetas := make([]*types.TransactionMeta, 0)
+		for _, entry := range b.Entries {
+			if len(entry.TxHashes) == 0 {
+				continue
+			}
+			txs, err := l.txStore.GetBatch(entry.TxHashes)
+			if err != nil {
+				return err
+			}
+			for _, tx := range txs {
+				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, "invalid poh"))
+				if l.txTracker != nil {
+					l.txTracker.RemoveTransaction(tx.Hash())
+				}
+				if l.eventRouter != nil {
+					event := events.NewTransactionFailed(tx, "invalid poh")
+					l.eventRouter.PublishTransactionEvent(event)
+				}
+			}
+		}
+		if len(txMetas) > 0 {
+			if err := l.txMetaStore.StoreBatch(txMetas); err != nil {
+				return err
+			}
+		}
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH with %d failed txs", b.Slot, len(txMetas)))
+		return nil
+	}
+
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
