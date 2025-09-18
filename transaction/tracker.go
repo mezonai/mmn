@@ -57,19 +57,22 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		return
 	}
 	atomic.AddInt64(&t.processingCount, -1)
-	atomic.AddInt64(&t.senderCount, -1)
 	tx := txInterface.(*Transaction)
 
 	// Update sender transaction list
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
 		txHashes := existing.([]string)
-		updatedHashes := remove(txHashes, txHash)
+		updatedHashes, isRemoved := remove(txHashes, txHash)
 		if len(updatedHashes) == 0 {
 			t.senderTxs.Delete(tx.Sender)
 		} else {
 			t.senderTxs.Store(tx.Sender, updatedHashes)
 		}
+		if isRemoved {
+			atomic.AddInt64(&t.senderCount, -1)
+		}
 	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
 }
 
@@ -99,11 +102,11 @@ func (t *TransactionTracker) GetLargestProcessingNonce(sender string) uint64 {
 	return largestNonce
 }
 
-func remove(slice []string, item string) []string {
+func remove(slice []string, item string) ([]string, bool) {
 	for i, v := range slice {
 		if v == item {
-			return append(slice[:i], slice[i+1:]...)
+			return append(slice[:i], slice[i+1:]...), true
 		}
 	}
-	return slice
+	return slice, false
 }
