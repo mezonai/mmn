@@ -57,7 +57,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		return
 	}
 	atomic.AddInt64(&t.processingCount, -1)
-	atomic.AddInt64(&t.senderCount, 1)
+	atomic.AddInt64(&t.senderCount, -1)
 	tx := txInterface.(*Transaction)
 
 	// Update sender transaction list
