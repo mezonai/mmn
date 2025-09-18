@@ -3,7 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/json"
+	"github.com/mezonai/mmn/jsonx"
 	"fmt"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -261,7 +261,7 @@ func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *
 			}
 
 			var req CheckpointHashRequest
-			if err := json.Unmarshal(msg.Data, &req); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
 				logx.Error("NETWORK:CHECKPOINT", "Failed to unmarshal checkpoint request:", err)
 				continue
 			}
@@ -311,7 +311,7 @@ func (ln *Libp2pNetwork) sendCheckpointResponse(targetPeer peer.ID, resp Checkpo
 	}
 	defer stream.Close()
 
-	data, err := json.Marshal(resp)
+	data, err := jsonx.Marshal(resp)
 	if err != nil {
 		logx.Error("NETWORK:CHECKPOINT", "Failed to marshal checkpoint response:", err)
 		return
@@ -326,7 +326,7 @@ func (ln *Libp2pNetwork) sendCheckpointResponse(targetPeer peer.ID, resp Checkpo
 func (ln *Libp2pNetwork) handleCheckpointStream(s network.Stream) {
 	defer s.Close()
 	var resp CheckpointHashResponse
-	decoder := json.NewDecoder(s)
+	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&resp); err != nil {
 		logx.Error("NETWORK:CHECKPOINT", "Failed to decode checkpoint response:", err)
 		return
@@ -357,7 +357,7 @@ func (ln *Libp2pNetwork) RequestCheckpointHash(ctx context.Context, checkpoint u
 		Checkpoint:  checkpoint,
 		Addrs:       ln.host.Addrs(),
 	}
-	data, err := json.Marshal(req)
+	data, err := jsonx.Marshal(req)
 	if err != nil {
 		return err
 	}

@@ -1,10 +1,10 @@
 package utils
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
@@ -122,7 +122,7 @@ func ToProtoEntries(entries []poh.Entry) ([]*pb.Entry, error) {
 	for i, e := range entries {
 		txs := make([][]byte, len(e.Transactions))
 		for j, tx := range e.Transactions {
-			txBytes, err := json.Marshal(tx)
+			txBytes, err := jsonx.Marshal(tx)
 			if err != nil {
 				return nil, err
 			}
@@ -141,7 +141,7 @@ func ToProtoEntries(entries []poh.Entry) ([]*pb.Entry, error) {
 
 func ParseTx(data []byte) (*transaction.Transaction, error) {
 	var tx transaction.Transaction
-	err := json.Unmarshal(data, &tx)
+	err := jsonx.Unmarshal(data, &tx)
 	return &tx, err
 }
 

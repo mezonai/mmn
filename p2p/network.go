@@ -3,11 +3,11 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/jsonx"
 
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
@@ -201,7 +201,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 
 	var msg map[string]interface{}
-	if err := json.Unmarshal(buf[:n], &msg); err != nil {
+	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
 		return
 	}

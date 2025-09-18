@@ -2,7 +2,6 @@ package store
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -217,7 +217,7 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 	}
 
 	var blk block.Block
-	if err := json.Unmarshal(value, &blk); err != nil {
+	if err := jsonx.Unmarshal(value, &blk); err != nil {
 		logx.Error("BLOCKSTORE", "Failed to unmarshal block", slot, "error:", err)
 		return nil
 	}
@@ -307,7 +307,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	logx.Info("BLOCKSTORE", "OK, block does not exist at slot", b.Slot)
 
 	// Store block
-	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
+	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}

@@ -3,8 +3,10 @@ package transaction
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 )
 
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
@@ -15,6 +17,9 @@ type TransactionTracker struct {
 
 	// senderTxs maps sender address to list of transaction hashes
 	senderTxs sync.Map
+
+	processingCount int64
+	senderCount     int64
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
@@ -25,16 +30,22 @@ func NewTransactionTracker() *TransactionTracker {
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
-	t.processingTxs.Store(txHash, tx)
-
+	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
+	if !loadedProcessing {
+		atomic.AddInt64(&t.processingCount, 1)
+	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
 		txHashes = existing.([]string)
 	}
 	txHashes = append(txHashes, txHash)
-	t.senderTxs.Store(tx.Sender, txHashes)
-
+	_, loadedSender := t.senderTxs.LoadOrStore(tx.Sender, txHashes)
+	if !loadedSender {
+		atomic.AddInt64(&t.senderCount, 1)
+	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -45,7 +56,8 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	if !exists {
 		return
 	}
-
+	atomic.AddInt64(&t.processingCount, -1)
+	atomic.AddInt64(&t.senderCount, -1)
 	tx := txInterface.(*Transaction)
 
 	// Update sender transaction list
@@ -58,6 +70,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 			t.senderTxs.Store(tx.Sender, updatedHashes)
 		}
 	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
 }
 
 // GetLargestProcessingNonce returns the largest nonce currently being processed for a sender

@@ -2,8 +2,9 @@ package consensus
 
 import (
 	"crypto/ed25519"
-	"encoding/json"
 	"fmt"
+
+	"github.com/mezonai/mmn/jsonx"
 )
 
 // Vote is a vote for a block of a slot
@@ -16,7 +17,7 @@ type Vote struct {
 
 // serializeVote to sign and verify (without Signature)
 func (v *Vote) serializeVote() []byte {
-	data, _ := json.Marshal(struct {
+	data, _ := jsonx.Marshal(struct {
 		Slot      uint64
 		BlockHash [32]byte
 		VoterID   string
