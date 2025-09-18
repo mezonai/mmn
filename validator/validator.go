@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"time"
+
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/store"
 
@@ -154,8 +155,8 @@ waitLoop:
 
 func (v *Validator) onLeaderSlotEnd() {
 	logx.Info("LEADER", "onLeaderSlotEnd")
-	// TODO: temporary fix bug race condition
-	// v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+	// Reset collected entries to prevent PoH mismatch
+	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.leaderStartAtSlot = NoSlot
 }
 
@@ -224,9 +225,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", v.lastSlot))
 		}
 	} else if v.IsLeader(currentSlot) {
-		// Buffer entries only if leader of current slot
-		v.collectedEntries = append(v.collectedEntries, entries...)
-		logx.Info("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
+		// Buffer entries only if leader of current slot and ready to start
+		if v.ReadyToStart(currentSlot) {
+			v.collectedEntries = append(v.collectedEntries, entries...)
+		}
 	}
 
 	// Update lastSlot
