@@ -150,6 +150,7 @@ waitLoop:
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 	v.leaderStartAtSlot = currentSlot
+	v.lastSlot = currentSlot
 	logx.Info("LEADER", fmt.Sprintf("Leader ready to start at slot: %d", currentSlot))
 }
 
@@ -224,11 +225,9 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		} else {
 			logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", v.lastSlot))
 		}
-	} else if v.IsLeader(currentSlot) {
+	} else if v.IsLeader(currentSlot) && v.ReadyToStart(currentSlot) {
 		// Buffer entries only if leader of current slot and ready to start
-		if v.ReadyToStart(currentSlot) {
-			v.collectedEntries = append(v.collectedEntries, entries...)
-		}
+		v.collectedEntries = append(v.collectedEntries, entries...)
 	}
 
 	// Update lastSlot
