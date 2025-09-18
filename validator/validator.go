@@ -156,8 +156,8 @@ waitLoop:
 
 func (v *Validator) onLeaderSlotEnd() {
 	logx.Info("LEADER", "onLeaderSlotEnd")
-	// Reset collected entries to prevent PoH mismatch
-	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
+	// TODO: temporary fix bug race condition
+	// v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.leaderStartAtSlot = NoSlot
 }
 
