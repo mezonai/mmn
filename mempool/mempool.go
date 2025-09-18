@@ -72,6 +72,9 @@ type Mempool struct {
 	// Broadcast queue to avoid spawning a goroutine per transaction
 	broadcastCh      chan *transaction.Transaction
 	broadcastWorkers int
+
+	// Track next expected nonce per sender to avoid hot-path ledger calls
+	nextExpectedNonce map[string]uint64
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Mempool {
@@ -98,14 +101,15 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		ledger:       ledger,
 
 		// Initialize zero-fee optimization fields
-		pendingTxs:       make(map[string]map[uint64]*PendingTransaction),
-		readyQueue:       make([]*transaction.Transaction, 0),
-		eventRouter:      eventRouter,
-		txTracker:        txTracker,
-		accountCache:     make(map[string]*CachedAccountState),
-		senderLocks:      make(map[string]*sync.Mutex),
-		broadcastCh:      make(chan *transaction.Transaction, 10000),
-		broadcastWorkers: 4,
+		pendingTxs:        make(map[string]map[uint64]*PendingTransaction),
+		readyQueue:        make([]*transaction.Transaction, 0),
+		eventRouter:       eventRouter,
+		txTracker:         txTracker,
+		accountCache:      make(map[string]*CachedAccountState),
+		senderLocks:       make(map[string]*sync.Mutex),
+		broadcastCh:       make(chan *transaction.Transaction, 10000),
+		broadcastWorkers:  4,
+		nextExpectedNonce: make(map[string]uint64),
 	}
 
 	// Start broadcast workers if a broadcaster is provided
@@ -356,30 +360,51 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	txHash := tx.Hash()
-	accountState, err := mp.getCachedAccountState(tx.Sender)
-	if err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("could not get account: %v", err))
-		return // Handle error appropriately based on context
-	}
-	currentNonce := accountState.Nonce
-	isReady := tx.Nonce == currentNonce+1
 
-	if isReady {
-		// Add to ready queue for immediate processing
+	// Initialize expected nonce lazily from cache if missing
+	expected, exists := mp.nextExpectedNonce[tx.Sender]
+	if !exists || expected == 0 {
+		accountState, err := mp.getCachedAccountState(tx.Sender)
+		if err != nil {
+			logx.Error("MEMPOOL", fmt.Sprintf("could not get account: %v", err))
+			return
+		}
+		expected = accountState.Nonce + 1
+		mp.nextExpectedNonce[tx.Sender] = expected
+	}
+
+	if tx.Nonce == expected {
+		// Add to ready and promote any continuous chain from pending without ledger calls
 		mp.readyQueue = append(mp.readyQueue, tx)
 		logx.Debug("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
+			txHash, tx.Sender[:8], tx.Nonce, expected))
+
+		// Advance expected and promote chain from pending
+		next := expected + 1
+		if pending, ok := mp.pendingTxs[tx.Sender]; ok {
+			for {
+				if ptx, ok2 := pending[next]; ok2 {
+					mp.readyQueue = append(mp.readyQueue, ptx.Tx)
+					delete(pending, next)
+					next++
+					if len(pending) == 0 {
+						delete(mp.pendingTxs, tx.Sender)
+						break
+					}
+				} else {
+					break
+				}
+			}
+		}
+		mp.nextExpectedNonce[tx.Sender] = next
 	} else {
-		// Add to pending transactions
+		// Queue as pending
 		if mp.pendingTxs[tx.Sender] == nil {
 			mp.pendingTxs[tx.Sender] = make(map[uint64]*PendingTransaction)
 		}
-		mp.pendingTxs[tx.Sender][tx.Nonce] = &PendingTransaction{
-			Tx:        tx,
-			Timestamp: time.Now(),
-		}
+		mp.pendingTxs[tx.Sender][tx.Nonce] = &PendingTransaction{Tx: tx, Timestamp: time.Now()}
 		logx.Debug("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
+			txHash, tx.Sender[:8], tx.Nonce, expected))
 	}
 }
 
@@ -519,8 +544,14 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 			logx.Debug("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
 				txHash, tx.Sender[:8], tx.Nonce))
 		}
-		// Check if any pending transactions became ready after processing
-		mp.promotePendingTransactions(readyTxs)
+		// Advance expected nonces for processed senders and promote chains already handled
+		for _, tx := range readyTxs {
+			if next, ok := mp.nextExpectedNonce[tx.Sender]; ok {
+				if tx.Nonce >= next {
+					mp.nextExpectedNonce[tx.Sender] = tx.Nonce + 1
+				}
+			}
+		}
 	}
 
 	logx.Debug("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
@@ -601,27 +632,33 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transactio
 		readyTxs = append(readyTxs, tx)
 	}
 
-	// Then check pending transactions for newly ready ones
+	// Promote from pending maps using tracked expected nonces, no ledger calls
+	if len(readyTxs) >= maxCount {
+		return readyTxs
+	}
 	for sender, pendingMap := range mp.pendingTxs {
 		if len(readyTxs) >= maxCount {
 			break
 		}
-
-		account, err := mp.ledger.GetAccount(sender)
-		if err != nil {
-			logx.Error("MEMPOOL", fmt.Sprintf("Error getting account for sender %s: %v", sender, err))
+		expected := mp.nextExpectedNonce[sender]
+		if expected == 0 {
+			// Not initialized yet
 			continue
 		}
-		currentNonce := account.Nonce
-		expectedNonce := currentNonce + 1
-
-		if pendingTx, exists := pendingMap[expectedNonce]; exists {
-			readyTxs = append(readyTxs, pendingTx.Tx)
-			delete(pendingMap, expectedNonce)
-			if len(pendingMap) == 0 {
-				delete(mp.pendingTxs, sender)
+		for len(readyTxs) < maxCount {
+			if pendingTx, exists := pendingMap[expected]; exists {
+				readyTxs = append(readyTxs, pendingTx.Tx)
+				delete(pendingMap, expected)
+				expected++
+				if len(pendingMap) == 0 {
+					delete(mp.pendingTxs, sender)
+					break
+				}
+			} else {
+				break
 			}
 		}
+		mp.nextExpectedNonce[sender] = expected
 	}
 
 	return readyTxs
@@ -708,6 +745,30 @@ func (mp *Mempool) BlockCleanup(block *block.Block) {
 		}
 	}
 
+	seenSenders := make(map[string]struct{})
+	for _, entry := range block.Entries {
+		for _, h := range entry.TxHashes {
+			_ = h // placeholder to keep structure
+		}
+	}
+	for sender := range mp.pendingTxs {
+		if _, ok := seenSenders[sender]; ok {
+			continue
+		}
+		if acct, err := mp.ledger.GetAccount(sender); err == nil && acct != nil {
+			mp.nextExpectedNonce[sender] = acct.Nonce + 1
+		}
+	}
+	for _, tx := range mp.readyQueue {
+		sender := tx.Sender
+		if _, ok := seenSenders[sender]; ok {
+			continue
+		}
+		if acct, err := mp.ledger.GetAccount(sender); err == nil && acct != nil {
+			mp.nextExpectedNonce[sender] = acct.Nonce + 1
+		}
+	}
+
 	logx.Info("BlockCleanup completed", "removed_transactions", removedCount, "block_slot", block.Slot)
 }
 
@@ -780,6 +841,7 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 		}
 		currentNonce := account.Nonce
 		expectedNonce := currentNonce + 1
+		mp.nextExpectedNonce[sender] = expectedNonce
 
 		// Remove any transactions with nonce <= current account nonce
 		for nonce, pendingTx := range pendingMap {
@@ -795,13 +857,18 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 			continue
 		}
 
-		// Promote ready transaction if it exists
-		if pendingTx, exists := pendingMap[expectedNonce]; exists {
-			mp.readyQueue = append(mp.readyQueue, pendingTx.Tx)
-			delete(pendingMap, expectedNonce)
-
-			if len(pendingMap) == 0 {
-				delete(mp.pendingTxs, sender)
+		// Promote consecutive ready transactions starting from expectedNonce
+		for {
+			if pendingTx, exists := pendingMap[expectedNonce]; exists {
+				mp.readyQueue = append(mp.readyQueue, pendingTx.Tx)
+				delete(pendingMap, expectedNonce)
+				expectedNonce++
+				if len(pendingMap) == 0 {
+					delete(mp.pendingTxs, sender)
+					break
+				}
+			} else {
+				break
 			}
 		}
 	}
