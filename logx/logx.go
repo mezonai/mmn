@@ -33,6 +33,12 @@ func Error(category string, content ...interface{}) {
 	logger.Printf("%s: %s", coloredCategory, message)
 }
 
+func Fatal(category string, content ...interface{}) {
+	message := fmt.Sprint(content...)
+	coloredCategory := fmt.Sprintf("%s[FATAL][%s]%s", ColorRed, category, ColorReset)
+	logger.Fatalf("%s: %s", coloredCategory, message)
+}
+
 func Warn(category string, content ...interface{}) {
 	message := fmt.Sprint(content...)
 	coloredCategory := fmt.Sprintf("%s[WARN][%s]%s", ColorYellow, category, ColorReset)

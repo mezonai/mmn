@@ -30,21 +30,20 @@ services:
   # End users (nodes) will always run this
   node:
     image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: node1
+    container_name: ${NODE_NAME}
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --jsonrpc-addr ":${NODE_API_PORT}" --grpc-addr ":${NODE_API_PORT}" --bootstrap-addresses "${BOOTSTRAP_NODE_ADDR}"
       '
     ports:
-      - "8001:8001"
-      - "8081:8081"
-      - "9001:9001"
+      - ${NODE_API_PORT}:${NODE_API_PORT}
+      - ${NODE_GRPC_PORT}:${NODE_GRPC_PORT}
     volumes:
       - node_data:/app/node-data
       - logs_data:/app/logs
     environment:
-      - LOGFILE=mmn-node1.log
+      - NODE_NAME=${NODE_NAME}
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
       - CORS_ALLOWED_ORIGINS=*

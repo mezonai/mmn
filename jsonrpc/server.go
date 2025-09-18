@@ -3,8 +3,10 @@ package jsonrpc
 import (
 	"context"
 	"fmt"
-	_ "net/http/pprof"
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"strings"
@@ -35,14 +37,14 @@ func toJRPC2Error(e *rpcError) error {
 
 // Tx
 type txMsgParams struct {
-	Type       int32  `json:"type"`
-	Sender     string `json:"sender"`
-	Recipient  string `json:"recipient"`
-	Amount     string `json:"amount"`
-	Timestamp  uint64 `json:"timestamp"`
-	TextData   string `json:"text_data"`
-	Nonce      uint64 `json:"nonce"`
-	ExtraInfo  string `json:"extra_info"`
+	Type      int32  `json:"type"`
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Amount    string `json:"amount"`
+	Timestamp uint64 `json:"timestamp"`
+	TextData  string `json:"text_data"`
+	Nonce     uint64 `json:"nonce"`
+	ExtraInfo string `json:"extra_info"`
 }
 
 type signedTxParams struct {
@@ -61,17 +63,17 @@ type getTxByHashRequest struct {
 }
 
 type txInfo struct {
-	Sender     string `json:"sender"`
-	Recipient  string `json:"recipient"`
-	Amount     string `json:"amount"`
-	Timestamp  uint64 `json:"timestamp"`
-	TextData   string `json:"text_data"`
-	Nonce      uint64 `json:"nonce"`
-	Slot       uint64 `json:"slot"`
-	BlockHash  string `json:"blockhash"`
-	Status     int32  `json:"status"`
-	ErrMsg     string `json:"err_msg"`
-	ExtraInfo  string `json:"extra_info"`
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Amount    string `json:"amount"`
+	Timestamp uint64 `json:"timestamp"`
+	TextData  string `json:"text_data"`
+	Nonce     uint64 `json:"nonce"`
+	Slot      uint64 `json:"slot"`
+	BlockHash string `json:"blockhash"`
+	Status    int32  `json:"status"`
+	ErrMsg    string `json:"err_msg"`
+	ExtraInfo string `json:"extra_info"`
 }
 
 type getTxByHashResponse struct {
@@ -142,9 +144,9 @@ type txMeta struct {
 }
 
 type getTxHistoryResponse struct {
-	Total    uint32   `json:"total"`
+	Total    uint32    `json:"total"`
 	Txs      []*txMeta `json:"txs"`
-	Decimals uint32   `json:"decimals"`
+	Decimals uint32    `json:"decimals"`
 }
 
 type getCurrentNonceRequest struct {
@@ -177,9 +179,10 @@ type getAccountByAddressResponse struct {
 // --- Server ---
 
 type Server struct {
-	addr   string
-	txSvc  interfaces.TxService
-	acctSvc interfaces.AccountService
+	mux        *http.ServeMux
+	addr       string
+	txSvc      interfaces.TxService
+	acctSvc    interfaces.AccountService
 	corsConfig CORSConfig
 }
 
@@ -192,8 +195,9 @@ type CORSConfig struct {
 
 func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *Server {
 	return &Server{
-		addr:   addr,
-		txSvc:  txSvc,
+		mux:     http.NewServeMux(),
+		addr:    addr,
+		txSvc:   txSvc,
 		acctSvc: acctSvc,
 		corsConfig: CORSConfig{
 			AllowedOrigins: []string{},
@@ -217,8 +221,18 @@ func (s *Server) Start() {
 		jh.ServeHTTP(w, r)
 	})
 
-	http.Handle("/", h)
-	go http.ListenAndServe(s.addr, nil)
+	s.mux.Handle("/", h)
+	go func() {
+		err := http.ListenAndServe(s.addr, s.mux)
+		if err != nil {
+			logx.Fatal("JSONRPC", "Failed to start server", err)
+		}
+	}()
+}
+
+// ServePromMetricsApi expose /metrics api with metrics registered from monitoring package
+func (s *Server) ServePromMetricsApi() {
+	monitoring.RegisterMetrics(s.mux)
 }
 
 // SetCORSConfig allows configuring CORS settings
@@ -231,51 +245,83 @@ func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
 		"tx.addtx": handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
 			res, err := s.rpcAddTx(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*addTxResponse), nil
 		}),
 		"tx.gettxbyhash": handler.New(func(ctx context.Context, p getTxByHashRequest) (*getTxByHashResponse, error) {
 			res, err := s.rpcGetTxByHash(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*getTxByHashResponse), nil
 		}),
 		"tx.gettransactionstatus": handler.New(func(ctx context.Context, p getTxStatusRequest) (*txStatusInfo, error) {
 			res, err := s.rpcGetTransactionStatus(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*txStatusInfo), nil
 		}),
 		"tx.getpendingtransactions": handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
 			res, err := s.rpcGetPendingTransactions()
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*getPendingTxsResponse), nil
 		}),
 
 		"account.getaccount": handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
 			res, err := s.rpcGetAccount(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*getAccountResponse), nil
 		}),
 		"account.gettxhistory": handler.New(func(ctx context.Context, p getTxHistoryRequest) (*getTxHistoryResponse, error) {
 			res, err := s.rpcGetTxHistory(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*getTxHistoryResponse), nil
 		}),
 		"account.getcurrentnonce": handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
 			res, err := s.rpcGetCurrentNonce(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*getCurrentNonceResponse), nil
 		}),
 		"account.getaccountbyaddress": handler.New(func(ctx context.Context, p getAccountByAddressRequest) (*getAccountByAddressResponse, error) {
 			res, err := s.rpcGetAccountByAddress(p)
-			if err != nil { return nil, toJRPC2Error(err) }
-			if res == nil { return nil, nil }
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
 			return res.(*getAccountByAddressResponse), nil
 		}),
 	}
@@ -403,7 +449,9 @@ func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpc
 }
 
 func (s *Server) rpcGetAccountByAddress(p getAccountByAddressRequest) (interface{}, *rpcError) {
-	if p.Address == "" { return &getAccountByAddressResponse{Error: "empty address"}, nil }
+	if p.Address == "" {
+		return &getAccountByAddressResponse{Error: "empty address"}, nil
+	}
 	resp, err := s.acctSvc.GetAccountByAddress(context.Background(), &pb.GetAccountByAddressRequest{Address: p.Address})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
@@ -467,40 +515,50 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 // - CORS_ALLOWED_HEADERS: comma-separated list
 // - CORS_MAX_AGE: integer seconds
 func CORSFromEnv() (CORSConfig, bool) {
-    origins := os.Getenv("CORS_ALLOWED_ORIGINS")
-    methods := os.Getenv("CORS_ALLOWED_METHODS")
-    headers := os.Getenv("CORS_ALLOWED_HEADERS")
-    maxAgeStr := os.Getenv("CORS_MAX_AGE")
+	origins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	methods := os.Getenv("CORS_ALLOWED_METHODS")
+	headers := os.Getenv("CORS_ALLOWED_HEADERS")
+	maxAgeStr := os.Getenv("CORS_MAX_AGE")
 
-    var maxAge int
-    if maxAgeStr != "" {
-        if v, err := strconv.Atoi(maxAgeStr); err == nil { maxAge = v }
-    }
+	var maxAge int
+	if maxAgeStr != "" {
+		if v, err := strconv.Atoi(maxAgeStr); err == nil {
+			maxAge = v
+		}
+	}
 
-    var allowedOrigins, allowedMethods, allowedHeaders []string
-    if origins != "" { allowedOrigins = splitAndTrim(origins) }
-    if methods != "" { allowedMethods = splitAndTrim(methods) }
-    if headers != "" { allowedHeaders = splitAndTrim(headers) }
+	var allowedOrigins, allowedMethods, allowedHeaders []string
+	if origins != "" {
+		allowedOrigins = splitAndTrim(origins)
+	}
+	if methods != "" {
+		allowedMethods = splitAndTrim(methods)
+	}
+	if headers != "" {
+		allowedHeaders = splitAndTrim(headers)
+	}
 
-    provided := len(allowedOrigins) > 0 || len(allowedMethods) > 0 || len(allowedHeaders) > 0 || maxAge > 0
-    if !provided { return CORSConfig{}, false }
+	provided := len(allowedOrigins) > 0 || len(allowedMethods) > 0 || len(allowedHeaders) > 0 || maxAge > 0
+	if !provided {
+		return CORSConfig{}, false
+	}
 
-    return CORSConfig{
-        AllowedOrigins: allowedOrigins,
-        AllowedMethods: allowedMethods,
-        AllowedHeaders: allowedHeaders,
-        MaxAge:         maxAge,
-    }, true
+	return CORSConfig{
+		AllowedOrigins: allowedOrigins,
+		AllowedMethods: allowedMethods,
+		AllowedHeaders: allowedHeaders,
+		MaxAge:         maxAge,
+	}, true
 }
 
 func splitAndTrim(s string) []string {
-    parts := strings.Split(s, ",")
-    var out []string
-    for _, p := range parts {
-        t := strings.TrimSpace(p)
-        if t != "" { out = append(out, t) }
-    }
-    return out
+	parts := strings.Split(s, ",")
+	var out []string
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
-
-

@@ -273,8 +273,8 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 func initializeFileLogger() {
 	// Load config log file name
 	logFile := "./logs/mmn.log"
-	if logFileConfig := os.Getenv("LOGFILE"); logFileConfig != "" {
-		logFile = "./logs/" + logFileConfig
+	if nodeNameConfig := os.Getenv("NODE_NAME"); nodeNameConfig != "" {
+		logFile = "./logs/" + nodeNameConfig + ".log"
 	}
 
 	// Load config log file size

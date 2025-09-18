@@ -1,19 +1,9 @@
-- targets: ['node1:8001']
+- targets: ['node:8081']
   labels:
     job: node
-    node: node1
+    node: node-01
 
 - targets: ['node-exporter:9100']
   labels:
     job: exporter
-    node: node1
-
-- targets: ['node2:8002']
-  labels:
-    job: node
-    node: node2
-
-- targets: ['node-exporter:9100']
-  labels:
-    job: exporter
-    node: node2
+    node: node-01

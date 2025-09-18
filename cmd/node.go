@@ -7,7 +7,6 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -44,7 +43,6 @@ const (
 
 var (
 	dataDir            string
-	listenAddr         string
 	jsonrpcAddr        string
 	p2pPort            string
 	bootstrapAddresses []string
@@ -68,7 +66,6 @@ func init() {
 
 	// Run command flags
 	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
-	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
 	runCmd.Flags().StringVar(&jsonrpcAddr, "jsonrpc-addr", ":8080", "Listen address for JSON-RPC server :<port>")
 	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
 	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
@@ -170,7 +167,6 @@ func runNode() {
 		PubKey:             pubKey,
 		PrivKeyPath:        privKeyPath,
 		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
-		ListenAddr:         listenAddr,
 		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
@@ -386,17 +382,5 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	}
 
 	rpcSrv.Start()
-	serveMetricsApi(nodeConfig.ListenAddr)
-}
-
-func serveMetricsApi(listenAddr string) {
-	mux := http.NewServeMux()
-	monitoring.RegisterMetrics(mux)
-	go func() {
-		err := http.ListenAndServe(listenAddr, mux)
-		if err != nil {
-			logx.Error("NODE", fmt.Sprintf("Failed to expose metrics for monitoring: %v", err))
-			os.Exit(1)
-		}
-	}()
+	rpcSrv.ServePromMetricsApi()
 }
