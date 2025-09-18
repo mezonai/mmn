@@ -57,6 +57,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		return
 	}
 	atomic.AddInt64(&t.processingCount, -1)
+	atomic.AddInt64(&t.senderCount, 1)
 	tx := txInterface.(*Transaction)
 
 	// Update sender transaction list
@@ -65,12 +66,8 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		updatedHashes := remove(txHashes, txHash)
 		if len(updatedHashes) == 0 {
 			t.senderTxs.Delete(tx.Sender)
-			atomic.AddInt64(&t.senderCount, -1)
 		} else {
-			_, loadedSender := t.senderTxs.LoadOrStore(tx.Sender, updatedHashes)
-			if !loadedSender {
-				atomic.AddInt64(&t.senderCount, 1)
-			}
+			t.senderTxs.Store(tx.Sender, updatedHashes)
 		}
 	}
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
