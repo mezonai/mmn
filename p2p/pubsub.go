@@ -3,8 +3,9 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/mezonai/mmn/jsonx"
 	"fmt"
+
+	"github.com/mezonai/mmn/jsonx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -50,7 +51,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			// Remove transactions in block from mempool and add tx tracker if node is follower
 			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-				go mp.BlockCleanup(blk)
+				mp.BlockCleanup(blk)
 			}
 
 			vote := &consensus.Vote{
