@@ -3,6 +3,7 @@ package transaction
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
@@ -16,6 +17,9 @@ type TransactionTracker struct {
 
 	// senderTxs maps sender address to list of transaction hashes
 	senderTxs sync.Map
+
+	processingCount int64
+	senderCount     int64
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
@@ -26,27 +30,22 @@ func NewTransactionTracker() *TransactionTracker {
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
-	t.processingTxs.Store(txHash, tx)
-	count := 0
-	// Use the Range method to iterate and count
-	t.processingTxs.Range(func(key, value interface{}) bool {
-		count++
-		return true // continue iteration
-	})
-	monitoring.SetTrackerProcessingTx(uint64(count), "processing")
+	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
+	if !loadedProcessing {
+		atomic.AddInt64(&t.processingCount, 1)
+	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
 		txHashes = existing.([]string)
 	}
 	txHashes = append(txHashes, txHash)
-	t.senderTxs.Store(tx.Sender, txHashes)
-	count = 0
-	t.senderTxs.Range(func(key, value interface{}) bool {
-		count++
-		return true // continue iteration
-	})
-	monitoring.SetTrackerProcessingTx(uint64(count), "senders")
+	_, loadedSender := t.senderTxs.LoadOrStore(tx.Sender, txHashes)
+	if !loadedSender {
+		atomic.AddInt64(&t.senderCount, 1)
+	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -57,7 +56,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	if !exists {
 		return
 	}
-
+	atomic.AddInt64(&t.processingCount, -1)
 	tx := txInterface.(*Transaction)
 
 	// Update sender transaction list
@@ -66,16 +65,15 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		updatedHashes := remove(txHashes, txHash)
 		if len(updatedHashes) == 0 {
 			t.senderTxs.Delete(tx.Sender)
+			atomic.AddInt64(&t.senderCount, -1)
 		} else {
-			t.senderTxs.Store(tx.Sender, updatedHashes)
+			_, loadedSender := t.senderTxs.LoadOrStore(tx.Sender, updatedHashes)
+			if !loadedSender {
+				atomic.AddInt64(&t.senderCount, 1)
+			}
 		}
 	}
-	count :=  0
-	t.senderTxs.Range(func(key, value interface{}) bool {
-		count++
-		return true // continue iteration
-	})
-	monitoring.SetTrackerProcessingTx(uint64(count), "senders")
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
 }
 
 // GetLargestProcessingNonce returns the largest nonce currently being processed for a sender

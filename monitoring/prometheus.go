@@ -172,7 +172,7 @@ func SetPeerCount(peers int) {
 	nodeMetrics.peerCount.Set(float64(peers))
 }
 
-func SetTrackerProcessingTx(bytes uint64, source string) {
+func SetTrackerProcessingTx(bytes int64, source string) {
 	nodeMetrics.trackerTx.With(prometheus.Labels{
 		"source": source,
 	}).Set(float64(bytes))
