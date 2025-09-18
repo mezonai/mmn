@@ -38,11 +38,11 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
-		txHashes = existing.([]string)
-	}
-	txHashes = append(txHashes, txHash)
-	_, loadedSender := t.senderTxs.LoadOrStore(tx.Sender, txHashes)
-	if !loadedSender {
+		txHashes = append(existing.([]string), txHash)
+		t.senderTxs.Store(tx.Sender, txHashes)
+	} else {
+		txHashes = []string{txHash}
+		t.senderTxs.Store(tx.Sender, txHashes)
 		atomic.AddInt64(&t.senderCount, 1)
 	}
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
@@ -54,6 +54,7 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
+		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}
 	atomic.AddInt64(&t.processingCount, -1)
@@ -63,13 +64,13 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
 		txHashes := existing.([]string)
 		updatedHashes, isRemoved := remove(txHashes, txHash)
-		if len(updatedHashes) == 0 {
-			t.senderTxs.Delete(tx.Sender)
-		} else {
-			t.senderTxs.Store(tx.Sender, updatedHashes)
-		}
 		if isRemoved {
-			atomic.AddInt64(&t.senderCount, -1)
+			if len(updatedHashes) == 0 {
+				t.senderTxs.Delete(tx.Sender)
+				atomic.AddInt64(&t.senderCount, -1)
+			} else {
+				t.senderTxs.Store(tx.Sender, updatedHashes)
+			}
 		}
 	}
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
