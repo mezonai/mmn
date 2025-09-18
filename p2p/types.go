@@ -88,6 +88,7 @@ type BlockMessage struct {
 
 type VoteMessage struct {
 	Slot      uint64 `json:"slot"`
+	VoteType  int    `json:"vote_type"`
 	BlockHash string `json:"block_hash"`
 	VoterID   string `json:"voter_id"`
 	Signature []byte `json:"signature"`

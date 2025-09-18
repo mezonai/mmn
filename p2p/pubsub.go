@@ -9,85 +9,45 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/mezonai/mmn/alpenglow/pool"
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, mbs *mem_blockstore.MemBlockStore, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, p *pool.Pool, recorder *poh.PohRecorder) {
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
-			if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
-				return nil
-			}
-
-			// Verify PoH
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH:", err)
 				return fmt.Errorf("invalid PoH")
 			}
 
-			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestStoreSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
-			}
+			mbs.AddBlock(blk.Slot, blk)
 
-			if err := bs.AddBlockPending(blk); err != nil {
-				logx.Error("BLOCK", "Failed to store block: ", err)
-				return err
-			}
+			//TODO: need to reset PoH somewhere else
 
-			// Remove transactions in block from mempool and add tx tracker if node is follower
 			if self.PubKey != blk.LeaderID {
 				go mp.BlockCleanup(blk)
 			}
 
-			vote := &consensus.Vote{
-				Slot:      blk.Slot,
-				BlockHash: blk.Hash,
-				VoterID:   self.PubKey,
-			}
-			vote.Sign(privKey)
-
-			// verify passed broadcast vote
-			ln.BroadcastVote(context.Background(), vote)
 			return nil
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
-			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-			committed, needApply, err := collector.AddVote(vote)
-			if err != nil {
-				logx.Error("VOTE", "Failed to add vote: ", err)
-				return err
-			}
-
-			// not leader => maybe vote come before block received => if dont have block just return
-			if bs.Block(vote.Slot) == nil {
-				logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
-				return nil
-			}
-			if committed && needApply {
-				logx.Info("VOTE", "Committed vote from OnVoteReceived: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-				err := ln.applyDataToBlock(vote, bs, ld, mp)
-				if err != nil {
-					logx.Error("VOTE", "Failed to apply data to block: ", err)
-					return err
-				}
-			}
+			p.AddVote(vote)
 
 			return nil
 		},
+
 		OnTransactionReceived: func(txData *transaction.Transaction) error {
 			logx.Info("TX", "Processing received transaction from P2P network")
 
