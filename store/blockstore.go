@@ -2,21 +2,22 @@ package store
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
-	"sync/atomic"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -216,7 +217,7 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 	}
 
 	var blk block.Block
-	if err := json.Unmarshal(value, &blk); err != nil {
+	if err := jsonx.Unmarshal(value, &blk); err != nil {
 		logx.Error("BLOCKSTORE", "Failed to unmarshal block", slot, "error:", err)
 		return nil
 	}
@@ -304,7 +305,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	// Store block
-	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
+	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}

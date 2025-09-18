@@ -1,13 +1,13 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/jsonx"
 )
 
 // TxMetaStore is the interface for transaction meta store
@@ -57,7 +57,7 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 	defer batch.Close()
 
 	for _, txMeta := range txMetas {
-		data, err := json.Marshal(txMeta)
+		data, err := jsonx.Marshal(txMeta)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction meta: %w", err)
 		}
@@ -82,7 +82,7 @@ func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta,
 	}
 
 	var txMeta types.TransactionMeta
-	err = json.Unmarshal(data, &txMeta)
+	err = jsonx.Unmarshal(data, &txMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal transaction meta %s: %w", txHash, err)
 	}
@@ -109,7 +109,7 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 		}
 
 		var txMeta types.TransactionMeta
-		err = json.Unmarshal(data, &txMeta)
+		err = jsonx.Unmarshal(data, &txMeta)
 		if err != nil {
 			logx.Warn("TX_META_STORE", fmt.Sprintf("Failed to unmarshal transaction meta %s: %s", txHash, err.Error()))
 			continue

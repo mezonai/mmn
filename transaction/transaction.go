@@ -4,11 +4,11 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/common"
+	"github.com/mezonai/mmn/jsonx"
 )
 
 const (
@@ -49,7 +49,7 @@ func (tx *Transaction) Verify() bool {
 }
 
 func (tx *Transaction) Bytes() []byte {
-	b, _ := json.Marshal(tx)
+	b, _ := jsonx.Marshal(tx)
 	return b
 }
 

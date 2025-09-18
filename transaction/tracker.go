@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 )
 
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
@@ -26,7 +27,13 @@ func NewTransactionTracker() *TransactionTracker {
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
 	t.processingTxs.Store(txHash, tx)
-
+	count := 0
+	// Use the Range method to iterate and count
+	t.processingTxs.Range(func(key, value interface{}) bool {
+		count++
+		return true // continue iteration
+	})
+	monitoring.SetTrackerProcessingTx(uint64(count), "processing")
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
@@ -34,7 +41,12 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	}
 	txHashes = append(txHashes, txHash)
 	t.senderTxs.Store(tx.Sender, txHashes)
-
+	count = 0
+	t.senderTxs.Range(func(key, value interface{}) bool {
+		count++
+		return true // continue iteration
+	})
+	monitoring.SetTrackerProcessingTx(uint64(count), "senders")
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -58,6 +70,12 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 			t.senderTxs.Store(tx.Sender, updatedHashes)
 		}
 	}
+	count :=  0
+	t.senderTxs.Range(func(key, value interface{}) bool {
+		count++
+		return true // continue iteration
+	})
+	monitoring.SetTrackerProcessingTx(uint64(count), "senders")
 }
 
 // GetLargestProcessingNonce returns the largest nonce currently being processed for a sender
