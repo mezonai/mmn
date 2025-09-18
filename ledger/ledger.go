@@ -108,6 +108,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+	if b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
+		return nil
+	}
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)

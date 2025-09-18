@@ -28,11 +28,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			// Verify PoH
+			// Verify PoH. If invalid, mark block and continue to process as a failed block
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
-				logx.Error("BLOCK", "Invalid PoH:", err)
-				return fmt.Errorf("invalid PoH")
+				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+				blk.InvalidPoH = true
 			}
 
 			// Reset poh to sync poh clock with leader
@@ -49,7 +49,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Remove transactions in block from mempool and add tx tracker if node is follower
-			if self.PubKey != blk.LeaderID {
+			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
 				go mp.BlockCleanup(blk)
 			}
 
