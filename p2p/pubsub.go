@@ -33,7 +33,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
-				blk.Entries = nil
 			}
 
 			// Reset poh to sync poh clock with leader

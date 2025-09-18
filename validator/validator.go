@@ -227,6 +227,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		}
 	} else if v.IsLeader(currentSlot) && v.ReadyToStart(currentSlot) {
 		// Buffer entries only if leader of current slot and ready to start
+		logx.Info("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
 		v.collectedEntries = append(v.collectedEntries, entries...)
 	}
 
