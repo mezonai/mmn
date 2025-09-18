@@ -337,13 +337,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	txsMeta := make([]*types.TransactionMeta, 0)
 	for _, entry := range b.Entries {
 		for _, tx := range entry.Transactions {
-			status := types.TxStatusProcessed
-			errMsg := ""
-			if b.InvalidPoH {
-				status = types.TxStatusFailed
-				errMsg = "invalid poh"
-			}
-			txsMeta = append(txsMeta, types.NewTxMeta(tx, b.Slot, b.HashString(), int32(status), errMsg))
+			txsMeta = append(txsMeta, types.NewTxMeta(tx, b.Slot, b.HashString(), types.TxStatusProcessed, ""))
 		}
 	}
 	if err := s.txMetaStore.StoreBatch(txsMeta); err != nil {
