@@ -74,6 +74,8 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	}
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
+	logx.Info("TRACKER", fmt.Sprintf("Remove transaction: %s (sender: %s, nonce: %d)",
+		txHash, tx.Sender[:8], tx.Nonce))
 }
 
 // GetLargestProcessingNonce returns the largest nonce currently being processed for a sender
