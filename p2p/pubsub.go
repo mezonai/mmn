@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -609,7 +610,7 @@ func (ln *Libp2pNetwork) requestSnapshotOnJoin() {
 
 	// Send snapshot request
 	req := SnapshotRequest{}
-	data, _ := json.Marshal(req)
+	data, _ := jsonx.Marshal(req)
 	if err := ln.topicSnapshotRequest.Publish(ln.ctx, data); err == nil {
 		logx.Info("SNAPSHOT:REQUEST", "snapshot request sent on join")
 	}
@@ -652,7 +653,7 @@ func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
 				if ann.UDPAddr == "" {
 					continue
 				}
-				data, _ := json.Marshal(ann)
+				data, _ := jsonx.Marshal(ann)
 				if err := ln.topicSnapshotAnnounce.Publish(ln.ctx, data); err == nil {
 					logx.Info("SNAPSHOT:GOSSIP", "Announce published slot=", ann.Slot)
 					if ln.onSnapshotAnnounce != nil {
@@ -707,7 +708,7 @@ func (ln *Libp2pNetwork) handleSnapshotAnnounce(ctx context.Context, sub *pubsub
 			return
 		}
 		var ann SnapshotAnnounce
-		if err := json.Unmarshal(msg.Data, &ann); err != nil {
+		if err := jsonx.Unmarshal(msg.Data, &ann); err != nil {
 			continue
 		}
 		if ann.PeerID == ln.selfPubKey {
