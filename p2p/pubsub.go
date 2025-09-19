@@ -37,6 +37,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				blk.InvalidPoH = true
 			}
 
+			// Reset poh to sync poh clock with leader
+			if blk.Slot > bs.GetLatestFinalizedSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
+
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
@@ -51,14 +59,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			// if len(ln.host.Network().Peers()) > 0 {
 			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
 			// }
-
-			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestFinalizedSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
-			}
 
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,

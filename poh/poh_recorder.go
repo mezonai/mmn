@@ -113,13 +113,11 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 }
 
 func HashTransactions(txs []*transaction.Transaction) [32]byte {
-	hasher := sha256.New()
+	var all []byte
 	for _, tx := range txs {
-		hasher.Write(tx.Bytes())
+		all = append(all, tx.Bytes()...)
 	}
-	var result [32]byte
-	hasher.Sum(result[:0])
-	return result
+	return sha256.Sum256(all)
 }
 
 func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {

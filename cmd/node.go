@@ -384,6 +384,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		rpcSrv.SetCORSConfig(corsCfg)
 	}
 
+	rpcSrv.Start()
 	serveMetricsApi(nodeConfig.ListenAddr)
 }
 

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
@@ -187,7 +187,7 @@ func (ln *Libp2pNetwork) Close() {
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
-	return len(ln.peers)
+	return len(ln.host.Network().Peers()) - 1
 }
 
 func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {

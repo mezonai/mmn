@@ -44,7 +44,7 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 
 	accountData, err := jsonx.Marshal(account)
 	if err != nil {
-		return fmt.Errorf("failed to marshal account (proto): %w", err)
+		return fmt.Errorf("failed to marshal account: %w", err)
 	}
 
 	err = as.dbProvider.Put(as.getDbKey(account.Address), accountData)
@@ -67,6 +67,7 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal account: %w", err)
 		}
+
 		batch.Put(as.getDbKey(account.Address), accountData)
 	}
 
@@ -100,10 +101,6 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 		return nil, fmt.Errorf("failed to unmarshal account %s: %w", addr, err)
 	}
 
-	// Fallback to JSON for backward compatibility
-	if err := json.Unmarshal(data, &acc); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal account %s: %w", addr, err)
-	}
 	return &acc, nil
 }
 
