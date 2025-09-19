@@ -277,7 +277,7 @@ func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
 	// Seed recorder with latest store slot if recorder is behind
-	if v.Recorder != nil && v.blockStore != nil {
+	if v.Recorder != nil {
 		latest := v.blockStore.GetLatestStoreSlot()
 		if latest > 0 {
 			if seed, ok := v.blockStore.LastEntryInfoAtSlot(latest); ok {
@@ -313,7 +313,7 @@ func (v *Validator) leaderBatchLoop() {
 		case <-batchTicker.C:
 			slot := v.Recorder.CurrentSlot()
 			// Skip if recorder is behind store; wait until seeding/reset catches up
-			if v.blockStore != nil && slot < v.blockStore.GetLatestStoreSlot() {
+			if slot < v.blockStore.GetLatestStoreSlot() {
 				continue
 			}
 			if !v.IsLeader(slot) {
@@ -369,7 +369,7 @@ func (v *Validator) roleMonitorLoop() {
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
 			// Avoid starting leader init while recorder is behind blockstore
-			if v.blockStore != nil && slot < v.blockStore.GetLatestStoreSlot() {
+			if slot < v.blockStore.GetLatestStoreSlot() {
 				continue
 			}
 			if v.IsLeader(slot) {
