@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
@@ -18,18 +19,25 @@ type TransactionTracker struct {
 	// senderTxs maps sender address to list of transaction hashes
 	senderTxs sync.Map
 
+	historyList sync.Map
+
 	processingCount int64
 	senderCount     int64
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
 func NewTransactionTracker() *TransactionTracker {
-	return &TransactionTracker{}
+	tt := &TransactionTracker{}
+	tt.StartAppliedCleanup(10 * time.Minute)
+	return tt
 }
 
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
+	if t.IsRemoved(txHash) {
+		return
+	}
 	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
 	if !loadedProcessing {
 		atomic.AddInt64(&t.processingCount, 1)
@@ -59,6 +67,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	}
 	atomic.AddInt64(&t.processingCount, -1)
 	tx := txInterface.(*Transaction)
+	t.MarkRemoved(txHash)
 
 	// Update sender transaction list
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
@@ -112,4 +121,27 @@ func remove(slice []string, item string) ([]string, bool) {
 		}
 	}
 	return slice, false
+}
+
+// IsApplied checks if txHash was marked applied
+func (t *TransactionTracker) IsRemoved(txHash string) bool {
+	_, ok := t.historyList.Load(txHash)
+	return ok
+}
+
+func (t *TransactionTracker) MarkRemoved(txHash string) {
+	t.historyList.Store(txHash, true)
+}
+
+func (t *TransactionTracker) StartAppliedCleanup(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			t.historyList.Range(func(key, _ any) bool {
+				t.historyList.Delete(key)
+				return true
+			})
+		}
+	}()
 }
