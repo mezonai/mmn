@@ -1,12 +1,12 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/jsonx"
 
 	"github.com/mezonai/mmn/transaction"
 )
@@ -57,7 +57,7 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 	defer batch.Close()
 
 	for _, tx := range txs {
-		txData, err := json.Marshal(tx)
+		txData, err := jsonx.Marshal(tx)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction: %w", err)
 		}
@@ -83,7 +83,7 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, er
 
 	// Deserialize transaction
 	var tx transaction.Transaction
-	err = json.Unmarshal(data, &tx)
+	err = jsonx.Unmarshal(data, &tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txHash, err)
 	}
@@ -111,7 +111,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 
 		// Deserialize transaction
 		var tx transaction.Transaction
-		err = json.Unmarshal(data, &tx)
+		err = jsonx.Unmarshal(data, &tx)
 		if err != nil {
 			logx.Warn("TX_STORE", fmt.Sprintf("Failed to unmarshal transaction %s: %s", txHash, err.Error()))
 			continue

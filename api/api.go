@@ -1,13 +1,13 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/mezonai/mmn/logx"
 	"io"
 	"net/http"
 	"strconv"
 
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/transaction"
@@ -59,7 +59,8 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req TxReq
-	if err := json.Unmarshal(body, &req); err != nil || len(req.Data) == 0 {
+
+	if err := jsonx.Unmarshal(body, &req); err != nil || len(req.Data) == 0 {
 		req.Data = body
 	}
 	tx, err := utils.ParseTx(req.Data)
@@ -129,5 +130,5 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to get account: %v", err), http.StatusInternalServerError)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(account)
+	_ = jsonx.NewEncoder(w).Encode(account)
 }

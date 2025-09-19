@@ -2,11 +2,11 @@ package p2p
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/mezonai/mmn/discovery"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -67,7 +67,7 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		Addrs:       ln.host.Addrs(),
 	}
 
-	data, err := json.Marshal(req)
+	data, err := jsonx.Marshal(req)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to marshal request:", err)
 		return 0, err
@@ -106,7 +106,7 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 		ToSlot:    toSlot,
 	}
 
-	data, err := json.Marshal(req)
+	data, err := jsonx.Marshal(req)
 	if err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to marshal sync request:", err)
 		return err
@@ -137,7 +137,7 @@ func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64
 		FromSlot:  slot,
 		ToSlot:    slot,
 	}
-	data, err := json.Marshal(req)
+	data, err := jsonx.Marshal(req)
 	if err != nil {
 		return err
 	}

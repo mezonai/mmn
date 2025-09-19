@@ -117,6 +117,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d with parallel execution", b.Slot))
+	if b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
+		return nil
+	}
 
 	blockHash := hex.EncodeToString(b.Hash[:])
 

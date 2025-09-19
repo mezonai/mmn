@@ -135,6 +135,7 @@ waitLoop:
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
 	v.leaderStartAtSlot = currentSlot
+	v.lastSlot = currentSlot
 	logx.Info("LEADER", fmt.Sprintf("Leader ready to start at slot: %d", currentSlot))
 }
 
@@ -197,10 +198,10 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
 			logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
 		}
-	} else if v.IsLeader(currentSlot) {
-		// Buffer entries only if leader of current slot
-		v.collectedEntries = append(v.collectedEntries, entries...)
+	} else if v.IsLeader(currentSlot) && v.ReadyToStart(currentSlot) {
+		// Buffer entries only if leader of current slot and ready to start
 		logx.Info("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
+		v.collectedEntries = append(v.collectedEntries, entries...)
 	}
 
 	// Update lastSlot

@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
-	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/utils"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"google.golang.org/protobuf/proto"
 )
 
 func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub.Subscription) {
@@ -34,16 +32,12 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 				continue
 			}
 
-			signed := &pb.SignedTxMsg{}
-			if err := proto.Unmarshal(msg.Data, signed); err != nil {
+			var tx *transaction.Transaction
+			if err := jsonx.Unmarshal(msg.Data, &tx); err != nil {
 				logx.Warn("NETWORK:TX", "Unmarshal error:", err)
 				continue
 			}
-			tx, err := utils.FromProtoSignedTx(signed)
-			if err != nil {
-				logx.Warn("NETWORK:TX", "Convert error:", err)
-				continue
-			}
+
 			if tx != nil && ln.onTransactionReceived != nil {
 				ln.onTransactionReceived(tx)
 			}
@@ -53,8 +47,7 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *transaction.Transaction) error {
 	logx.Info("TX", "Broadcasting transaction to network")
-	pbSigned := utils.ToProtoSignedTx(tx)
-	txData, err := proto.Marshal(pbSigned)
+	txData, err := jsonx.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("failed to serialize transaction: %w", err)
 	}
