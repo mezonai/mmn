@@ -19,7 +19,6 @@ type VotorEventType int
 
 const (
 	BLOCK_RECEIVED VotorEventType = iota
-	BLOCK_NOTARIZED
 	PARENT_READY
 	SAFE_TO_NOTAR
 	SAFE_TO_SKIP
@@ -33,5 +32,5 @@ type VotorEvent struct {
 	Slot      uint64
 	BlockHash [32]byte
 	Block     BlockInfo
-	Cert      consensus.Cert
+	Cert      *consensus.Cert
 }

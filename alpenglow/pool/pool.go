@@ -26,32 +26,32 @@ func NewPool(parentReadyTracker *ParentReadyTracker, finalityTracker *FinalityTr
 	}
 }
 
-func (p *Pool) CreateSlotState(slot uint64) {
+func (p *Pool) getSlotState(slot uint64) *SlotState {
+	if state, exists := p.slotState[slot]; exists {
+		return state
+	}
 	p.slotState[slot] = NewSlotState(slot, p.ownPubKey)
+	return p.slotState[slot]
 }
 
 func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
 	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
-	if v.Slot <= latestFinalizedSlot || v.Slot > latestFinalizedSlot+utils.SLOTS_PER_EPOCH {
-		return false, nil
+	if v.Slot <= latestFinalizedSlot || v.Slot >= latestFinalizedSlot+2*utils.SLOTS_PER_EPOCH {
+		return false, errors.New("slot out of range")
 	}
 
-	if err := v.Validate(); err != nil {
+	if valid, err := p.getSlotState(v.Slot).CheckSlashableOffense(v); !valid {
 		return false, err
-	}
-
-	if valid, err := p.slotState[v.Slot].CheckSlashableOffense(v); !valid {
-		return false, err
-	} else if p.slotState[v.Slot].ShouldIgnoreVote(v) {
+	} else if p.getSlotState(v.Slot).ContainsVote(v) {
 		return false, errors.New("duplicate vote")
 	}
 
 	// Add vote to slot state
-	newCerts, newVotorEvents := p.slotState[v.Slot].AddVote(v)
+	newCerts, newVotorEvents := p.getSlotState(v.Slot).AddVote(v)
 
 	// If new certs created => add them to pool
 	for _, cert := range newCerts {
-		p.addValidCert(cert)
+		p.addValidCert(&cert)
 	}
 
 	// If new votor events created => send them to votor
@@ -64,9 +64,28 @@ func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
 	return true, nil
 }
 
-func (p *Pool) addValidCert(cert consensus.Cert) {
+func (p *Pool) AddCert(c *consensus.Cert) (bool, error) {
+	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
+	if c.Slot <= latestFinalizedSlot || c.Slot > latestFinalizedSlot+utils.SLOTS_PER_EPOCH {
+		return false, errors.New("slot out of range")
+	}
+
+	if valid := c.VerifySignature(); !valid {
+		return false, errors.New("invalid certificate signature")
+	}
+
+	if p.getSlotState(c.Slot).ContainsCert(c) {
+		return false, errors.New("duplicate certificate")
+	}
+
+	p.addValidCert(c)
+
+	return true, nil
+}
+
+func (p *Pool) addValidCert(cert *consensus.Cert) {
 	// Add cert to slot state
-	p.slotState[cert.Slot].AddCert(&cert)
+	p.getSlotState(cert.Slot).AddCert(cert)
 
 	switch cert.CertType {
 	case consensus.NOTAR_CERT, consensus.NOTAR_FALLBACK_CERT:

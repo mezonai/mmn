@@ -5,11 +5,12 @@ import "github.com/mezonai/mmn/utils"
 type ParentReadyState struct {
 	Skip           bool
 	NotarFallbacks [][32]byte
-	IsReady        BlockId //TODO: IsReady NotReady (has someone waiting to hear when the slot ready) - Like Solana
+	IsReady        []BlockId //TODO: IsReady NotReady (has someone waiting to hear when the slot ready) - Like Solana
 }
 
+//TODO: need logic cleanup and optimization
 type ParentReadyTracker struct {
-	States map[uint64]*ParentReadyState
+	states map[uint64]*ParentReadyState
 }
 
 type SlotBlockId struct {
@@ -19,24 +20,31 @@ type SlotBlockId struct {
 
 func NewParentReadyTracker(genesisSlot uint64, genesisHash [32]byte) *ParentReadyTracker {
 	states := make(map[uint64]*ParentReadyState)
-	states[genesisSlot] = &ParentReadyState{
-		NotarFallbacks: [][32]byte{genesisHash},
+	states[genesisSlot] = newParentReadyState()
+	states[genesisSlot].NotarFallbacks = [][32]byte{genesisHash}
+	return &ParentReadyTracker{states: states}
+}
+
+func (prt *ParentReadyTracker) getState(slot uint64) *ParentReadyState {
+	if state, exists := prt.states[slot]; exists {
+		return state
 	}
-	return &ParentReadyTracker{States: states}
+	prt.states[slot] = newParentReadyState()
+	return prt.states[slot]
 }
 
 func (prt *ParentReadyTracker) MarkNotarFallback(blockId BlockId) []SlotBlockId {
 
-	if prt.States[blockId.Slot].isContainedNotarFallback(blockId.BlockHash) {
+	if prt.getState(blockId.Slot).isContainedNotarFallback(blockId.BlockHash) {
 		return []SlotBlockId{}
 	}
-	state := prt.States[blockId.Slot]
+	state := prt.getState(blockId.Slot)
 	state.NotarFallbacks = append(state.NotarFallbacks, blockId.BlockHash)
 
 	newlyCertified := []SlotBlockId{}
 
 	for slot := blockId.Slot + 1; ; slot++ {
-		state := prt.States[slot]
+		state := prt.getState(slot)
 		if utils.IsSlotStartOfWindow(slot) {
 			state.addToReady(blockId)
 			newlyCertified = append(newlyCertified, SlotBlockId{Slot: slot, BlockId: blockId})
@@ -50,7 +58,7 @@ func (prt *ParentReadyTracker) MarkNotarFallback(blockId BlockId) []SlotBlockId 
 }
 
 func (prt *ParentReadyTracker) MarkSkipped(markedSlot uint64) []SlotBlockId {
-	state := prt.States[markedSlot]
+	state := prt.getState(markedSlot)
 	if state.Skip {
 		return nil
 	}
@@ -59,7 +67,7 @@ func (prt *ParentReadyTracker) MarkSkipped(markedSlot uint64) []SlotBlockId {
 	// Find all potential parents
 	potentialParents := []BlockId{}
 	for slot := markedSlot; slot >= utils.FirstSlotInWindow(markedSlot); slot-- {
-		state := prt.States[slot]
+		state := prt.getState(slot)
 
 		if slot != markedSlot {
 			for _, nf := range state.NotarFallbacks {
@@ -71,13 +79,13 @@ func (prt *ParentReadyTracker) MarkSkipped(markedSlot uint64) []SlotBlockId {
 			break
 		}
 
-		potentialParents = append(potentialParents, state.IsReady)
+		potentialParents = append(potentialParents, state.IsReady...)
 	}
 
 	// Add parent for future slots
 	newlyCertified := []SlotBlockId{}
 	for slot := markedSlot + 1; ; slot++ {
-		state := prt.States[slot]
+		state := prt.getState(slot)
 		if utils.IsSlotStartOfWindow(slot) {
 			for _, parent := range potentialParents {
 				state.addToReady(parent)
@@ -118,14 +126,16 @@ func (prt *ParentReadyTracker) HandleFinalization(event FinalizationEvent) []Slo
 }
 
 // ParentReadyState methods
-func (prs *ParentReadyState) addToReady(blockId BlockId) {
-	if prs.IsReady == (BlockId{}) {
-		prs.IsReady = blockId
-	} else {
-		if prs.IsReady != blockId {
-			panic("Inconsistent ready state")
-		}
+func newParentReadyState() *ParentReadyState {
+	return &ParentReadyState{
+		Skip:           false,
+		NotarFallbacks: [][32]byte{},
+		IsReady:        []BlockId{},
 	}
+}
+
+func (prs *ParentReadyState) addToReady(blockId BlockId) {
+	prs.IsReady = append(prs.IsReady, blockId)
 }
 
 func (prs *ParentReadyState) isContainedNotarFallback(blockHash [32]byte) bool {

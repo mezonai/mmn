@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"time"
+
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/store"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
@@ -45,7 +45,6 @@ type Validator struct {
 	netClient  interfaces.Broadcaster
 	blockStore store.BlockStore
 	ledger     *ledger.Ledger
-	collector  *consensus.Collector
 	// Slot & entry buffer
 	lastSlot          uint64
 	leaderStartAtSlot uint64
@@ -71,7 +70,6 @@ func NewValidator(
 	p2pClient *p2p.Libp2pNetwork,
 	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
-	collector *consensus.Collector,
 	lastSlot uint64,
 ) *Validator {
 	v := &Validator{
@@ -93,7 +91,6 @@ func NewValidator(
 		lastSlot:                  lastSlot + 1,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
-		collector:                 collector,
 		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
 	}
 	svc.OnEntry = v.handleEntry

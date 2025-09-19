@@ -11,7 +11,6 @@ import (
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
@@ -33,37 +32,35 @@ type server struct {
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
-	pubKeys       map[string]ed25519.PublicKey
-	blockDir      string
-	ledger        *ledger.Ledger
-	voteCollector *consensus.Collector
-	selfID        string
-	privKey       ed25519.PrivateKey
-	validator     *validator.Validator
-	blockStore    store.BlockStore
-	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter                    // Event router for complex event logic
-	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
-	txSvc         interfaces.TxService
-	acctSvc       interfaces.AccountService
+	pubKeys     map[string]ed25519.PublicKey
+	blockDir    string
+	ledger      *ledger.Ledger
+	selfID      string
+	privKey     ed25519.PrivateKey
+	validator   *validator.Validator
+	blockStore  store.BlockStore
+	mempool     *mempool.Mempool
+	eventRouter *events.EventRouter                    // Event router for complex event logic
+	txTracker   interfaces.TransactionTrackerInterface // Transaction state tracker
+	txSvc       interfaces.TxService
+	acctSvc     interfaces.AccountService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
-	ld *ledger.Ledger, collector *consensus.Collector,
+	ld *ledger.Ledger,
 	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
 
 	s := &server{
-		pubKeys:       pubKeys,
-		blockDir:      blockDir,
-		ledger:        ld,
-		voteCollector: collector,
-		selfID:        selfID,
-		privKey:       priv,
-		blockStore:    blockStore,
-		validator:     validator,
-		mempool:       mempool,
-		eventRouter:   eventRouter,
-		txTracker:     txTracker,
+		pubKeys:     pubKeys,
+		blockDir:    blockDir,
+		ledger:      ld,
+		selfID:      selfID,
+		privKey:     priv,
+		blockStore:  blockStore,
+		validator:   validator,
+		mempool:     mempool,
+		eventRouter: eventRouter,
+		txTracker:   txTracker,
 	}
 
 	// Initialize shared services

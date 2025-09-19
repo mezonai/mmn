@@ -6,6 +6,7 @@ import (
 	"github.com/mezonai/mmn/poh"
 )
 
+// TODO: need logic to cleanup old slots
 type MemBlockStore struct {
 	blockData    map[uint64]*SlotBlockData // slot -> SlotBlockData
 	votorChannel chan votor.VotorEvent
@@ -26,6 +27,20 @@ func NewMemBlockStore(votorChannel chan votor.VotorEvent, genesisBlock *block.Bl
 		blockData:    blockData,
 		votorChannel: votorChannel,
 	}
+}
+
+func (mbs *MemBlockStore) GetBlock(slot uint64, blockHash [32]byte) *block.BroadcastedBlock {
+	primaryBlock := mbs.blockData[slot].GetPrimaryBlocks()
+	if primaryBlock != nil && primaryBlock.Hash == blockHash {
+		return primaryBlock
+	}
+
+	for _, repairedBlock := range mbs.blockData[slot].GetRepairedBlocks() {
+		if repairedBlock.Hash == blockHash {
+			return repairedBlock
+		}
+	}
+	return nil
 }
 
 func (mbs *MemBlockStore) AddBlock(slot uint64, block *block.BroadcastedBlock) {

@@ -36,6 +36,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/herumi/bls-eth-go-binary v1.36.4 // indirect
 	github.com/ipfs/boxo v0.30.0 // indirect
 	github.com/ipfs/go-datastore v0.8.2 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect

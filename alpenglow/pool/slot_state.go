@@ -1,8 +1,12 @@
 package pool
 
 import (
+	"errors"
+
+	"github.com/herumi/bls-eth-go-binary/bls"
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/utils"
 )
 
 const (
@@ -98,61 +102,61 @@ func NewSlotState(slot uint64, ownPubKey string) *SlotState {
 }
 
 func (ss *SlotState) CheckSlashableOffense(v *consensus.Vote) (bool, error) {
-	voter := v.VoterID
+	voter := v.PubKey
 
 	switch v.VoteType {
-	case consensus.NOTAR:
+	case consensus.NOTAR_VOTE:
 		blockHash := v.BlockHash
 		if _, exists := ss.votes.skip[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted skip and notar")
 		}
 		if hv, exists := ss.votes.notar[voter]; exists && hv.hash != blockHash {
-			return false, nil // TODO: error message
+			return false, errors.New("slashable offense: voted different block")
 		}
 
-	case consensus.NOTAR_FALLBACK:
+	case consensus.NOTAR_FALLBACK_VOTE:
 		if _, exists := ss.votes.final[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted notar fallback and final")
 		}
 
-	case consensus.SKIP:
+	case consensus.SKIP_VOTE:
 		if _, exists := ss.votes.final[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted skip and final")
 		}
 		if _, exists := ss.votes.notar[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted skip and notar")
 		}
 
-	case consensus.SKIP_FALLBACK:
+	case consensus.SKIP_FALLBACK_VOTE:
 		if _, exists := ss.votes.final[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted skip fallback and final")
 		}
 
-	case consensus.FINAL:
+	case consensus.FINAL_VOTE:
 		if _, exists := ss.votes.skip[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted final and skip")
 		}
 		if _, exists := ss.votes.skipFallback[voter]; exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted final and skip fallback")
 		}
 		if _, exists := ss.votes.notar[voter]; !exists {
-			return false, nil //TODO: error message
+			return false, errors.New("slashable offense: voted final and not voted notar")
 		}
 	}
 
 	return true, nil
 }
 
-func (ss *SlotState) ShouldIgnoreVote(v *consensus.Vote) bool {
-	voter := v.VoterID
+func (ss *SlotState) ContainsVote(v *consensus.Vote) bool {
+	voter := v.PubKey
 
 	switch v.VoteType {
-	case consensus.NOTAR:
+	case consensus.NOTAR_VOTE:
 		if hv, exists := ss.votes.notar[voter]; exists && hv.hash == v.BlockHash {
 			return true
 		}
 
-	case consensus.NOTAR_FALLBACK:
+	case consensus.NOTAR_FALLBACK_VOTE:
 		hvs, exists := ss.votes.notarFallback[voter]
 		if !exists {
 			return false
@@ -163,14 +167,14 @@ func (ss *SlotState) ShouldIgnoreVote(v *consensus.Vote) bool {
 			}
 		}
 
-	case consensus.SKIP, consensus.SKIP_FALLBACK:
+	case consensus.SKIP_VOTE, consensus.SKIP_FALLBACK_VOTE:
 		_, skipExists := ss.votes.skip[voter]
 		_, skipFallbackExists := ss.votes.skipFallback[voter]
 		if skipExists || skipFallbackExists {
 			return true
 		}
 
-	case consensus.FINAL:
+	case consensus.FINAL_VOTE:
 		if _, exists := ss.votes.final[voter]; exists {
 			return true
 		}
@@ -179,31 +183,66 @@ func (ss *SlotState) ShouldIgnoreVote(v *consensus.Vote) bool {
 	return false
 }
 
+func (ss *SlotState) ContainsCert(c *consensus.Cert) bool {
+	switch c.CertType {
+	case consensus.NOTAR_CERT:
+		if ss.certificates.notar != nil {
+			return true
+		}
+
+	case consensus.NOTAR_FALLBACK_CERT:
+		for _, cert := range ss.certificates.notarFallback {
+			if cert.BlockHash == c.BlockHash {
+				return true
+			}
+		}
+
+	case consensus.SKIP_CERT:
+		if ss.certificates.skip != nil {
+			return true
+		}
+
+	case consensus.FAST_FINAL_CERT:
+		if ss.certificates.fastFinalize != nil {
+			return true
+		}
+
+	case consensus.FINAL_CERT:
+		if ss.certificates.finalize != nil {
+			return true
+		}
+
+	}
+
+	return false
+}
+
+// TODO: add repair block event
 func (ss *SlotState) AddVote(v *consensus.Vote) ([]consensus.Cert, []votor.VotorEvent) {
-	voter := v.VoterID
+	voter := v.PubKey
 
 	newVotorEvents := []votor.VotorEvent{}
 	newCerts := []consensus.Cert{}
 
 	switch v.VoteType {
-	case consensus.NOTAR:
+	case consensus.NOTAR_VOTE:
 		ss.votes.notar[voter] = &HashVotes{hash: v.BlockHash, vote: v}
 		newCerts, newVotorEvents = ss.countNotarStake(ss.slot, v.BlockHash)
 
-	case consensus.NOTAR_FALLBACK:
+	case consensus.NOTAR_FALLBACK_VOTE:
 		ss.votes.notarFallback[voter] = append(ss.votes.notarFallback[voter], &HashVotes{hash: v.BlockHash, vote: v})
-		newCerts = ss.countNotarFallbackStake(v.BlockHash)
+		newCerts = ss.countNotarFallbackStake(v.Slot, v.BlockHash)
 
-	case consensus.SKIP:
+	case consensus.SKIP_VOTE:
 		ss.votes.skip[voter] = v
 		ss.votedStakes.notarOrSkip += 1
 		newCerts, newVotorEvents = ss.countSkipStake(v.Slot, false)
 
-	case consensus.SKIP_FALLBACK:
+	case consensus.SKIP_FALLBACK_VOTE:
 		ss.votes.skipFallback[voter] = v
 		newCerts, newVotorEvents = ss.countSkipStake(v.Slot, true)
 
-	case consensus.FINAL:
+	case consensus.FINAL_VOTE:
 		ss.votes.final[voter] = v
 		newCerts = ss.countFinalStake(v.Slot)
 	}
@@ -292,45 +331,51 @@ func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consens
 	nfStake := ss.votedStakes.notarFallback[blockHash]
 
 	if ss.isQuorum(notarStake+nfStake) && !ss.isNotarFallback(blockHash) {
-		//TODO: create notar cert by BLS
+		nSigns, nPubkeys := ss.getSignsAndPubkeysFromVote(consensus.NOTAR_VOTE, blockHash)
+		nfSigns, nfPubkeys := ss.getSignsAndPubkeysFromVote(consensus.NOTAR_FALLBACK_VOTE, blockHash)
 		newCert := consensus.Cert{
-			Slot:      slot,
-			BlockHash: blockHash,
-			CertType:  consensus.NOTAR_FALLBACK_CERT,
-			Stake:     notarStake + nfStake,
-			// Signature: TODO
+			Slot:                slot,
+			CertType:            consensus.NOTAR_FALLBACK_CERT,
+			BlockHash:           blockHash,
+			Stake:               notarStake + nfStake,
+			ListPubKeys:         nPubkeys,
+			ListPubKeysFallback: nfPubkeys,
 		}
+		newCert.AggregateSignature(nSigns)
+		newCert.AggregateSignatureFallback(nfSigns)
 		newCerts = append(newCerts, newCert)
 	}
 
 	if ss.isQuorum(notarStake) && ss.certificates.notar == nil {
-		//TODO: create notar cert by BLS
+		nSigns, nPubkeys := ss.getSignsAndPubkeysFromVote(consensus.NOTAR_VOTE, blockHash)
 		newCert := consensus.Cert{
-			Slot:      slot,
-			BlockHash: blockHash,
-			CertType:  consensus.NOTAR_CERT,
-			Stake:     notarStake,
-			// Signature: TODO
+			Slot:        slot,
+			CertType:    consensus.NOTAR_CERT,
+			BlockHash:   blockHash,
+			Stake:       nfStake,
+			ListPubKeys: nPubkeys,
 		}
+		newCert.AggregateSignature(nSigns)
 		newCerts = append(newCerts, newCert)
 	}
 
 	if ss.isStrongQuorum(notarStake) && ss.certificates.fastFinalize == nil {
-		//TODO: create fast finalize cert by BLS
+		nSigns, nPubkeys := ss.getSignsAndPubkeysFromVote(consensus.NOTAR_VOTE, blockHash)
 		newCert := consensus.Cert{
-			Slot:      slot,
-			BlockHash: blockHash,
-			CertType:  consensus.FAST_FINAL_CERT,
-			Stake:     notarStake,
-			// Signature: TODO
+			Slot:        slot,
+			CertType:    consensus.FAST_FINAL_CERT,
+			BlockHash:   blockHash,
+			Stake:       nfStake,
+			ListPubKeys: nPubkeys,
 		}
+		newCert.AggregateSignature(nSigns)
 		newCerts = append(newCerts, newCert)
 	}
 
 	return newCerts, newVotorEvents
 }
 
-func (ss *SlotState) countNotarFallbackStake(blockHash [32]byte) []consensus.Cert {
+func (ss *SlotState) countNotarFallbackStake(slot uint64, blockHash [32]byte) []consensus.Cert {
 	newCerts := []consensus.Cert{}
 
 	ss.votedStakes.notarFallback[blockHash] += 1
@@ -339,14 +384,18 @@ func (ss *SlotState) countNotarFallbackStake(blockHash [32]byte) []consensus.Cer
 	notarStake := ss.votedStakes.notar[blockHash]
 	nfStake := ss.votedStakes.notarFallback[blockHash]
 	if ss.isQuorum(notarStake+nfStake) && !ss.isNotarFallback(blockHash) {
-		//TODO: create notar fallback cert by BLS
+		nSigns, nPubkeys := ss.getSignsAndPubkeysFromVote(consensus.NOTAR_VOTE, blockHash)
+		nfSigns, nfPubkeys := ss.getSignsAndPubkeysFromVote(consensus.NOTAR_FALLBACK_VOTE, blockHash)
 		newCert := consensus.Cert{
-			Slot:      ss.slot,
-			BlockHash: blockHash,
-			CertType:  consensus.NOTAR_FALLBACK_CERT,
-			Stake:     nfStake + notarStake,
-			// Signature: TODO
+			Slot:                slot,
+			CertType:            consensus.NOTAR_FALLBACK_CERT,
+			BlockHash:           blockHash,
+			Stake:               notarStake + nfStake,
+			ListPubKeys:         nPubkeys,
+			ListPubKeysFallback: nfPubkeys,
 		}
+		newCert.AggregateSignature(nSigns)
+		newCert.AggregateSignatureFallback(nfSigns)
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -385,16 +434,15 @@ func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.C
 	// Check to create skip cert
 	totalSkipStake := ss.votedStakes.skip + ss.votedStakes.skipFallback
 	if ss.isQuorum(totalSkipStake) && ss.certificates.skip == nil {
-		//TODO: create skip cert by BLS
+		sSigns, sPubkeys := ss.getSignsAndPubkeysFromVote(consensus.SKIP_VOTE, [32]byte{})
 		newCert := consensus.Cert{
-			Slot:      slot,
-			BlockHash: [32]byte{},
-			CertType:  consensus.SKIP_CERT,
-			Stake:     totalSkipStake,
-			// Signature: TODO
+			Slot:        slot,
+			CertType:    consensus.SKIP_CERT,
+			Stake:       totalSkipStake,
+			ListPubKeys: sPubkeys,
 		}
+		newCert.AggregateSignature(sSigns)
 		newCerts = append(newCerts, newCert)
-
 	}
 
 	// Check safe to skip
@@ -416,14 +464,14 @@ func (ss *SlotState) countFinalStake(slot uint64) []consensus.Cert {
 
 	// Check to create cert
 	if ss.isQuorum(ss.votedStakes.final) && ss.certificates.finalize == nil {
-		//TODO: create finalize cert by BLS
+		fSigns, fPubkeys := ss.getSignsAndPubkeysFromVote(consensus.FINAL_VOTE, [32]byte{})
 		newCert := consensus.Cert{
-			Slot:      slot,
-			BlockHash: [32]byte{},
-			CertType:  consensus.FINAL_CERT,
-			Stake:     ss.votedStakes.final,
-			// Signature: TODO
+			Slot:        slot,
+			CertType:    consensus.FINAL_CERT,
+			Stake:       ss.votedStakes.final,
+			ListPubKeys: fPubkeys,
 		}
+		newCert.AggregateSignature(fSigns)
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -487,6 +535,60 @@ func (ss *SlotState) isNotarFallback(blockHash [32]byte) bool {
 		}
 	}
 	return false
+}
+
+func (ss *SlotState) getSignsAndPubkeysFromVote(voteType consensus.VoteType, blockHash [32]byte) ([]bls.Sign, []string) {
+	var signs []bls.Sign
+	var pubkeys []string
+	switch voteType {
+	case consensus.NOTAR_VOTE:
+		for _, voteHash := range ss.votes.notar {
+			if voteHash.hash == blockHash {
+				if sign, err := utils.BytesToBlsSignature(voteHash.vote.Signature); err == nil {
+					signs = append(signs, sign)
+				}
+				pubkeys = append(pubkeys, voteHash.vote.PubKey)
+			}
+		}
+
+	case consensus.NOTAR_FALLBACK_VOTE:
+		for _, voteHashs := range ss.votes.notarFallback {
+			for _, voteHash := range voteHashs {
+				if voteHash.hash == blockHash {
+					if sign, err := utils.BytesToBlsSignature(voteHash.vote.Signature); err == nil {
+						signs = append(signs, sign)
+					}
+					pubkeys = append(pubkeys, voteHash.vote.PubKey)
+				}
+			}
+		}
+
+	case consensus.SKIP_VOTE:
+		for _, vote := range ss.votes.skip {
+			if sign, err := utils.BytesToBlsSignature(vote.Signature); err == nil {
+				signs = append(signs, sign)
+			}
+			pubkeys = append(pubkeys, vote.PubKey)
+		}
+
+	case consensus.SKIP_FALLBACK_VOTE:
+		for _, vote := range ss.votes.skipFallback {
+			if sign, err := utils.BytesToBlsSignature(vote.Signature); err == nil {
+				signs = append(signs, sign)
+			}
+			pubkeys = append(pubkeys, vote.PubKey)
+		}
+
+	case consensus.FINAL_VOTE:
+		for _, vote := range ss.votes.final {
+			if sign, err := utils.BytesToBlsSignature(vote.Signature); err == nil {
+				signs = append(signs, sign)
+			}
+			pubkeys = append(pubkeys, vote.PubKey)
+		}
+	}
+
+	return signs, pubkeys
 }
 
 func maxStake(a, b uint64) uint64 {

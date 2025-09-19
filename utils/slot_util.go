@@ -1,21 +1,21 @@
 package utils
 
 const (
-	SLOTS_PER_EPOCH = 4 //TODO: not hardcode, read from config
+	SLOTS_PER_EPOCH = 10 //TODO: not hardcode, read from config
 )
 
 func IsSlotStartOfWindow(slot uint64) bool {
-	return slot%SLOTS_PER_EPOCH == 0
+	return (slot-1)%SLOTS_PER_EPOCH == 0
 }
 
 func FirstSlotInWindow(slot uint64) uint64 {
 	window := slot / SLOTS_PER_EPOCH
-	return window * SLOTS_PER_EPOCH
+	return window*SLOTS_PER_EPOCH + 1
 }
 
 func LastSlotInWindow(slot uint64) uint64 {
 	window := slot / SLOTS_PER_EPOCH
-	return (window+1)*SLOTS_PER_EPOCH - 1
+	return (window + 1) * SLOTS_PER_EPOCH
 }
 
 func SlotsInWindow(slot uint64) []uint64 {

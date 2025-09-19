@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/herumi/bls-eth-go-binary/bls"
 	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/poh"
 
@@ -78,6 +79,31 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	}
 
 	return privKey, nil
+}
+
+// LoadBlsPrivKey loads an BLS private key from a file (accepts base58 or hex)
+func LoadBlsPrivKey(path string) (bls.SecretKey, error) {
+	var blsPrivKey bls.SecretKey
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return blsPrivKey, err
+	}
+	keyHex := strings.TrimSpace(string(data))
+	blsPrivBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(blsPrivBytes) == 0 {
+		// Fallback to hex
+		hb, herr := hex.DecodeString(keyHex)
+		if herr != nil {
+			return blsPrivKey, fmt.Errorf("failed to decode private key as base58 or hex: %v | %v", err, herr)
+		}
+		blsPrivBytes = hb
+	}
+
+	if err := blsPrivKey.Deserialize(blsPrivBytes); err != nil {
+		return blsPrivKey, fmt.Errorf("failed to deserialize BLS private key: %w", err)
+	}
+
+	return blsPrivKey, nil
 }
 
 // ConvertLeaderSchedule converts []config.LeaderSchedule to *poh.LeaderSchedule
@@ -168,4 +194,32 @@ func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 	pubKey := privKey.Public().(ed25519.PublicKey)
 
 	return common.EncodeBytesToBase58(pubKey), nil
+}
+
+func LoadBlsPubKeyFromPriv(blsPrivKeyPath string) (string, error) {
+	data, err := os.ReadFile(blsPrivKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read BLS private key file: %w", err)
+	}
+
+	keyHex := strings.TrimSpace(string(data))
+
+	blsPrivBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(blsPrivBytes) == 0 {
+		// Fallback to hex
+		hb, herr := hex.DecodeString(keyHex)
+		if herr != nil {
+			return "", fmt.Errorf("failed to decode private key (base58 and hex): %v | %v", err, herr)
+		}
+		blsPrivBytes = hb
+	}
+
+	var blsPrivKey bls.SecretKey
+	if err := blsPrivKey.Deserialize(blsPrivBytes); err != nil {
+		return "", fmt.Errorf("failed to deserialize BLS private key: %w", err)
+	}
+
+	blsPubKey := blsPrivKey.GetPublicKey().Serialize()
+
+	return hex.EncodeToString(blsPubKey), nil
 }
