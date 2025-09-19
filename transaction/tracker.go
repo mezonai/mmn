@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
 )
@@ -25,12 +26,16 @@ type TransactionTracker struct {
 
 	processingCount int64
 	senderCount     int64
+	stopCh          chan struct{}
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
 func NewTransactionTracker() *TransactionTracker {
 	tt := &TransactionTracker{}
-	tt.StartAppliedCleanup(10 * time.Minute)
+	tt.stopCh = make(chan struct{})
+	exception.SafeGo("StartAppliedCleanup", func() {
+		tt.StartAppliedCleanup(10 * time.Minute)
+	})
 	return tt
 }
 
@@ -137,29 +142,31 @@ func (t *TransactionTracker) MarkRemoved(txHash string) {
 }
 
 func (t *TransactionTracker) StartAppliedCleanup(interval time.Duration) {
-	func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						logx.Warn("TRACKER", fmt.Sprintf("Cleanup iteration panicked:", r))
-					}
-				}()
-				nowMs := time.Now().UnixMilli()
-				thresholdMs := defaultRemovalThreshold.Milliseconds()
-				t.historyList.Range(func(key, val any) bool {
-					if _, ok := val.(bool); ok {
-						t.historyList.Delete(key)
-						return true
-					}
-					if ts, ok := val.(int64); ok && nowMs-ts >= thresholdMs {
-						t.historyList.Delete(key)
-					}
-					return true
-				})
-			}()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-t.stopCh:
+			return
+		case <-ticker.C:
+			exception.SafeGo("cleanOldItemIsBlackList", func() {
+				t.cleanOldItemIsBlackList()
+			})
 		}
-	}()
+	}
+}
+
+func (t *TransactionTracker) cleanOldItemIsBlackList() {
+	nowMs := time.Now().UnixMilli()
+	thresholdMs := defaultRemovalThreshold.Milliseconds()
+	t.historyList.Range(func(key, val any) bool {
+		if _, ok := val.(bool); ok {
+			t.historyList.Delete(key)
+			return true
+		}
+		if ts, ok := val.(int64); ok && nowMs-ts >= thresholdMs {
+			t.historyList.Delete(key)
+		}
+		return true
+	})
 }
