@@ -141,19 +141,25 @@ func (t *TransactionTracker) StartAppliedCleanup(interval time.Duration) {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
-			nowMs := time.Now().UnixMilli()
-			thresholdMs := defaultRemovalThreshold.Milliseconds()
-			t.historyList.Range(func(key, val any) bool {
-				if _, ok := val.(bool); ok {
-					t.historyList.Delete(key)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						logx.Warn("TRACKER", fmt.Sprintf("Cleanup iteration panicked:", r))
+					}
+				}()
+				nowMs := time.Now().UnixMilli()
+				thresholdMs := defaultRemovalThreshold.Milliseconds()
+				t.historyList.Range(func(key, val any) bool {
+					if _, ok := val.(bool); ok {
+						t.historyList.Delete(key)
+						return true
+					}
+					if ts, ok := val.(int64); ok && nowMs-ts >= thresholdMs {
+						t.historyList.Delete(key)
+					}
 					return true
-				}
-				if ts, ok := val.(int64); ok && nowMs-ts >= thresholdMs {
-					t.historyList.Delete(key)
-				}
-				return true
-			})
-
+				})
+			}()
 		}
 	}()
 }
