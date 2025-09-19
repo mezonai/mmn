@@ -1,11 +1,11 @@
 package client
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mr-tron/base58"
 )
 
@@ -82,7 +82,7 @@ func SerializeTxExtraInfo(data map[string]string) (string, error) {
 		return "", nil
 	}
 
-	extraBytes, err := json.Marshal(data)
+	extraBytes, err := jsonx.Marshal(data)
 	if err != nil {
 		return "", fmt.Errorf("unable to marshal tx extra info: %w", err)
 	}
@@ -95,7 +95,7 @@ func DeserializeTxExtraInfo(raw string) (map[string]string, error) {
 	}
 
 	var extraInfo map[string]string
-	if err := json.Unmarshal([]byte(raw), &extraInfo); err != nil {
+	if err := jsonx.Unmarshal([]byte(raw), &extraInfo); err != nil {
 		return nil, fmt.Errorf("unable to unmarshal extra info: %w", err)
 	}
 	return extraInfo, nil

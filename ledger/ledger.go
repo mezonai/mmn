@@ -108,6 +108,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+	if b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
+		return nil
+	}
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -160,6 +164,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			}
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
+			// Remove successful transaction from tracker
+			if l.txTracker != nil {
+				l.txTracker.RemoveTransaction(txHash)
+			}
 
 			// commit the update
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))

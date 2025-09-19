@@ -19,13 +19,14 @@ const (
 )
 
 type BlockCore struct {
-	Slot      uint64
-	PrevHash  [32]byte // hash of the last entry in the previous block
-	LeaderID  string
-	Timestamp uint64 // unix nanos
-	Hash      [32]byte
-	Signature []byte
-	Status    BlockStatus
+	Slot       uint64
+	PrevHash   [32]byte // hash of the last entry in the previous block
+	LeaderID   string
+	Timestamp  uint64 // unix nanos
+	Hash       [32]byte
+	Signature  []byte
+	Status     BlockStatus
+	InvalidPoH bool
 }
 
 type Block struct {

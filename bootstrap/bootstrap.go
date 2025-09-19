@@ -2,13 +2,13 @@ package bootstrap
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/jsonx"
 
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -69,7 +69,7 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 			"addrs":       addrStrings(h.Addrs()),
 		}
 
-		data, _ := json.Marshal(info)
+		data, _ := jsonx.Marshal(info)
 		s.Write(data)
 	})
 
@@ -124,6 +124,6 @@ func openSteam(peerID peer.ID, h host.Host) {
 		"new_peer_id": h.ID().String(),
 		"addrs":       addrStrings(h.Addrs()),
 	}
-	data, _ := json.Marshal(info)
+	data, _ := jsonx.Marshal(info)
 	stream.Write(data)
 }
