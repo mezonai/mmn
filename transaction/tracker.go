@@ -10,6 +10,8 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 )
 
+const defaultRemovalThreshold = 10 * time.Minute
+
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
 // Only tracks transactions after they are pulled from mempool until they are applied to ledger
 type TransactionTracker struct {
@@ -36,6 +38,7 @@ func NewTransactionTracker() *TransactionTracker {
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
 	if t.IsRemoved(txHash) {
+		t.historyList.Delete(txHash)
 		return
 	}
 	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
@@ -62,12 +65,12 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
+		t.MarkRemoved(txHash)
 		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}
 	atomic.AddInt64(&t.processingCount, -1)
 	tx := txInterface.(*Transaction)
-	t.MarkRemoved(txHash)
 
 	// Update sender transaction list
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
@@ -130,18 +133,27 @@ func (t *TransactionTracker) IsRemoved(txHash string) bool {
 }
 
 func (t *TransactionTracker) MarkRemoved(txHash string) {
-	t.historyList.Store(txHash, true)
+	t.historyList.Store(txHash, time.Now().UnixMilli())
 }
 
 func (t *TransactionTracker) StartAppliedCleanup(interval time.Duration) {
-	go func() {
+	func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
-			t.historyList.Range(func(key, _ any) bool {
-				t.historyList.Delete(key)
+			nowMs := time.Now().UnixMilli()
+			thresholdMs := defaultRemovalThreshold.Milliseconds()
+			t.historyList.Range(func(key, val any) bool {
+				if _, ok := val.(bool); ok {
+					t.historyList.Delete(key)
+					return true
+				}
+				if ts, ok := val.(int64); ok && nowMs-ts >= thresholdMs {
+					t.historyList.Delete(key)
+				}
 				return true
 			})
+
 		}
 	}()
 }

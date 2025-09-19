@@ -190,13 +190,14 @@ func (ln *Libp2pNetwork) processSingleBlock(blk *block.BroadcastedBlock) error {
 		return fmt.Errorf("block is nil")
 	}
 
-	if existingBlock := ln.blockStore.Block(blk.Slot); existingBlock != nil {
-		logx.Debug("NETWORK:SYNC BLOCK", "Block slot", blk.Slot, "already exists, skipping")
+	if ln.blockStore.HasCompleteBlock(blk.Slot) {
+		logx.Debug("NETWORK:SYNC BLOCK", "Block at slot", blk.Slot, "already exists, skipping")
 		return nil
 	}
 
 	if err := blk.VerifyPoH(); err != nil {
-		return fmt.Errorf("invalid PoH for block slot %d: %w", blk.Slot, err)
+		logx.Warn("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err.Error())
+		blk.InvalidPoH = true
 	}
 
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
