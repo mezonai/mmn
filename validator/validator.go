@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"time"
+
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/store"
 
@@ -274,6 +275,20 @@ func (v *Validator) dropPendingTxs(size int) {
 func (v *Validator) Run() {
 	v.stopCh = make(chan struct{})
 
+	// Seed recorder with latest store slot if recorder is behind
+	if v.Recorder != nil && v.blockStore != nil {
+		latest := v.blockStore.GetLatestStoreSlot()
+		if latest > 0 {
+			if seed, ok := v.blockStore.LastEntryInfoAtSlot(latest); ok {
+				// Only reset if recorder is behind or at zero
+				if v.Recorder.CurrentSlot() < latest {
+					logx.Info("VALIDATOR", fmt.Sprintf("Seeding recorder from store at slot %d", latest))
+					v.Recorder.Reset(seed.Hash, seed.Slot)
+				}
+			}
+		}
+	}
+
 	exception.SafeGoWithPanic("roleMonitorLoop", func() {
 		v.roleMonitorLoop()
 	})
@@ -296,6 +311,10 @@ func (v *Validator) leaderBatchLoop() {
 			return
 		case <-batchTicker.C:
 			slot := v.Recorder.CurrentSlot()
+			// Skip if recorder is behind store; wait until seeding/reset catches up
+			if v.blockStore != nil && slot < v.blockStore.GetLatestStoreSlot() {
+				continue
+			}
 			if !v.IsLeader(slot) {
 				continue
 			}
@@ -348,6 +367,10 @@ func (v *Validator) roleMonitorLoop() {
 			return
 		case <-ticker.C:
 			slot := v.Recorder.CurrentSlot()
+			// Avoid starting leader init while recorder is behind blockstore
+			if v.blockStore != nil && slot < v.blockStore.GetLatestStoreSlot() {
+				continue
+			}
 			if v.IsLeader(slot) {
 				if v.leaderStartAtSlot == NoSlot {
 					v.onLeaderSlotStart(slot)
