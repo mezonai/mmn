@@ -32,6 +32,8 @@ message TxMsg {
   string text_data = 6;
   uint64 nonce = 7;
   string extra_info = 8;
+  string zk_proof = 9;
+  string zk_pub = 10;
 }
 
 message SignedTxMsg {

@@ -81,7 +81,7 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 	if err != nil {
 		return "", err
 	}
-	unsigned, err := mmnClient.BuildTransferTx(mmnClient.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil)
+	unsigned, err := mmnClient.BuildTransferTx(mmnClient.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -184,7 +184,7 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 }
 
 func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount *uint256.Int, textData string, transferType int) (string, error) {
-	unsigned, err := mmnClient.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil)
+	unsigned, err := mmnClient.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil, "", "")
 	if err != nil {
 		return "", err
 	}

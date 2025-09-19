@@ -9,7 +9,6 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -321,33 +320,4 @@ func (s *Session) CopyWithOverlayClone() *Session {
 			mu:      sync.RWMutex{}, // Initialize mutex for new session
 		},
 	}
-}
-
-// Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []error) {
-	valid := make([]*transaction.Transaction, 0, len(raws))
-	errs := make([]error, 0)
-	for _, r := range raws {
-		tx, err := utils.ParseTx(r)
-		if err != nil || !tx.Verify() {
-			logx.Error("LEDGER SESSION", fmt.Sprintf("Invalid tx: %v, %+v", err, tx))
-			if s.ledger.eventRouter != nil {
-				event := events.NewTransactionFailed(tx, fmt.Sprintf("sig/format: %v", err))
-				s.ledger.eventRouter.PublishTransactionEvent(event)
-			}
-			errs = append(errs, fmt.Errorf("sig/format: %w", err))
-			continue
-		}
-		if err := s.view.ApplyTx(tx); err != nil {
-			logx.Error("LEDGER SESSION", fmt.Sprintf("Invalid tx: %v, %+v", err, tx))
-			if s.ledger.eventRouter != nil {
-				event := events.NewTransactionFailed(tx, err.Error())
-				s.ledger.eventRouter.PublishTransactionEvent(event)
-			}
-			errs = append(errs, err)
-			continue
-		}
-		valid = append(valid, tx)
-	}
-	return valid, errs
 }

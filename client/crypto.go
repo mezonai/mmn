@@ -11,7 +11,7 @@ import (
 var ErrUnsupportedKey = errors.New("crypto: unsupported private key length")
 
 func Serialize(tx *Tx) []byte {
-	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d|%s", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce, tx.ExtraInfo)
+	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d|%s|%s|%s", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce, tx.ExtraInfo, tx.ZkProof, tx.ZkPub)
 	fmt.Println("Serialize metadata:", metadata)
 	return []byte(metadata)
 }

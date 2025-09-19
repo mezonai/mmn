@@ -9,10 +9,13 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/zkverify"
 )
 
 const (
 	TxTypeTransfer = 0
+	TxTypeFaucet   = 1
 )
 
 type Transaction struct {
@@ -25,26 +28,38 @@ type Transaction struct {
 	Nonce     uint64       `json:"nonce,omitempty"`
 	Signature string       `json:"signature,omitempty"`
 	ExtraInfo string       `json:"extra_info,omitempty"`
+	ZkProof   string       `json:"zk_proof,omitempty"`
+	ZkPub     string       `json:"zk_pub,omitempty"`
 }
 
 func (tx *Transaction) Serialize() []byte {
 	amountStr := uint256ToString(tx.Amount)
 	metadata := fmt.Sprintf(
-		"%d|%s|%s|%s|%s|%d|%s",
-		tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce, tx.ExtraInfo,
+		"%d|%s|%s|%s|%s|%d|%s|%s|%s",
+		tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce, tx.ExtraInfo, tx.ZkProof, tx.ZkPub,
 	)
 	return []byte(metadata)
 }
 
-func (tx *Transaction) Verify() bool {
+func (tx *Transaction) Verify(zkVerify *zkverify.ZkVerify) bool {
 	pub, err := base58ToEd25519(tx.Sender)
 	if err != nil {
+		logx.Error("TransactionVerify", "tx.Sender", tx.Sender)
 		return false
 	}
 	signature, err := common.DecodeBase58ToBytes(tx.Signature)
 	if err != nil {
+		logx.Error("TransactionVerify", "tx.Signature", tx.Signature)
 		return false
 	}
+
+	if tx.Type != TxTypeFaucet {
+		zkVerifyValid := zkVerify.Verify(tx.ZkProof, tx.ZkPub)
+		if !zkVerifyValid {
+			return false
+		}
+	}
+
 	return ed25519.Verify(pub, tx.Serialize(), signature)
 }
 

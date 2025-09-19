@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/block"
@@ -42,9 +43,11 @@ type Mempool struct {
 	readyQueue  []*transaction.Transaction                // ready-to-process transactions
 	eventRouter *events.EventRouter                       // Event router for transaction status updates
 	txTracker   interfaces.TransactionTrackerInterface    // Transaction state tracker
+	zkVerify    *zkverify.ZkVerify                        // Zk verify for zk transactions
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter,
+	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
@@ -57,6 +60,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		readyQueue:  make([]*transaction.Transaction, 0),
 		eventRouter: eventRouter,
 		txTracker:   txTracker,
+		zkVerify:    zkVerify,
 	}
 }
 
@@ -216,9 +220,9 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 // Stateless validation, simple for tx
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
-	if !tx.Verify() {
+	if !tx.Verify(mp.zkVerify) {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
-		return fmt.Errorf("invalid signature")
+		return fmt.Errorf("invalid signature or zk proof")
 	}
 
 	// 2. Check for zero amount

@@ -118,7 +118,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	// Extract the seed from the private key (first 32 bytes)
 	faucetPrivateKeySeed := faucetPrivateKey.Seed()
-	transferType := TxTypeTransfer
+	transferType := TxTypeFaucet
 	fromAddr := faucetPublicKey
 	fromAccount, err := client.GetAccount(ctx, fromAddr)
 	if err != nil {
@@ -133,7 +133,8 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	extraInfo := map[string]string{
 		"type": "unlock_item",
 	}
-	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo)
+
+	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
 	if err != nil {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
@@ -210,7 +211,10 @@ func TestClient_SendToken(t *testing.T) {
 	extraInfo := map[string]string{
 		"type": "transfer",
 	}
-	unsigned, err := BuildTransferTx(TxTypeTransfer, fromAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo)
+
+	zkProof := "ooypSRTvqnSeRBlrGx1tz3TKklkTNmkmMhwrX83yFYWMbwz+k2NGo22G4QV70YfUgjnZpI9dCllsNIUtUNu1/ChAhF+Sw5uXiz+LMoohGXwQ7QYBRTCHFkDjdiHUhKqlzBWkqsJO5/UFiFXjzDZ1EXOaz5w49xPjKsKX0zcyPRMAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	zkPub := "AAAAAgAAAAAAAAACBcqhgqk+Na9bcvfEyH+DfYr6WfYUJxHFcRjcCeM49CsAAAAAAAAAAAAAAAAAAAAAAAAAAAAyMjIyMjIyMjIyMg=="
+	unsigned, err := BuildTransferTx(TxTypeTransfer, fromAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, zkProof, zkPub)
 	if err != nil {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
