@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/monitoring"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/utils"
@@ -29,6 +30,7 @@ func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, t
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
+	monitoring.IncreaseIngressTxCount()
 	if err != nil {
 		logx.Error("GRPC ADD TX", "FromProtoSignedTx error ", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil

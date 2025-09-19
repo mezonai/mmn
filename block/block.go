@@ -54,6 +54,10 @@ func (b *BlockCore) PrevHashString() string {
 	return hex.EncodeToString(b.PrevHash[:])
 }
 
+func (b *BlockCore) CreationTimestamp() time.Time {
+	return time.Unix(0, int64(b.Timestamp))
+}
+
 func AssembleBlock(
 	slot uint64,
 	prevHash [32]byte,

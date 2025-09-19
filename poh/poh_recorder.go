@@ -22,13 +22,13 @@ type PohRecorder struct {
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
-func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule) *PohRecorder {
+func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule, latestSlot uint64) *PohRecorder {
 	return &PohRecorder{
 		poh:            poh,
 		ticksPerSlot:   ticksPerSlot,
-		tickHeight:     0,
+		tickHeight:     latestSlot * ticksPerSlot,
 		entries:        []Entry{},
-		slotHashQueue:  NewSlotHashQueue(100),
+		slotHashQueue:  NewSlotHashQueue(),
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
 	}
@@ -129,4 +129,9 @@ func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {
 		return [32]byte{}
 	}
 	return hash
+}
+
+// GetSlotHashFromQueue returns slot hash from in-memory queue if available
+func (r *PohRecorder) GetSlotHashFromQueue(slot uint64) ([32]byte, bool) {
+	return r.slotHashQueue.Get(slot)
 }

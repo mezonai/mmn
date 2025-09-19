@@ -53,7 +53,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			// }
 
 			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestSlot() {
+			if blk.Slot > bs.GetLatestFinalizedSlot() {
 				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
 				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
 					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
@@ -139,7 +139,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
 
-			localLatestSlot := bs.GetLatestSlot()
+			localLatestSlot := bs.GetLatestFinalizedSlot()
 			if latestSlot > localLatestSlot {
 				fromSlot := localLatestSlot + 1
 				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
@@ -296,7 +296,7 @@ func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte,
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false
 	}
-	latest := ln.blockStore.GetLatestSlot()
+	latest := ln.blockStore.GetLatestFinalizedSlot()
 	if latest == 0 {
 		return 0, [32]byte{}, false
 	}
