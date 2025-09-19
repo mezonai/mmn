@@ -30,11 +30,10 @@ services:
   # End users (nodes) will always run this
   node:
     image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: ${NODE_NAME}
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --jsonrpc-addr ":${NODE_API_PORT}" --grpc-addr ":${NODE_API_PORT}" --bootstrap-addresses "${BOOTSTRAP_NODE_ADDR}"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --jsonrpc-addr ":${NODE_API_PORT}" --grpc-addr ":${NODE_GRPC_PORT}" --bootstrap-addresses "${BOOTSTRAP_NODE_ADDR}"
       '
     ports:
       - ${NODE_API_PORT}:${NODE_API_PORT}
@@ -61,7 +60,6 @@ services:
   # Services that help monitor blockchain and individual nodes
   grafana:
     image: grafana/grafana:11.6.5
-    container_name: grafana
     environment:
       - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app
     ports:
@@ -79,7 +77,6 @@ services:
 
   loki:
     image: grafana/loki:3.5.0
-    container_name: loki
     command: ["-config.file=/etc/loki/config.yml"]
     ports:
       - "3100:3100"
@@ -95,7 +92,6 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.5.0
-    container_name: prometheus
     command: [ "--config.file=/etc/prometheus/prometheus.yml" ]
     ports:
       - "9090:9090"
@@ -112,11 +108,14 @@ services:
 
   promtail:
     image: grafana/promtail:3.5.0
-    container_name: promtail
-    command: ["-config.file=/etc/promtail/config.yml"]
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+      - "-config.expand-env=true"
     volumes:
       - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
       - logs_data:/var/log/mmn:ro
+    environment:
+      - LOKI_ADDR=${LOKI_ADDR}
     networks:
       - mezon
     restart: unless-stopped
@@ -126,7 +125,6 @@ services:
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
-    container_name: node-exporter
     ports:
       - "9100:9100"
     volumes:

@@ -225,7 +225,7 @@ func (s *Server) Start() {
 	go func() {
 		err := http.ListenAndServe(s.addr, s.mux)
 		if err != nil {
-			logx.Fatal("JSONRPC", "Failed to start server", err)
+			logx.Fatal("JSONRPC", "Failed to start server: ", err)
 		}
 	}()
 }

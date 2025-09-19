@@ -7,3 +7,5 @@
   labels:
     job: exporter
     node: node-01
+
+# more targets...
