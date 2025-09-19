@@ -16,7 +16,6 @@ type AccountStore interface {
 	GetByAddr(addr string) (*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
 	GetAll() ([]*types.Account, error)
-	GetDatabaseProvider() db.DatabaseProvider
 	MustClose()
 }
 
@@ -148,9 +147,4 @@ func (as *GenericAccountStore) GetAll() ([]*types.Account, error) {
 	}
 
 	return accounts, nil
-}
-
-// GetDatabaseProvider returns the underlying database provider
-func (as *GenericAccountStore) GetDatabaseProvider() db.DatabaseProvider {
-	return as.dbProvider
 }

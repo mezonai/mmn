@@ -10,9 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/types"
 )
 
@@ -43,9 +41,8 @@ type EpochMetadata struct {
 }
 
 type SnapshotMeta struct {
-	Slot           uint64                    `json:"slot"`
-	BankHash       [32]byte                  `json:"bank_hash"`
-	LeaderSchedule []poh.LeaderScheduleEntry `json:"leader_schedule"`
+	Slot     uint64   `json:"slot"`
+	BankHash [32]byte `json:"bank_hash"`
 }
 
 type SnapshotFile struct {
@@ -72,7 +69,7 @@ func ComputeFullBankHashFromAccounts(accounts []*types.Account) ([32]byte, error
 }
 
 // WriteSnapshotFromAccounts writes a snapshot from a list of accounts
-func WriteSnapshotFromAccounts(dir string, accounts []*types.Account, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
+func WriteSnapshotFromAccounts(dir string, accounts []*types.Account, slot uint64, bankHash [32]byte) (string, error) {
 	// Convert []*types.Account to []types.Account
 	accountList := make([]types.Account, len(accounts))
 	for i, acc := range accounts {
@@ -111,50 +108,6 @@ func WriteSnapshotFromAccounts(dir string, accounts []*types.Account, slot uint6
 	return latestPath, nil
 }
 
-// WriteSnapshot writes a full snapshot of all accounts with given slot and bank hash
-func WriteSnapshot(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
-	iterable, ok := provider.(db.IterableProvider)
-	if !ok {
-		return "", fmt.Errorf("provider does not support iteration")
-	}
-
-	var accounts []types.Account
-	err := iterable.IteratePrefix([]byte(accountPrefix), func(key, value []byte) bool {
-		var acc types.Account
-		if err := json.Unmarshal(value, &acc); err != nil {
-			return false
-		}
-		accounts = append(accounts, acc)
-		return true
-	})
-	if err != nil {
-		return "", fmt.Errorf("iterate accounts: %w", err)
-	}
-
-	file := SnapshotFile{
-		Meta: SnapshotMeta{
-			Slot:           slot,
-			BankHash:       bankHash,
-			LeaderSchedule: leaderSchedule,
-		},
-		Accounts: accounts,
-	}
-
-	data, err := json.MarshalIndent(file, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("marshal snapshot: %w", err)
-	}
-
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", fmt.Errorf("mkdir snapshot dir: %w", err)
-	}
-	path := filepath.Join(dir, FileName)
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return "", fmt.Errorf("write snapshot file: %w", err)
-	}
-	return path, nil
-}
-
 // ReadSnapshot loads a snapshot file from disk
 func ReadSnapshot(path string) (*SnapshotFile, error) {
 	data, err := os.ReadFile(path)
@@ -166,26 +119,6 @@ func ReadSnapshot(path string) (*SnapshotFile, error) {
 		return nil, err
 	}
 	return &s, nil
-}
-
-// WriteSnapshotWithDefaults writes a snapshot with default values for epoch and leader schedule
-func WriteSnapshotWithDefaults(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
-	return WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
-}
-
-func WriteSnapshotAndCleanup(dir string, provider db.DatabaseProvider, slot uint64, bankHash [32]byte, leaderSchedule []poh.LeaderScheduleEntry) (string, error) {
-	// Write new snapshot
-	path, err := WriteSnapshot(dir, provider, slot, bankHash, leaderSchedule)
-	if err != nil {
-		return "", err
-	}
-
-	// Clean up old snapshots, keep only the latest
-	if err := cleanupOldSnapshots(dir, path); err != nil {
-		logx.Error("SNAPSHOT", "Failed to cleanup old snapshots:", err)
-	}
-
-	return path, nil
 }
 
 func cleanupOldSnapshots(dir, latestPath string) error {

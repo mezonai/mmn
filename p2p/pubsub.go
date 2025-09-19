@@ -268,21 +268,18 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		}})
 
 	// Start UDP snapshot streamer for serving nodes
-	accountStore := ld.GetAccountStore()
-	if accountStore != nil {
-		go func() {
-			// Ensure snapshot directory exists before starting streamer
-			if err := snapshot.EnsureSnapshotDirectory(); err != nil {
-				logx.Error("SNAPSHOT:STREAMER", "Failed to ensure snapshot directory:", err)
-				return
-			}
+	go func() {
+		// Ensure snapshot directory exists before starting streamer
+		if err := snapshot.EnsureSnapshotDirectory(); err != nil {
+			logx.Error("SNAPSHOT:STREAMER", "Failed to ensure snapshot directory:", err)
+			return
+		}
 
-			// Use single snapshot directory
-			if err := snapshot.StartSnapshotUDPStreamer(snapshot.SnapshotDirectory, snapshotUDPPort); err != nil {
-				logx.Error("SNAPSHOT:STREAMER", "failed to start:", err)
-			}
-		}()
-	}
+		// Use single snapshot directory
+		if err := snapshot.StartSnapshotUDPStreamer(snapshot.SnapshotDirectory, snapshotUDPPort); err != nil {
+			logx.Error("SNAPSHOT:STREAMER", "failed to start:", err)
+		}
+	}()
 
 	// Temporary comment to save bandwidth for main flow
 	// go ln.startPeriodicSyncCheck(bs)
@@ -807,7 +804,7 @@ func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
 		return
 	}
 	dir := snapshot.SnapshotDirectory
-	saved, err := snapshot.WriteSnapshotFromAccounts(dir, accounts, slot, bankHash, nil)
+	saved, err := snapshot.WriteSnapshotFromAccounts(dir, accounts, slot, bankHash)
 	if err != nil {
 		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
 		return
