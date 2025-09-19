@@ -126,29 +126,6 @@ type getAccountResponse struct {
 	Decimals uint32 `json:"decimals"`
 }
 
-type getTxHistoryRequest struct {
-	Address string `json:"address"`
-	Limit   uint32 `json:"limit"`
-	Offset  uint32 `json:"offset"`
-	Filter  uint32 `json:"filter"`
-}
-
-type txMeta struct {
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    string `json:"amount"`
-	Nonce     uint64 `json:"nonce"`
-	Timestamp uint64 `json:"timestamp"`
-	Status    int32  `json:"status"`
-	ExtraInfo string `json:"extra_info"`
-}
-
-type getTxHistoryResponse struct {
-	Total    uint32    `json:"total"`
-	Txs      []*txMeta `json:"txs"`
-	Decimals uint32    `json:"decimals"`
-}
-
 type getCurrentNonceRequest struct {
 	Address string `json:"address"`
 	Tag     string `json:"tag"`
@@ -294,16 +271,6 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getAccountResponse), nil
 		}),
-		"account.gettxhistory": handler.New(func(ctx context.Context, p getTxHistoryRequest) (*getTxHistoryResponse, error) {
-			res, err := s.rpcGetTxHistory(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*getTxHistoryResponse), nil
-		}),
 		"account.getcurrentnonce": handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
 			res, err := s.rpcGetCurrentNonce(p)
 			if err != nil {
@@ -423,18 +390,6 @@ func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
 	return &getAccountResponse{Address: resp.Address, Balance: resp.Balance, Nonce: resp.Nonce, Decimals: resp.Decimals}, nil
-}
-
-func (s *Server) rpcGetTxHistory(p getTxHistoryRequest) (interface{}, *rpcError) {
-	resp, err := s.acctSvc.GetTxHistory(context.Background(), &pb.GetTxHistoryRequest{Address: p.Address, Limit: p.Limit, Offset: p.Offset, Filter: p.Filter})
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	metas := make([]*txMeta, len(resp.Txs))
-	for i, m := range resp.Txs {
-		metas[i] = &txMeta{Sender: m.Sender, Recipient: m.Recipient, Amount: m.Amount, Nonce: m.Nonce, Timestamp: m.Timestamp, Status: int32(m.Status), ExtraInfo: m.ExtraInfo}
-	}
-	return &getTxHistoryResponse{Total: resp.Total, Txs: metas, Decimals: resp.Decimals}, nil
 }
 
 func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpcError) {

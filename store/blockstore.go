@@ -2,21 +2,22 @@ package store
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
-	"sync/atomic"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -216,7 +217,7 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 	}
 
 	var blk block.Block
-	if err := json.Unmarshal(value, &blk); err != nil {
+	if err := jsonx.Unmarshal(value, &blk); err != nil {
 		logx.Error("BLOCKSTORE", "Failed to unmarshal block", slot, "error:", err)
 		return nil
 	}
@@ -290,6 +291,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	slotLock := s.getSlotLock(b.Slot)
 	slotLock.Lock()
 	defer slotLock.Unlock()
+	logx.Info("BLOCKSTORE", "Acquired lock for adding pending block at slot", b.Slot)
 
 	key := slotToBlockKey(b.Slot)
 
@@ -302,15 +304,18 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if exists {
 		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
+	logx.Info("BLOCKSTORE", "OK, block does not exist at slot", b.Slot)
 
 	// Store block
-	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
+	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
+
+	logx.Info("BLOCKSTORE", "Monitoring block size bytes at slot", b.Slot)
 	monitoring.RecordBlockSizeBytes(len(value))
 	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
 

@@ -3,8 +3,10 @@ package transaction
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 )
 
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
@@ -15,6 +17,9 @@ type TransactionTracker struct {
 
 	// senderTxs maps sender address to list of transaction hashes
 	senderTxs sync.Map
+
+	processingCount int64
+	senderCount     int64
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
@@ -25,16 +30,22 @@ func NewTransactionTracker() *TransactionTracker {
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
-	t.processingTxs.Store(txHash, tx)
-
+	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
+	if !loadedProcessing {
+		atomic.AddInt64(&t.processingCount, 1)
+	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
-		txHashes = existing.([]string)
+		txHashes = append(existing.([]string), txHash)
+		t.senderTxs.Store(tx.Sender, txHashes)
+	} else {
+		txHashes = []string{txHash}
+		t.senderTxs.Store(tx.Sender, txHashes)
+		atomic.AddInt64(&t.senderCount, 1)
 	}
-	txHashes = append(txHashes, txHash)
-	t.senderTxs.Store(tx.Sender, txHashes)
-
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -43,21 +54,29 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
+		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}
-
+	atomic.AddInt64(&t.processingCount, -1)
 	tx := txInterface.(*Transaction)
 
 	// Update sender transaction list
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
 		txHashes := existing.([]string)
-		updatedHashes := remove(txHashes, txHash)
-		if len(updatedHashes) == 0 {
-			t.senderTxs.Delete(tx.Sender)
-		} else {
-			t.senderTxs.Store(tx.Sender, updatedHashes)
+		updatedHashes, isRemoved := remove(txHashes, txHash)
+		if isRemoved {
+			if len(updatedHashes) == 0 {
+				t.senderTxs.Delete(tx.Sender)
+				atomic.AddInt64(&t.senderCount, -1)
+			} else {
+				t.senderTxs.Store(tx.Sender, updatedHashes)
+			}
 		}
 	}
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
+	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
+	logx.Info("TRACKER", fmt.Sprintf("Remove transaction: %s (sender: %s, nonce: %d)",
+		txHash, tx.Sender[:8], tx.Nonce))
 }
 
 // GetLargestProcessingNonce returns the largest nonce currently being processed for a sender
@@ -86,11 +105,11 @@ func (t *TransactionTracker) GetLargestProcessingNonce(sender string) uint64 {
 	return largestNonce
 }
 
-func remove(slice []string, item string) []string {
+func remove(slice []string, item string) ([]string, bool) {
 	for i, v := range slice {
 		if v == item {
-			return append(slice[:i], slice[i+1:]...)
+			return append(slice[:i], slice[i+1:]...), true
 		}
 	}
-	return slice
+	return slice, false
 }

@@ -91,16 +91,11 @@ func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 
 // AccountExists checks if an account exists (implements LedgerInterface)
 func (l *Ledger) AccountExists(addr string) (bool, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
 	return l.accountStore.ExistsByAddr(addr)
 }
 
 // Balance returns current balance for addr
 func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
 	acc, err := l.accountStore.GetByAddr(addr)
 	if err != nil {
 		return uint256.NewInt(0), err
@@ -113,6 +108,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+	if b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
+		return nil
+	}
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -165,9 +164,9 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			}
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
-			addHistory(state[tx.Sender], tx)
-			if tx.Recipient != tx.Sender {
-				addHistory(state[tx.Recipient], tx)
+			// Remove successful transaction from tracker
+			if l.txTracker != nil {
+				l.txTracker.RemoveTransaction(txHash)
 			}
 
 			// commit the update
@@ -191,8 +190,6 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 
 // GetAccount returns account with addr (nil if not exist)
 func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
 	return l.accountStore.GetByAddr(addr)
 }
 
@@ -228,10 +225,6 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	return nil
 }
 
-func addHistory(acc *types.Account, tx *transaction.Transaction) {
-	acc.History = append(acc.History, tx.Hash())
-}
-
 func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error, error) {
 	tx, errTx := l.txStore.GetByHash(hash)
 	txMeta, errTxMeta := l.txMetaStore.GetByHash(hash)
@@ -239,40 +232,6 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 		return nil, nil, errTx, errTxMeta
 	}
 	return tx, txMeta, nil, nil
-}
-
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	txs := make([]*transaction.Transaction, 0)
-	acc, err := l.accountStore.GetByAddr(addr)
-	if err != nil {
-		return 0, txs
-	}
-
-	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]*transaction.Transaction, 0)
-	transactions, err := l.txStore.GetBatch(acc.History)
-	if err != nil {
-		return 0, txs
-	}
-	for _, tx := range transactions {
-		if filter == 0 {
-			filteredHistory = append(filteredHistory, tx)
-		} else if filter == 1 && tx.Sender == addr {
-			filteredHistory = append(filteredHistory, tx)
-		} else if filter == 2 && tx.Recipient == addr {
-			filteredHistory = append(filteredHistory, tx)
-		}
-	}
-
-	total := uint32(len(filteredHistory))
-	start := offset
-	end := min(start+limit, total)
-	txs = filteredHistory[start:end]
-
-	return total, txs
 }
 
 // LedgerView is a view of the ledger to verify block before applying it to the ledger.

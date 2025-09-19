@@ -35,6 +35,7 @@ type nodePromMetrics struct {
 	ingressTxCount    prometheus.Counter
 	receivedTxCount   prometheus.Counter
 	peerCount         prometheus.Gauge
+	trackerTx         prometheus.GaugeVec
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -106,6 +107,13 @@ func newNodePromMetrics() *nodePromMetrics {
 				Help: "The total number of peer connections",
 			},
 		),
+		trackerTx: *promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "mmn_node_tracker_tx",
+				Help: "Number of transactions currently being processed (between mempool and ledger)",
+			},
+			[]string{"source"},
+		),
 	}
 }
 
@@ -162,4 +170,10 @@ func IncreaseReceivedTxCount() {
 
 func SetPeerCount(peers int) {
 	nodeMetrics.peerCount.Set(float64(peers))
+}
+
+func SetTrackerProcessingTx(bytes int64, source string) {
+	nodeMetrics.trackerTx.With(prometheus.Labels{
+		"source": source,
+	}).Set(float64(bytes))
 }

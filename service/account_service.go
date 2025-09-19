@@ -51,17 +51,6 @@ func (s *AccountServiceImpl) GetAccount(ctx context.Context, in *pb.GetAccountRe
 	}, nil
 }
 
-func (s *AccountServiceImpl) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
-	addr := in.Address
-	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
-	txMetas := make([]*pb.TxMeta, len(txs))
-	for i, tx := range txs {
-		amount := utils.Uint256ToString(tx.Amount)
-		txMetas[i] = &pb.TxMeta{Sender: tx.Sender, Recipient: tx.Recipient, Amount: amount, Nonce: tx.Nonce, Timestamp: tx.Timestamp, Status: pb.TxMeta_CONFIRMED, ExtraInfo: tx.ExtraInfo}
-	}
-	return &pb.GetTxHistoryResponse{Total: total, Txs: txMetas, Decimals: uint32(config.GetDecimalsFactor())}, nil
-}
-
 func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
 	addr := in.Address
 	tag := in.Tag
