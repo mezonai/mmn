@@ -9,7 +9,6 @@ services:
       args:
         DB_VENDOR: ${DB_VENDOR:-rocksdb} #rocksdb or leveldb
     image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: bootnode
     command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
     ports:
       - "9000:9000"
@@ -65,8 +64,8 @@ services:
     ports:
       - "3300:3000"
     volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/config/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     networks:
       - mezon
@@ -81,7 +80,7 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
+      - ./monitoring/config/loki-config.yml:/etc/loki/config.yml:ro
       - loki_data:/loki
     networks:
       - mezon
@@ -96,8 +95,8 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/prometheus/targets:/etc/prometheus/targets:ro
+      - ./monitoring/config/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/config/prometheus/targets:/etc/prometheus/targets:ro
       - prom_data:/prometheus
     networks:
       - mezon
@@ -112,7 +111,7 @@ services:
       - "-config.file=/etc/promtail/config.yml"
       - "-config.expand-env=true"
     volumes:
-      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./monitoring/config/promtail-config.yml:/etc/promtail/config.yml:ro
       - logs_data:/var/log/mmn:ro
     environment:
       - LOKI_ADDR=${LOKI_ADDR}
