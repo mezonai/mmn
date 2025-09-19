@@ -357,6 +357,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 			for _, tx := range entry.Transactions {
 				event := events.NewTransactionIncludedInBlock(tx, b.Slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseExecutedTpsCount()
 			}
 		}
 	}
@@ -419,6 +420,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFinalizedTpsCount()
 			}
 		}
 	}
