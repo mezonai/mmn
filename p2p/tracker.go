@@ -98,7 +98,7 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
 			// probe checkpoint every tick
-			latest := bs.GetLatestSlot()
+			latest := bs.GetLatestFinalizedSlot()
 			if latest >= MaxScanRange {
 				checkpoint := (latest / MaxScanRange) * MaxScanRange
 				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
@@ -119,6 +119,7 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 		case <-ticker.C:
 			ln.CleanupExpiredRequests()
 			ln.cleanupOldMissingBlocksTracker()
+			ln.cleanupOldRecentlyRequestedSlots()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
@@ -153,6 +154,18 @@ func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	for requestID, info := range ln.activeSyncRequests {
 		if !info.IsActive || now.Sub(info.StartTime) > 5*time.Minute {
 			delete(ln.activeSyncRequests, requestID)
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) cleanupOldRecentlyRequestedSlots() {
+	ln.recentlyRequestedMu.Lock()
+	defer ln.recentlyRequestedMu.Unlock()
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+	for slot, requestTime := range ln.recentlyRequestedSlots {
+		if requestTime.Before(cutoff) {
+			delete(ln.recentlyRequestedSlots, slot)
 		}
 	}
 }

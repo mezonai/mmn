@@ -2,13 +2,13 @@ package p2p
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -38,7 +38,7 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 			}
 
 			var blk *block.BroadcastedBlock
-			if err := json.Unmarshal(msg.Data, &blk); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &blk); err != nil {
 				logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)
 				continue
 			}
@@ -73,7 +73,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 			}
 
 			var req SyncRequest
-			if err := json.Unmarshal(msg.Data, &req); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to unmarshal SyncRequest: ", err.Error())
 				continue
 			}
@@ -117,7 +117,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 	remotePeer := s.Conn().RemotePeer()
 
 	var syncRequest SyncRequest
-	decoder := json.NewDecoder(s)
+	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&syncRequest); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to decode sync request from stream:", err)
 		s.Close()
@@ -144,6 +144,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 	batchCount := 0
 	totalBlocks := 0
+	processedBlocks := 0
 
 	for {
 		var blocks []*block.BroadcastedBlock
@@ -156,35 +157,27 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 			break
 		}
 
-		batchCount++
-		totalBlocks += len(blocks)
-
-		// Filter out duplicates instead of aborting the stream
-		filtered := make([]*block.BroadcastedBlock, 0, len(blocks))
 		for _, blk := range blocks {
 			if blk == nil {
 				continue
 			}
-			if existingBlock := ln.blockStore.Block(blk.Slot); existingBlock != nil {
+
+			totalBlocks++
+
+			if err := ln.processSingleBlock(blk); err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Failed to process block slot", blk.Slot, ":", err.Error())
 				continue
 			}
-			filtered = append(filtered, blk)
-		}
 
-		if len(filtered) == 0 {
-			logx.Debug("NETWORK:SYNC BLOCK", "Batch", batchCount, "contains only duplicates; continuing to next batch")
-			continue
-		}
+			processedBlocks++
 
-		if ln.onSyncResponseReceived != nil {
-			if err := ln.onSyncResponseReceived(filtered); err != nil {
-				logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
-			} else {
-				logx.Info("NETWORK:SYNC BLOCK", "Sync response callback completed successfully for batch ", batchCount)
-				tracker.CloseAllOtherPeers()
-				break
+			if processedBlocks%10 == 0 {
+				batchCount++
 			}
 		}
+
+		// clean blocks array reference
+		blocks = nil
 	}
 
 	// Close all peer streams and remove tracker
@@ -195,14 +188,35 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 	}
 	ln.syncTrackerMu.Unlock()
 
-	// check to sync
-	ln.CheckSyncCompletion(syncRequest.ToSlot)
+	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks, "processed:", processedBlocks)
+}
 
-	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks)
+func (ln *Libp2pNetwork) processSingleBlock(blk *block.BroadcastedBlock) error {
+	if blk == nil {
+		return fmt.Errorf("block is nil")
+	}
+
+	if ln.blockStore.HasCompleteBlock(blk.Slot) {
+		logx.Debug("NETWORK:SYNC BLOCK", "Block at slot", blk.Slot, "already exists, skipping")
+		return nil
+	}
+
+	if err := blk.VerifyPoH(); err != nil {
+		logx.Warn("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err.Error())
+		blk.InvalidPoH = true
+	}
+
+	if err := ln.blockStore.AddBlockPending(blk); err != nil {
+		return fmt.Errorf("failed to store block slot %d: %w", blk.Slot, err)
+	}
+
+	ln.removeFromMissingTracker(blk.Slot)
+
+	return nil
 }
 
 func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
-	data, err := json.Marshal(batch)
+	data, err := jsonx.Marshal(batch)
 	if err != nil {
 		return err
 	}
@@ -250,7 +264,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 	}
 	defer stream.Close()
 
-	encoder := json.NewEncoder(stream)
+	encoder := jsonx.NewEncoder(stream)
 	if err := encoder.Encode(req); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to send request ID:", err)
 		return
@@ -266,7 +280,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		ln.syncTrackerMu.Unlock()
 	}()
 
-	localLatestSlot := ln.blockStore.GetLatestSlot()
+	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 	if localLatestSlot > 0 && req.FromSlot > localLatestSlot {
 		return
 	}
@@ -362,7 +376,7 @@ func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.
 	}
 	defer stream.Close()
 
-	data, err := json.Marshal(req)
+	data, err := jsonx.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -396,7 +410,7 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 			}
 
 			var req LatestSlotRequest
-			if err := json.Unmarshal(msg.Data, &req); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
 				logx.Error("NETWORK:LATEST SLOT", "Failed to unmarshal LatestSlotRequest:", err)
 				continue
 			}
@@ -409,7 +423,7 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 }
 
 func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
-	return ln.blockStore.GetLatestSlot()
+	return ln.blockStore.GetLatestFinalizedSlot()
 }
 
 func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot uint64) {
@@ -425,7 +439,7 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 		PeerID:     ln.host.ID().String(),
 	}
 
-	data, err := json.Marshal(response)
+	data, err := jsonx.Marshal(response)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to marshal latest slot response:", err)
 		return
@@ -443,7 +457,7 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 	defer s.Close()
 
 	var response LatestSlotResponse
-	decoder := json.NewDecoder(s)
+	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&response); err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to decode latest slot response:", err)
 		return
@@ -459,7 +473,7 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
 
-	data, err := json.Marshal(blk)
+	data, err := jsonx.Marshal(blk)
 	if err != nil {
 		logx.Error("BLOCK", "Failed to marshal block: ", err)
 		return err
@@ -475,7 +489,7 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 }
 
 func (ln *Libp2pNetwork) CheckSyncCompletion(toSlot uint64) {
-	localLatestSlot := ln.blockStore.GetLatestSlot()
+	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 	if localLatestSlot >= toSlot {
 		go func() {
 			ctx := context.Background()

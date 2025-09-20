@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/mezonai/mmn/monitoring"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -95,6 +97,7 @@ func getRandomFreePort() (string, error) {
 
 func runNode() {
 	initializeFileLogger()
+	monitoring.InitMetrics()
 
 	logx.Info("NODE", "Running node")
 
@@ -193,7 +196,8 @@ func runNode() {
 	}
 
 	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	latestSlot := bs.GetLatestFinalizedSlot()
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
@@ -221,7 +225,7 @@ func runNode() {
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, latestSlot)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -276,7 +280,7 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string, latestSlot uint64) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -294,7 +298,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
-	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule)
+	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule, latestSlot)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
 	pohService.Start()
@@ -330,7 +334,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, lastSlot uint64) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -352,7 +356,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector, lastSlot,
 	)
 	val.Run()
 
@@ -430,4 +434,17 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	}
 
 	rpcSrv.Start()
+	serveMetricsApi(nodeConfig.ListenAddr)
+}
+
+func serveMetricsApi(listenAddr string) {
+	mux := http.NewServeMux()
+	monitoring.RegisterMetrics(mux)
+	go func() {
+		err := http.ListenAndServe(listenAddr, mux)
+		if err != nil {
+			logx.Error("NODE", fmt.Sprintf("Failed to expose metrics for monitoring: %v", err))
+			os.Exit(1)
+		}
+	}()
 }

@@ -3,12 +3,14 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/monitoring"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -33,11 +35,20 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			// Verify PoH
+			// Verify PoH. If invalid, mark block and continue to process as a failed block
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
-				logx.Error("BLOCK", "Invalid PoH:", err)
-				return fmt.Errorf("invalid PoH")
+				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+				blk.InvalidPoH = true
+				monitoring.IncreaseInvalidPohCount()
+			}
+
+			// Reset poh to sync poh clock with leader
+			if blk.Slot > bs.GetLatestStoreSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
 			}
 
 			if err := bs.AddBlockPending(blk); err != nil {
@@ -46,21 +57,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Remove transactions in block from mempool and add tx tracker if node is follower
-			if self.PubKey != blk.LeaderID {
-				go mp.BlockCleanup(blk)
-			}
-
-			// Temporary comment to save bandwidth for main flow
-			// if len(ln.host.Network().Peers()) > 0 {
-			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
-			// }
-
-			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
+			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
+				mp.BlockCleanup(blk)
 			}
 
 			vote := &consensus.Vote{
@@ -141,7 +139,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
 
-			localLatestSlot := bs.GetLatestSlot()
+			localLatestSlot := bs.GetLatestFinalizedSlot()
 			if latestSlot > localLatestSlot {
 				fromSlot := localLatestSlot + 1
 				logx.Info("NETWORK:SYNC BLOCK", "Peer has higher slot:", latestSlot, "local slot:", localLatestSlot, "requesting sync from slot:", fromSlot)
@@ -289,7 +287,7 @@ func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *
 			}
 
 			var req CheckpointHashRequest
-			if err := json.Unmarshal(msg.Data, &req); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
 				logx.Error("NETWORK:CHECKPOINT", "Failed to unmarshal checkpoint request:", err)
 				continue
 			}
@@ -317,7 +315,7 @@ func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte,
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false
 	}
-	latest := ln.blockStore.GetLatestSlot()
+	latest := ln.blockStore.GetLatestFinalizedSlot()
 	if latest == 0 {
 		return 0, [32]byte{}, false
 	}
@@ -339,7 +337,7 @@ func (ln *Libp2pNetwork) sendCheckpointResponse(targetPeer peer.ID, resp Checkpo
 	}
 	defer stream.Close()
 
-	data, err := json.Marshal(resp)
+	data, err := jsonx.Marshal(resp)
 	if err != nil {
 		logx.Error("NETWORK:CHECKPOINT", "Failed to marshal checkpoint response:", err)
 		return
@@ -354,7 +352,7 @@ func (ln *Libp2pNetwork) sendCheckpointResponse(targetPeer peer.ID, resp Checkpo
 func (ln *Libp2pNetwork) handleCheckpointStream(s network.Stream) {
 	defer s.Close()
 	var resp CheckpointHashResponse
-	decoder := json.NewDecoder(s)
+	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&resp); err != nil {
 		logx.Error("NETWORK:CHECKPOINT", "Failed to decode checkpoint response:", err)
 		return
@@ -385,7 +383,7 @@ func (ln *Libp2pNetwork) RequestCheckpointHash(ctx context.Context, checkpoint u
 		Checkpoint:  checkpoint,
 		Addrs:       ln.host.Addrs(),
 	}
-	data, err := json.Marshal(req)
+	data, err := jsonx.Marshal(req)
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -17,12 +18,17 @@ import (
 	mmnClient "github.com/mezonai/mmn/client"
 )
 
+type WalletManager interface {
+	LoadKey(userID uint64) (addr string, privKey []byte, err error)
+	CreateKey(userID uint64) (addr string, privKey []byte, err error)
+}
+
 type pgStore struct {
 	db   *sql.DB
 	aead cipher.AEAD
 }
 
-func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (mmnClient.WalletManager, error) {
+func NewPgEncryptedStore(db *sql.DB, base64MasterKey string) (WalletManager, error) {
 	mk, err := base64.StdEncoding.DecodeString(base64MasterKey)
 	if err != nil {
 		return nil, fmt.Errorf("master-key decode: %w", err)
@@ -56,18 +62,23 @@ func (p *pgStore) decrypt(ciphertext []byte) ([]byte, error) {
 // ---------- WalletManager ----------
 func (p *pgStore) LoadKey(uid uint64) (string, []byte, error) {
 	var addr string
-	var enc []byte
+	var encHex string
 
 	// TODO: need use exist db model
-	err := p.db.QueryRow(`SELECT address, enc_privkey FROM mmn_user_keys WHERE user_id=$1`, uid).
-		Scan(&addr, &enc)
+	err := p.db.QueryRow(`SELECT address, enc_privkey FROM mmn_wallet WHERE user_id=$1`, uid).
+		Scan(&addr, &encHex)
 	if errors.Is(err, sql.ErrNoRows) {
-		fmt.Printf("LoadKey ErrNoRows %d %s %s %v\n", uid, addr, enc, err)
+		fmt.Printf("LoadKey ErrNoRows %d %s %s %v\n", uid, addr, encHex, err)
 		return "", nil, mmnClient.ErrKeyNotFound
 	}
 	if err != nil {
-		fmt.Printf("LoadKey Err %d %s %s %v\n", uid, addr, enc, err)
+		fmt.Printf("LoadKey Err %d %s %s %v\n", uid, addr, encHex, err)
 		return "", nil, err
+	}
+
+	enc, err := hex.DecodeString(encHex)
+	if err != nil {
+		return "", nil, fmt.Errorf("hex decode error: %w", err)
 	}
 
 	priv, err := p.decrypt(enc)
@@ -98,9 +109,13 @@ func (p *pgStore) CreateKey(uid uint64) (string, []byte, error) {
 	}
 
 	_, err = p.db.Exec(
-		`INSERT INTO mmn_user_keys(user_id,address,enc_privkey) VALUES($1,$2,$3)`,
-		uid, addr, enc,
+		`INSERT INTO mmn_wallet(user_id,address,enc_privkey) VALUES($1,$2,$3)`,
+		uid, addr, hex.EncodeToString(enc),
 	)
+	if err != nil {
+		return "", nil, err
+	}
+
 	fmt.Printf("CreateKey done %d %s\n", uid, addr)
 	return addr, seed, err
 }

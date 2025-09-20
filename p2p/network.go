@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -88,7 +89,6 @@ func NewNetWork(
 		selfPrivKey:            selfPrivKey,
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
-		syncStreams:            make(map[peer.ID]network.Stream),
 		blockStore:             blockStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
@@ -211,7 +211,8 @@ func (ln *Libp2pNetwork) Close() {
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
-	return len(ln.peers)
+	// Minus by 1 to exclude self node in the peer list
+	return len(ln.host.Network().Peers()) - 1
 }
 
 func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
@@ -225,8 +226,8 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 
 	var msg map[string]interface{}
-	if err := json.Unmarshal(buf[:n], &msg); err != nil {
-		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal message: ", err)
+	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
 		return
 	}
 
