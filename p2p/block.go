@@ -80,19 +80,16 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 
 			logx.Info("NETWORK:SYNC BLOCK", "Received sync request:", req.RequestID, "from slot", req.FromSlot, "to slot", req.ToSlot, "from peer:", msg.ReceivedFrom.String())
 
-			// Check if this request is already being handled
-			ln.syncTrackerMu.RLock()
+			// Check if this request is already being handled with proper locking
+			ln.syncTrackerMu.Lock()
 			tracker, exists := ln.syncRequests[req.RequestID]
-			ln.syncTrackerMu.RUnlock()
-
 			if !exists {
-				// new tracker
+				// Create new tracker
 				tracker = NewSyncRequestTracker(req.RequestID, req.FromSlot, req.ToSlot)
-				ln.syncTrackerMu.Lock()
 				ln.syncRequests[req.RequestID] = tracker
-				ln.syncTrackerMu.Unlock()
 				logx.Info("NETWORK:SYNC BLOCK", "Created new tracker for request:", req.RequestID)
 			}
+			ln.syncTrackerMu.Unlock()
 
 			if !tracker.ActivatePeer(msg.ReceivedFrom, nil) {
 				continue
@@ -127,13 +124,11 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		tracker = NewSyncRequestTracker(syncRequest.RequestID, syncRequest.FromSlot, syncRequest.ToSlot)
 		ln.syncRequests[syncRequest.RequestID] = tracker
 	}
+	ln.syncTrackerMu.Unlock()
 
 	if !tracker.ActivatePeer(remotePeer, s) {
-		ln.syncTrackerMu.Unlock()
 		return
 	}
-
-	ln.syncTrackerMu.Unlock()
 
 	batchCount := 0
 	totalBlocks := 0
@@ -185,14 +180,22 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 }
 
 func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
+	if len(batch) == 0 {
+		return nil
+	}
+
 	data, err := jsonx.Marshal(batch)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal batch: %w", err)
+	}
+
+	if err := s.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		logx.Warn("NETWORK:SYNC BLOCK", "Failed to set write deadline:", err)
 	}
 
 	bytesWritten, err := s.Write(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write batch to stream: %w", err)
 	}
 
 	logx.Info("NETWORK:SYNC BLOCK", "Successfully wrote batch of", bytesWritten, "bytes", "numBlocks=", len(batch))
@@ -225,8 +228,10 @@ func (ln *Libp2pNetwork) RequestBlockSyncStream() error {
 }
 
 func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.ID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
-	stream, err := ln.host.NewStream(context.Background(), targetPeer, RequestBlockSyncStream)
+	stream, err := ln.host.NewStream(ctx, targetPeer, RequestBlockSyncStream)
 	if err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to create stream to peer:", targetPeer.String(), "error:", err.Error())
 		return
@@ -239,12 +244,13 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		return
 	}
 
-	// Close when done
+	// Track original request ID for cleanup
+	originalRequestID := req.RequestID
 	defer func() {
 		ln.syncTrackerMu.Lock()
-		if tracker, exists := ln.syncRequests[req.RequestID]; exists {
+		if tracker, exists := ln.syncRequests[originalRequestID]; exists {
 			tracker.CloseRequest()
-			delete(ln.syncRequests, req.RequestID)
+			delete(ln.syncRequests, originalRequestID)
 		}
 		ln.syncTrackerMu.Unlock()
 	}()
@@ -256,52 +262,74 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 
 	var batch []*block.Block
 	totalBlocksSent := 0
+	currentFromSlot := req.FromSlot
+	currentToSlot := req.ToSlot
 
-	slot := req.FromSlot
-	for slot <= localLatestSlot && slot <= req.ToSlot {
-		blk := ln.GetBlock(slot)
-		if blk != nil {
-			batch = append(batch, blk)
+	// Use iterative approach instead of recursion to prevent goroutine leaks
+	for {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			logx.Warn("NETWORK:SYNC BLOCK", "Context cancelled, stopping sync for peer:", targetPeer.String())
+			return
+		default:
 		}
 
-		if len(batch) >= int(SyncBlocksBatchSize) {
+		// Refresh latest slot for each iteration
+		localLatestSlot = ln.blockStore.GetLatestFinalizedSlot()
+
+		// Adjust currentToSlot if it exceeds local latest slot
+		if currentToSlot > localLatestSlot {
+			currentToSlot = localLatestSlot
+		}
+
+		slot := currentFromSlot
+		for slot <= localLatestSlot && slot <= currentToSlot {
+			blk := ln.GetBlock(slot)
+			if blk != nil {
+				batch = append(batch, blk)
+			}
+
+			if len(batch) >= int(SyncBlocksBatchSize) {
+				if err := ln.sendBlockBatchStream(batch, stream); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to send batch:", err)
+					return
+				}
+				totalBlocksSent += len(batch)
+				batch = batch[:0]
+			}
+
+			slot++
+		}
+
+		if len(batch) > 0 {
 			if err := ln.sendBlockBatchStream(batch, stream); err != nil {
-				logx.Error("NETWORK:SYNC BLOCK", "Failed to send batch:", err)
+				logx.Error("NETWORK:SYNC BLOCK", "Failed to send final batch:", err.Error())
 				return
 			}
 			totalBlocksSent += len(batch)
 			batch = batch[:0]
 		}
 
-		slot++
-	}
-
-	if len(batch) > 0 {
-		if err := ln.sendBlockBatchStream(batch, stream); err != nil {
-			logx.Error("NETWORK:SYNC BLOCK", "Failed to send final batch:", err)
-			return
-		}
-		totalBlocksSent += len(batch)
-	}
-
-	// must auto send here if want the request node catch up
-	if req.ToSlot < localLatestSlot {
-		nextFromSlot := req.ToSlot + 1
-		nextToSlot := nextFromSlot + SyncBlocksBatchSize - 1
-		if nextToSlot > localLatestSlot {
-			nextToSlot = localLatestSlot
+		// Check if we need to continue with next range
+		if currentToSlot >= localLatestSlot {
+			break
 		}
 
-		nextReq := SyncRequest{
-			RequestID: fmt.Sprintf("auto_sync_%d_%d_%s", nextFromSlot, nextToSlot, targetPeer.String()),
-			FromSlot:  nextFromSlot,
-			ToSlot:    nextToSlot,
+		currentFromSlot = currentToSlot + 1
+		currentToSlot = currentFromSlot + SyncBlocksBatchSize - 1
+		if currentToSlot > localLatestSlot {
+			currentToSlot = localLatestSlot
 		}
 
-		go func() {
-			ln.sendBlocksOverStream(nextReq, targetPeer)
-		}()
+		// Safety check to prevent infinite loop
+		if currentFromSlot > localLatestSlot {
+			break
+		}
+
 	}
+
+	logx.Info("NETWORK:SYNC BLOCK", "Completed sync for peer:", targetPeer.String(), "total blocks sent:", totalBlocksSent)
 }
 
 func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {

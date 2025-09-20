@@ -27,7 +27,6 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 
 	// Add block to queue
 	ln.blockOrderingQueue[blk.Slot] = blk
-	logx.Info("BLOCK:ORDERING", "Added block to queue at slot", blk.Slot, "queue size:", len(ln.blockOrderingQueue), "nextExpectedSlot:", ln.nextExpectedSlot)
 
 	return ln.processConsecutiveBlocks(bs, ld)
 }
