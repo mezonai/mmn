@@ -143,6 +143,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		var blocks []*block.BroadcastedBlock
 		if err := decoder.Decode(&blocks); err != nil {
 			if errors.Is(err, io.EOF) {
+
 				break
 			}
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
@@ -156,16 +157,15 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 			totalBlocks++
 
-			if err := ln.processSingleBlock(blk); err != nil {
-				logx.Error("NETWORK:SYNC BLOCK", "Failed to process block slot", blk.Slot, ":", err.Error())
-				continue
+			if ln.onSyncResponseReceived != nil {
+				if err := ln.onSyncResponseReceived(blk); err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
+				}
 			}
 
 			processedBlocks++
+			batchCount++
 
-			if processedBlocks%10 == 0 {
-				batchCount++
-			}
 		}
 
 		// clean blocks array reference
@@ -181,30 +181,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 	ln.syncTrackerMu.Unlock()
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks, "processed:", processedBlocks)
-}
 
-func (ln *Libp2pNetwork) processSingleBlock(blk *block.BroadcastedBlock) error {
-	if blk == nil {
-		return fmt.Errorf("block is nil")
-	}
-
-	if ln.blockStore.HasCompleteBlock(blk.Slot) {
-		logx.Debug("NETWORK:SYNC BLOCK", "Block at slot", blk.Slot, "already exists, skipping")
-		return nil
-	}
-
-	if err := blk.VerifyPoH(); err != nil {
-		logx.Warn("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err.Error())
-		blk.InvalidPoH = true
-	}
-
-	if err := ln.blockStore.AddBlockPending(blk); err != nil {
-		return fmt.Errorf("failed to store block slot %d: %w", blk.Slot, err)
-	}
-
-	ln.removeFromMissingTracker(blk.Slot)
-
-	return nil
 }
 
 func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
@@ -230,7 +207,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncStream() error {
 
 	peers := ln.host.Network().Peers()
 
-	if len(peers) < 2 {
+	if len(peers) == 0 {
 		logx.Warn("NETWORK:SYNC", "Not enough peers to request block sync")
 		return fmt.Errorf("not enough peers")
 	}
@@ -325,37 +302,6 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			ln.sendBlocksOverStream(nextReq, targetPeer)
 		}()
 	}
-}
-
-func (ln *Libp2pNetwork) RequestContinuousBlockSync(fromSlot, toSlot uint64, targetPeer peer.ID) {
-
-	currentSlot := fromSlot
-
-	for currentSlot < toSlot {
-		endSlot := currentSlot + SyncBlocksBatchSize - 1
-		if endSlot > toSlot {
-			endSlot = toSlot
-		}
-
-		requestID := fmt.Sprintf("sync_%d_%d_%s", currentSlot, endSlot, targetPeer.String())
-
-		req := SyncRequest{
-			RequestID: requestID,
-			FromSlot:  currentSlot,
-			ToSlot:    endSlot,
-		}
-
-		logx.Info("NETWORK:SYNC BLOCK", "Sending sync request:", requestID, "for slots", currentSlot, "to", endSlot)
-
-		if err := ln.sendSyncRequestToPeer(req, targetPeer); err != nil {
-			logx.Error("NETWORK:SYNC BLOCK", "Failed to send sync request:", err)
-			continue
-		}
-
-		currentSlot = endSlot + 1
-	}
-
-	logx.Info("NETWORK:SYNC BLOCK", "Completed sending all sync requests from slot", fromSlot, "to", toSlot)
 }
 
 func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {

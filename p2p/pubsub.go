@@ -139,26 +139,23 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			return nil
 		},
-		OnSyncResponseReceived: func(blocks []*block.BroadcastedBlock) error {
-			logx.Info("NETWORK:SYNC BLOCK", "Processing ", len(blocks), " blocks from sync response")
+		OnSyncResponseReceived: func(blk *block.BroadcastedBlock) error {
 
-			// Add all blocks to global ordering queue
-			for _, blk := range blocks {
-				if blk == nil {
-					continue
-				}
+			// Add block to global ordering queue
+			if blk == nil {
+				return nil
+			}
 
-				// Add to ordering queue - this will process blocks in order
-				if err := ln.AddBlockToOrderingQueue(blk, bs, ld); err != nil {
-					logx.Error("NETWORK:SYNC BLOCK", "Failed to add block to ordering queue: ", err)
-					continue
-				}
+			// Add to ordering queue - this will process block in order
+			if err := ln.AddBlockToOrderingQueue(blk, bs, ld); err != nil {
+				logx.Error("NETWORK:SYNC BLOCK", "Failed to add block to ordering queue: ", err)
+				return nil
 			}
 
 			if !ln.IsNodeReady() {
 				gap := uint64(0)
-				if ln.worldLatestSlot > blocks[len(blocks)-1].Slot {
-					gap = ln.worldLatestSlot - blocks[len(blocks)-1].Slot
+				if ln.worldLatestSlot > blk.Slot {
+					gap = ln.worldLatestSlot - blk.Slot
 				}
 
 				if gap <= SnapshotReadyGapThreshold {

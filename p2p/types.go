@@ -46,7 +46,7 @@ type Libp2pNetwork struct {
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
-	onSyncResponseReceived func([]*block.BroadcastedBlock) error
+	onSyncResponseReceived func(*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	onSnapshotAnnounce     func(SnapshotAnnounce) error
@@ -182,7 +182,7 @@ type Callbacks struct {
 	OnVoteReceived         func(*consensus.Vote) error
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
-	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+	OnSyncResponseReceived func(*block.BroadcastedBlock) error
 	OnSnapshotAnnounce     func(SnapshotAnnounce) error
 }
 
