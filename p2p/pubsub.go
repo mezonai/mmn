@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/monitoring"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -47,6 +48,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
+				monitoring.IncreaseInvalidPohCount()
 			}
 
 			// Reset poh to sync poh clock with leader
