@@ -8,6 +8,7 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -151,6 +152,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
+					monitoring.IncreaseFailedTpsCount()
 				}
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				state[tx.Sender].Nonce++
@@ -174,6 +176,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
 					l.eventRouter.PublishTransactionEvent(event)
+					monitoring.IncreaseFailedTpsCount()
 				}
 				return err
 			}

@@ -124,6 +124,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	if mp.eventRouter != nil {
 		event := events.NewTransactionAddedToMempool(txHash, tx)
 		mp.eventRouter.PublishTransactionEvent(event)
+		monitoring.IncreaseIngressTpsCount()
 	}
 
 	// Handle broadcast safely
