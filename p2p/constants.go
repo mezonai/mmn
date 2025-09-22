@@ -29,6 +29,6 @@ var (
 	SyncBlocksBatchSize          uint64 = 10 // for test only, should be 1000
 	MaxcheckpointScanBlocksRange uint64 = 100
 	SnapshotRangeFor             uint64 = 50 // for test only, should be 20k ~ 50k
-	SnapshotReadyGapThreshold    uint64 = 5
+	SnapshotReadyGapThreshold    uint64 = 2
 	SnapshotChunkSize            int    = 16384
 )
