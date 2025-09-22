@@ -21,7 +21,7 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 	defer ln.blockOrderingMu.Unlock()
 
 	// Skip if block already exists in store
-	if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+	if existingBlock := bs.HasCompleteBlock(blk.Slot); existingBlock {
 		return nil
 	}
 
@@ -42,12 +42,13 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 			ln.nextExpectedSlot++
 		} else if ln.isLeaderOfSlot(ln.nextExpectedSlot) {
 			// Create empty block for leader slot
+			// TODO: should move logic create empty block to another function
 			prevHash := ln.getPrevHashForSlot(ln.nextExpectedSlot, bs, processedBlocks)
 			emptyBlock := block.AssembleBlock(
 				ln.nextExpectedSlot,
 				prevHash,
 				ln.selfPubKey,
-				[]poh.Entry{},
+				[]poh.Entry{}, // TODO should simulate entries with empty txs
 			)
 
 			emptyBlock.Sign(ln.selfPrivKey)
@@ -141,20 +142,6 @@ func (ln *Libp2pNetwork) ClearOrderingQueue() {
 	defer ln.blockOrderingMu.Unlock()
 
 	ln.blockOrderingQueue = make(map[uint64]*block.BroadcastedBlock)
-}
-
-// GetLeaderSlotsInRange returns all slots in [start, end] where this node is leader.
-func (ln *Libp2pNetwork) GetLeaderSlotsInRange(start, end uint64) []uint64 {
-	if start > end || ln.leaderSchedule == nil {
-		return nil
-	}
-	leaders := make([]uint64, 0, end-start+1)
-	for s := start; s <= end; s++ {
-		if leader, ok := ln.leaderSchedule.LeaderAt(s); ok && leader == ln.selfPubKey {
-			leaders = append(leaders, s)
-		}
-	}
-	return leaders
 }
 
 func (ln *Libp2pNetwork) isLeaderOfSlot(slot uint64) bool {

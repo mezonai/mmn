@@ -46,11 +46,6 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 	}
 }
 
-func (ln *Libp2pNetwork) GetBlock(slot uint64) *block.Block {
-	blk := ln.blockStore.Block(slot)
-	return blk
-}
-
 func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *pubsub.Subscription) {
 	logx.Info("NETWORK:SYNC BLOCK", "Starting block sync request topic handler")
 
@@ -284,8 +279,8 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		}
 
 		slot := currentFromSlot
-		for slot <= localLatestSlot && slot <= currentToSlot {
-			blk := ln.GetBlock(slot)
+		for slot <= currentToSlot {
+			blk := ln.blockStore.Block(slot)
 			if blk != nil {
 				batch = append(batch, blk)
 			}
