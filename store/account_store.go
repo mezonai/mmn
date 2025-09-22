@@ -5,9 +5,9 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/jsonx"
 )
 
 type AccountStore interface {
@@ -136,7 +136,7 @@ func (as *GenericAccountStore) GetAll() ([]*types.Account, error) {
 	err := iterable.IteratePrefix(prefix, func(key, value []byte) bool {
 		// Deserialize account
 		var acc types.Account
-		if err := json.Unmarshal(value, &acc); err != nil {
+		if err := jsonx.Unmarshal(value, &acc); err != nil {
 			// Skip invalid accounts
 			return true
 		}

@@ -419,13 +419,13 @@ func (ln *Libp2pNetwork) handleSnapshotAnnounce(ctx context.Context, sub *pubsub
 			return
 		}
 		var ann SnapshotAnnounce
-		if err := json.Unmarshal(msg.Data, &ann); err != nil {
+		if err := jsonx.Unmarshal(msg.Data, &ann); err != nil {
 			continue
 		}
 		if ann.PeerID == ln.selfPubKey {
 			continue
 		}
-		localSlot := ln.blockStore.GetLatestSlot()
+		localSlot := ln.blockStore.GetLatestFinalizedSlot()
 		if ann.Slot > localSlot {
 			logx.Info("SNAPSHOT:GOSSIP", "Announce received slot=", ann.Slot, " udp=", ann.UDPAddr)
 			if ln.onSnapshotAnnounce != nil {
@@ -448,7 +448,7 @@ func (ln *Libp2pNetwork) handleSnapshotRequest(ctx context.Context, sub *pubsub.
 		}
 
 		var req SnapshotRequest
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
+		if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
 			continue
 		}
 
@@ -475,7 +475,7 @@ func (ln *Libp2pNetwork) handleSnapshotRequest(ctx context.Context, sub *pubsub.
 			CreatedAt: time.Now().Unix(),
 			PeerID:    ln.selfPubKey,
 		}
-		data, _ := json.Marshal(ann)
+		data, _ := jsonx.Marshal(ann)
 		if ln.topicSnapshotAnnounce != nil {
 			_ = ln.topicSnapshotAnnounce.Publish(ctx, data)
 			logx.Info("SNAPSHOT:GOSSIP", "announce in response slot=", ann.Slot)
@@ -572,7 +572,7 @@ func (ln *Libp2pNetwork) startSnapshotAnnouncer() {
 					// skip announce if no valid addr
 					continue
 				}
-				data, _ := json.Marshal(ann)
+				data, _ := jsonx.Marshal(ann)
 				if err := ln.topicSnapshotAnnounce.Publish(ln.ctx, data); err == nil {
 					logx.Info("SNAPSHOT:GOSSIP", "Announce published slot=", ann.Slot)
 					// simulate local delivery to surface logs in single-node runs

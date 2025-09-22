@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"log"
 	"net"
 	"net/http"
@@ -15,11 +14,9 @@ import (
 	"syscall"
 	"time"
 
-<<<<<<< HEAD
-	"github.com/mezonai/mmn/api"
 	"github.com/mezonai/mmn/db"
-=======
->>>>>>> a306003eba1b8a95989ca7e7c5eb964a0d92e678
+	"github.com/mezonai/mmn/monitoring"
+
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
@@ -440,11 +437,11 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 func serveMetricsApi(listenAddr string) {
 	mux := http.NewServeMux()
 	monitoring.RegisterMetrics(mux)
-	go func() {
+	exception.SafeGo("serveMetricsApi", func() {
 		err := http.ListenAndServe(listenAddr, mux)
 		if err != nil {
 			logx.Error("NODE", fmt.Sprintf("Failed to expose metrics for monitoring: %v", err))
 			os.Exit(1)
 		}
-	}()
+	})
 }
