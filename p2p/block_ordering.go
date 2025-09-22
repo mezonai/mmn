@@ -42,7 +42,6 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 			ln.nextExpectedSlot++
 		} else if ln.isLeaderOfSlot(ln.nextExpectedSlot) {
 			// Create empty block for leader slot
-			// TODO: should move logic create empty block to another function
 			prevHash := ln.getPrevHashForSlot(ln.nextExpectedSlot, bs, processedBlocks)
 			emptyBlock := block.AssembleBlock(
 				ln.nextExpectedSlot,
@@ -157,26 +156,20 @@ func (ln *Libp2pNetwork) getPrevHashForSlot(slot uint64, bs store.BlockStore, pr
 		return [32]byte{}
 	}
 
-	// First check in block store
-	prevBlock := bs.Block(prevSlot)
-	if prevBlock != nil {
-		return prevBlock.LastEntryHash()
-	}
-
 	// Check in processed blocks (blocks being processed in current batch)
-	for _, blk := range processedBlocks {
-		if blk.Slot == prevSlot {
-			return blk.LastEntryHash()
+	if len(processedBlocks) > 0 {
+		lastProcessedBlock := processedBlocks[len(processedBlocks)-1]
+		if lastProcessedBlock.Slot == prevSlot {
+			return lastProcessedBlock.LastEntryHash()
+		}
+	} else {
+		// First check in block store
+		prevBlock := bs.Block(prevSlot)
+		if prevBlock != nil {
+			return prevBlock.LastEntryHash()
 		}
 	}
 
-	// If not in processed blocks, check in ordering queue
-	ln.blockOrderingMu.RLock()
-	if queuedBlock, exists := ln.blockOrderingQueue[prevSlot]; exists {
-		ln.blockOrderingMu.RUnlock()
-		return queuedBlock.LastEntryHash()
-	}
-	ln.blockOrderingMu.RUnlock()
-
+	logx.Warn("BLOCK:ORDERING", "No previous hash found for slot", prevSlot)
 	return [32]byte{}
 }
