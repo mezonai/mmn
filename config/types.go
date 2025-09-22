@@ -13,7 +13,6 @@ type NodeConfig struct {
 	Libp2pAddr         string   `yaml:"libp2p_addr"`
 	GRPCAddr           string   `yaml:"grpc_addr"`
 	BootStrapAddresses []string `yaml:"bootstrap_addresses"`
-	JoinAfterSync      bool     `yaml:"join_after_sync"` // If true, node joins network only after snapshot download and block sync
 }
 
 // LeaderSchedule represents a leader schedule entry

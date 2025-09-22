@@ -54,8 +54,6 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
-	joinAfterSync   bool // New flag for join behavior
-	snapshotUDPPort string
 )
 
 var runCmd = &cobra.Command{
@@ -78,8 +76,6 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().BoolVar(&joinAfterSync, "sync", false, "Join the network after syncing blocks")
-	runCmd.Flags().StringVar(&snapshotUDPPort, "udp-port", ":9100", "UDP port for snapshot streaming :<port>")
 
 }
 
@@ -178,7 +174,6 @@ func runNode() {
 		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
-		JoinAfterSync:      joinAfterSync,
 	}
 
 	txTracker := transaction.NewTransactionTracker()
@@ -212,7 +207,7 @@ func runNode() {
 
 	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, snapshotUDPPort)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, latestSlot)
@@ -306,13 +301,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
-		self.JoinAfterSync,
 	)
-
-	if err == nil {
-		// Set join behavior based on configuration
-		libp2pNetwork.SetJoinBehavior(self.JoinAfterSync)
-	}
 
 	return libp2pNetwork, err
 }

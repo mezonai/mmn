@@ -86,16 +86,12 @@ type Libp2pNetwork struct {
 	ready              atomic.Bool
 
 	// New field for join behavior control
-	joinAfterSync   bool
 	worldLatestSlot uint64
 
 	// Global block ordering queue
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
 	blockOrderingMu    sync.RWMutex
-
-	// Snapshot UDP port
-	snapshotUDPPort string
 
 	OnStartPoh       func()
 	OnStartValidator func()
@@ -187,7 +183,6 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error
-	OnSnapshotAnnounce     func(SnapshotAnnounce) error
 }
 
 type CheckpointHashRequest struct {

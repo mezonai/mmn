@@ -32,7 +32,6 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
-	joinAfterSync bool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -95,7 +94,6 @@ func NewNetWork(
 		recentlyRequestedSlots: make(map[uint64]time.Time),
 		ctx:                    ctx,
 		cancel:                 cancel,
-		joinAfterSync:          joinAfterSync,
 		worldLatestSlot:        0,
 		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
 		nextExpectedSlot:       0,
