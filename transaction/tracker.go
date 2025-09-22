@@ -42,20 +42,31 @@ func NewTransactionTracker() *TransactionTracker {
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
-	if t.IsRemoved(txHash) {
-		t.historyList.Delete(txHash)
+
+	// Use atomic LoadOrStore to avoid race conditions
+	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
+	if loadedProcessing {
+		logx.Debug("TRACKER", fmt.Sprintf("Transaction %s already being processed, skipping", txHash))
 		return
 	}
-	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
-	if !loadedProcessing {
-		atomic.AddInt64(&t.processingCount, 1)
-	}
+	atomic.AddInt64(&t.processingCount, 1)
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
-		txHashes = append(existing.([]string), txHash)
-		t.senderTxs.Store(tx.Sender, txHashes)
+		txHashes = existing.([]string)
+		// Check if txHash already exists to avoid duplicates
+		found := false
+		for _, existingHash := range txHashes {
+			if existingHash == txHash {
+				found = true
+				break
+			}
+		}
+		if !found {
+			txHashes = append(txHashes, txHash)
+			t.senderTxs.Store(tx.Sender, txHashes)
+		}
 	} else {
 		txHashes = []string{txHash}
 		t.senderTxs.Store(tx.Sender, txHashes)
