@@ -113,34 +113,12 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 	return nil
 }
 
-func (ln *Libp2pNetwork) GetOrderingQueueStatus() (nextExpected uint64, queueSize int, queuedSlots []uint64) {
-	ln.blockOrderingMu.RLock()
-	defer ln.blockOrderingMu.RUnlock()
-
-	nextExpected = ln.nextExpectedSlot
-	queueSize = len(ln.blockOrderingQueue)
-
-	queuedSlots = make([]uint64, 0, len(ln.blockOrderingQueue))
-	for slot := range ln.blockOrderingQueue {
-		queuedSlots = append(queuedSlots, slot)
-	}
-
-	return nextExpected, queueSize, queuedSlots
-}
-
 func (ln *Libp2pNetwork) SetNextExpectedSlot(slot uint64) {
 	ln.blockOrderingMu.Lock()
 	defer ln.blockOrderingMu.Unlock()
 
 	ln.nextExpectedSlot = slot
 	logx.Info("BLOCK:ORDERING", "Set next expected slot to", slot)
-}
-
-func (ln *Libp2pNetwork) ClearOrderingQueue() {
-	ln.blockOrderingMu.Lock()
-	defer ln.blockOrderingMu.Unlock()
-
-	ln.blockOrderingQueue = make(map[uint64]*block.BroadcastedBlock)
 }
 
 func (ln *Libp2pNetwork) isLeaderOfSlot(slot uint64) bool {
