@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/zkverify"
 
@@ -130,13 +131,13 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	// Handle broadcast safely
 	if broadcast && mp.broadcaster != nil {
 		// Use goroutine to avoid blocking the critical path
-		go func() {
+		exception.SafeGo("TxBroadcast", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := mp.broadcaster.TxBroadcast(ctx, tx); err != nil {
 				logx.Error("MEMPOOL", fmt.Sprintf("Broadcast error: %v", err))
 			}
-		}()
+		})
 	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("Added tx %s", txHash))
