@@ -63,7 +63,7 @@ func setupIntegrationTest(t *testing.T) (*TestService, func()) {
 
 	// Create MMN user keys table if not exists (for testing)
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS mmn_wallet (
+		CREATE TABLE IF NOT EXISTS mmn_user_keys (
 			user_id      BIGINT PRIMARY KEY,
 			address      VARCHAR(255) NOT NULL,
 			enc_privkey  TEXT NOT NULL,

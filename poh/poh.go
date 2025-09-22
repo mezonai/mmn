@@ -82,7 +82,11 @@ func (p *Poh) Record(mixin [32]byte) *PohEntry {
 		return nil
 	}
 
-	p.hashOnce(append(p.Hash[:], mixin[:]...))
+	// Optimize: avoid memory allocation
+	var combined [64]byte
+	copy(combined[:32], p.Hash[:])
+	copy(combined[32:], mixin[:])
+	p.hashOnce(combined[:])
 
 	entry := &PohEntry{
 		NumHashes: p.NumHashes,

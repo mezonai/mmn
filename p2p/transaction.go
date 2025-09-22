@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/jsonx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )

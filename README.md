@@ -115,9 +115,26 @@ go build -o bin/mmn ./cmd
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
 
-## Monitoring stack (Grafana + Loki + Promtail + Prometheus)
+## Performance Testing (TPS)
 
-- Create prometheus targets config file named `nodes.yaml` inside `./monitoring/prometheus/targets`, take a look at [example file](monitoring/prometheus/targets/nodes.example.yml)
-- Open grafana at http://localhost:3300 (admin / admin)
-- Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
-- Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs
+### Previous TPS Results (60 users x 20 tx)
+
+| Users | Total TXs | Ingress TPS | Executed TPS | Finalized TPS | Sent OK | Total Time |
+|-------|-----------|-------------|--------------|---------------|---------|------------|
+| 60    | 1200      | 1895.42     | 48.51        | 48.51         | 1200    | ~49.74s    |
+
+listen SubscribeTransactionStatus
+- Ingress TPS: numPending / (lastPending - firstSent)
+- Executed TPS: numConfirmed / (lastConfirmed - firstSent)
+- Finalized TPS: numFinalized / (lastFinalized - firstSent)
+
+### Latest TPS Results (120 users x 20 tx) - September 17, 2025
+
+| Users | Total TXs | Ingress TPS | Executed TPS | Finalized TPS | Sent OK | Failed | Success Rate | Total Time |
+|-------|-----------|-------------|--------------|---------------|---------|--------|--------------|------------|
+| 120   | 2400      | 2892.94     | 148.84       | 148.84        | 2400    | 0      | 100%         | ~13.84s    |
+
+## Monitoring stack (Grafana + Loki + Promtail)
+
+- Open grafana at http://localhost:3000 (admin / admin)
+- Navigate to [Drilldown > Logs](http://localhost:3000/a/grafana-lokiexplore-app/explore)

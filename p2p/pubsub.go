@@ -21,6 +21,7 @@ import (
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
@@ -39,7 +40,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestStoreSlot() {
+			if blk.Slot > bs.GetLatestFinalizedSlot() {
 				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
 				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
 					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
@@ -53,8 +54,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			// Remove transactions in block from mempool and add tx tracker if node is follower
 			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-				mp.BlockCleanup(blk)
+				go mp.BlockCleanup(utils.BroadcastedBlockToBlock(blk))
 			}
+
+			// Temporary comment to save bandwidth for main flow
+			// if len(ln.host.Network().Peers()) > 0 {
+			// 	go ln.checkForMissingBlocksAround(bs, blk.Slot)
+			// }
 
 			vote := &consensus.Vote{
 				Slot:      blk.Slot,

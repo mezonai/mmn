@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"time"
 
 	"github.com/mezonai/mmn/config"
@@ -11,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/monitoring"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/utils"

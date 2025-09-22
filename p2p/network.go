@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
@@ -83,6 +83,7 @@ func NewNetWork(
 		selfPrivKey:            selfPrivKey,
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
+		syncStreams:            make(map[peer.ID]network.Stream),
 		blockStore:             blockStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
@@ -186,7 +187,6 @@ func (ln *Libp2pNetwork) Close() {
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
-	// Minus by 1 to exclude self node in the peer list
 	return len(ln.host.Network().Peers()) - 1
 }
 

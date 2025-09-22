@@ -5,9 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"hash"
+	"sync"
 	"time"
 
-	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
 )
 
@@ -35,10 +36,6 @@ type Block struct {
 }
 
 func (b *Block) LastEntryHash() [32]byte {
-	if len(b.Entries) == 0 {
-		logx.Warn("BLOCK", "LastEntryHash called on block with no entries, returning zero hash")
-		return [32]byte{}
-	}
 	return b.Entries[len(b.Entries)-1].Hash
 }
 
@@ -80,31 +77,42 @@ func AssembleBlock(
 	return b
 }
 
+var (
+	hasherPool = sync.Pool{New: func() interface{} { return sha256.New() }}
+	buf8Pool   = sync.Pool{New: func() interface{} { return make([]byte, 8) }}
+)
+
 func (b *BroadcastedBlock) Sign(privKey ed25519.PrivateKey) {
 	sig := ed25519.Sign(privKey, b.Hash[:])
 	b.Signature = sig
 }
 
 func (b *BroadcastedBlock) computeHash() [32]byte {
-	h := sha256.New()
+	h := hasherPool.Get().(hash.Hash)
+	h.Reset()
+	defer hasherPool.Put(h)
+
+	buf := buf8Pool.Get().([]byte)
+	defer buf8Pool.Put(buf)
+
 	// Slot
-	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, b.Slot)
-	h.Write(buf)
+	_, _ = h.Write(buf)
 	// PrevHash
-	h.Write(b.PrevHash[:])
+	_, _ = h.Write(b.PrevHash[:])
 	// LeaderID
-	h.Write([]byte(b.LeaderID))
+	_, _ = h.Write([]byte(b.LeaderID))
 	// Timestamp (UnixNano)
 	binary.BigEndian.PutUint64(buf, b.Timestamp)
-	h.Write(buf)
+	_, _ = h.Write(buf)
 	for _, e := range b.Entries {
 		binary.BigEndian.PutUint64(buf, e.NumHashes)
-		h.Write(buf)
-		h.Write(e.Hash[:])
+		_, _ = h.Write(buf)
+		_, _ = h.Write(e.Hash[:])
 	}
 	var out [32]byte
-	copy(out[:], h.Sum(nil))
+	sum := h.Sum(nil)
+	copy(out[:], sum)
 	return out
 }
 
@@ -117,9 +125,5 @@ func (b *BroadcastedBlock) VerifyPoH() error {
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {
-	if len(b.Entries) == 0 {
-		logx.Warn("BLOCK", "LastEntryHash called on broadcasted block with no entries, returning zero hash")
-		return [32]byte{}
-	}
 	return b.Entries[len(b.Entries)-1].Hash
 }

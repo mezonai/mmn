@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"log"
 	"net"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/store"
@@ -320,7 +320,6 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
 	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, lastSlot uint64) (*validator.Validator, error) {
-
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load validator config: %w", err)

@@ -44,7 +44,8 @@ type Libp2pNetwork struct {
 	onLatestSlotReceived   func(uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 
-	maxPeers int
+	syncStreams map[peer.ID]network.Stream
+	maxPeers    int
 
 	activeSyncRequests map[string]*SyncRequestInfo
 	syncMu             sync.RWMutex

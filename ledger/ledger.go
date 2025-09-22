@@ -1,10 +1,12 @@
 package ledger
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
@@ -25,21 +27,23 @@ var (
 )
 
 type Ledger struct {
-	mu           sync.RWMutex
-	txStore      store.TxStore
-	txMetaStore  store.TxMetaStore
-	accountStore store.AccountStore
-	eventRouter  *events.EventRouter
-	txTracker    interfaces.TransactionTrackerInterface
+	mu               sync.RWMutex
+	txStore          store.TxStore
+	txMetaStore      store.TxMetaStore
+	accountStore     store.AccountStore
+	eventRouter      *events.EventRouter
+	txTracker        interfaces.TransactionTrackerInterface
+	parallelExecutor *ParallelExecutor
 }
 
 func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
 	return &Ledger{
-		txStore:      txStore,
-		txMetaStore:  txMetaStore,
-		accountStore: accountStore,
-		eventRouter:  eventRouter,
-		txTracker:    txTracker,
+		txStore:          txStore,
+		txMetaStore:      txMetaStore,
+		accountStore:     accountStore,
+		eventRouter:      eventRouter,
+		txTracker:        txTracker,
+		parallelExecutor: NewParallelExecutor(),
 	}
 }
 
@@ -92,11 +96,16 @@ func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 
 // AccountExists checks if an account exists (implements LedgerInterface)
 func (l *Ledger) AccountExists(addr string) (bool, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.accountStore.ExistsByAddr(addr)
 }
 
 // Balance returns current balance for addr
 func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
 	acc, err := l.accountStore.GetByAddr(addr)
 	if err != nil {
 		return uint256.NewInt(0), err
@@ -108,11 +117,75 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d with parallel execution", b.Slot))
 	if b.InvalidPoH {
 		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
 		return nil
 	}
+
+	blockHash := hex.EncodeToString(b.Hash[:])
+
+	for _, entry := range b.Entries {
+		txs, err := l.txStore.GetBatch(entry.TxHashes)
+		if err != nil {
+			return err
+		}
+
+		if len(txs) == 0 {
+			continue
+		}
+
+		// Use parallel execution for transactions
+		ctx := context.Background()
+		dependencies := l.parallelExecutor.AnalyzeDependencies(txs)
+
+		startTime := time.Now()
+		results, err := l.parallelExecutor.ExecuteParallel(
+			ctx,
+			dependencies,
+			l.accountStore,
+			l.eventRouter,
+			b.Slot,
+			blockHash,
+		)
+		executionTime := time.Since(startTime)
+
+		if err != nil {
+			logx.Error("LEDGER", fmt.Sprintf("Parallel execution failed: %v", err))
+			return l.applyBlockSequential(b)
+		}
+
+		// Validate and commit results
+		if err := l.parallelExecutor.ValidateAndCommit(results, l.accountStore, l.txMetaStore); err != nil {
+			logx.Error("LEDGER", fmt.Sprintf("Failed to commit parallel execution results: %v", err))
+			return err
+		}
+
+		// Remove failed transactions from tracker
+		for _, result := range results {
+			if !result.Success && l.txTracker != nil {
+				l.txTracker.RemoveTransaction(result.Tx.Hash())
+			}
+		}
+
+		successCount := 0
+		for _, result := range results {
+			if result.Success {
+				successCount++
+			}
+		}
+
+		logx.Info("LEDGER", fmt.Sprintf("Parallel execution completed: %d/%d transactions successful in %v",
+			successCount, len(txs), executionTime))
+	}
+
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied with parallel execution", b.Slot))
+	return nil
+}
+
+// fallback sequential execution method
+func (l *Ledger) applyBlockSequential(b *block.Block) error {
+	logx.Info("LEDGER", fmt.Sprintf("Falling back to sequential execution for block %d", b.Slot))
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -166,6 +239,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			}
 			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
+			addHistory(state[tx.Sender], tx)
+			if tx.Recipient != tx.Sender {
+				addHistory(state[tx.Recipient], tx)
+			}
 			// Remove successful transaction from tracker
 			if l.txTracker != nil {
 				l.txTracker.RemoveTransaction(txHash)
@@ -187,23 +264,19 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		}
 	}
 
-	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied sequentially", b.Slot))
 	return nil
 }
 
 // GetAccount returns account with addr (nil if not exist)
 func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.accountStore.GetByAddr(addr)
 }
 
 // Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
 func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
-	if tx == nil {
-		return fmt.Errorf("transaction cannot be nil")
-	}
-	if tx.Amount == nil {
-		return fmt.Errorf("transaction amount cannot be nil")
-	}
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: uint256.NewInt(0), Nonce: 0}
@@ -228,6 +301,10 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	return nil
 }
 
+func addHistory(acc *types.Account, tx *transaction.Transaction) {
+	acc.History = append(acc.History, tx.Hash())
+}
+
 func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error, error) {
 	tx, errTx := l.txStore.GetByHash(hash)
 	txMeta, errTxMeta := l.txMetaStore.GetByHash(hash)
@@ -235,6 +312,40 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 		return nil, nil, errTx, errTxMeta
 	}
 	return tx, txMeta, nil, nil
+}
+
+func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	txs := make([]*transaction.Transaction, 0)
+	acc, err := l.accountStore.GetByAddr(addr)
+	if err != nil {
+		return 0, txs
+	}
+
+	// filter type: 0: all, 1: sender, 2: recipient
+	filteredHistory := make([]*transaction.Transaction, 0)
+	transactions, err := l.txStore.GetBatch(acc.History)
+	if err != nil {
+		return 0, txs
+	}
+	for _, tx := range transactions {
+		if filter == 0 {
+			filteredHistory = append(filteredHistory, tx)
+		} else if filter == 1 && tx.Sender == addr {
+			filteredHistory = append(filteredHistory, tx)
+		} else if filter == 2 && tx.Recipient == addr {
+			filteredHistory = append(filteredHistory, tx)
+		}
+	}
+
+	total := uint32(len(filteredHistory))
+	start := offset
+	end := min(start+limit, total)
+	txs = filteredHistory[start:end]
+
+	return total, txs
 }
 
 // LedgerView is a view of the ledger to verify block before applying it to the ledger.

@@ -40,8 +40,8 @@ leveldb
 ./mmn
 node-data
 
-# Log files
-mmn*.log
-
 # Prometheus config
 /monitoring/prometheus/targets/nodes.yml
+
+# Log files
+mmn*.log

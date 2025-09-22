@@ -2,15 +2,15 @@ package api
 
 import (
 	"fmt"
+	"github.com/mezonai/mmn/logx"
 	"io"
 	"net/http"
-	_ "net/http/pprof"
-
-	"github.com/mezonai/mmn/logx"
+	"strconv"
 
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 )
 
@@ -19,16 +19,13 @@ type TxReq struct {
 }
 
 type APIServer struct {
-	mux        *http.ServeMux
 	Mempool    *mempool.Mempool
 	Ledger     *ledger.Ledger
 	ListenAddr string
 }
 
 func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIServer {
-	mux := http.NewServeMux()
 	return &APIServer{
-		mux:        mux,
 		Mempool:    mp,
 		Ledger:     ledger,
 		ListenAddr: addr,
@@ -36,16 +33,18 @@ func NewAPIServer(mp *mempool.Mempool, ledger *ledger.Ledger, addr string) *APIS
 }
 
 func (s *APIServer) Start() {
-	s.mux.HandleFunc("/txs", s.handleTxs)
-	s.mux.HandleFunc("/account", s.handleAccount)
+	http.HandleFunc("/txs", s.handleTxs)
+	http.HandleFunc("/account", s.handleAccount)
 	logx.Info("API SERVER", "Api server listening on ", s.ListenAddr)
-	go http.ListenAndServe(s.ListenAddr, s.mux)
+	go http.ListenAndServe(s.ListenAddr, nil)
 }
 
 func (s *APIServer) handleTxs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		s.submitTxHandler(w, r)
+	case http.MethodGet:
+		s.getTxsHandler(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -83,6 +82,40 @@ func (s *APIServer) submitTxHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte("ok"))
+}
+
+func (s *APIServer) getTxsHandler(w http.ResponseWriter, r *http.Request) {
+	addr := r.URL.Query().Get("addr")
+	if addr == "" {
+		http.Error(w, "missing addr param", http.StatusBadRequest)
+		return
+	}
+	limit, err := strconv.ParseUint(r.URL.Query().Get("limit"), 10, 32)
+	if err != nil {
+		limit = 10
+	}
+	offset, err := strconv.ParseUint(r.URL.Query().Get("offset"), 10, 32)
+	if err != nil {
+		offset = 0
+	}
+	filter, err := strconv.ParseUint(r.URL.Query().Get("filter"), 10, 32)
+	if err != nil {
+		filter = 0
+	}
+
+	result := struct {
+		Total uint32
+		Txs   []*transaction.Transaction
+	}{
+		Total: 0,
+		Txs:   make([]*transaction.Transaction, 0),
+	}
+	total, txs := s.Ledger.GetTxs(addr, uint32(limit), uint32(offset), uint32(filter))
+	result.Total = total
+	result.Txs = txs
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) {
