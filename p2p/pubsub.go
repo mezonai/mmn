@@ -160,6 +160,13 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 				if gap <= SnapshotReadyGapThreshold {
 					ln.enableFullModeOnce.Do(func() {
+						ln.OnForceResetPOH(blk.LastEntryHash(), blk.Slot)
+						if ln.OnStartPoh != nil {
+							ln.OnStartPoh()
+						}
+						if ln.OnStartValidator != nil {
+							ln.OnStartValidator()
+						}
 						ln.SetupPubSubTopics(ln.ctx)
 						ln.setNodeReady()
 					})
@@ -398,6 +405,16 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 			if localLatestSlot == 0 {
 				ln.SetupPubSubTopics(ln.ctx)
+				ln.enableFullModeOnce.Do(func() {
+					// Start PoH/Validator immediately without sync
+					if ln.OnStartPoh != nil {
+						ln.OnStartPoh()
+					}
+					if ln.OnStartValidator != nil {
+						ln.OnStartValidator()
+					}
+					ln.setNodeReady()
+				})
 			} else {
 
 				for {
@@ -410,6 +427,26 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 					ln.RequestBlockSyncFromLatest(ln.ctx)
 				} else {
 					ln.SetupPubSubTopics(ln.ctx)
+					// No sync required; start services based on local latest state
+					ln.enableFullModeOnce.Do(func() {
+						latest := ln.blockStore.GetLatestFinalizedSlot()
+						var seed [32]byte
+						if latest > 0 {
+							if blk := ln.blockStore.Block(latest); blk != nil {
+								seed = blk.LastEntryHash()
+							}
+						}
+						if ln.OnForceResetPOH != nil {
+							ln.OnForceResetPOH(seed, latest)
+						}
+						if ln.OnStartPoh != nil {
+							ln.OnStartPoh()
+						}
+						if ln.OnStartValidator != nil {
+							ln.OnStartValidator()
+						}
+						ln.setNodeReady()
+					})
 				}
 			}
 		}()

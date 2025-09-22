@@ -220,7 +220,9 @@ func runNode() {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
-	// Start services
+	libP2pClient.OnStartPoh = func() { pohService.Start() }
+	libP2pClient.OnStartValidator = func() { val.Run() }
+
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
@@ -291,7 +293,6 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule, latestSlot)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
-	pohService.Start()
 
 	return pohEngine, pohService, recorder, nil
 }
@@ -354,7 +355,6 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector, lastSlot,
 	)
-	val.Run()
 
 	// Cache leader schedule inside p2p for local leader checks
 	p2pClient.ApplyLeaderSchedule(val.Schedule)

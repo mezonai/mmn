@@ -49,6 +49,7 @@ type Libp2pNetwork struct {
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
+	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
 	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	maxPeers int
@@ -95,6 +96,9 @@ type Libp2pNetwork struct {
 
 	// Snapshot UDP port
 	snapshotUDPPort string
+
+	OnStartPoh       func()
+	OnStartValidator func()
 }
 
 type PeerInfo struct {
