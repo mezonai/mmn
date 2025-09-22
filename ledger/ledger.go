@@ -154,7 +154,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
 					if errors.Is(err, ErrInvalidNonce) {
-						monitoring.IncreaseFailedTpsCount("invalid_nonce")
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxInvalidNonce)
 					} else {
 						monitoring.IncreaseFailedTpsCount(err.Error())
 					}
@@ -183,9 +183,9 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 					l.eventRouter.PublishTransactionEvent(event)
 					switch {
 					case errors.Is(err, store.ErrFailedMarshalAccount):
-						monitoring.IncreaseFailedTpsCount("failed_marshal_account")
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedMarshalAccount)
 					case errors.Is(err, store.ErrFaliedWriteAccount):
-						monitoring.IncreaseFailedTpsCount("failed_write_account")
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedWriteAccount)
 					default:
 						monitoring.IncreaseFailedTpsCount(err.Error())
 					}

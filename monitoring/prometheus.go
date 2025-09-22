@@ -23,6 +23,12 @@ var (
 	TxRejectedUnknown     TxRejectedReason = "other"
 )
 
+var (
+	FailedTxInvalidNonce         string = "invalid_nonce"
+	FailedTxFailedMarshalAccount string = "failed_marshal_account"
+	FailedTxFailedWriteAccount   string = "failed_write_account"
+)
+
 type nodePromMetrics struct {
 	nodeUpUnixSeconds     prometheus.Gauge
 	mempoolSize           prometheus.Gauge
@@ -242,7 +248,7 @@ func IncreaseFinalizedTpsCount() {
 }
 
 func IncreaseFailedTpsCount(reason string) {
-	nodeMetrics.failedTpsCounter.With(prometheus.Labels{
-		"reason": reason,
-	}).Inc()
+    nodeMetrics.failedTpsCounter.With(prometheus.Labels{
+        "reason": reason,
+    }).Inc()
 }
