@@ -5,9 +5,9 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/jsonx"
 )
 
 // TxMetaStore is the interface for transaction meta store

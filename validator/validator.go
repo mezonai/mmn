@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/monitoring"
-	"github.com/mezonai/mmn/snapshot"
 
 	"github.com/mezonai/mmn/store"
 
@@ -405,32 +404,4 @@ func (v *Validator) mempoolCleanupLoop() {
 			v.Mempool.PeriodicCleanup()
 		}
 	}
-}
-
-func writeSnapshotIfDue(ld *ledger.Ledger, slot uint64) {
-	if slot%p2p.RangeForSnapshot != 0 { // adjust interval as needed
-		return
-	}
-	accountStore := ld.GetAccountStore()
-	if accountStore == nil {
-		return
-	}
-	dbProvider := accountStore.GetDatabaseProvider()
-	if dbProvider == nil {
-		return
-	}
-	bankHash, err := snapshot.ComputeFullBankHash(dbProvider)
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("BankHash compute failed at slot %d: %v", slot, err))
-		return
-	}
-	dir := "/data/snapshots"
-	// Write snapshot and cleanup old ones, keep only the latest
-	saved, err := snapshot.WriteSnapshotAndCleanup(dir, dbProvider, slot, bankHash, nil)
-	if err != nil {
-		logx.Error("SNAPSHOT", fmt.Sprintf("Failed to write snapshot at slot %d: %v", slot, err))
-		return
-	}
-
-	logx.Info("SNAPSHOT", fmt.Sprintf("Created snapshot: %s (slot %d)", saved, slot))
 }

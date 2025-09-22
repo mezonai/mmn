@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/db"
-	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/mezonai/mmn/transaction"
 )

@@ -5,11 +5,12 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
-	"github.com/holiman/uint256"
-	"github.com/mezonai/mmn/logx"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/logx"
 
 	mmn "github.com/mezonai/mmn/client"
 	"github.com/mr-tron/base58"

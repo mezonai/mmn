@@ -24,7 +24,7 @@ func (s *AccountService) GetAccount(ctx context.Context, uid uint64) (mmnClient.
 	addr, _, err := s.ks.LoadKey(uid)
 	if err != nil {
 		if !errors.Is(err, mmnClient.ErrKeyNotFound) {
-			fmt.Printf("SendToken LoadKey Err %d %s %s %v\n", uid, addr, err)
+			fmt.Printf("SendToken LoadKey Err %d %s %s\n", uid, addr, err)
 			return mmnClient.Account{}, err
 		}
 		fmt.Printf("SendToken CreateKey %d\n", uid)

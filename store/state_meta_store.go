@@ -48,7 +48,7 @@ func (s *GenericStateMetaStore) GetBankHash(slot uint64) ([32]byte, bool, error)
 	if err != nil {
 		return [32]byte{}, false, fmt.Errorf("failed to get bank hash for slot %d: %w", slot, err)
 	}
-	if value == nil || len(value) == 0 {
+	if len(value) == 0 {
 		return [32]byte{}, false, nil
 	}
 	if len(value) != sha256.Size {
