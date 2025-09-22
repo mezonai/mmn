@@ -153,7 +153,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
-					monitoring.IncreaseFailedTpsCount()
+					if errors.Is(err, ErrInvalidNonce) {
+						monitoring.IncreaseFailedTpsCount("invalid_nonce")
+					} else {
+						monitoring.IncreaseFailedTpsCount(err.Error())
+					}
 				}
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				state[tx.Sender].Nonce++
@@ -177,7 +181,14 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
 					l.eventRouter.PublishTransactionEvent(event)
-					monitoring.IncreaseFailedTpsCount()
+					switch {
+					case errors.Is(err, store.ErrFailedMarshalAccount):
+						monitoring.IncreaseFailedTpsCount("failed_marshal_account")
+					case errors.Is(err, store.ErrFaliedWriteAccount):
+						monitoring.IncreaseFailedTpsCount("failed_write_account")
+					default:
+						monitoring.IncreaseFailedTpsCount(err.Error())
+					}
 				}
 				return err
 			}
@@ -220,7 +231,7 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	}
 	// Strict nonce validation to prevent duplicate transactions
 	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
+		return fmt.Errorf("%w: expected %d, got %d", ErrInvalidNonce, sender.Nonce+1, tx.Nonce)
 	}
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
@@ -337,7 +348,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 			if s.ledger.eventRouter != nil {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("sig/format: %v", err))
 				s.ledger.eventRouter.PublishTransactionEvent(event)
-				monitoring.IncreaseFailedTpsCount()
+				monitoring.IncreaseFailedTpsCount(err.Error())
 			}
 			errs = append(errs, fmt.Errorf("sig/format: %w", err))
 			continue
@@ -347,7 +358,7 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 			if s.ledger.eventRouter != nil {
 				event := events.NewTransactionFailed(tx, err.Error())
 				s.ledger.eventRouter.PublishTransactionEvent(event)
-				monitoring.IncreaseFailedTpsCount()
+				monitoring.IncreaseFailedTpsCount(err.Error())
 			}
 			errs = append(errs, err)
 			continue
@@ -356,3 +367,5 @@ func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []erro
 	}
 	return valid, errs
 }
+
+var ErrInvalidNonce = errors.New("invalid nonce")

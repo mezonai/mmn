@@ -117,6 +117,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				// Verify PoH
 				if err := blk.VerifyPoH(); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Invalid PoH for synced block: ", err)
+					monitoring.IncreaseInvalidPohCount()
 					continue
 				}
 				// Add to block store and publish transaction inclusion events
