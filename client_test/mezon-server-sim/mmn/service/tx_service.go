@@ -13,6 +13,7 @@ import (
 	mmnClient "github.com/mezonai/mmn/client"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	mmnpb "github.com/mezonai/mmn/proto"
+	"github.com/mr-tron/base58"
 )
 
 // -------- TxService --------
@@ -86,7 +87,11 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 		return "", err
 	}
 
-	signedRaw, err := mmnClient.SignTx(unsigned, fromPriv)
+	fromAddrBytes, err := base58.Decode(fromAddr)
+	if err != nil {
+		return "", err
+	}
+	signedRaw, err := mmnClient.SignTx(unsigned, fromAddrBytes, fromPriv)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +194,11 @@ func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, 
 		return "", err
 	}
 
-	signedRaw, err := mmnClient.SignTx(unsigned, fromPriv)
+	fromAddrBytes, err := base58.Decode(fromAddr)
+	if err != nil {
+		return "", err
+	}
+	signedRaw, err := mmnClient.SignTx(unsigned, fromAddrBytes, fromPriv)
 	if err != nil {
 		return "", err
 	}

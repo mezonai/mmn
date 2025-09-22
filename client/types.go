@@ -114,6 +114,11 @@ type SignedTx struct {
 	Sig string
 }
 
+type UserSig struct {
+	PubKey []byte
+	Sig    []byte
+}
+
 type AddTxResponse struct {
 	Ok     bool   `json:"ok"`
 	TxHash string `json:"tx_hash"`

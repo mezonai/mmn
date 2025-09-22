@@ -117,7 +117,7 @@ func transferToken(transferConfig TransferConfig) error {
 	}
 
 	// Sign the transaction
-	signedTx, err := mmn.SignTx(unsigned, senderPrivateKey.Seed())
+	signedTx, err := mmn.SignTx(unsigned, []byte(senderAddress), senderPrivateKey.Seed())
 	if err != nil {
 		return fmt.Errorf("failed to sign transaction: %w", err)
 	}

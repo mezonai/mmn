@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"os"
+	"strings"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -36,7 +38,7 @@ func NewZkVerify(keyPath string) *ZkVerify {
 	return &ZkVerify{vk: vk}
 }
 
-func (v *ZkVerify) Verify(proofB64, pubB64 string) bool {
+func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
 	proofBytes, err := base64.StdEncoding.DecodeString(proofB64)
 	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to decode proof: %v", err))
@@ -63,6 +65,31 @@ func (v *ZkVerify) Verify(proofB64, pubB64 string) bool {
 		return false
 	}
 
+	pubVector := pw.Vector()
+	var pubString = fmt.Sprintf("%v", pubVector)
+	pubStringTrimmed := strings.TrimSpace(strings.Trim(pubString, "[]"))
+	var pubStringArray = []string{}
+	if pubStringTrimmed != "" {
+		pubStringArray = strings.Split(pubStringTrimmed, ",")
+		for i := range pubStringArray {
+			pubStringArray[i] = strings.TrimSpace(pubStringArray[i])
+		}
+	}
+
+	if len(pubStringArray) != 4 {
+		logx.Error("ZkVerify", "Public input length invalid")
+		return false
+	}
+
+	if pubStringArray[3] != stringToBigIntBN254FromBytes(sender).String() {
+		logx.Error("ZkVerify", "Sender invalid")
+		return false
+	}
+	if pubStringArray[2] != stringToBigIntBN254FromBytes(pubKey).String() {
+		logx.Error("ZkVerify", "Key invalid")
+		return false
+	}
+
 	if err := groth16.Verify(proof, v.vk, pw); err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to verify: %v", err))
 		return false
@@ -70,4 +97,10 @@ func (v *ZkVerify) Verify(proofB64, pubB64 string) bool {
 		logx.Debug("ZkVerify", "Verify success")
 		return true
 	}
+}
+
+func stringToBigIntBN254FromBytes(s string) *big.Int {
+	scalarField := ecc.BN254.ScalarField()
+	value := new(big.Int).SetBytes([]byte(s))
+	return value.Mod(value, scalarField)
 }

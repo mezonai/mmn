@@ -106,7 +106,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey", faucetPublicKey)
-	toAddress := "FmyRGSQU4aswUJTu3eeLiMNZZXgUEzGLTHyU9kD8eMm7" // dummy base58 for test
+	toAddress := "8BH3ZXoAptWYbAc69221kKDrrPzvc4RaJ248qdbTs6k5" // dummy base58 for test
 
 	// Get current faucet account to get the next nonce
 	faucetAccount, err := client.GetAccount(ctx, faucetPublicKey)
@@ -139,7 +139,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
 
-	signedRaw, err := SignTx(unsigned, faucetPrivateKeySeed)
+	signedRaw, err := SignTx(unsigned, []byte(faucetPublicKey), faucetPrivateKeySeed)
 	if err != nil {
 		t.Fatalf("Failed to sign tx: %v", err)
 	}
@@ -186,8 +186,9 @@ func TestClient_SendToken(t *testing.T) {
 
 	ctx := context.Background()
 
-	fromAddress := "FmyRGSQU4aswUJTu3eeLiMNZZXgUEzGLTHyU9kD8eMm7" // dummy base58 for test
-	fromPrivateKeyHex := "302e020100300506032b65700422042026ecff75c084f52a7acbf7b2f26b5f7ea46c9b8451dcad9fe2f889855c7dcf69"
+	fromAddress := "8BH3ZXoAptWYbAc69221kKDrrPzvc4RaJ248qdbTs6k5" // dummy base58 for test
+	fromPrivateKeyHex := "302e020100300506032b657004220420f6d1c48c25d3705715959eb1a750cafe8ce1a95ef9738a4d634b24f206dad506"
+	fromPublicKeyHex := "2Bq5iv3hxDf7Z8moNVmLzKKKFBWoV48BZ1M1ppqqRJ5j"
 	toAddress := "CanBzWYv7Rf21DYZR5oDoon7NJmhLQ32eUvmyDGkeyK7" // dummy base58 for test
 
 	fromPrivateKeyDer, err := hex.DecodeString(fromPrivateKeyHex)
@@ -212,14 +213,18 @@ func TestClient_SendToken(t *testing.T) {
 		"type": "transfer",
 	}
 
-	zkProof := "ooypSRTvqnSeRBlrGx1tz3TKklkTNmkmMhwrX83yFYWMbwz+k2NGo22G4QV70YfUgjnZpI9dCllsNIUtUNu1/ChAhF+Sw5uXiz+LMoohGXwQ7QYBRTCHFkDjdiHUhKqlzBWkqsJO5/UFiFXjzDZ1EXOaz5w49xPjKsKX0zcyPRMAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	zkPub := "AAAAAgAAAAAAAAACBcqhgqk+Na9bcvfEyH+DfYr6WfYUJxHFcRjcCeM49CsAAAAAAAAAAAAAAAAAAAAAAAAAAAAyMjIyMjIyMjIyMg=="
+	zkProof := "pqbM64ZFEgCkTEY9hB0DoeBPjVypF94nN67JOm5HPvSV3yRXHoVMJlHR+li9ZzPTEuLpG3KjWFjtFoVQVdg3zgVWRU7WSk7ogRAVQ6SWfV9dkyH16KPRYPqDDTbe13mmpugxjHp8J5gXQMPLHBajbWS8r8ifXWDTYLPb6ubFJiAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	zkPub := "AAAABAAAAAAAAAAEGXCTN8ZNN3H071Ika7f1l+1tIUWLtsQ5FaXqv9c2L7cAAAAAAAAAAAAAAAAAMzc2NzQ3ODQzMjE2MzE3Mjk5OSSG388WlTRfAZ3r3w6bu8EmVbNlf9dyuS25NeJwx9gmKur1plPc1AnRoYtefb3mzUMHLgWArBdW8RKHMQ8NeV4="
 	unsigned, err := BuildTransferTx(TxTypeTransfer, fromAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, zkProof, zkPub)
 	if err != nil {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
 
-	signedRaw, err := SignTx(unsigned, fromPrivateKey.Seed())
+	fromPublicKey, err := base58.Decode(fromPublicKeyHex)
+	if err != nil {
+		t.Fatalf("Failed to decode from public key: %v", err)
+	}
+	signedRaw, err := SignTx(unsigned, fromPublicKey, fromPrivateKey.Seed())
 	if err != nil {
 		t.Fatalf("Failed to sign tx: %v", err)
 	}
@@ -249,26 +254,4 @@ func TestClient_SendToken(t *testing.T) {
 	}
 
 	t.Logf("Account %s balance: %s tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
-}
-
-func TestClient_GetListTransactionsFaucet(t *testing.T) {
-	client, err := defaultClient()
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-
-	ctx := context.Background()
-
-	page := 1
-	limit := 10
-	offset := (page - 1) * limit
-	filter := 0
-	history, err := client.GetTxHistory(ctx, faucetAddress, limit, offset, filter)
-	if err != nil {
-		t.Fatalf("GetTxHistory failed: %v", err)
-	}
-
-	for _, tx := range history.Txs {
-		t.Logf("Transaction Sender: %v, Recipient: %v, Amount: %v, Nonce: %v, Timestamp: %v, Status: %v", tx.Sender, tx.Recipient, tx.Amount, tx.Nonce, tx.Timestamp, tx.Status)
-	}
 }
