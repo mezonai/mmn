@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
 
@@ -81,7 +82,9 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore 
 
 	// Start periodic cleanup to manage memory usage
 	// Keep locks for 1000 recent slots, cleanup every 10 minutes
-	store.StartPeriodicCleanup(1000, 10*time.Minute)
+	exception.SafeGo("startPeriodicCleanup", func() {
+		store.StartPeriodicCleanup(1000, 10*time.Minute)
+	})
 
 	return store, nil
 }
@@ -189,14 +192,14 @@ func (s *GenericBlockStore) CleanupOldSlotLocks(keepRecentSlots uint64) {
 
 // StartPeriodicCleanup starts a background goroutine that periodically cleans up old slot locks
 func (s *GenericBlockStore) StartPeriodicCleanup(keepRecentSlots uint64, cleanupInterval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(cleanupInterval)
-		defer ticker.Stop()
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
 
-		for range ticker.C {
+	for range ticker.C {
+		exception.SafeGo("CleanupOldSlotLocks", func() {
 			s.CleanupOldSlotLocks(keepRecentSlots)
-		}
-	}()
+		})
+	}
 }
 
 // Block retrieves a block by slot number
@@ -357,6 +360,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 			for _, tx := range entry.Transactions {
 				event := events.NewTransactionIncludedInBlock(tx, b.Slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseExecutedTpsCount()
 			}
 		}
 	}
@@ -419,6 +423,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFinalizedTpsCount()
 			}
 		}
 	}

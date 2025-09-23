@@ -166,6 +166,8 @@ func FromProtoSignedTx(pbTx *pb.SignedTxMsg) (*transaction.Transaction, error) {
 		Nonce:     pbTx.TxMsg.Nonce,
 		ExtraInfo: pbTx.TxMsg.ExtraInfo,
 		Signature: pbTx.Signature,
+		ZkProof:   pbTx.TxMsg.ZkProof,
+		ZkPub:     pbTx.TxMsg.ZkPub,
 	}, nil
 }
 

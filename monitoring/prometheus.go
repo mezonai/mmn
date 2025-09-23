@@ -23,19 +23,31 @@ var (
 	TxRejectedUnknown     TxRejectedReason = "other"
 )
 
+var (
+	FailedTxInvalidNonce         string = "invalid_nonce"
+	FailedTxFailedMarshalAccount string = "failed_marshal_account"
+	FailedTxFailedWriteAccount   string = "failed_write_account"
+)
+
 type nodePromMetrics struct {
-	nodeUpUnixSeconds prometheus.Gauge
-	mempoolSize       prometheus.Gauge
-	timeToFinality    prometheus.Histogram
-	blockTime         prometheus.Histogram
-	rejectedTxCount   *prometheus.CounterVec
-	blockHeight       prometheus.Gauge
-	blockSizeBytes    prometheus.Histogram
-	txInBlock         prometheus.Histogram
-	ingressTxCount    prometheus.Counter
-	receivedTxCount   prometheus.Counter
-	peerCount         prometheus.Gauge
-	trackerTx         prometheus.GaugeVec
+	nodeUpUnixSeconds     prometheus.Gauge
+	mempoolSize           prometheus.Gauge
+	timeToFinality        prometheus.Histogram
+	blockTime             prometheus.Histogram
+	rejectedTxCount       *prometheus.CounterVec
+	blockHeight           prometheus.Gauge
+	blockSizeBytes        prometheus.Histogram
+	txInBlock             prometheus.Histogram
+	receivedClientTxCount prometheus.Counter
+	receivedTxCount       prometheus.Counter
+	peerCount             prometheus.Gauge
+	trackerTx             prometheus.GaugeVec
+	panicCounter          prometheus.Counter
+	invalidPohCounter     prometheus.Counter
+	ingressTpsCounter     prometheus.Counter
+	executedTpsCounter    prometheus.Counter
+	finalizedTpsCounter   prometheus.Counter
+	failedTpsCounter      *prometheus.CounterVec
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -89,9 +101,9 @@ func newNodePromMetrics() *nodePromMetrics {
 				Help: "Number of tx in block",
 			},
 		),
-		ingressTxCount: promauto.NewCounter(
+		receivedClientTxCount: promauto.NewCounter(
 			prometheus.CounterOpts{
-				Name: "mmn_node_ingress_tx_count",
+				Name: "mmn_node_received_client_tx_count",
 				Help: "The total number of ingress transactions (received from client)",
 			},
 		),
@@ -113,6 +125,43 @@ func newNodePromMetrics() *nodePromMetrics {
 				Help: "Number of transactions currently being processed (between mempool and ledger)",
 			},
 			[]string{"source"},
+		),
+		panicCounter: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_panic_count",
+				Help: "The total number of panics",
+			},
+		),
+		invalidPohCounter: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_invalid_poh_count",
+				Help: "The total number of invalid PoH",
+			},
+		),
+		ingressTpsCounter: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_ingress_tps_count",
+				Help: "The total number of ingress transactions (received from client) for TPS calculation",
+			},
+		),
+		executedTpsCounter: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_executed_tps_count",
+				Help: "The total number of executed transactions for TPS calculation",
+			},
+		),
+		finalizedTpsCounter: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "mmn_node_finalized_tps_count",
+				Help: "The total number of finalized transactions for TPS calculation",
+			},
+		),
+		failedTpsCounter: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "mmn_node_failed_tps_count",
+				Help: "The total number of failed transactions for TPS calculation",
+			},
+			[]string{"reason"},
 		),
 	}
 }
@@ -160,8 +209,8 @@ func RecordTxInBlock(txCount int) {
 	nodeMetrics.txInBlock.Observe(float64(txCount))
 }
 
-func IncreaseIngressTxCount() {
-	nodeMetrics.ingressTxCount.Inc()
+func IncreaseReceivedClientTxCount() {
+	nodeMetrics.receivedClientTxCount.Inc()
 }
 
 func IncreaseReceivedTxCount() {
@@ -176,4 +225,30 @@ func SetTrackerProcessingTx(bytes int64, source string) {
 	nodeMetrics.trackerTx.With(prometheus.Labels{
 		"source": source,
 	}).Set(float64(bytes))
+}
+
+func IncreasePanicCount() {
+	nodeMetrics.panicCounter.Inc()
+}
+
+func IncreaseInvalidPohCount() {
+	nodeMetrics.invalidPohCounter.Inc()
+}
+
+func IncreaseIngressTpsCount() {
+	nodeMetrics.ingressTpsCounter.Inc()
+}
+
+func IncreaseExecutedTpsCount() {
+	nodeMetrics.executedTpsCounter.Inc()
+}
+
+func IncreaseFinalizedTpsCount() {
+	nodeMetrics.finalizedTpsCounter.Inc()
+}
+
+func IncreaseFailedTpsCount(reason string) {
+    nodeMetrics.failedTpsCounter.With(prometheus.Labels{
+        "reason": reason,
+    }).Inc()
 }

@@ -5,11 +5,12 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
-	"github.com/holiman/uint256"
-	"github.com/mezonai/mmn/logx"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/logx"
 
 	mmn "github.com/mezonai/mmn/client"
 	"github.com/mr-tron/base58"
@@ -100,7 +101,7 @@ func transferToken(transferConfig TransferConfig) error {
 	// Build and sign transferConfig transaction
 	nonce := senderAccount.Nonce + 1
 	unsigned, err := mmn.BuildTransferTx(
-		mmn.TxTypeTransfer,
+		mmn.TxTypeFaucet,
 		senderAddress,
 		transferConfig.To,
 		amount,
@@ -108,13 +109,15 @@ func transferToken(transferConfig TransferConfig) error {
 		uint64(time.Now().Unix()),
 		transferConfig.Message,
 		nil,
+		"",
+		"",
 	)
 	if err != nil {
 		return fmt.Errorf("failed to build transferConfig transaction: %w", err)
 	}
 
 	// Sign the transaction
-	signedTx, err := mmn.SignTx(unsigned, senderPrivateKey.Seed())
+	signedTx, err := mmn.SignTx(unsigned, []byte(senderAddress), senderPrivateKey.Seed())
 	if err != nil {
 		return fmt.Errorf("failed to sign transaction: %w", err)
 	}

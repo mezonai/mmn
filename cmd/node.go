@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"log"
 	"net"
 	"os"
@@ -13,6 +12,9 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
@@ -101,6 +103,7 @@ func runNode() {
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, "privkey.txt")
 	genesisPath := filepath.Join(dataDir, "genesis.yml")
+	zkVerifyPath := filepath.Join(dataDir, "verifying_key.b64")
 	dbStoreDir := filepath.Join(dataDir, "store")
 
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
@@ -114,6 +117,12 @@ func runNode() {
 	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
 		logx.Info("NODE", "Genesis file not found in data directory, using default config/genesis.yml")
 		genesisPath = "config/genesis.yml"
+	}
+
+	// Check if zk verify key exists in data dir, fallback to config/verifying_key.b64
+	if _, err := os.Stat(zkVerifyPath); os.IsNotExist(err) {
+		logx.Info("NODE", "Zk verify key file not found in data directory, using default config/verifying_key.b64")
+		zkVerifyPath = "config/verifying_key.b64"
 	}
 
 	// Create blockstore directory if it doesn't exist
@@ -195,8 +204,11 @@ func runNode() {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
+	// Initialize zk verify
+	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
+
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -302,13 +314,14 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string,
+	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker, zkVerify)
 	return mp, nil
 }
 

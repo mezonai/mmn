@@ -45,6 +45,8 @@ type txMsgParams struct {
 	TextData  string `json:"text_data"`
 	Nonce     uint64 `json:"nonce"`
 	ExtraInfo string `json:"extra_info"`
+	ZkProof   string `json:"zk_proof"`
+	ZkPub     string `json:"zk_pub"`
 }
 
 type signedTxParams struct {
@@ -309,6 +311,8 @@ func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
 			TextData:  p.TxMsg.TextData,
 			Nonce:     p.TxMsg.Nonce,
 			ExtraInfo: p.TxMsg.ExtraInfo,
+			ZkProof:   p.TxMsg.ZkProof,
+			ZkPub:     p.TxMsg.ZkPub,
 		},
 		Signature: p.Signature,
 	}
