@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -16,7 +17,7 @@ func Serialize(tx *Tx) []byte {
 	return []byte(metadata)
 }
 
-func SignTx(tx *Tx, privKey []byte) (SignedTx, error) {
+func SignTx(tx *Tx, pubKey, privKey []byte) (SignedTx, error) {
 	switch l := len(privKey); l {
 	case ed25519.SeedSize:
 		privKey = ed25519.NewKeyFromSeed(privKey)
@@ -26,24 +27,55 @@ func SignTx(tx *Tx, privKey []byte) (SignedTx, error) {
 
 	tx_hash := Serialize(tx)
 	signature := ed25519.Sign(privKey, tx_hash)
+	if tx.Type == TxTypeFaucet {
+		return SignedTx{
+			Tx:  tx,
+			Sig: base58.Encode(signature),
+		}, nil
+	}
+
+	userSig := UserSig{
+		PubKey: pubKey,
+		Sig:    signature,
+	}
+	userSigBytes, err := json.Marshal(userSig)
+	if err != nil {
+		return SignedTx{}, err
+	}
 
 	return SignedTx{
 		Tx:  tx,
-		Sig: base58.Encode(signature),
+		Sig: base58.Encode(userSigBytes),
 	}, nil
 }
 
 func Verify(tx *Tx, sig string) bool {
-	decoded, err := base58.Decode(tx.Sender)
-	if err != nil {
-		return false
-	}
-	pubKey := ed25519.PublicKey(decoded)
 	tx_hash := Serialize(tx)
-	signature, err := base58.Decode(sig)
+	if tx.Type == TxTypeFaucet {
+		decoded, err := base58.Decode(tx.Sender)
+		if err != nil {
+			return false
+		}
+		pubKey := ed25519.PublicKey(decoded)
+		signature, err := base58.Decode(sig)
+		if err != nil {
+			return false
+		}
+
+		return ed25519.Verify(pubKey, tx_hash, signature)
+	}
+
+	sigBytes, err := base58.Decode(sig)
 	if err != nil {
 		return false
 	}
 
-	return ed25519.Verify(pubKey, tx_hash, signature)
+	var userSig UserSig
+	if err := json.Unmarshal(sigBytes, &userSig); err != nil {
+		return false
+	}
+
+	pubKey := ed25519.PublicKey(userSig.PubKey)
+
+	return ed25519.Verify(pubKey, tx_hash, userSig.Sig)
 }
