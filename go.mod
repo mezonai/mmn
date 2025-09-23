@@ -7,6 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/creachadair/jrpc2 v1.3.2
 	github.com/holiman/uint256 v1.3.2
+	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/json-iterator/go v1.1.12
 	github.com/lib/pq v1.10.9
 	github.com/libp2p/go-libp2p v0.43.0
