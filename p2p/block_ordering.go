@@ -12,9 +12,9 @@ import (
 	"github.com/mezonai/mmn/utils"
 )
 
-func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
+func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
 	if blk == nil {
-		return fmt.Errorf("block is nil")
+		return nil, fmt.Errorf("block is nil")
 	}
 
 	ln.blockOrderingMu.Lock()
@@ -22,7 +22,7 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 
 	// Skip if block already exists in store
 	if existingBlock := bs.HasCompleteBlock(blk.Slot); existingBlock {
-		return nil
+		return nil, nil
 	}
 
 	// Add block to queue
@@ -31,7 +31,7 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 	return ln.processConsecutiveBlocks(bs, ld)
 }
 
-func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) error {
+func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
 	var processedBlocks []*block.BroadcastedBlock
 	var emptyBlocksToBroadcast []*block.BroadcastedBlock
 	// Find consecutive blocks starting from nextExpectedSlot
@@ -86,7 +86,10 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 		}
 	}
 
-	return nil
+	if len(processedBlocks) == 0 {
+		return nil, nil
+	}
+	return processedBlocks[len(processedBlocks)-1], nil
 }
 
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {

@@ -39,8 +39,7 @@ import (
 
 const (
 	// Storage paths - using absolute paths
-	fileBlockDir    = "./blockstore/blocks"
-	leveldbBlockDir = "blockstore/leveldb"
+	fileBlockDir = "./blockstore/blocks"
 )
 
 var (
@@ -102,6 +101,7 @@ func runNode() {
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -114,6 +114,7 @@ func runNode() {
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
+		cancel()
 		return
 	}
 
@@ -223,7 +224,7 @@ func runNode() {
 	libP2pClient.OnStartPoh = func() { pohService.Start() }
 	libP2pClient.OnStartValidator = func() { val.Run() }
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(nodeConfig, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -363,7 +364,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *consensus.Collector,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
