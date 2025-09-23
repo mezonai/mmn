@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -95,6 +96,9 @@ type Libp2pNetwork struct {
 
 	OnStartPoh       func()
 	OnStartValidator func()
+
+	// PoH config
+	pohCfg *config.PohConfig
 }
 
 type PeerInfo struct {

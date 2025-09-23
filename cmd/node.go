@@ -194,7 +194,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey, &cfg.Poh)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -293,7 +293,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -301,6 +301,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		pohCfg,
 	)
 
 	return libp2pNetwork, err

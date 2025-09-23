@@ -43,7 +43,8 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 		} else if ln.isLeaderOfSlot(ln.nextExpectedSlot) {
 			// Create empty block for leader slot
 			prevHash := ln.getPrevHashForSlot(ln.nextExpectedSlot, bs, processedBlocks)
-			entries := poh.GenerateTickOnlyEntries(prevHash, 4, 10)
+			// Use PoH config instead of hardcoded values
+			entries := poh.GenerateTickOnlyEntries(prevHash, int(ln.pohCfg.TicksPerSlot), ln.pohCfg.HashesPerTick)
 			emptyBlock := block.AssembleBlock(
 				ln.nextExpectedSlot,
 				prevHash,

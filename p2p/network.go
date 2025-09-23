@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
@@ -32,6 +33,7 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	pohCfg *config.PohConfig,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -97,6 +99,7 @@ func NewNetWork(
 		worldLatestSlot:        0,
 		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
 		nextExpectedSlot:       0,
+		pohCfg:                 pohCfg,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -253,15 +256,29 @@ func (ln *Libp2pNetwork) setNodeReady() {
 	ln.ready.Store(true)
 }
 
+// startCoreServices starts PoH and Validator (if callbacks provided), sets up pubsub topics, and marks node ready
+func (ln *Libp2pNetwork) startCoreServices(ctx context.Context, withPubsub bool) {
+	if ln.OnStartPoh != nil {
+		ln.OnStartPoh()
+	}
+	if ln.OnStartValidator != nil {
+		ln.OnStartValidator()
+	}
+	if withPubsub {
+		ln.SetupPubSubTopics(ctx)
+	}
+	ln.setNodeReady()
+}
+
 func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 	// Request latest slot after a delay to allow peers to connect
-	go func() {
+	exception.SafeGo("LatestSlotRequest(Initial)", func() {
 		time.Sleep(3 * time.Second) // Wait for peers to connect
 		ln.RequestLatestSlotFromPeers(ln.ctx)
-	}()
+	})
 
 	// Periodic latest slot request every 30 seconds
-	go func() {
+	exception.SafeGo("LatestSlotRequest(Periodic)", func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -272,5 +289,5 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 				return
 			}
 		}
-	}()
+	})
 }

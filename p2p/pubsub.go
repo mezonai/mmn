@@ -160,14 +160,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 							lb := bs.Block(slot)
 							ln.OnForceResetPOH(lb.LastEntryHash(), slot)
 						}
-						if ln.OnStartPoh != nil {
-							ln.OnStartPoh()
-						}
-						if ln.OnStartValidator != nil {
-							ln.OnStartValidator()
-						}
-						ln.SetupPubSubTopics(ln.ctx)
-						ln.setNodeReady()
+						ln.startCoreServices(ln.ctx, true)
 					})
 				}
 			}
@@ -175,8 +168,11 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
-			logx.Info("world Latest Slot", "data: ", latestSlot, "peerId", peerID)
-			ln.worldLatestSlot = latestSlot
+			if ln.worldLatestSlot > latestSlot {
+				logx.Info("world Latest Slot", "data: ", latestSlot, "peerId", peerID)
+				ln.worldLatestSlot = latestSlot
+			}
+
 			return nil
 		},
 	})
@@ -276,13 +272,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			ln.SetupPubSubTopics(ln.ctx)
 			ln.enableFullModeOnce.Do(func() {
 				// Start PoH/Validator immediately without sync
-				if ln.OnStartPoh != nil {
-					ln.OnStartPoh()
-				}
-				if ln.OnStartValidator != nil {
-					ln.OnStartValidator()
-				}
-				ln.setNodeReady()
+				ln.startCoreServices(ln.ctx, false)
 			})
 		} else {
 
@@ -308,13 +298,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 					if ln.OnForceResetPOH != nil {
 						ln.OnForceResetPOH(seed, latest)
 					}
-					if ln.OnStartPoh != nil {
-						ln.OnStartPoh()
-					}
-					if ln.OnStartValidator != nil {
-						ln.OnStartValidator()
-					}
-					ln.setNodeReady()
+					ln.startCoreServices(ln.ctx, false)
 				})
 			}
 		}
