@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/mezonai/mmn/monitoring"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -121,7 +122,7 @@ func initializeNode() {
 		if privKeyExists && pubKeyExists {
 			logx.Info("INIT", "Private and public key files already exist, skipping key generation")
 			// Load existing public key
-			pubKeyHex, err = config.LoadPubKeyFromPriv(privKeyFile)
+			_, err = config.LoadPubKeyFromPriv(privKeyFile)
 			if err != nil {
 				logx.Error("INIT", "Failed to load existing public key:", err.Error())
 				return
