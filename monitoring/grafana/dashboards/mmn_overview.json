@@ -555,7 +555,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(floor(increase(mmn_node_failed_tps_count[$__rate_interval])))",
+          "expr": "sum(floor(increase(mmn_node_failed_tps_count[$__range])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -1238,7 +1238,7 @@
     }
   ],
   "preload": false,
-  "refresh": "5s",
+  "refresh": "",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
@@ -1252,5 +1252,5 @@
   "timezone": "browser",
   "title": "MMN Overview",
   "uid": "fexs021078h6oe",
-  "version": 4
+  "version": 2
 }
