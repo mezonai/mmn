@@ -21,6 +21,7 @@ message TransactionData {
   uint64 timestamp = 6;
   TransactionStatus status = 7;
   string text_data = 8;
+  string extra_info = 9;
 }
 
 message TxMsg { 

@@ -359,6 +359,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Timestamp: tx.Timestamp,
 				Status:    txStatus,
 				TextData:  tx.TextData,
+				ExtraInfo: tx.ExtraInfo,
 			})
 		}
 
