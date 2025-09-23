@@ -46,9 +46,10 @@ type Libp2pNetwork struct {
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
-	onLatestSlotReceived   func(uint64, string) error
+	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
+	OnGetLatestPohSlot     func() uint64
 
 	maxPeers int
 
@@ -81,8 +82,8 @@ type Libp2pNetwork struct {
 	ready              atomic.Bool
 
 	// New field for join behavior control
-	worldLatestSlot uint64
-
+	worldLatestSlot    uint64
+	worldLatestPohSlot uint64
 	// Global block ordering queue
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
@@ -141,8 +142,9 @@ type LatestSlotRequest struct {
 }
 
 type LatestSlotResponse struct {
-	LatestSlot uint64 `json:"latest_slot"`
-	PeerID     string `json:"peer_id"`
+	LatestSlot    uint64 `json:"latest_slot"`
+	PeerID        string `json:"peer_id"`
+	LatestPohSlot uint64 `json:"latest_poh_slot"`
 }
 
 type SnapshotSyncRequest struct {
@@ -179,7 +181,7 @@ type Callbacks struct {
 	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
 	OnTransactionReceived  func(*transaction.Transaction) error
-	OnLatestSlotReceived   func(uint64, string) error
+	OnLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error
 }
 

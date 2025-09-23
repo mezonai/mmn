@@ -86,6 +86,7 @@ func NewValidator(
 	svc.OnEntry = v.handleEntry
 	p2pClient.OnSyncPohFromLeader = v.handleResetPohFromLeader
 	p2pClient.OnForceResetPOH = v.ForceResetPoh
+	p2pClient.OnGetLatestPohSlot = v.Recorder.CurrentPassedSlot
 	return v
 }
 

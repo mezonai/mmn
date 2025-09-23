@@ -156,10 +156,15 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			return nil
 		},
-		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
+		OnLatestSlotReceived: func(latestSlot uint64, latestPohSlot uint64, peerID string) error {
 			if ln.worldLatestSlot < latestSlot {
-				logx.Info("world Latest Slot", "data: ", latestSlot, "peerId", peerID)
+				logx.Info("NETWORK:LATEST SLOT", "data: ", latestSlot, "peerId", peerID)
 				ln.worldLatestSlot = latestSlot
+			}
+
+			if ln.worldLatestPohSlot < latestPohSlot {
+				logx.Info("NETWORK:LATEST POH SLOT", "data: ", latestPohSlot, "peerId", peerID)
+				ln.worldLatestPohSlot = latestPohSlot
 			}
 
 			return nil
@@ -264,9 +269,28 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 				ln.startCoreServices(ln.ctx, true)
 			})
 		} else {
+			for {
+				if ln.worldLatestPohSlot > 0 {
+					// Handle restart all nodes
+					if localLatestSlot == ln.worldLatestPohSlot {
+						logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
+						var seed [32]byte
+						if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
+							seed = blk.LastEntryHash()
+						}
+						if ln.OnForceResetPOH != nil {
+							ln.OnForceResetPOH(seed, localLatestSlot)
+						}
+						ln.startCoreServices(ln.ctx, true)
+						return
+					}
+					break
+				}
+				time.Sleep(WaitWorldLatestSlotTimeInterval)
+			}
 
 			for {
-				if ln.worldLatestSlot > 0 && !ln.isLeaderOfSlot(ln.worldLatestSlot) {
+				if !ln.isLeaderOfSlot(ln.worldLatestSlot) && localLatestSlot != ln.worldLatestSlot {
 					break
 				}
 				ln.RequestLatestSlotFromPeers(ctx)

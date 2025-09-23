@@ -36,7 +36,9 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	var emptyBlocksToBroadcast []*block.BroadcastedBlock
 	// Find consecutive blocks starting from nextExpectedSlot
 	for {
-		if blk, exists := ln.blockOrderingQueue[ln.nextExpectedSlot]; exists {
+		if ln.nextExpectedSlot > ln.worldLatestSlot {
+			break
+		} else if blk, exists := ln.blockOrderingQueue[ln.nextExpectedSlot]; exists {
 			processedBlocks = append(processedBlocks, blk)
 			delete(ln.blockOrderingQueue, ln.nextExpectedSlot)
 			ln.nextExpectedSlot++

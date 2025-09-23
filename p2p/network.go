@@ -97,6 +97,7 @@ func NewNetWork(
 		ctx:                    ctx,
 		cancel:                 cancel,
 		worldLatestSlot:        0,
+		worldLatestPohSlot:     0,
 		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
 		nextExpectedSlot:       0,
 		pohCfg:                 pohCfg,
