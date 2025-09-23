@@ -15,6 +15,8 @@ func ToProtoTx(tx *Tx) *proto.TxMsg {
 		TextData:  tx.TextData,
 		Timestamp: tx.Timestamp,
 		ExtraInfo: tx.ExtraInfo,
+		ZkProof:   tx.ZkProof,
+		ZkPub:     tx.ZkPub,
 	}
 }
 

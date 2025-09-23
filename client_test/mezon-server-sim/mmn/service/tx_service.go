@@ -13,6 +13,7 @@ import (
 	mmnClient "github.com/mezonai/mmn/client"
 	"github.com/mezonai/mmn/client_test/mezon-server-sim/mmn/keystore"
 	mmnpb "github.com/mezonai/mmn/proto"
+	"github.com/mr-tron/base58"
 )
 
 // -------- TxService --------
@@ -81,12 +82,16 @@ func (s *TxService) SendToken(ctx context.Context, nonce uint64, fromUID, toUID 
 	if err != nil {
 		return "", err
 	}
-	unsigned, err := mmnClient.BuildTransferTx(mmnClient.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil)
+	unsigned, err := mmnClient.BuildTransferTx(mmnClient.TxTypeTransfer, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil, "", "")
 	if err != nil {
 		return "", err
 	}
 
-	signedRaw, err := mmnClient.SignTx(unsigned, fromPriv)
+	fromAddrBytes, err := base58.Decode(fromAddr)
+	if err != nil {
+		return "", err
+	}
+	signedRaw, err := mmnClient.SignTx(unsigned, fromAddrBytes, fromPriv)
 	if err != nil {
 		return "", err
 	}
@@ -184,12 +189,16 @@ func (s *TxService) ListTransactions(ctx context.Context, uid uint64, limit, pag
 }
 
 func (s *TxService) SendTokenWithoutDatabase(ctx context.Context, nonce uint64, fromAddr, toAddr string, fromPriv []byte, amount *uint256.Int, textData string, transferType int) (string, error) {
-	unsigned, err := mmnClient.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil)
+	unsigned, err := mmnClient.BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, nil, "", "")
 	if err != nil {
 		return "", err
 	}
 
-	signedRaw, err := mmnClient.SignTx(unsigned, fromPriv)
+	fromAddrBytes, err := base58.Decode(fromAddr)
+	if err != nil {
+		return "", err
+	}
+	signedRaw, err := mmnClient.SignTx(unsigned, fromAddrBytes, fromPriv)
 	if err != nil {
 		return "", err
 	}
