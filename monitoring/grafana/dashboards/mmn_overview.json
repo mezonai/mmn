@@ -227,8 +227,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(rate(mmn_node_tx_in_block_sum[$__rate_interval])) / sum(rate(mmn_node_tx_in_block_count[$__rate_interval]))",
-          "legendFormat": "Average",
+          "expr": "sum(increase(mmn_node_tx_in_block_sum[$__range])) / sum(increase(mmn_node_tx_in_block_count[$__range]))",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
@@ -429,7 +429,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_executed_tps_count[$__rate_interval]))",
+          "expr": "avg(rate(mmn_node_executed_tps_count[$__range]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -492,7 +492,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_ingress_tps_count[$__rate_interval]))",
+          "expr": "avg(rate(mmn_node_ingress_tps_count[$__range]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -555,7 +555,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_finalized_tps_count[$__rate_interval])) - (avg(rate(mmn_node_failed_tps_count[$__rate_interval])) or vector(0))",
+          "expr": "avg(rate(mmn_node_finalized_tps_count[$__range])) - (avg(rate(mmn_node_failed_tps_count[$__range])) or vector(0))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -683,7 +683,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (reason)(mmn_node_failed_tps_count)",
+          "expr": "sum by (reason) (\r\n  increase(mmn_node_failed_tps_count{reason!=\"\"}[$__range])\r\n)\r\nor\r\nsum by (reason) (\r\n  label_replace(\r\n    increase(mmn_node_failed_tps_count{reason=\"\"}[$__range]),\r\n    \"reason\", \"other\", \"\", \"\"\r\n  )\r\n)\r\n",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -715,6 +715,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "max": 5,
           "min": 0,
@@ -765,7 +766,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(mmn_node_panic_count)",
+          "expr": "sum(increase(mmn_node_panic_count[$__range]))",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -784,6 +785,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "max": 5,
           "thresholds": {
@@ -849,7 +851,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(mmn_node_invalid_poh_count)",
+          "expr": "sum(increase(mmn_node_invalid_poh_count[$__range]))",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -1009,7 +1011,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (reason) (mmn_node_rejected_tx_count)",
+          "expr": "sum by (reason) (increase(mmn_node_rejected_tx_count[$__range]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
