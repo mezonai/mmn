@@ -372,7 +372,7 @@
           "refId": "A"
         }
       ],
-      "title": "Executed TPS (Add to mempool)",
+      "title": "Executed TPS (Included In Block)",
       "type": "stat"
     },
     {
@@ -435,7 +435,7 @@
           "refId": "A"
         }
       ],
-      "title": "Ingress TPS (Include in Block)",
+      "title": "Ingress TPS (Add to Mempool)",
       "type": "stat"
     },
     {
