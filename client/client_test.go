@@ -126,7 +126,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	}
 
 	toAddr := toAddress
-	amount := uint256.NewInt(10)
+	amount := uint256.NewInt(10000000000000)
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
