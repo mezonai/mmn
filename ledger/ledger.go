@@ -111,26 +111,12 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
 	if b.InvalidPoH {
 		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
-		// Ensure we untrack any transactions that were marked as processing for this block
-		if l.txTracker != nil {
-			for _, entry := range b.Entries {
-				for _, txHash := range entry.TxHashes {
-					l.txTracker.RemoveTransaction(txHash)
-				}
-			}
-		}
 		return nil
 	}
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
-			// If we cannot load txs for this entry, make sure to untrack them to avoid leaks
-			if l.txTracker != nil {
-				for _, txHash := range entry.TxHashes {
-					l.txTracker.RemoveTransaction(txHash)
-				}
-			}
 			return err
 		}
 		txMetas := make([]*types.TransactionMeta, 0, len(txs))
