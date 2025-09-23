@@ -139,21 +139,16 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			if !ln.IsNodeReady() {
+			if !ln.IsNodeReady() && latestProcessed != nil {
 				gap := uint64(0)
-				if ln.worldLatestSlot > blk.Slot {
-					gap = ln.worldLatestSlot - blk.Slot
+				if ln.worldLatestSlot > latestProcessed.Slot {
+					gap = ln.worldLatestSlot - latestProcessed.Slot
 				}
 
-				if gap <= SnapshotReadyGapThreshold {
+				if ln.worldLatestSlot-latestProcessed.Slot <= ReadyGapThreshold {
+					logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Gap is less than or equal to ready gap threshold, gap: %d", gap))
 					ln.enableFullModeOnce.Do(func() {
-						if latestProcessed != nil {
-							ln.OnForceResetPOH(latestProcessed.LastEntryHash(), latestProcessed.Slot)
-						} else {
-							slot := bs.GetLatestFinalizedSlot()
-							lb := bs.Block(slot)
-							ln.OnForceResetPOH(lb.LastEntryHash(), slot)
-						}
+						ln.OnForceResetPOH(latestProcessed.LastEntryHash(), latestProcessed.Slot)
 						ln.startCoreServices(ln.ctx, true)
 					})
 				}
@@ -265,20 +260,24 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		if localLatestSlot == 0 {
 			ln.enableFullModeOnce.Do(func() {
 				// Start PoH/Validator immediately without sync
+				logx.Info("NETWORK", "Starting PoH/Validator immediately")
 				ln.startCoreServices(ln.ctx, true)
 			})
 		} else {
 
 			for {
-				if ln.worldLatestSlot > 0 {
+				if ln.worldLatestSlot > 0 && !ln.isLeaderOfSlot(ln.worldLatestSlot) {
 					break
 				}
-				time.Sleep(1 * time.Second)
+				ln.RequestLatestSlotFromPeers(ctx)
+				time.Sleep(WaitWorldLatestSlotTimeInterval)
 			}
 			if localLatestSlot < ln.worldLatestSlot {
+				logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
 				ln.RequestBlockSyncFromLatest(ln.ctx)
 			} else {
 				// No sync required; start services based on local latest state
+				logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
 				ln.enableFullModeOnce.Do(func() {
 					latest := ln.blockStore.GetLatestFinalizedSlot()
 					var seed [32]byte

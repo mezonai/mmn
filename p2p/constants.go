@@ -1,5 +1,7 @@
 package p2p
 
+import "time"
+
 const (
 	NodeInfoProtocol       = "/node-info"
 	RequestBlockSyncStream = "/sync-block-request"
@@ -24,11 +26,10 @@ const (
 )
 
 var (
-	ConnCount                    int32  = 0
-	MaxPeers                     int32  = 50
-	SyncBlocksBatchSize          uint64 = 10 // for test only, should be 1000
-	MaxcheckpointScanBlocksRange uint64 = 100
-	SnapshotRangeFor             uint64 = 50 // for test only, should be 20k ~ 50k
-	SnapshotReadyGapThreshold    uint64 = 2
-	SnapshotChunkSize            int    = 16384
+	ConnCount                       int32         = 0
+	MaxPeers                        int32         = 50
+	SyncBlocksBatchSize             uint64        = 10 // ~ 1 leader window
+	MaxcheckpointScanBlocksRange    uint64        = 100
+	ReadyGapThreshold               uint64        = 1
+	WaitWorldLatestSlotTimeInterval time.Duration = 300 * time.Millisecond
 )

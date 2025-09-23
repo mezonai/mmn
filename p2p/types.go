@@ -40,8 +40,6 @@ type Libp2pNetwork struct {
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
-	topicSnapshotAnnounce  *pubsub.Topic
-	topicSnapshotRequest   *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
@@ -51,7 +49,6 @@ type Libp2pNetwork struct {
 	onLatestSlotReceived   func(uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
-	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	maxPeers int
 
@@ -75,9 +72,6 @@ type Libp2pNetwork struct {
 
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
-
-	// runtime callback to apply leader schedule without import cycles
-	applyLeaderSchedule func(*poh.LeaderSchedule)
 
 	// cached leader schedule for local leader checks
 	leaderSchedule *poh.LeaderSchedule

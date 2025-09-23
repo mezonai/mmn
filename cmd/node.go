@@ -210,7 +210,7 @@ func runNode() {
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, latestSlot)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -320,8 +320,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, lastSlot uint64) (*validator.Validator, error) {
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -341,9 +340,9 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
-		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
+		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector, lastSlot,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs,
 	)
 
 	// Cache leader schedule inside p2p for local leader checks

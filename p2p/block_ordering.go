@@ -69,7 +69,7 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	// Process all consecutive blocks
 	for _, blk := range processedBlocks {
 		if err := ln.processBlock(blk, bs, ld); err != nil {
-			logx.Warn("CONSECUTIVE", "Failed to process block at slot", err.Error())
+			logx.Warn("BLOCK:ORDERING", "Failed to process block at slot", err.Error())
 			continue
 		}
 	}
