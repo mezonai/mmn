@@ -3,7 +3,6 @@ package transaction
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -26,10 +25,7 @@ type TransactionTracker struct {
 	// historyList is a blacklist to prevent re-tracking recently removed txs
 	historyList sync.Map
 
-	// legacy counters kept for minimal disruption; gauges are refreshed periodically from cache
-	processingCount int64
-	senderCount     int64
-	stopCh          chan struct{}
+	stopCh chan struct{}
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
@@ -61,10 +57,7 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 		t.historyList.Delete(txHash)
 		return
 	}
-	// Check existence before setting to avoid double increment
-	if t.processingCache.Get(txHash) == nil {
-		atomic.AddInt64(&t.processingCount, 1)
-	}
+
 	t.processingCache.Set(txHash, tx, ttlcache.DefaultTTL)
 	// Update sender transaction list
 	var txHashes []string
@@ -74,10 +67,8 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	} else {
 		txHashes = []string{txHash}
 		t.senderTxs.Store(tx.Sender, txHashes)
-		atomic.AddInt64(&t.senderCount, 1)
 	}
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
+	t.updateTrackerMetrics()
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -90,7 +81,6 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}
-	atomic.AddInt64(&t.processingCount, -1)
 	tx := txItem.Value()
 	t.processingCache.Delete(txHash)
 
@@ -101,14 +91,12 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		if isRemoved {
 			if len(updatedHashes) == 0 {
 				t.senderTxs.Delete(tx.Sender)
-				atomic.AddInt64(&t.senderCount, -1)
 			} else {
 				t.senderTxs.Store(tx.Sender, updatedHashes)
 			}
 		}
 	}
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
+	t.updateTrackerMetrics()
 	logx.Info("TRACKER", fmt.Sprintf("Remove transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -186,4 +174,16 @@ func (t *TransactionTracker) cleanOldItemIsBlackList() {
 		}
 		return true
 	})
+}
+
+func (t *TransactionTracker) updateTrackerMetrics() {
+	monitoring.SetTrackerProcessingTx(int64(t.processingCache.Len()), "processing")
+
+	uniqueSenders := make(map[string]struct{})
+	t.processingCache.Range(func(itm *ttlcache.Item[string, *Transaction]) bool {
+		tx := itm.Value()
+		uniqueSenders[tx.Sender] = struct{}{}
+		return true
+	})
+	monitoring.SetTrackerProcessingTx(int64(len(uniqueSenders)), "senders")
 }
