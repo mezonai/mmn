@@ -145,7 +145,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					gap = ln.worldLatestSlot - latestProcessed.Slot
 				}
 
-				if ln.worldLatestSlot-latestProcessed.Slot <= ReadyGapThreshold {
+				if gap <= ReadyGapThreshold {
 					logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Gap is less than or equal to ready gap threshold, gap: %d", gap))
 					ln.enableFullModeOnce.Do(func() {
 						ln.OnForceResetPOH(latestProcessed.LastEntryHash(), latestProcessed.Slot)
