@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/bankhash"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/types"
 )
 
 type BlockStatus uint8
@@ -27,6 +30,7 @@ type BlockCore struct {
 	Signature  []byte
 	Status     BlockStatus
 	InvalidPoH bool
+	BankHash   [32]byte // hash of account state changes in this block
 }
 
 type Block struct {
@@ -98,6 +102,8 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 	// Timestamp (UnixNano)
 	binary.BigEndian.PutUint64(buf, b.Timestamp)
 	h.Write(buf)
+	// BankHash
+	h.Write(b.BankHash[:])
 	for _, e := range b.Entries {
 		binary.BigEndian.PutUint64(buf, e.NumHashes)
 		h.Write(buf)
@@ -109,11 +115,30 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 }
 
 func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
+	if len(pubKey) != ed25519.PublicKeySize {
+		return false
+	}
+	if len(b.Signature) != ed25519.SignatureSize {
+		return false
+	}
+
 	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
 }
 
 func (b *BroadcastedBlock) VerifyPoH() error {
 	return poh.VerifyEntries(b.PrevHash, b.Entries, b.Slot)
+}
+
+func (b *BroadcastedBlock) VerifyBankHash(prevBankHash [32]byte, accountDeltas map[string]*types.Account) error {
+	deltaHash := bankhash.ComputeAccountsDeltaHash(accountDeltas)
+
+	expectedBankHash := bankhash.CombineBankHash(prevBankHash, deltaHash)
+
+	if b.BankHash != expectedBankHash {
+		return fmt.Errorf("bankhash mismatch: expected=%x got=%x", expectedBankHash, b.BankHash)
+	}
+
+	return nil
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {

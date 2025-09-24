@@ -5,8 +5,10 @@ import (
 	"crypto/ed25519"
 	"fmt"
 
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/pkg/errors"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -21,6 +23,7 @@ import (
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
@@ -30,12 +33,25 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
+			leaderPubKey, err := GetLeaderPublicKey(blk.LeaderID)
+			if err != nil {
+				return errors.Errorf("invalid leader public key: %s", err.Error())
+			}
+
+			if !blk.VerifySignature(leaderPubKey) {
+				return errors.Errorf("invalid block signature")
+			}
+
 			// Verify PoH. If invalid, mark block and continue to process as a failed block
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
 				monitoring.IncreaseInvalidPohCount()
+			}
+
+			if err := ln.verifyBlockBankHash(blk, ld, bs); err != nil {
+				return errors.Errorf("invalid block bankhash %s", err.Error())
 			}
 
 			// Reset poh to sync poh clock with leader
@@ -69,6 +85,16 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
 			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
+
+			voterPubKey, err := GetVoterPublicKey(vote.VoterID)
+			if err != nil {
+				return errors.Errorf("invalid voter public key: %s", err.Error())
+			}
+
+			if !vote.VerifySignature(voterPubKey) {
+				return errors.Errorf("invalid vote signature")
+			}
+
 			committed, needApply, err := collector.AddVote(vote)
 			if err != nil {
 				logx.Error("VOTE", "Failed to add vote: ", err)
@@ -94,6 +120,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		OnTransactionReceived: func(txData *transaction.Transaction) error {
 			logx.Info("TX", "Processing received transaction from P2P network")
 
+			if !txData.Verify(mp.GetZkVerify()) {
+				return errors.Errorf("invalid transaction signature")
+			}
+
 			// Add transaction to mempool
 			_, err := mp.AddTx(txData, false)
 			if err != nil {
@@ -111,6 +141,17 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 				// skip add pending if block already exists
 				if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+					continue
+				}
+
+				leaderPubKey, err := GetLeaderPublicKey(blk.LeaderID)
+				if err != nil {
+					logx.Error("NETWORK:SYNC BLOCK", "Failed to get leader public key for synced block:", err.Error())
+					continue
+				}
+
+				if !blk.VerifySignature(leaderPubKey) {
+					logx.Error("NETWORK:SYNC BLOCK", "Invalid block signature for synced block from leader=", blk.LeaderID)
 					continue
 				}
 
@@ -369,6 +410,58 @@ func (ln *Libp2pNetwork) RequestCheckpointHash(ctx context.Context, checkpoint u
 		return fmt.Errorf("checkpoint request topic not initialized")
 	}
 	return ln.topicCheckpointRequest.Publish(ctx, data)
+}
+
+func (ln *Libp2pNetwork) verifyBlockBankHash(blk *block.BroadcastedBlock, ld *ledger.Ledger, bs store.BlockStore) error {
+	var prevBankHash [32]byte
+	if blk.Slot > 0 {
+		prevBlock := bs.Block(blk.Slot - 1)
+		if prevBlock != nil {
+			prevBankHash = prevBlock.BankHash
+		}
+	}
+
+	accountDeltas := make(map[string]*types.Account)
+
+	for _, entry := range blk.Entries {
+		txs := entry.Transactions
+		if len(txs) == 0 {
+			continue // Skip tick-only entries
+		}
+
+		for _, tx := range txs {
+			sender, err := ld.GetAccount(tx.Sender)
+			if err != nil {
+				return fmt.Errorf("failed to get sender account: %w", err)
+			}
+			if sender == nil {
+				sender = &types.Account{Address: tx.Sender, Balance: uint256.NewInt(0), Nonce: 0}
+			}
+
+			recipient, err := ld.GetAccount(tx.Recipient)
+			if err != nil {
+				return fmt.Errorf("failed to get recipient account: %w", err)
+			}
+			if recipient == nil {
+				recipient = &types.Account{Address: tx.Recipient, Balance: uint256.NewInt(0), Nonce: 0}
+			}
+
+			state := map[string]*types.Account{
+				sender.Address:    sender,
+				recipient.Address: recipient,
+			}
+
+			if err := ledger.ApplyTransaction(state, tx); err != nil {
+				// Skip failed transactions for bankhash calculation
+				continue
+			}
+
+			accountDeltas[sender.Address] = state[sender.Address]
+			accountDeltas[recipient.Address] = state[recipient.Address]
+		}
+	}
+
+	return blk.VerifyBankHash(prevBankHash, accountDeltas)
 }
 
 func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {

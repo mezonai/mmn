@@ -56,9 +56,18 @@ func Verify(tx *Tx, sig string) bool {
 		if err != nil {
 			return false
 		}
+
+		if len(decoded) != ed25519.PublicKeySize {
+			return false
+		}
+
 		pubKey := ed25519.PublicKey(decoded)
 		signature, err := base58.Decode(sig)
 		if err != nil {
+			return false
+		}
+
+		if len(signature) != ed25519.SignatureSize {
 			return false
 		}
 
@@ -72,6 +81,10 @@ func Verify(tx *Tx, sig string) bool {
 
 	var userSig UserSig
 	if err := json.Unmarshal(sigBytes, &userSig); err != nil {
+		return false
+	}
+
+	if len(userSig.PubKey) != ed25519.PublicKeySize || len(userSig.Sig) != ed25519.SignatureSize {
 		return false
 	}
 
