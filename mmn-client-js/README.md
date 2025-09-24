@@ -17,7 +17,7 @@ A comprehensive TypeScript client for interacting with the MMN blockchain ecosys
 ## Installation
 
 ```bash
-npm install @mezonai/mmn-client-js
+npm install mmn-client-js
 ```
 
 ## Quick Start
