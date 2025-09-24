@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/common"
@@ -111,6 +112,11 @@ func (tx *Transaction) Verify(zkVerify *zkverify.ZkVerify) bool {
 
 		if len(userSig.PubKey) == 0 || len(userSig.Sig) == 0 {
 			logx.Error("TransactionVerify", "invalid user signature structure")
+			return false
+		}
+
+		if l := len(userSig.PubKey); l != ed25519.PublicKeySize {
+			logx.Error("TransactionVerify", "bad public key length: "+strconv.Itoa(l))
 			return false
 		}
 

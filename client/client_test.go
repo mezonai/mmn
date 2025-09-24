@@ -13,8 +13,6 @@ import (
 	"github.com/mr-tron/base58"
 )
 
-const faucetAddress = "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
-
 func defaultClient() (*MmnClient, error) {
 	cfg := Config{Endpoint: "localhost:9001"}
 	client, err := NewClient(cfg)
@@ -126,7 +124,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	}
 
 	toAddr := toAddress
-	amount := uint256.NewInt(10)
+	amount := uint256.NewInt(10000000000000)
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
