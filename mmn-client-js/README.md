@@ -1,4 +1,4 @@
-# @mezonai/mmn-client-js
+# mmn-client-js
 
 A comprehensive TypeScript client for interacting with the MMN blockchain ecosystem. It provides complete functionality for blockchain transactions, account management, indexer queries, and ZK proof generation.
 
@@ -20,21 +20,36 @@ A comprehensive TypeScript client for interacting with the MMN blockchain ecosys
 npm install mmn-client-js
 ```
 
+Or using yarn:
+
+```bash
+yarn add mmn-client-js
+```
+
 ## Quick Start
 
 ### Basic MMN Client Usage
 
 ```typescript
-import { MmnClient, IndexerClient, ZkClient } from '@mezonai/mmn-client-js';
+import { MmnClient, IndexerClient, ZkClient } from 'mmn-client-js';
 
 // Create MMN client for blockchain operations
 const mmnClient = new MmnClient({
   baseUrl: 'http://localhost:8080',
+  timeout: 30000,
 });
 
 // Generate ephemeral key pair for ZK authentication
 const keyPair = mmnClient.generateEphemeralKeyPair();
 console.log('Public Key:', keyPair.publicKey);
+
+// Convert user ID to blockchain address
+const senderAddress = mmnClient.getAddressFromUserId('user123');
+const recipientAddress = mmnClient.getAddressFromUserId('user456');
+
+// Get current nonce for sender
+const nonceResponse = await mmnClient.getCurrentNonce(senderAddress);
+const currentNonce = nonceResponse.nonce;
 
 // Get account information by user ID
 const account = await mmnClient.getAccountByUserId('user123');
@@ -45,7 +60,7 @@ const response = await mmnClient.sendTransaction({
   sender: 'user123',
   recipient: 'user456',
   amount: '1000000000000000000',
-  nonce: 1,
+  nonce: currentNonce + 1,
   textData: 'Hello MMN!',
   publicKey: keyPair.publicKey,
   privateKey: keyPair.privateKey,
@@ -53,7 +68,11 @@ const response = await mmnClient.sendTransaction({
   zkPub: 'zk-public-string',
 });
 
-console.log('Transaction Hash:', response.tx_hash);
+if (response.ok) {
+  console.log('Transaction Hash:', response.tx_hash);
+} else {
+  console.error('Transaction failed:', response.error);
+}
 ```
 
 ### Indexer Client Usage

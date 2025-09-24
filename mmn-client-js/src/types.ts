@@ -181,3 +181,9 @@ export interface IndexerClientConfig {
   timeout?: number;
   headers?: Record<string, string>;
 }
+
+export interface ZkClientConfig {
+  endpoint: string;
+  timeout?: number;
+  headers?: Record<string, string>;
+}
