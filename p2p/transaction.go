@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/jsonx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
@@ -52,8 +52,10 @@ func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *transaction.Transa
 		return fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
-	if err := ln.topicTxs.Publish(ctx, txData); err != nil {
-		return fmt.Errorf("failed to publish transaction: %w", err)
+	if ln.topicTxs != nil {
+		if err := ln.topicTxs.Publish(ctx, txData); err != nil {
+			return fmt.Errorf("failed to publish transaction: %w", err)
+		}
 	}
 
 	return nil

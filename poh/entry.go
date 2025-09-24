@@ -37,8 +37,3 @@ func NewTxEntry(numHashes uint64, hash [32]byte, txs []*transaction.Transaction)
 		Tick:         false,
 	}
 }
-
-// Empty entry check
-func (e Entry) IsTickOnly() bool {
-	return len(e.Transactions) == 0
-}
