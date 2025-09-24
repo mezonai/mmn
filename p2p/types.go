@@ -96,6 +96,11 @@ type Libp2pNetwork struct {
 	// Snapshot UDP port
 	snapshotUDPPort string
 
+	// Snapshot download coordination (allow only one active download)
+	snapshotDlMu     sync.Mutex
+	snapshotDlActive bool
+	snapshotDlSlot   uint64
+
 	OnStartPoh       func()
 	OnStartValidator func()
 

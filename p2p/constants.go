@@ -30,9 +30,10 @@ var (
 	MaxPeers                        int32         = 50
 	SyncBlocksBatchSize             uint64        = 10 // ~ 1 leader window
 	MaxcheckpointScanBlocksRange    uint64        = 100
-	ReadyGapThreshold               uint64        = 1
-	WaitWorldLatestSlotTimeInterval time.Duration = 300 * time.Millisecond
+	ReadyGapThreshold               uint64        = 0
+	LatestSlotSyncGapThreshold      uint64        = 1
+	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
 	SnapshotChunkSize               int           = 16384
 	SnapshotReadyGapThreshold       uint64        = 2
-	SnapshotRangeFor                uint64        = 50 // for test only, should be 20k ~ 50k
+	SnapshotRangeFor                uint64        = 20000 // should be 20k ~ 50k
 )

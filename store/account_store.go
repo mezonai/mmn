@@ -40,12 +40,12 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 
 	accountData, err := jsonx.Marshal(account)
 	if err != nil {
-		return fmt.Errorf("failed to marshal account: %w", err)
+		return fmt.Errorf("%w failed to marshal account: %w", ErrFailedMarshalAccount, err)
 	}
 
 	err = as.dbProvider.Put(as.getDbKey(account.Address), accountData)
 	if err != nil {
-		return fmt.Errorf("failed to write account to db: %w", err)
+		return fmt.Errorf("%w failed to write account to db: %w", ErrFaliedWriteAccount, err)
 	}
 
 	return nil
@@ -150,3 +150,6 @@ func (as *GenericAccountStore) GetAll() ([]*types.Account, error) {
 
 	return accounts, nil
 }
+
+var ErrFailedMarshalAccount = fmt.Errorf("failed marshal account")
+var ErrFaliedWriteAccount = fmt.Errorf("failed write account")

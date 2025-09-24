@@ -11,7 +11,10 @@ import (
 
 const NATIVE_DECIMAL = 6
 const addressDecodedExpectedLength = 32
-const TxTypeTransfer = 0
+const (
+	TxTypeTransfer = 0
+	TxTypeFaucet   = 1
+)
 
 var (
 	ErrInvalidAddress = errors.New("domain: invalid address format")
@@ -47,9 +50,12 @@ type Tx struct {
 	TextData  string       `json:"text_data"`
 	Nonce     uint64       `json:"nonce"`
 	ExtraInfo string       `json:"extra_info"`
+	ZkProof   string       `json:"zk_proof"`
+	ZkPub     string       `json:"zk_pub"`
 }
 
-func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string, extraInfo map[string]string) (*Tx, error) {
+func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string,
+	extraInfo map[string]string, zkProof string, zkPub string) (*Tx, error) {
 	if err := ValidateAddress(sender); err != nil {
 		return nil, fmt.Errorf("from: %w", err)
 	}
@@ -74,6 +80,8 @@ func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, 
 		Timestamp: ts,
 		TextData:  textData,
 		ExtraInfo: serializedTxExtra,
+		ZkProof:   zkProof,
+		ZkPub:     zkPub,
 	}, nil
 }
 
@@ -104,6 +112,11 @@ func DeserializeTxExtraInfo(raw string) (map[string]string, error) {
 type SignedTx struct {
 	Tx  *Tx
 	Sig string
+}
+
+type UserSig struct {
+	PubKey []byte
+	Sig    []byte
 }
 
 type AddTxResponse struct {

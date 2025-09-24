@@ -30,9 +30,7 @@ import (
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder, snapshotUDPPort string) {
-	// Set snapshot UDP port
 	ln.snapshotUDPPort = snapshotUDPPort
-
 	latestSlot := bs.GetLatestFinalizedSlot()
 	ln.SetNextExpectedSlot(latestSlot + 1)
 
@@ -114,7 +112,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			if committed && needApply {
 				logx.Info("VOTE", "Committed vote from OnVote Received: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-				err := ln.applyDataToBlock(vote, bs, ld, mp)
+				err := ln.applyDataToBlock(vote, bs, ld)
 				if err != nil {
 					logx.Error("VOTE", "Failed to apply data to block: ", err)
 					return err
@@ -134,6 +132,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnSyncResponseReceived: func(blk *block.BroadcastedBlock) error {
+
 			// Add block to global ordering queue
 			if blk == nil {
 				return nil
@@ -177,6 +176,21 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnSnapshotAnnounce: func(ann SnapshotAnnounce) error {
+			// Guard: only one active snapshot download at a time
+			ln.snapshotDlMu.Lock()
+			if ln.snapshotDlActive {
+				if ln.snapshotDlSlot >= ann.Slot {
+					logx.Info("SNAPSHOT:DOWNLOAD", "skip announce; download in progress", "active_slot=", ln.snapshotDlSlot, "ann=", ann.Slot)
+					ln.snapshotDlMu.Unlock()
+					return nil
+				}
+				logx.Info("SNAPSHOT:DOWNLOAD", "skip announce; another download active", "active_slot=", ln.snapshotDlSlot, "ann=", ann.Slot)
+				ln.snapshotDlMu.Unlock()
+				return nil
+			}
+			ln.snapshotDlActive = true
+			ln.snapshotDlSlot = ann.Slot
+			ln.snapshotDlMu.Unlock()
 			// Skip self announces
 			if ann.PeerID == ln.selfPubKey {
 				logx.Info("SNAPSHOT:DOWNLOAD", "skip self announce", ann.UDPAddr)
@@ -227,6 +241,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					if err != nil {
 						logx.Error("SNAPSHOT:DOWNLOAD", "start failed:", err, " attempt:", attempt, "/", maxRetries)
 						if attempt == maxRetries {
+							ln.snapshotDlMu.Lock()
+							ln.snapshotDlActive = false
+							ln.snapshotDlMu.Unlock()
 							panic(fmt.Sprintf("snapshot download failed after %d attempts (peer=%s udp=%s slot=%d): %v", maxRetries, ann.PeerID, ann.UDPAddr, ann.Slot, err))
 						}
 						time.Sleep(backoff)
@@ -242,6 +259,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 						if st.Status == snapshot.TransferStatusComplete {
 							logx.Info("SNAPSHOT:DOWNLOAD", "completed ", ann.UDPAddr)
 							ln.SetNextExpectedSlot(ann.Slot + 1)
+							ln.snapshotDlMu.Lock()
+							ln.snapshotDlActive = false
+							ln.snapshotDlMu.Unlock()
 
 							logx.Info("SNAPSHOT:DOWNLOAD", "Snapshot loaded, starting block sync")
 							// Trigger a single block sync from the announced slot + 1
@@ -258,6 +278,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 						if st.Status == snapshot.TransferStatusFailed || st.Status == snapshot.TransferStatusCancelled {
 							logx.Error("SNAPSHOT:DOWNLOAD", "not successful:", st.Status, " attempt:", attempt, "/", maxRetries)
 							if attempt == maxRetries {
+								ln.snapshotDlMu.Lock()
+								ln.snapshotDlActive = false
+								ln.snapshotDlMu.Unlock()
 								panic(fmt.Sprintf("snapshot transfer %s after %d attempts (peer=%s udp=%s slot=%d)", st.Status, maxRetries, ann.PeerID, ann.UDPAddr, ann.Slot))
 							}
 							// retry with backoff
@@ -284,7 +307,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			logx.Error("SNAPSHOT:STREAMER", "failed to start:", err)
 		}
 	}()
-
 	// Temporary comment to save bandwidth for main flow
 	// go ln.startPeriodicSyncCheck(bs)
 
@@ -296,7 +318,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	go ln.startCleanupRoutine()
 }
 
-func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
+func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger) error {
 	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
@@ -376,6 +398,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			})
 		}
 	}
+
 	ln.startSnapshotAnnouncer()
 
 	if !ln.joinAfterSync {
@@ -406,9 +429,9 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 				})
 			} else {
 				for {
+					// Handle restart all nodes, check poh slot first
 					if ln.worldLatestPohSlot > 0 {
-						// Handle restart all nodes
-						if localLatestSlot == ln.worldLatestPohSlot {
+						if localLatestSlot >= ln.worldLatestPohSlot {
 							logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
 							var seed [32]byte
 							if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
@@ -425,8 +448,14 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 					time.Sleep(WaitWorldLatestSlotTimeInterval)
 				}
 
+				// Handle node crash, should catchup to world latest slot
 				for {
-					if !ln.isLeaderOfSlot(ln.worldLatestSlot) && localLatestSlot != ln.worldLatestSlot {
+					// Only sync at the time when the poh clock is synchronized with the slot of the finalized block
+					if ln.worldLatestSlot > 0 &&
+						!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
+						ln.worldLatestPohSlot > 0 &&
+						!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
+						ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold {
 						break
 					}
 					ln.RequestLatestSlotFromPeers(ctx)

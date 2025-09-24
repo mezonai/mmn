@@ -152,7 +152,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
-					monitoring.IncreaseFailedTpsCount()
+					if errors.Is(err, ErrInvalidNonce) {
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxInvalidNonce)
+					} else {
+						monitoring.IncreaseFailedTpsCount(err.Error())
+					}
 				}
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				state[tx.Sender].Nonce++
@@ -176,7 +180,14 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
 					l.eventRouter.PublishTransactionEvent(event)
-					monitoring.IncreaseFailedTpsCount()
+					switch {
+					case errors.Is(err, store.ErrFailedMarshalAccount):
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedMarshalAccount)
+					case errors.Is(err, store.ErrFaliedWriteAccount):
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedWriteAccount)
+					default:
+						monitoring.IncreaseFailedTpsCount(err.Error())
+					}
 				}
 				return err
 			}
@@ -219,7 +230,7 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	}
 	// Strict nonce validation to prevent duplicate transactions
 	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
+		return fmt.Errorf("%w: expected %d, got %d", ErrInvalidNonce, sender.Nonce+1, tx.Nonce)
 	}
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
@@ -239,3 +250,5 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 func (l *Ledger) GetAccountStore() store.AccountStore {
 	return l.accountStore
 }
+
+var ErrInvalidNonce = errors.New("invalid nonce")

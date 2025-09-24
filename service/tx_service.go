@@ -3,8 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/mezonai/mmn/monitoring"
 	"time"
+
+	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/interfaces"
@@ -30,7 +31,7 @@ func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, t
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
-	monitoring.IncreaseIngressTxCount()
+	monitoring.IncreaseReceivedClientTxCount()
 	if err != nil {
 		logx.Error("GRPC ADD TX", "FromProtoSignedTx error ", err)
 		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
