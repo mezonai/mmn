@@ -35,7 +35,7 @@ func NewTransactionTracker() *TransactionTracker {
 
 	// Initialize TTL cache for processing transactions
 	// Default TTL to auto-expire forgotten items; can be tuned if needed
-	processingTTL := 10 * time.Minute
+	processingTTL := 1 * time.Minute
 	tt.processingCache = ttlcache.New(
 		ttlcache.WithTTL[string, *Transaction](processingTTL),
 	)
