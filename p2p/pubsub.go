@@ -272,7 +272,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			for {
 				if ln.worldLatestPohSlot > 0 {
 					// Handle restart all nodes
-					if localLatestSlot == ln.worldLatestPohSlot {
+					if localLatestSlot >= ln.worldLatestPohSlot {
 						logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
 						var seed [32]byte
 						if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
