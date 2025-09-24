@@ -27,7 +27,6 @@ import (
 	"github.com/mezonai/mmn/snapshot"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder, snapshotUDPPort string) {
@@ -88,17 +87,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 
-				if existingBlock := bs.Block(blk.Slot); existingBlock != nil {
+				if existingBlock := bs.HasCompleteBlock(blk.Slot); existingBlock {
 					continue
 				}
 
 				if err := bs.AddBlockPending(blk); err != nil {
 					logx.Error("EMPTY_BLOCK", "Failed to save empty block to store:", err)
-					continue
-				}
-
-				if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
-					logx.Error("EMPTY_BLOCK", "Failed to apply empty block to ledger:", err)
 					continue
 				}
 			}
@@ -152,38 +146,34 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			if !ln.IsNodeReady() {
+			if !ln.IsNodeReady() && latestProcessed != nil {
 				gap := uint64(0)
-				if ln.worldLatestSlot > blk.Slot {
-					gap = ln.worldLatestSlot - blk.Slot
+				if ln.worldLatestSlot > latestProcessed.Slot {
+					gap = ln.worldLatestSlot - latestProcessed.Slot
 				}
 
-				if gap <= SnapshotReadyGapThreshold {
+				if gap <= ReadyGapThreshold {
+					logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Gap is less than or equal to ready gap threshold, gap: %d", gap))
 					ln.enableFullModeOnce.Do(func() {
-						if latestProcessed != nil {
-							ln.OnForceResetPOH(latestProcessed.LastEntryHash(), latestProcessed.Slot)
-						} else {
-							slot := bs.GetLatestFinalizedSlot()
-							lb := bs.Block(slot)
-							ln.OnForceResetPOH(lb.LastEntryHash(), slot)
-						}
-						if ln.OnStartPoh != nil {
-							ln.OnStartPoh()
-						}
-						if ln.OnStartValidator != nil {
-							ln.OnStartValidator()
-						}
-						ln.SetupPubSubTopics(ln.ctx)
-						ln.setNodeReady()
+						ln.OnForceResetPOH(latestProcessed.LastEntryHash(), latestProcessed.Slot)
+						ln.startCoreServices(ln.ctx, true)
 					})
 				}
 			}
 
 			return nil
 		},
-		OnLatestSlotReceived: func(latestSlot uint64, peerID string) error {
-			logx.Info("world Latest Slot", "data: ", latestSlot, "peerId", peerID)
-			ln.worldLatestSlot = latestSlot
+		OnLatestSlotReceived: func(latestSlot uint64, latestPohSlot uint64, peerID string) error {
+			if ln.worldLatestSlot < latestSlot {
+				logx.Info("NETWORK:LATEST SLOT", "data: ", latestSlot, "peerId", peerID)
+				ln.worldLatestSlot = latestSlot
+			}
+
+			if ln.worldLatestPohSlot < latestPohSlot {
+				logx.Info("NETWORK:LATEST POH SLOT", "data: ", latestPohSlot, "peerId", peerID)
+				ln.worldLatestPohSlot = latestPohSlot
+			}
+
 			return nil
 		},
 		OnSnapshotAnnounce: func(ann SnapshotAnnounce) error {
@@ -386,11 +376,10 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			})
 		}
 	}
-
 	ln.startSnapshotAnnouncer()
 
 	if !ln.joinAfterSync {
-		go func() {
+		exception.SafeGo("WaitPeersAndStart", func() {
 			// wait until network has more than 1 peer, max 3 seconds
 			startTime := time.Now()
 			maxWaitTime := 3 * time.Second
@@ -410,30 +399,45 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 
 			if localLatestSlot == 0 {
-				ln.SetupPubSubTopics(ln.ctx)
 				ln.enableFullModeOnce.Do(func() {
 					// Start PoH/Validator immediately without sync
-					if ln.OnStartPoh != nil {
-						ln.OnStartPoh()
-					}
-					if ln.OnStartValidator != nil {
-						ln.OnStartValidator()
-					}
-					ln.setNodeReady()
+					logx.Info("NETWORK", "Starting PoH/Validator immediately")
+					ln.startCoreServices(ln.ctx, true)
 				})
 			} else {
-
 				for {
-					if ln.worldLatestSlot > 0 {
+					if ln.worldLatestPohSlot > 0 {
+						// Handle restart all nodes
+						if localLatestSlot == ln.worldLatestPohSlot {
+							logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
+							var seed [32]byte
+							if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
+								seed = blk.LastEntryHash()
+							}
+							if ln.OnForceResetPOH != nil {
+								ln.OnForceResetPOH(seed, localLatestSlot)
+							}
+							ln.startCoreServices(ln.ctx, true)
+							return
+						}
 						break
 					}
-					time.Sleep(1 * time.Second)
+					time.Sleep(WaitWorldLatestSlotTimeInterval)
+				}
+
+				for {
+					if !ln.isLeaderOfSlot(ln.worldLatestSlot) && localLatestSlot != ln.worldLatestSlot {
+						break
+					}
+					ln.RequestLatestSlotFromPeers(ctx)
+					time.Sleep(WaitWorldLatestSlotTimeInterval)
 				}
 				if localLatestSlot < ln.worldLatestSlot {
+					logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
 					ln.RequestBlockSyncFromLatest(ln.ctx)
 				} else {
-					ln.SetupPubSubTopics(ln.ctx)
 					// No sync required; start services based on local latest state
+					logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
 					ln.enableFullModeOnce.Do(func() {
 						latest := ln.blockStore.GetLatestFinalizedSlot()
 						var seed [32]byte
@@ -445,17 +449,11 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 						if ln.OnForceResetPOH != nil {
 							ln.OnForceResetPOH(seed, latest)
 						}
-						if ln.OnStartPoh != nil {
-							ln.OnStartPoh()
-						}
-						if ln.OnStartValidator != nil {
-							ln.OnStartValidator()
-						}
-						ln.setNodeReady()
+						ln.startCoreServices(ln.ctx, true)
 					})
 				}
 			}
-		}()
+		})
 	} else {
 		go ln.requestSnapshotOnJoin()
 	}

@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -47,9 +48,10 @@ type Libp2pNetwork struct {
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
-	onLatestSlotReceived   func(uint64, string) error
+	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
+	OnGetLatestPohSlot     func() uint64
 	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	maxPeers int
@@ -75,9 +77,6 @@ type Libp2pNetwork struct {
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
 
-	// runtime callback to apply leader schedule without import cycles
-	applyLeaderSchedule func(*poh.LeaderSchedule)
-
 	// cached leader schedule for local leader checks
 	leaderSchedule *poh.LeaderSchedule
 
@@ -86,9 +85,9 @@ type Libp2pNetwork struct {
 	ready              atomic.Bool
 
 	// New field for join behavior control
-	joinAfterSync   bool
-	worldLatestSlot uint64
-
+	joinAfterSync      bool
+	worldLatestSlot    uint64
+	worldLatestPohSlot uint64
 	// Global block ordering queue
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
@@ -99,6 +98,9 @@ type Libp2pNetwork struct {
 
 	OnStartPoh       func()
 	OnStartValidator func()
+
+	// PoH config
+	pohCfg *config.PohConfig
 }
 
 type PeerInfo struct {
@@ -147,8 +149,9 @@ type LatestSlotRequest struct {
 }
 
 type LatestSlotResponse struct {
-	LatestSlot uint64 `json:"latest_slot"`
-	PeerID     string `json:"peer_id"`
+	LatestSlot    uint64 `json:"latest_slot"`
+	PeerID        string `json:"peer_id"`
+	LatestPohSlot uint64 `json:"latest_poh_slot"`
 }
 
 type SnapshotSyncRequest struct {
@@ -185,7 +188,7 @@ type Callbacks struct {
 	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
 	OnTransactionReceived  func(*transaction.Transaction) error
-	OnLatestSlotReceived   func(uint64, string) error
+	OnLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error
 	OnSnapshotAnnounce     func(SnapshotAnnounce) error
 }

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/discovery"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
-	"github.com/mezonai/mmn/jsonx"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -99,6 +99,7 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 }
 
 func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) error {
+	logx.Info("NETWORK:SYNC BLOCK", "Requesting block sync from slot", fromSlot)
 	toSlot := fromSlot + SyncBlocksBatchSize - 1
 
 	requestID := GenerateSyncRequestID()
@@ -162,6 +163,5 @@ func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64
 func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 	ln.RequestLatestSlotFromPeers(ctx)
 	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
-	logx.Debug("REQUEST:SYNC", localLatestSlot+1)
 	return ln.RequestBlockSync(ctx, localLatestSlot+1)
 }

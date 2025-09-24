@@ -4,10 +4,6 @@ import (
 	"crypto/sha256"
 )
 
-// - 4 ticks ~ 4 entries
-// - 1 tick ~ 10 hash
-// seed Hash = `prevHash`
-// hash 10 times -> 1 entry
 func GenerateTickOnlyEntries(seed [32]byte, numEntries int, hashesPerTick uint64) []Entry {
 	if numEntries <= 0 || hashesPerTick == 0 {
 		return nil

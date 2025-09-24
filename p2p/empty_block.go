@@ -3,7 +3,6 @@ package p2p
 import (
 	"context"
 	"encoding/json"
-	"time"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/logx"
@@ -60,16 +59,6 @@ func (ln *Libp2pNetwork) BroadcastEmptyBlocks(ctx context.Context, blocks []*blo
 	}
 
 	if ln.topicEmptyBlocks != nil {
-		// Wait briefly for peers to join the topic (max ~2s)
-		// This helps avoid publishing when no peers are in the mesh yet.
-		deadline := time.Now().Add(2 * time.Second)
-		for len(ln.topicEmptyBlocks.ListPeers()) == 0 && time.Now().Before(deadline) {
-			logx.Debug("EMPTY_BLOCK", "No peers in topic yet; waiting to publish")
-			time.Sleep(200 * time.Millisecond)
-		}
-
-		peerCount := len(ln.topicEmptyBlocks.ListPeers())
-		logx.Info("EMPTY_BLOCK", "Publishing", len(blocks), "empty blocks; topic peers:", peerCount)
 		if err := ln.topicEmptyBlocks.Publish(ctx, data); err != nil {
 			logx.Error("EMPTY_BLOCK", "Failed to publish empty blocks batch:", err)
 			return err

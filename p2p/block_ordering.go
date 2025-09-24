@@ -36,14 +36,17 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	var emptyBlocksToBroadcast []*block.BroadcastedBlock
 	// Find consecutive blocks starting from nextExpectedSlot
 	for {
-		if blk, exists := ln.blockOrderingQueue[ln.nextExpectedSlot]; exists {
+		if ln.nextExpectedSlot > ln.worldLatestSlot {
+			break
+		} else if blk, exists := ln.blockOrderingQueue[ln.nextExpectedSlot]; exists {
 			processedBlocks = append(processedBlocks, blk)
 			delete(ln.blockOrderingQueue, ln.nextExpectedSlot)
 			ln.nextExpectedSlot++
 		} else if ln.isLeaderOfSlot(ln.nextExpectedSlot) {
 			// Create empty block for leader slot
 			prevHash := ln.getPrevHashForSlot(ln.nextExpectedSlot, bs, processedBlocks)
-			entries := poh.GenerateTickOnlyEntries(prevHash, 4, 10)
+			// Use PoH config instead of hardcoded values
+			entries := poh.GenerateTickOnlyEntries(prevHash, int(ln.pohCfg.TicksPerSlot), ln.pohCfg.HashesPerTick)
 			emptyBlock := block.AssembleBlock(
 				ln.nextExpectedSlot,
 				prevHash,
@@ -68,7 +71,7 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	// Process all consecutive blocks
 	for _, blk := range processedBlocks {
 		if err := ln.processBlock(blk, bs, ld); err != nil {
-			logx.Warn("CONSECUTIVE", "Failed to process block at slot", err.Error())
+			logx.Warn("BLOCK:ORDERING", "Failed to process block at slot", err.Error())
 			continue
 		}
 	}
