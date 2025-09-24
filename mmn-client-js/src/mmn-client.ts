@@ -1,6 +1,5 @@
 // MMN Client
 // This client provides a complete interface for interacting with MMN blockchain
-
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import * as bip39 from 'bip39';
 import bs58 from 'bs58';
@@ -18,8 +17,6 @@ import {
   SignedTx,
   TxMsg,
 } from './types';
-
-// --- MMN Client ---
 
 const TX_TYPE = {
   TRANSFER: 0,
@@ -40,7 +37,6 @@ export class MmnClient {
       ...config,
     };
 
-    // Create axios instance
     this.axiosInstance = axios.create({
       baseURL: this.config.baseUrl,
       timeout: this.config.timeout || 30000,
@@ -143,7 +139,6 @@ export class MmnClient {
     return Buffer.from(pkcs8).toString('hex');
   }
 
-  // ZkLogin
   public generateEphemeralKeyPair(): IEphemeralKeyPair {
     try {
       const mnemonic = bip39.generateMnemonic(128);
@@ -159,7 +154,6 @@ export class MmnClient {
       const publicKeyBytes = kp.publicKey;
 
       const privateKeyHex = this.rawEd25519ToPkcs8Hex(privateKey);
-      // const publicKeyHex = this.rawEd25519ToPkcs8Hex(Buffer.from(publicKeyBytes));
 
       return {
         privateKey: privateKeyHex,
@@ -170,8 +164,6 @@ export class MmnClient {
       throw new Error('Failed to generate wallet');
     }
   }
-
-  // --- Transaction Methods ---
 
   public getAddressFromUserId(userId: string): string {
     const hash = createHash('sha256').update(userId, 'utf8').digest();

@@ -61,8 +61,6 @@ export interface TxMsg {
   text_data: string;
   nonce: number;
   extra_info: string;
-  // public_key: string;
-  // private_key: string;
   zk_proof: string;
   zk_pub: string;
 }
@@ -174,7 +172,6 @@ export interface TransactionDetailResponse {
 }
 
 // ----------------- Client -----------------
-
 export interface IndexerClientConfig {
   endpoint: string;
   chainId: string;
