@@ -276,6 +276,11 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		// Refresh latest slot for each iteration
 		localLatestSlot = ln.blockStore.GetLatestFinalizedSlot()
 
+		// Safety check to prevent infinite loop
+		if currentFromSlot > localLatestSlot {
+			break
+		}
+
 		// Adjust currentToSlot if it exceeds local latest slot
 		if currentToSlot > localLatestSlot {
 			currentToSlot = localLatestSlot
@@ -309,22 +314,9 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			batch = batch[:0]
 		}
 
-		// Check if we need to continue with next range
-		if currentToSlot >= localLatestSlot {
-			break
-		}
-
+		// Jump to next batch
 		currentFromSlot = currentToSlot + 1
 		currentToSlot = currentFromSlot + SyncBlocksBatchSize - 1
-		if currentToSlot > localLatestSlot {
-			currentToSlot = localLatestSlot
-		}
-
-		// Safety check to prevent infinite loop
-		if currentFromSlot > localLatestSlot {
-			break
-		}
-
 	}
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed sync for peer:", targetPeer.String(), "total blocks sent:", totalBlocksSent)

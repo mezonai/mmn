@@ -270,8 +270,8 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			})
 		} else {
 			for {
+				// Handle restart all nodes, check poh slot first
 				if ln.worldLatestPohSlot > 0 {
-					// Handle restart all nodes
 					if localLatestSlot >= ln.worldLatestPohSlot {
 						logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
 						var seed [32]byte
@@ -289,8 +289,14 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 				time.Sleep(WaitWorldLatestSlotTimeInterval)
 			}
 
+			// Handle node crash, should catchup to world latest slot
 			for {
-				if !ln.isLeaderOfSlot(ln.worldLatestSlot) && localLatestSlot != ln.worldLatestSlot {
+				// Only sync at the time when the poh clock is synchronized with the slot of the finalized block
+				if ln.worldLatestSlot > 0 &&
+					!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
+					ln.worldLatestPohSlot > 0 &&
+					!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
+					ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold {
 					break
 				}
 				ln.RequestLatestSlotFromPeers(ctx)
