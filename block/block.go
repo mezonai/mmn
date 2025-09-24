@@ -91,6 +91,8 @@ func (b *BroadcastedBlock) Sign(privKey ed25519.PrivateKey) {
 
 func (b *BroadcastedBlock) computeHash() [32]byte {
 	h := sha256.New()
+
+	h.Write([]byte("BLOCK:"))
 	// Slot
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, b.Slot)
