@@ -8,6 +8,7 @@ require (
 	github.com/consensys/gnark v0.14.0
 	github.com/consensys/gnark-crypto v0.19.0
 	github.com/creachadair/jrpc2 v1.3.2
+	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/holiman/uint256 v1.3.2
 	github.com/json-iterator/go v1.1.12
 	github.com/libp2p/go-libp2p v0.43.0

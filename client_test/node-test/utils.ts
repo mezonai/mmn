@@ -71,7 +71,6 @@ export async function generateTestAccount() {
   const userId = Math.floor(Math.random() * 100000000);
   const address = hashStringToBase58(userId);
   const jwt = generateJwt(userId);
-  console.log('JWT:', jwt);
   const proofRes = await generateZkProof({
     user_id: userId.toString(10),
     address,
