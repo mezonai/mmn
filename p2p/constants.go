@@ -30,6 +30,6 @@ var (
 	MaxPeers                        int32         = 50
 	SyncBlocksBatchSize             uint64        = 10 // ~ 1 leader window
 	MaxcheckpointScanBlocksRange    uint64        = 100
-	ReadyGapThreshold               uint64        = 1
-	WaitWorldLatestSlotTimeInterval time.Duration = 300 * time.Millisecond
+	ReadyGapThreshold               uint64        = 0
+	WaitWorldLatestSlotTimeInterval time.Duration = 200 * time.Millisecond // ~ 1/2 slot
 )
