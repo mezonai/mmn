@@ -171,13 +171,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 	})
 
-	// Temporary comment to save bandwidth for main flow
-	// go ln.startPeriodicSyncCheck(bs)
-
-	// Start continuous gap detection
-	// Temporary comment to save bandwidth for main flow
-	// go ln.startContinuousGapDetection(bs)
-
 	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
 }
@@ -199,13 +192,14 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		// missing block how to handle
 		return fmt.Errorf("block not found for slot %d", vote.Slot)
 	}
-	if err := ld.ApplyBlock(block); err != nil {
-		return fmt.Errorf("apply block error: %w", err)
-	}
 
 	// Mark block as finalized
 	if err := bs.MarkFinalized(vote.Slot); err != nil {
 		return fmt.Errorf("mark block as finalized error: %w", err)
+	}
+
+	if err := ld.ApplyBlock(block); err != nil {
+		return fmt.Errorf("apply block error: %w", err)
 	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
