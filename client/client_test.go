@@ -13,8 +13,6 @@ import (
 	"github.com/mr-tron/base58"
 )
 
-const faucetAddress = "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
-
 func defaultClient() (*MmnClient, error) {
 	cfg := Config{Endpoint: "localhost:9001"}
 	client, err := NewClient(cfg)
