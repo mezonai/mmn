@@ -186,45 +186,44 @@ func TestClient_SendToken(t *testing.T) {
 
 	ctx := context.Background()
 
-	fromAddress := "8BH3ZXoAptWYbAc69221kKDrrPzvc4RaJ248qdbTs6k5" // dummy base58 for test
-	fromPrivateKeyHex := "302e020100300506032b657004220420f6d1c48c25d3705715959eb1a750cafe8ce1a95ef9738a4d634b24f206dad506"
-	fromPublicKeyHex := "2Bq5iv3hxDf7Z8moNVmLzKKKFBWoV48BZ1M1ppqqRJ5j"
+	// Use faucet account as sender instead of creating new account
+	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
+	fromAddress := faucetPublicKey
 	toAddress := "CanBzWYv7Rf21DYZR5oDoon7NJmhLQ32eUvmyDGkeyK7" // dummy base58 for test
 
-	fromPrivateKeyDer, err := hex.DecodeString(fromPrivateKeyHex)
-	if err != nil {
-		t.Fatalf("Failed to decode from private key: %v", err)
-	}
-	fromSeed := fromPrivateKeyDer[len(fromPrivateKeyDer)-32:]
-	fromPrivateKey := ed25519.NewKeyFromSeed(fromSeed)
-
+	// Get faucet account
 	fromAccount, err := client.GetAccount(ctx, fromAddress)
 	if err != nil {
-		t.Fatalf("Failed to get account: %v", err)
+		t.Fatalf("Failed to get faucet account: %v", err)
 	}
+
+	// Check if faucet has enough balance
+	if fromAccount.Balance.Cmp(uint256.NewInt(1)) < 0 {
+		t.Fatalf("Faucet account has insufficient balance: %s", fromAccount.Balance)
+	}
+
 	nextNonce := fromAccount.Nonce + 1
-	t.Logf("From account nonce: %d, using next nonce: %d", fromAccount.Nonce, nextNonce)
+	t.Logf("From account nonce: %d, using next nonce: %d, balance: %s", fromAccount.Nonce, nextNonce, fromAccount.Balance)
 
 	amount := uint256.NewInt(1)
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
 	extraInfo := map[string]string{
-		"type": "transfer",
+		"type": "unlock_item",
 	}
 
-	zkProof := "pqbM64ZFEgCkTEY9hB0DoeBPjVypF94nN67JOm5HPvSV3yRXHoVMJlHR+li9ZzPTEuLpG3KjWFjtFoVQVdg3zgVWRU7WSk7ogRAVQ6SWfV9dkyH16KPRYPqDDTbe13mmpugxjHp8J5gXQMPLHBajbWS8r8ifXWDTYLPb6ubFJiAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	zkPub := "AAAABAAAAAAAAAAEGXCTN8ZNN3H071Ika7f1l+1tIUWLtsQ5FaXqv9c2L7cAAAAAAAAAAAAAAAAAMzc2NzQ3ODQzMjE2MzE3Mjk5OSSG388WlTRfAZ3r3w6bu8EmVbNlf9dyuS25NeJwx9gmKur1plPc1AnRoYtefb3mzUMHLgWArBdW8RKHMQ8NeV4="
-	unsigned, err := BuildTransferTx(TxTypeTransfer, fromAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, zkProof, zkPub)
+	// Use faucet transaction type (no ZK proof required)
+	unsigned, err := BuildTransferTx(TxTypeFaucet, fromAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
 	if err != nil {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
 
-	fromPublicKey, err := base58.Decode(fromPublicKeyHex)
+	fromPublicKey, err := base58.Decode(fromAddress)
 	if err != nil {
 		t.Fatalf("Failed to decode from public key: %v", err)
 	}
-	signedRaw, err := SignTx(unsigned, fromPublicKey, fromPrivateKey.Seed())
+	signedRaw, err := SignTx(unsigned, fromPublicKey, faucetPrivateKey.Seed())
 	if err != nil {
 		t.Fatalf("Failed to sign tx: %v", err)
 	}
