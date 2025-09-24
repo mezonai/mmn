@@ -3,94 +3,102 @@
 import { AxiosRequestConfig } from 'axios';
 
 export interface JsonRpcRequest {
-	jsonrpc: '2.0';
-	method: string;
-	params?: unknown;
-	id: string | number;
+  jsonrpc: '2.0';
+  method: string;
+  params?: unknown;
+  id: string | number;
 }
 
 export interface JsonRpcError {
-	code: number;
-	message: string;
-	data?: unknown;
+  code: number;
+  message: string;
+  data?: unknown;
 }
 
 export interface JsonRpcResponse<T = unknown> {
-	jsonrpc: '2.0';
-	result?: T;
-	error?: JsonRpcError;
-	id: string | number;
-}
-
-export interface IWallet {
-  address: string;
-  privateKey: string;
-  recoveryPhrase: string;
+  jsonrpc: '2.0';
+  result?: T;
+  error?: JsonRpcError;
+  id: string | number;
 }
 
 // --- Transaction Types ---
 
+export interface IEphemeralKeyPair {
+  privateKey: string;
+  publicKey: string;
+}
+
+export interface IZkProof {
+  proof: string;
+  public_input: string;
+}
+
 export enum ETransferType {
-	GiveCoffee = 'give_coffee',
-	TransferToken = 'transfer_token',
-	UnlockItem = 'unlock_item'
+  GiveCoffee = 'give_coffee',
+  TransferToken = 'transfer_token',
+  UnlockItem = 'unlock_item',
 }
 
 export interface ExtraInfo {
-	type: ETransferType;
-	ItemId?: string;
-	ItemType?: string;
-	ClanId?: string;
-	UserSenderId: string;
-	UserSenderUsername: string;
-	UserReceiverId: string;
-	ChannelId?: string;
-	MessageRefId?: string;
+  type: ETransferType;
+  ItemId?: string;
+  ItemType?: string;
+  ClanId?: string;
+  UserSenderId: string;
+  UserSenderUsername: string;
+  UserReceiverId: string;
+  ChannelId?: string;
+  MessageRefId?: string;
 }
 
 export interface TxMsg {
-	type: number;
-	sender: string;
-	recipient: string;
-	amount: string;
-	timestamp: number;
-	text_data: string;
-	nonce: number;
-	extra_info: string;
+  type: number;
+  sender: string;
+  recipient: string;
+  amount: string;
+  timestamp: number;
+  text_data: string;
+  nonce: number;
+  extra_info: string;
+  // public_key: string;
+  // private_key: string;
+  zk_proof: string;
+  zk_pub: string;
 }
 
 export interface SignedTx {
-	tx_msg: TxMsg;
-	signature: string;
+  tx_msg: TxMsg;
+  signature: string;
 }
 
 export interface AddTxResponse {
-	ok: boolean;
-	tx_hash: string;
-	error: string;
+  ok: boolean;
+  tx_hash: string;
+  error: string;
 }
 
 export interface GetCurrentNonceResponse {
-	address: string;
-	nonce: number;
-	tag: string;
-	error: string;
+  address: string;
+  nonce: number;
+  tag: string;
+  error: string;
 }
 
 export interface GetAccountByAddressResponse {
-	address: string;
-	balance: string;
-	nonce: number;	
-	decimals: number;
+  address: string;
+  balance: string;
+  nonce: number;
+  decimals: number;
 }
 
 // --- Client Configuration ---
 
 export interface MmnClientConfig {
-	baseUrl: string;
-	timeout?: number;
-	headers?: Record<string, string>;
-	axiosConfig?: AxiosRequestConfig;
+  baseUrl: string;
+  timeout?: number;
+  headers?: Record<string, string>;
+  axiosConfig?: AxiosRequestConfig;
 }
 
 // ----------------- Types Indexer -----------------
@@ -130,6 +138,7 @@ export interface Transaction {
   status?: number;
   transaction_timestamp: number;
   text_data: string;
+  extra_info: string;
 }
 
 export interface Meta {

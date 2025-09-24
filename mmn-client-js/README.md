@@ -1,14 +1,18 @@
-# @mezon/mmn-client
+# @mezonai/mmn-client-js
 
-A TypeScript client for interacting with the MMN blockchain via JSON-RPC. It supports creating, signing, and submitting transactions, plus basic account and transaction queries.
+A comprehensive TypeScript client for interacting with the MMN blockchain ecosystem. It provides complete functionality for blockchain transactions, account management, indexer queries, and ZK proof generation.
 
 ## Features
 
-- 🔐 Transaction signing (Ed25519)
-- 📝 Create and sign transactions
-- 🚀 JSON-RPC client for MMN
-- 📦 TypeScript with exported types
-- 🌐 Browser & Node.js compatible
+- 🔐 **Transaction signing** (Ed25519 with NaCl)
+- 📝 **Complete transaction lifecycle** (create, sign, submit)
+- 🚀 **JSON-RPC client** for MMN blockchain
+- 📊 **Indexer client** for transaction history and wallet details
+- � **ZK proof generation** for privacy-preserving authentication
+- 💰 **Wallet management** with BIP39 mnemonic support
+- 🎯 **User ID to address conversion** with SHA256 hashing
+- �📦 **Full TypeScript support** with exported types
+- 🌐 **Cross-platform** (Browser & Node.js compatible)
 
 ## Installation
 
@@ -18,70 +22,178 @@ npm install @mezonai/mmn-client-js
 
 ## Quick Start
 
-```typescript
-import { MmnClient } from '@mezonai/mmn-client-js';
+### Basic MMN Client Usage
 
-// Create a client instance
-const client = new MmnClient({
+```typescript
+import { MmnClient, IndexerClient, ZkClient } from '@mezonai/mmn-client-js';
+
+// Create MMN client for blockchain operations
+const mmnClient = new MmnClient({
   baseUrl: 'http://localhost:8080',
-  timeout: 30000
 });
+
+// Generate ephemeral key pair for ZK authentication
+const keyPair = mmnClient.generateEphemeralKeyPair();
+console.log('Public Key:', keyPair.publicKey);
+
+// Get account information by user ID
+const account = await mmnClient.getAccountByUserId('user123');
+console.log('Balance:', account.balance);
 
 // Send a transaction
-const response = await client.sendTransaction({
-  type: 1, // Transfer type
-  sender: 'sender-address',
-  recipient: 'recipient-address',
+const response = await mmnClient.sendTransaction({
+  sender: 'user123',
+  recipient: 'user456',
   amount: '1000000000000000000',
+  nonce: 1,
   textData: 'Hello MMN!',
-  privateKey: 'private-key-hex'
+  publicKey: keyPair.publicKey,
+  privateKey: keyPair.privateKey,
+  zkProof: 'zk-proof-string',
+  zkPub: 'zk-public-string',
 });
 
-if (response.ok) {
-  console.log('Transaction Hash:', response.tx_hash);
-} else {
-  console.error('Error:', response.error);
-}
+console.log('Transaction Hash:', response.tx_hash);
+```
+
+### Indexer Client Usage
+
+```typescript
+// Create indexer client for transaction history
+const indexerClient = new IndexerClient({
+  endpoint: 'https://indexer.mmn.network',
+  chainId: 'mmn-mainnet',
+});
+
+// Get transaction history for a wallet
+const transactions = await indexerClient.getTransactionByWallet(
+  'wallet-address',
+  1, // page
+  50, // limit
+  0 // filter: 0=all, 1=received, 2=sent
+);
+
+// Get specific transaction details
+const tx = await indexerClient.getTransactionByHash('tx-hash');
+
+// Get wallet details
+const walletInfo = await indexerClient.getWalletDetail('wallet-address');
+```
+
+### ZK Proof Client Usage
+
+```typescript
+// Create ZK client for proof generation
+const zkClient = new ZkClient({
+  endpoint: 'https://zk.mmn.network',
+  chainId: 'mmn-mainnet',
+});
+
+// Generate ZK proof for authentication
+const zkProof = await zkClient.getZkProofs({
+  userId: 'user123',
+  ephemeralPublicKey: keyPair.publicKey,
+  jwt: 'jwt-token',
+  address: 'wallet-address',
+});
 ```
 
 ## API Reference
 
-### Client Configuration
+### MMN Client Configuration
 
 ```typescript
 interface MmnClientConfig {
-  baseUrl: string;                    // MMN JSON-RPC base URL
-  timeout?: number;                   // Request timeout in ms (default: 30000)
-  headers?: Record<string, string>;   // Additional headers
-  axiosConfig?: AxiosRequestConfig;   // Optional axios overrides
+  baseUrl: string; // MMN JSON-RPC base URL
+  timeout?: number; // Request timeout in ms (default: 30000)
+  headers?: Record<string, string>; // Additional headers
+  axiosConfig?: AxiosRequestConfig; // Optional axios overrides
 }
 ```
 
-### Transaction Signing
+### Indexer Client Configuration
 
-The client signs transactions with Ed25519. Provide a 64‑byte secret key or a 32‑byte seed (as `Uint8Array` or string hex/base58).
+```typescript
+interface IndexerClientConfig {
+  endpoint: string; // Indexer API endpoint
+  chainId: string; // Blockchain chain ID
+  timeout?: number; // Request timeout in ms (default: 30000)
+  headers?: Record<string, string>; // Additional headers
+}
+```
 
-### Transaction Operations
+### Core Methods
 
-#### `sendTransaction(params): Promise<AddTxResponse>`
-Create, sign, and submit a transaction in one call.
+#### MMN Client Methods
+
+**`generateEphemeralKeyPair(): IEphemeralKeyPair`**
+Generate a new Ed25519 key pair using BIP39 mnemonic.
+
+```typescript
+const keyPair = client.generateEphemeralKeyPair();
+// Returns: { privateKey: string, publicKey: string }
+```
+
+**`getAddressFromUserId(userId: string): string`**
+Convert user ID to blockchain address using SHA256 + Base58.
+
+```typescript
+const address = client.getAddressFromUserId('user123');
+```
+
+**`sendTransaction(params): Promise<AddTxResponse>`**
+Create, sign, and submit a transaction.
 
 ```typescript
 const response = await client.sendTransaction({
-  type: 1,
-  sender: 'sender-address',
-  recipient: 'recipient-address',
+  sender: 'user123',
+  recipient: 'user456',
   amount: '1000000000000000000',
-  nonce,
+  nonce: 1,
   textData: 'Optional message',
-  extraInfo: 'Optional extra',
-  privateKey: new Uint8Array(/* 64-byte secretKey */)
+  extraInfo: { type: 'transfer_token', UserSenderId: 'user123', ... },
+  publicKey: 'public-key-base58',
+  privateKey: 'private-key-pkcs8-hex',
+  zkProof: 'zk-proof-string',
+  zkPub: 'zk-public-string'
 });
 ```
 
-## License
+**`getCurrentNonce(address: string, tag?: 'latest' | 'pending'): Promise<GetCurrentNonceResponse>`**
+Get current nonce for an account.
 
-MIT
+**`getAccountByUserId(userId: string): Promise<GetAccountByAddressResponse>`**
+Get account details by user ID.
+
+**`scaleAmountToDecimals(amount: string | number, decimals: number): string`**
+Scale amount to blockchain decimals.
+
+#### Indexer Client Methods
+
+**`getTransactionByHash(hash: string): Promise<Transaction>`**
+Get transaction details by hash.
+
+**`getTransactionByWallet(wallet: string, page: number, limit: number, filter: number): Promise<ListTransactionResponse>`**
+Get transaction history for a wallet.
+
+- `filter`: 0=all, 1=received, 2=sent
+
+**`getWalletDetail(wallet: string): Promise<WalletDetail>`**
+Get wallet balance and account information.
+
+#### ZK Client Methods
+
+**`getZkProofs(params): Promise<IZkProof>`**
+Generate ZK proof for authentication.
+
+```typescript
+const zkProof = await zkClient.getZkProofs({
+  userId: 'user123',
+  ephemeralPublicKey: 'ephemeral-public-key',
+  jwt: 'jwt-token',
+  address: 'wallet-address',
+});
+```
 
 ## Contributing
 
