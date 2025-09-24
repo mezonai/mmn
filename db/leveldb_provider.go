@@ -1,9 +1,11 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
-	"github.com/syndtr/goleveldb/leveldb"
 	"sync"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // LevelDBProvider implements DatabaseProvider for LevelDB
@@ -65,6 +67,34 @@ func (p *LevelDBProvider) Batch() DatabaseBatch {
 		batch: new(leveldb.Batch),
 		db:    p.db,
 	}
+}
+
+// IteratePrefix iterates over all key-value pairs with the given prefix
+func (p *LevelDBProvider) IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error {
+	iter := p.db.NewIterator(nil, nil)
+	defer iter.Release()
+
+	// Seek to the prefix
+	iter.Seek(prefix)
+
+	// Iterate through all keys with the prefix
+	for iter.Valid() {
+		key := iter.Key()
+
+		// Check if key still starts with prefix
+		if len(key) < len(prefix) || !bytes.HasPrefix(key, prefix) {
+			break
+		}
+
+		// Call callback function
+		if !callback(key, iter.Value()) {
+			break
+		}
+
+		iter.Next()
+	}
+
+	return iter.Error()
 }
 
 // LevelDBBatch implements DatabaseBatch for LevelDB

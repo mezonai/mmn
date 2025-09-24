@@ -144,3 +144,8 @@ func (b *RedisBatch) Close() error {
 	b.pipe.Discard()
 	return nil
 }
+
+func (p *RedisProvider) IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error {
+	// TODO: implement IteratePrefix for redis
+	return nil
+}
