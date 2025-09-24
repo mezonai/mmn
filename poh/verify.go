@@ -26,7 +26,7 @@ func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
 		}
 
 		if cur != e.Hash {
-			return fmt.Errorf("PoH mismatch at entry=%d, slot=%d", i, slot)
+			return fmt.Errorf("PoH mismatch: entry=%d slot=%d expected=%x got=%x", i, slot, e.Hash, cur)
 		}
 	}
 	return nil

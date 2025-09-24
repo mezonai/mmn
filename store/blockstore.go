@@ -2,21 +2,23 @@ package store
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
-	"sync/atomic"
 
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/events"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -80,7 +82,9 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore 
 
 	// Start periodic cleanup to manage memory usage
 	// Keep locks for 1000 recent slots, cleanup every 10 minutes
-	store.StartPeriodicCleanup(1000, 10*time.Minute)
+	exception.SafeGo("startPeriodicCleanup", func() {
+		store.StartPeriodicCleanup(1000, 10*time.Minute)
+	})
 
 	return store, nil
 }
@@ -188,14 +192,14 @@ func (s *GenericBlockStore) CleanupOldSlotLocks(keepRecentSlots uint64) {
 
 // StartPeriodicCleanup starts a background goroutine that periodically cleans up old slot locks
 func (s *GenericBlockStore) StartPeriodicCleanup(keepRecentSlots uint64, cleanupInterval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(cleanupInterval)
-		defer ticker.Stop()
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
 
-		for range ticker.C {
+	for range ticker.C {
+		exception.SafeGo("CleanupOldSlotLocks", func() {
 			s.CleanupOldSlotLocks(keepRecentSlots)
-		}
-	}()
+		})
+	}
 }
 
 // Block retrieves a block by slot number
@@ -216,7 +220,7 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 	}
 
 	var blk block.Block
-	if err := json.Unmarshal(value, &blk); err != nil {
+	if err := jsonx.Unmarshal(value, &blk); err != nil {
 		logx.Error("BLOCKSTORE", "Failed to unmarshal block", slot, "error:", err)
 		return nil
 	}
@@ -290,6 +294,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	slotLock := s.getSlotLock(b.Slot)
 	slotLock.Lock()
 	defer slotLock.Unlock()
+	logx.Info("BLOCKSTORE", "Acquired lock for adding pending block at slot", b.Slot)
 
 	key := slotToBlockKey(b.Slot)
 
@@ -302,15 +307,18 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if exists {
 		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
+	logx.Info("BLOCKSTORE", "OK, block does not exist at slot", b.Slot)
 
 	// Store block
-	value, err := json.Marshal(utils.BroadcastedBlockToBlock(b))
+	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
 	if err := s.provider.Put(key, value); err != nil {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
+
+	logx.Info("BLOCKSTORE", "Monitoring block size bytes at slot", b.Slot)
 	monitoring.RecordBlockSizeBytes(len(value))
 	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
 
@@ -352,6 +360,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 			for _, tx := range entry.Transactions {
 				event := events.NewTransactionIncludedInBlock(tx, b.Slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseExecutedTpsCount()
 			}
 		}
 	}
@@ -414,6 +423,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFinalizedTpsCount()
 			}
 		}
 	}
