@@ -5,10 +5,12 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/consensus"
@@ -26,6 +28,44 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type MissingBlocksTracker struct {
+	mu         sync.RWMutex
+	missingSet map[uint64]struct{}
+	lastCount  int
+}
+
+var globalMissingBlocksTracker = &MissingBlocksTracker{
+	missingSet: make(map[uint64]struct{}),
+	lastCount:  0,
+}
+
+func UpdateMissingBlocks(numBlock uint64) {
+	globalMissingBlocksTracker.mu.Lock()
+	defer globalMissingBlocksTracker.mu.Unlock()
+
+	_, exists := globalMissingBlocksTracker.missingSet[numBlock]
+	if !exists {
+		globalMissingBlocksTracker.missingSet[numBlock] = struct{}{}
+		currentCount := len(globalMissingBlocksTracker.missingSet)
+		if currentCount != globalMissingBlocksTracker.lastCount {
+			monitoring.MissingBlocks(currentCount)
+			globalMissingBlocksTracker.lastCount = currentCount
+		}
+	}
+}
+
+func DeleteMissingBlock(numBlock uint64) {
+	globalMissingBlocksTracker.mu.Lock()
+	defer globalMissingBlocksTracker.mu.Unlock()
+
+	delete(globalMissingBlocksTracker.missingSet, numBlock)
+	currentCount := len(globalMissingBlocksTracker.missingSet)
+	if currentCount != globalMissingBlocksTracker.lastCount {
+		monitoring.MissingBlocks(currentCount)
+		globalMissingBlocksTracker.lastCount = currentCount
+	}
+}
 
 type server struct {
 	pb.UnimplementedBlockServiceServer
@@ -326,7 +366,11 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	for _, num := range in.BlockNumbers {
 		block := s.blockStore.Block(num)
 		if block == nil {
+			UpdateMissingBlocks(num)
 			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+		}
+		if _, exists := globalMissingBlocksTracker.missingSet[num]; exists {
+			DeleteMissingBlock(num)
 		}
 
 		entries := make([]*pb.Entry, 0, len(block.Entries))
