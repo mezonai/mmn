@@ -36,6 +36,12 @@ func (v *Vote) Sign(priv ed25519.PrivateKey) {
 
 // VerifySignature check vote signature with public key
 func (v *Vote) VerifySignature(pub ed25519.PublicKey) bool {
+	if len(pub) != ed25519.PublicKeySize {
+		return false
+	}
+	if len(v.Signature) != ed25519.SignatureSize {
+		return false
+	}
 	return ed25519.Verify(pub, v.serializeVote(), v.Signature)
 }
 
@@ -43,6 +49,12 @@ func (v *Vote) VerifySignature(pub ed25519.PublicKey) bool {
 func (v *Vote) Validate() error {
 	if len(v.Signature) == 0 {
 		return fmt.Errorf("missing signature")
+	}
+	if len(v.Signature) != ed25519.SignatureSize {
+		return fmt.Errorf("invalid signature size: expected %d, got %d", ed25519.SignatureSize, len(v.Signature))
+	}
+	if v.VoterID == "" {
+		return fmt.Errorf("voter ID cannot be empty")
 	}
 	return nil
 }
