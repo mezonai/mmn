@@ -49,7 +49,7 @@ func UpdateMissingBlocksCount(numBlock uint64) {
 		globalMissingBlocksTracker.missingSet[numBlock] = struct{}{}
 		currentCount := len(globalMissingBlocksTracker.missingSet)
 		if currentCount != globalMissingBlocksTracker.lastCount {
-			monitoring.MissingBlocks(currentCount)
+			monitoring.MissingBlocksCount(currentCount)
 			globalMissingBlocksTracker.lastCount = currentCount
 		}
 	}
@@ -62,7 +62,7 @@ func DeleteMissingBlocksCount(numBlock uint64) {
 	delete(globalMissingBlocksTracker.missingSet, numBlock)
 	currentCount := len(globalMissingBlocksTracker.missingSet)
 	if currentCount != globalMissingBlocksTracker.lastCount {
-		monitoring.MissingBlocks(currentCount)
+		monitoring.MissingBlocksCount(currentCount)
 		globalMissingBlocksTracker.lastCount = currentCount
 	}
 }

@@ -48,7 +48,7 @@ type nodePromMetrics struct {
 	executedTpsCounter    prometheus.Counter
 	finalizedTpsCounter   prometheus.Counter
 	failedTpsCounter      *prometheus.CounterVec
-	missingBlocks         prometheus.Gauge
+	missingBlocksCount         prometheus.Gauge
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -164,7 +164,7 @@ func newNodePromMetrics() *nodePromMetrics {
 			},
 			[]string{"reason"},
 		),
-		missingBlocks: promauto.NewGauge(
+		missingBlocksCount: promauto.NewGauge(
 			prometheus.GaugeOpts{
 				Name: "mmn_node_missing_block",
 				Help: "The total number of missing blocks being tracked",
@@ -260,6 +260,6 @@ func IncreaseFailedTpsCount(reason string) {
 	}).Inc()
 }
 
-func MissingBlocks(count int) {
-	nodeMetrics.missingBlocks.Set(float64(count))
+func MissingBlocksCount(count int) {
+	nodeMetrics.missingBlocksCount.Set(float64(count))
 }
