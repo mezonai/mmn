@@ -414,6 +414,7 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 
 // GetBlockByNumber retrieves a block by its number
 func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieving blocks %v", in.BlockNumbers))
 	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
 
 	for _, num := range in.BlockNumbers {
@@ -471,6 +472,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		blocks = append(blocks, pbBlock)
 	}
 
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieved blocks %v", in.BlockNumbers))
 	return &pb.GetBlockByNumberResponse{
 		Blocks:   blocks,
 		Decimals: uint32(config.GetDecimalsFactor()),

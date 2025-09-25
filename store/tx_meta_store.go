@@ -2,12 +2,11 @@ package store
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/jsonx"
 )
 
 // TxMetaStore is the interface for transaction meta store
@@ -22,7 +21,6 @@ type TxMetaStore interface {
 
 // GenericTxMetaStore provides transaction meta storage operations
 type GenericTxMetaStore struct {
-	mu         sync.RWMutex
 	dbProvider db.DatabaseProvider
 }
 
@@ -48,10 +46,7 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 		logx.Info("TX_META_STORE", "StoreBatch: no transaction metas to store")
 		return nil
 	}
-	logx.Info("TX_META_STORE", "StoreBatch: storing", len(txMetas), "transaction metas")
-
-	tms.mu.Lock()
-	defer tms.mu.Unlock()
+	logx.Info("TX_META_STORE", fmt.Sprintf("StoreBatch: storing %d transaction metas", len(txMetas)))
 
 	batch := tms.dbProvider.Batch()
 	defer batch.Close()
@@ -70,7 +65,7 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 		return fmt.Errorf("failed to write transaction meta to database: %w", err)
 	}
 
-	logx.Info("TX_META_STORE", "StoreBatch: stored", len(txMetas), "transaction metas")
+	logx.Info("TX_META_STORE", fmt.Sprintf("StoreBatch: stored %d transaction metas", len(txMetas)))
 	return nil
 }
 
@@ -96,12 +91,8 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 		return map[string]*types.TransactionMeta{}, nil
 	}
 
-	tms.mu.RLock()
-	defer tms.mu.RUnlock()
-
 	txMetas := make(map[string]*types.TransactionMeta, len(txHashes))
 	for _, txHash := range txHashes {
-		// Direct database access without nested locking
 		data, err := tms.dbProvider.Get(tms.getDbKey(txHash))
 		if err != nil {
 			logx.Warn("TX_META_STORE", fmt.Sprintf("Could not get transaction meta %s from database: %s", txHash, err.Error()))

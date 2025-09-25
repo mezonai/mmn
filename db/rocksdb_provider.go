@@ -4,6 +4,7 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 
@@ -146,6 +147,39 @@ func (p *RocksDBProvider) Batch() DatabaseBatch {
 		batch:    grocksdb.NewWriteBatch(),
 		provider: p,
 	}
+}
+
+// IteratePrefix iterates over all key-value pairs with the given prefix
+func (p *RocksDBProvider) IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error {
+	iter := p.db.NewIterator(p.ro)
+	defer iter.Close()
+
+	// Seek to the prefix
+	iter.Seek(prefix)
+
+	// Iterate through all keys with the prefix
+	for iter.Valid() {
+		keySlice := iter.Key()
+		valueSlice := iter.Value()
+
+		// Convert grocksdb.Slice to []byte
+		key := keySlice.Data()
+		value := valueSlice.Data()
+
+		// Check if key still starts with prefix
+		if len(key) < len(prefix) || !bytes.HasPrefix(key, prefix) {
+			break
+		}
+
+		// Call callback function
+		if !callback(key, value) {
+			break
+		}
+
+		iter.Next()
+	}
+
+	return iter.Err()
 }
 
 // RocksDBBatch implements DatabaseBatch for RocksDB

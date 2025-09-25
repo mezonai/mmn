@@ -627,23 +627,14 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 	mp.readyQueue = newReadyQueue
 }
 
-// GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
-// Returns 0 if no pending transactions exist for the sender
-func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
+func (mp *Mempool) GetLargestReadyTransactionNonce(sender string) uint64 {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
 
-	var largestNonce uint64 = 0
-	// Check in pending map
-	pendingMap, exists := mp.pendingTxs[sender]
-	if exists && len(pendingMap) > 0 {
-		for nonce := range pendingMap {
-			if nonce > largestNonce {
-				largestNonce = nonce
-			}
-		}
+	if len(mp.readyQueue) == 0 {
+		return 0
 	}
-
+	var largestNonce uint64 = 0
 	// Check in ready queue
 	for _, tx := range mp.readyQueue {
 		if tx.Sender == sender {
@@ -652,8 +643,31 @@ func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
 			}
 		}
 	}
-
 	return largestNonce
+}
+
+// GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
+// Returns 0 if no pending transactions exist for the sender
+func (mp *Mempool) GetLargestConsecutivePendingNonce(sender string, fromNonce uint64) uint64 {
+	mp.mu.RLock()
+	defer mp.mu.RUnlock()
+
+	// Check in pending map
+	pendingMap, exists := mp.pendingTxs[sender]
+	if !exists || len(pendingMap) == 0 {
+		return fromNonce
+	}
+
+	currentNonce := fromNonce
+	for {
+		if _, exists := pendingMap[currentNonce+1]; exists {
+			currentNonce++
+		} else {
+			break
+		}
+	}
+
+	return currentNonce
 }
 
 // GetMempoolStats returns current mempool statistics

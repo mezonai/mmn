@@ -204,7 +204,7 @@ func (r *PohRecorder) Tick() *Entry {
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
 
 	r.tickHeight++
-	if r.isLastTickOfSlot() {
+	if r.IsLastTickOfSlot() {
 		logx.Debug("PohRecorder", fmt.Sprintf("Putting slot hash %d %x", r.tickHeight/r.ticksPerSlot, entry.Hash))
 		r.slotHashQueue.Put(r.tickHeight/r.ticksPerSlot, entry.Hash)
 	}
@@ -212,7 +212,7 @@ func (r *PohRecorder) Tick() *Entry {
 	return &entry
 }
 
-func (r *PohRecorder) isLastTickOfSlot() bool {
+func (r *PohRecorder) IsLastTickOfSlot() bool {
 	return r.tickHeight%r.ticksPerSlot == 0
 }
 
@@ -225,11 +225,18 @@ func (r *PohRecorder) DrainEntries() []Entry {
 	return entries
 }
 
-// estimateEntrySize estimates the memory size of an entry in bytes
 func estimateEntrySize(entry Entry) int {
 	size := 8 + 32 + 1                   // NumHashes + Hash + Tick
 	size += len(entry.Transactions) * 32 // Approximate transaction size
 	return size
+}
+
+func (r *PohRecorder) CurrentPassedSlot() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// +1 to make slot start from 1
+	return r.tickHeight / r.ticksPerSlot
 }
 
 func (r *PohRecorder) CurrentSlot() uint64 {
