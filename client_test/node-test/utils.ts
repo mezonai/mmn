@@ -22,7 +22,7 @@ export const TxTypeTransfer = 0;
 export const TxTypeFaucet = 1;
 
 const JwtSecret = "defaultencryptionkey";
-const ZkVerifyUrl = "http://localhost:8282";
+const ZkVerifyUrl = "http://172.16.100.180:8282";
 
 // Response shape for zk verify /prove endpoint
 type ProveResponse = {
