@@ -217,17 +217,17 @@ func (ss *SlotState) ContainsCert(c *consensus.Cert) bool {
 	return false
 }
 
-// TODO: add repair block event
-func (ss *SlotState) AddVote(v *consensus.Vote) ([]consensus.Cert, []votor.VotorEvent) {
+func (ss *SlotState) AddVote(v *consensus.Vote) ([]consensus.Cert, []votor.VotorEvent, []BlockId) {
 	voter := v.PubKey
 
 	newVotorEvents := []votor.VotorEvent{}
 	newCerts := []consensus.Cert{}
+	newRepairBlocks := []BlockId{}
 
 	switch v.VoteType {
 	case consensus.NOTAR_VOTE:
 		ss.votes.notar[voter] = &HashVotes{hash: v.BlockHash, vote: v}
-		newCerts, newVotorEvents = ss.countNotarStake(ss.slot, v.BlockHash)
+		newCerts, newVotorEvents, newRepairBlocks = ss.countNotarStake(v.Slot, v.BlockHash)
 
 	case consensus.NOTAR_FALLBACK_VOTE:
 		ss.votes.notarFallback[voter] = append(ss.votes.notarFallback[voter], &HashVotes{hash: v.BlockHash, vote: v})
@@ -236,11 +236,11 @@ func (ss *SlotState) AddVote(v *consensus.Vote) ([]consensus.Cert, []votor.Votor
 	case consensus.SKIP_VOTE:
 		ss.votes.skip[voter] = v
 		ss.votedStakes.notarOrSkip += 1
-		newCerts, newVotorEvents = ss.countSkipStake(v.Slot, false)
+		newCerts, newVotorEvents, newRepairBlocks = ss.countSkipStake(v.Slot, false)
 
 	case consensus.SKIP_FALLBACK_VOTE:
 		ss.votes.skipFallback[voter] = v
-		newCerts, newVotorEvents = ss.countSkipStake(v.Slot, true)
+		newCerts, newVotorEvents, newRepairBlocks = ss.countSkipStake(v.Slot, true)
 
 	case consensus.FINAL_VOTE:
 		ss.votes.final[voter] = v
@@ -259,15 +259,17 @@ func (ss *SlotState) AddVote(v *consensus.Vote) ([]consensus.Cert, []votor.Votor
 					Slot:      v.Slot,
 					BlockHash: blockHash,
 				})
+
 			case MISSING_BLOCK:
-				//TODO: append event to block repair
+				newRepairBlocks = append(newRepairBlocks, BlockId{Slot: v.Slot, BlockHash: blockHash})
+
 			case AWAITING_VOTES:
 				// do nothing, wait for more votes
 			}
 		}
 	}
 
-	return newCerts, newVotorEvents
+	return newCerts, newVotorEvents, newRepairBlocks
 }
 
 func (ss *SlotState) AddCert(cert *consensus.Cert) {
@@ -292,10 +294,44 @@ func (ss *SlotState) AddCert(cert *consensus.Cert) {
 	}
 }
 
-// TODO: add repair block event
-func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consensus.Cert, []votor.VotorEvent) {
+func (ss *SlotState) NotifyParentKnown(blockHash [32]byte) {
+	ss.parents[blockHash] = KNOWN
+}
+
+func (ss *SlotState) NotifyParentCertified(blockHash [32]byte) (*votor.VotorEvent, *BlockId) {
+	_, ok := ss.parents[blockHash]
+	if !ok {
+		panic("parent block not known")
+	}
+
+	ss.parents[blockHash] = CERTIFIED
+
+	if _, exists := ss.sentSafeToNotar[blockHash]; exists {
+		return nil, nil
+	}
+
+	switch ss.checkSafeToNotar(blockHash) {
+	case SAFE_TO_NOTAR:
+		return &votor.VotorEvent{
+			Type:      votor.SAFE_TO_NOTAR,
+			Slot:      ss.slot,
+			BlockHash: blockHash,
+		}, nil
+
+	case MISSING_BLOCK:
+		return nil, &BlockId{Slot: ss.slot, BlockHash: blockHash}
+
+	case AWAITING_VOTES:
+		// do nothing, wait for more votes
+	}
+
+	return nil, nil
+}
+
+func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consensus.Cert, []votor.VotorEvent, []BlockId) {
 	newVotorEvents := []votor.VotorEvent{}
 	newCerts := []consensus.Cert{}
+	newRepairBlocks := []BlockId{}
 
 	ss.votedStakes.notar[blockHash] += 1
 	ss.votedStakes.notarOrSkip += 1
@@ -310,8 +346,10 @@ func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consens
 				Slot:      slot,
 				BlockHash: blockHash,
 			})
+
 		case MISSING_BLOCK:
-			//TODO: append event to block repair
+			newRepairBlocks = append(newRepairBlocks, BlockId{Slot: slot, BlockHash: blockHash})
+
 		case AWAITING_VOTES:
 			// do nothing, wait for more votes
 		}
@@ -372,7 +410,7 @@ func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consens
 		newCerts = append(newCerts, newCert)
 	}
 
-	return newCerts, newVotorEvents
+	return newCerts, newVotorEvents, newRepairBlocks
 }
 
 func (ss *SlotState) countNotarFallbackStake(slot uint64, blockHash [32]byte) []consensus.Cert {
@@ -402,10 +440,10 @@ func (ss *SlotState) countNotarFallbackStake(slot uint64, blockHash [32]byte) []
 	return newCerts
 }
 
-// TODO: add repair block event
-func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.Cert, []votor.VotorEvent) {
+func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.Cert, []votor.VotorEvent, []BlockId) {
 	newCerts := []consensus.Cert{}
 	newVotorEvents := []votor.VotorEvent{}
+	newRepairBlocks := []BlockId{}
 
 	if isFallback {
 		ss.votedStakes.skipFallback += 1
@@ -423,8 +461,10 @@ func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.C
 					Slot:      slot,
 					BlockHash: blockHash,
 				})
+
 			case MISSING_BLOCK:
-				//TODO: append event to block repair
+				newRepairBlocks = append(newRepairBlocks, BlockId{Slot: slot, BlockHash: blockHash})
+
 			case AWAITING_VOTES:
 				// do nothing, wait for more votes
 			}
@@ -454,7 +494,7 @@ func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.C
 		})
 	}
 
-	return newCerts, newVotorEvents
+	return newCerts, newVotorEvents, newRepairBlocks
 }
 
 func (ss *SlotState) countFinalStake(slot uint64) []consensus.Cert {

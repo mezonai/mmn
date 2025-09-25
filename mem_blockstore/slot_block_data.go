@@ -41,3 +41,15 @@ func (s *SlotBlockData) GetPrimaryBlocks() *block.BroadcastedBlock {
 func (s *SlotBlockData) GetRepairedBlocks() map[string]*block.BroadcastedBlock {
 	return s.repaired
 }
+
+func (s *SlotBlockData) GetBlock(blockHash [32]byte) *block.BroadcastedBlock {
+	if s.primary != nil && s.primary.Hash == blockHash {
+		return s.primary
+	}
+	for _, repairedBlock := range s.repaired {
+		if repairedBlock.Hash == blockHash {
+			return repairedBlock
+		}
+	}
+	return nil
+}

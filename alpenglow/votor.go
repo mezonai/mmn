@@ -179,6 +179,7 @@ func (v *Votor) setTimeouts(currentSlot uint64) {
 	sender := v.eventSender
 	slots := utils.SlotsInWindow(currentSlot)
 
+	// TODO: set timeouts only once? (Sonlana)
 	// Set timeout for each slot in the window
 	go func() {
 		for _, s := range slots {
@@ -230,6 +231,7 @@ func (v *Votor) handleCertCreated(ev votor.VotorEvent) {
 		v.tryFinal(slot, blockHash)
 
 	case consensus.FINAL_CERT, consensus.FAST_FINAL_CERT:
+		// Fallback: set timeouts on Final/FastFinal to recover if ParentReady was missed.
 		firstSlotInWindow := utils.FirstSlotInWindow(cert.Slot)
 		v.setTimeouts(firstSlotInWindow)
 	}

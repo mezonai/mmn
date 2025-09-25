@@ -5,10 +5,9 @@ import "github.com/mezonai/mmn/utils"
 type ParentReadyState struct {
 	Skip           bool
 	NotarFallbacks [][32]byte
-	IsReady        []BlockId //TODO: IsReady NotReady (has someone waiting to hear when the slot ready) - Like Solana
+	IsReady        []BlockId
 }
 
-//TODO: need logic cleanup and optimization
 type ParentReadyTracker struct {
 	states map[uint64]*ParentReadyState
 }
@@ -145,4 +144,12 @@ func (prs *ParentReadyState) isContainedNotarFallback(blockHash [32]byte) bool {
 		}
 	}
 	return false
+}
+
+func (prt *ParentReadyTracker) Prune(highestFinalizedSlot uint64) {
+	for slot := range prt.states {
+		if slot < highestFinalizedSlot {
+			delete(prt.states, slot)
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package mem_blockstore
 
 import (
+	"github.com/mezonai/mmn/alpenglow/pool"
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/poh"
@@ -9,10 +10,11 @@ import (
 // TODO: need logic to cleanup old slots
 type MemBlockStore struct {
 	blockData    map[uint64]*SlotBlockData // slot -> SlotBlockData
+	pool         *pool.Pool
 	votorChannel chan votor.VotorEvent
 }
 
-func NewMemBlockStore(votorChannel chan votor.VotorEvent, genesisBlock *block.Block) *MemBlockStore {
+func NewMemBlockStore(votorChannel chan votor.VotorEvent, pool *pool.Pool, genesisBlock *block.Block) *MemBlockStore {
 	// Create a genesisBlockData from genesisBlock
 	genesisBlockData := &block.BroadcastedBlock{
 		BlockCore: genesisBlock.BlockCore,
@@ -25,33 +27,31 @@ func NewMemBlockStore(votorChannel chan votor.VotorEvent, genesisBlock *block.Bl
 	blockData[0] = slotBlockData
 	return &MemBlockStore{
 		blockData:    blockData,
+		pool:         pool,
 		votorChannel: votorChannel,
 	}
 }
 
-func (mbs *MemBlockStore) GetBlock(slot uint64, blockHash [32]byte) *block.BroadcastedBlock {
-	primaryBlock := mbs.blockData[slot].GetPrimaryBlocks()
-	if primaryBlock != nil && primaryBlock.Hash == blockHash {
-		return primaryBlock
+func (mbs *MemBlockStore) getSlotBlockData(slot uint64) *SlotBlockData {
+	slotBlockData, exists := mbs.blockData[slot]
+	if !exists {
+		slotBlockData = NewSlotBlockData()
+		mbs.blockData[slot] = slotBlockData
 	}
+	return slotBlockData
+}
 
-	for _, repairedBlock := range mbs.blockData[slot].GetRepairedBlocks() {
-		if repairedBlock.Hash == blockHash {
-			return repairedBlock
+func (mbs *MemBlockStore) GetBlock(slot uint64, blockHash [32]byte) *block.BroadcastedBlock {
+	if slotBlockData, exists := mbs.blockData[slot]; exists {
+		if blk := slotBlockData.GetBlock(blockHash); blk != nil {
+			return blk
 		}
 	}
 	return nil
 }
 
 func (mbs *MemBlockStore) AddBlock(slot uint64, block *block.BroadcastedBlock) {
-	slotBlockData, exists := mbs.blockData[slot]
-	if !exists {
-		slotBlockData = NewSlotBlockData()
-		slotBlockData.AddBlock(block)
-		mbs.blockData[slot] = slotBlockData
-		return
-	}
-
+	slotBlockData := mbs.getSlotBlockData(slot)
 	slotBlockData.AddBlock(block)
 	mbs.blockData[slot] = slotBlockData
 
@@ -71,18 +71,16 @@ func (mbs *MemBlockStore) AddBlock(slot uint64, block *block.BroadcastedBlock) {
 		BlockHash: block.Hash,
 		Block:     blockInfo,
 	}
+
+	mbs.pool.AddBlock(pool.BlockId{Slot: block.Slot, BlockHash: block.Hash}, pool.BlockId{Slot: parentBlock.Slot, BlockHash: parentBlock.Hash})
 }
 
 func (mbs *MemBlockStore) AddRepairedBlock(slot uint64, block *block.BroadcastedBlock) {
-	slotBlockData, exists := mbs.blockData[slot]
-	if !exists {
-		slotBlockData = NewSlotBlockData()
-		slotBlockData.AddRepairedBlock(block)
-		mbs.blockData[slot] = slotBlockData
-		return
-	}
+	slotBlockData := mbs.getSlotBlockData(slot)
 	slotBlockData.AddRepairedBlock(block)
 	mbs.blockData[slot] = slotBlockData
+
+	mbs.pool.AddBlock(pool.BlockId{Slot: block.Slot, BlockHash: block.Hash}, pool.BlockId{Slot: 0, BlockHash: [32]byte{}})
 }
 
 func (mbs *MemBlockStore) getParentBlock(slot uint64, hash [32]byte) *block.BroadcastedBlock {

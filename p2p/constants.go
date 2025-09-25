@@ -5,6 +5,7 @@ const (
 	RequestBlockSyncStream = "/sync-block-request"
 	LatestSlotProtocol     = "/latest-slot-request"
 	CheckpointProtocol     = "/checkpoint-hash"
+	RepairBlockProtocol    = "/repair-block"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"

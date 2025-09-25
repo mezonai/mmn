@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -28,7 +29,8 @@ type Libp2pNetwork struct {
 	// Track bootstrap peers so we can exclude them from certain requests
 	bootstrapPeerIDs map[peer.ID]struct{}
 
-	blockStore store.BlockStore
+	blockStore    store.BlockStore
+	memBlockStore *mem_blockstore.MemBlockStore
 
 	topicBlocks            *pubsub.Topic
 	topicVotes             *pubsub.Topic
@@ -120,6 +122,11 @@ type SyncRequest struct {
 
 type SyncResponse struct {
 	Blocks []*block.Block `json:"blocks"`
+}
+
+type RepairRequest struct {
+	Slot      uint64   `json:"slot"`
+	BlockHash [32]byte `json:"block_hash"`
 }
 
 type LatestSlotRequest struct {

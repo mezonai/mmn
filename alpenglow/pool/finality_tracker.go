@@ -26,7 +26,6 @@ type FinalizationEvent struct {
 	ImplicitlySkipped   []uint64
 }
 
-// TODO: need logic cleanup and optimization
 type FinalityTracker struct {
 	status               map[uint64]StatusEntry
 	parents              map[BlockId]BlockId
@@ -217,5 +216,18 @@ func (ft *FinalityTracker) handleImplicitlyFinalized(sourceSlot uint64, implicit
 	// Recurse if needed
 	if parent, exists := ft.parents[implicitlyFinalized]; exists {
 		ft.handleImplicitlyFinalized(implicitlyFinalized.Slot, parent, event)
+	}
+}
+
+func (ft *FinalityTracker) Prune() {
+	for slot := range ft.status {
+		if slot < ft.highestFinalizedSlot {
+			delete(ft.status, slot)
+		}
+	}
+	for block, parent := range ft.parents {
+		if block.Slot < ft.highestFinalizedSlot && parent.Slot < ft.highestFinalizedSlot {
+			delete(ft.parents, block)
+		}
 	}
 }

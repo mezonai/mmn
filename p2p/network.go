@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
@@ -30,6 +31,7 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	memBlockStore *mem_blockstore.MemBlockStore,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -84,6 +86,7 @@ func NewNetWork(
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
 		blockStore:             blockStore,
+		memBlockStore:          memBlockStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
 		syncRequests:           make(map[string]*SyncRequestTracker),
@@ -117,6 +120,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
+	ln.host.SetStreamHandler(RepairBlockProtocol, ln.handleRepairBlockStream)
 
 	ln.SetupPubSubTopics(ctx)
 

@@ -19,6 +19,7 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/alpenglow/pool"
+	"github.com/mezonai/mmn/alpenglow/repair_block"
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
@@ -213,8 +214,19 @@ func runNode() {
 		log.Fatalf("load BLS private key: %v", err)
 	}
 
+	// Initialize pool
+	genesisBlock := bs.Block(0)
+	votorChannel := make(chan votor.VotorEvent, 100) // create votor channel
+	repairChannel := make(chan pool.BlockId, 100)    // create repair channel
+	prt := pool.NewParentReadyTracker(genesisBlock.Slot, genesisBlock.Hash)
+	ft := pool.NewFinalityTracker()
+	p := pool.NewPool(prt, ft, votorChannel, repairChannel, nodeConfig.BlsPubKey)
+
+	// Initialize mem blockstore
+	mbs := mem_blockstore.NewMemBlockStore(votorChannel, p, genesisBlock)
+
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, mbs, privKey)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -225,18 +237,11 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	// Initialize mem blockstore
-	genesisBlock := bs.Block(0)
-	votorChannel := make(chan votor.VotorEvent, 100) // create votor channel
-	mbs := mem_blockstore.NewMemBlockStore(votorChannel, genesisBlock)
-
-	// Initialize pool
-	prt := pool.NewParentReadyTracker(genesisBlock.Slot, genesisBlock.Hash)
-	ft := pool.NewFinalityTracker()
-	p := pool.NewPool(prt, ft, votorChannel, nodeConfig.BlsPubKey)
-
 	// Initialize votor
 	initializeVotor(nodeConfig.BlsPubKey, blsPrivKey, votorChannel, libP2pClient)
+
+	// Initialize repair block worker
+	initializeRepairBlockWorker(repairChannel, mbs, libP2pClient)
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, mbs, bs, mp, p, recorder)
 
@@ -323,7 +328,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blockstore.MemBlockStore, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -331,6 +336,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		mbs,
 	)
 
 	return libp2pNetwork, err
@@ -382,6 +388,11 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 func initializeVotor(blsPubKey string, blsPrivKey bls.SecretKey, votorChannel chan votor.VotorEvent, ln *p2p.Libp2pNetwork) {
 	votor := alpenglow.NewVotor(blsPubKey, blsPrivKey, votorChannel, votorChannel, ln)
 	go votor.Run()
+}
+
+func initializeRepairBlockWorker(repairChannel chan pool.BlockId, mbs *mem_blockstore.MemBlockStore, ln *p2p.Libp2pNetwork) {
+	rpw := repair_block.NewRepairBlockWorker(repairChannel, mbs, ln)
+	go rpw.Run(context.Background())
 }
 
 // startServices starts all network and API services
