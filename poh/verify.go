@@ -3,11 +3,13 @@ package poh
 import (
 	"crypto/sha256"
 	"fmt"
+
+	"github.com/mezonai/mmn/logx"
 )
 
-func VerifyEntries(prev [32]byte, entries []Entry) error {
-	fmt.Printf("VerifyEntries: prev hash: %x\n", prev)
-	fmt.Printf("VerifyEntries: verifying %d entries\n", len(entries))
+func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash=%x slot=%d", prev, slot))
+	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries in slot=%d", len(entries), slot))
 	cur := prev
 
 	for i, e := range entries {
@@ -24,7 +26,7 @@ func VerifyEntries(prev [32]byte, entries []Entry) error {
 		}
 
 		if cur != e.Hash {
-			return fmt.Errorf("PoH mismatch at entry %d", i)
+			return fmt.Errorf("PoH mismatch: entry=%d slot=%d expected=%x got=%x", i, slot, e.Hash, cur)
 		}
 	}
 	return nil
