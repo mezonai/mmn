@@ -33,6 +33,7 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	txStore store.TxStore,
 	pohCfg *config.PohConfig,
 ) (*Libp2pNetwork, error) {
 
@@ -88,6 +89,7 @@ func NewNetWork(
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
 		blockStore:             blockStore,
+		txStore:                txStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
 		syncRequests:           make(map[string]*SyncRequestTracker),

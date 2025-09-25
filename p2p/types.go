@@ -32,6 +32,7 @@ type Libp2pNetwork struct {
 	bootstrapPeerIDs map[peer.ID]struct{}
 
 	blockStore store.BlockStore
+	txStore    store.TxStore
 
 	topicBlocks            *pubsub.Topic
 	topicEmptyBlocks       *pubsub.Topic
