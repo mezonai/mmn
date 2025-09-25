@@ -49,8 +49,6 @@ type BlockStore interface {
 type GenericBlockStore struct {
 	provider db.DatabaseProvider
 
-	// Metadata lock (global)
-	metaMu          sync.RWMutex
 	latestFinalized atomic.Uint64
 	latestStore     atomic.Uint64
 
@@ -204,10 +202,6 @@ func (s *GenericBlockStore) StartPeriodicCleanup(keepRecentSlots uint64, cleanup
 
 // Block retrieves a block by slot number
 func (s *GenericBlockStore) Block(slot uint64) *block.Block {
-	slotLock := s.getSlotLock(slot)
-	slotLock.RLock()
-	defer slotLock.RUnlock()
-
 	key := slotToBlockKey(slot)
 	value, err := s.provider.Get(key)
 	if err != nil {
@@ -230,10 +224,6 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 
 // HasCompleteBlock checks if a complete block exists at the given slot
 func (s *GenericBlockStore) HasCompleteBlock(slot uint64) bool {
-	slotLock := s.getSlotLock(slot)
-	slotLock.RLock()
-	defer slotLock.RUnlock()
-
 	key := slotToBlockKey(slot)
 	exists, err := s.provider.Has(key)
 	if err != nil {
@@ -289,12 +279,12 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
-	logx.Info("BLOCKSTORE", "Adding pending block at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Adding pending block at slot %d", b.Slot))
 
 	slotLock := s.getSlotLock(b.Slot)
 	slotLock.Lock()
 	defer slotLock.Unlock()
-	logx.Info("BLOCKSTORE", "Acquired lock for adding pending block at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Acquired lock for adding pending block at slot %d", b.Slot))
 
 	key := slotToBlockKey(b.Slot)
 
@@ -307,7 +297,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if exists {
 		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
-	logx.Info("BLOCKSTORE", "OK, block does not exist at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("OK, block does not exist at slot %d", b.Slot))
 
 	// Store block
 	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
@@ -318,9 +308,9 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
 
-	logx.Info("BLOCKSTORE", "Monitoring block size bytes at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Monitoring block size bytes at slot %d", b.Slot))
 	monitoring.RecordBlockSizeBytes(len(value))
-	logx.Info("BLOCKSTORE", "Stored block at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored block at slot %d", b.Slot))
 
 	// Update latest store slot if the block slot is greater than the latest store slot
 	if b.Slot > s.latestStore.Load() {
@@ -339,7 +329,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.txStore.StoreBatch(txs); err != nil {
 		return fmt.Errorf("failed to store txs: %w", err)
 	}
-	logx.Info("BLOCKSTORE", "Stored txs at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored txs at slot %d", b.Slot))
 	// Store block txs meta
 	txsMeta := make([]*types.TransactionMeta, 0)
 	for _, entry := range b.Entries {
@@ -350,7 +340,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if err := s.txMetaStore.StoreBatch(txsMeta); err != nil {
 		return fmt.Errorf("failed to store txs meta: %w", err)
 	}
-	logx.Info("BLOCKSTORE", "Stored txs meta at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored txs meta at slot %d", b.Slot))
 	// Publish transaction inclusion events if event router is provided
 	if s.eventRouter != nil {
 		blockHashHex := b.HashString()
@@ -365,16 +355,13 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		}
 	}
 
-	logx.Info("BLOCKSTORE", "Added pending block at slot", b.Slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Added pending block at slot %d", b.Slot))
 
 	return nil
 }
 
+// IsApplied checks if a slot has been finalized
 func (s *GenericBlockStore) IsApplied(slot uint64) bool {
-	slotLock := s.getSlotLock(slot)
-	slotLock.RLock()
-	defer slotLock.RUnlock()
-
 	// Check if this specific slot has been finalized
 	key := slotToFinalizedKey(slot)
 	exists, err := s.provider.Has(key)
@@ -435,10 +422,6 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 		return fmt.Errorf("failed to mark slot as finalized: %w", err)
 	}
 
-	// Update latest finalized
-	s.metaMu.Lock()
-	defer s.metaMu.Unlock()
-
 	currentLatest := s.latestFinalized.Load()
 	if slot > currentLatest {
 		s.latestFinalized.Store(slot)
@@ -456,7 +439,7 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 		monitoring.SetBlockHeight(slot)
 	}
 
-	logx.Info("BLOCKSTORE", "Marked block as finalized at slot", slot)
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Marked block as finalized at slot %d", slot))
 
 	return nil
 }
@@ -490,10 +473,6 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 	if txMeta.Status != types.TxStatusProcessed {
 		return 0, nil, false, false
 	}
-
-	slotLock := bs.getSlotLock(txMeta.Slot)
-	slotLock.RLock()
-	defer slotLock.RUnlock()
 
 	blk = bs.Block(txMeta.Slot)
 	if blk == nil {

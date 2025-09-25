@@ -335,9 +335,6 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		// missing block how to handle
 		return fmt.Errorf("block not found for slot %d", vote.Slot)
 	}
-	if err := ld.ApplyBlock(block); err != nil {
-		return fmt.Errorf("apply block error: %w", err)
-	}
 
 	// Mark block as finalized
 	if err := bs.MarkFinalized(vote.Slot); err != nil {
@@ -345,6 +342,10 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	}
 
 	go writeSnapshotIfDue(ld, vote.Slot)
+
+	if err := ld.ApplyBlock(block); err != nil {
+		return fmt.Errorf("apply block error: %w", err)
+	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
 	return nil

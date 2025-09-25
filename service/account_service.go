@@ -91,26 +91,15 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		currentNonce = acc.Nonce
 		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
 	} else { // tag == "pending"
-		// For "pending", return the largest nonce among pending transactions, processing transactions, or current ledger nonce
+		// For "pending", return the largest nonce among ready transactions, processing transactions, current ledger nonce, and consecutive pending nonce
 		ledgerNonce := acc.Nonce
-		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
+		largestReadyNonce := s.mempool.GetLargestReadyTransactionNonce(addr)
+		largestProcessingNonce := s.tracker.GetLargestProcessingNonce(addr)
+		currentNonce = max(largestProcessingNonce, max(largestReadyNonce, ledgerNonce))
 
-		var largestProcessingNonce uint64
-		if s.tracker != nil {
-			largestProcessingNonce = s.tracker.GetLargestProcessingNonce(addr)
-		}
-
-		// Find the maximum nonce across all sources
-		currentNonce = ledgerNonce
-		if largestPendingNonce > currentNonce {
-			currentNonce = largestPendingNonce
-		}
-		if largestProcessingNonce > currentNonce {
-			currentNonce = largestProcessingNonce
-		}
-
+		currentNonce = s.mempool.GetLargestConsecutivePendingNonce(addr, currentNonce)
 		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
-			addr, ledgerNonce, largestPendingNonce, largestProcessingNonce, currentNonce))
+			addr, ledgerNonce, largestReadyNonce, largestProcessingNonce, currentNonce))
 	}
 
 	return &pb.GetCurrentNonceResponse{
