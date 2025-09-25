@@ -22,13 +22,13 @@ type PohRecorder struct {
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
-func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule) *PohRecorder {
+func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule, latestSlot uint64) *PohRecorder {
 	return &PohRecorder{
 		poh:            poh,
 		ticksPerSlot:   ticksPerSlot,
-		tickHeight:     0,
+		tickHeight:     latestSlot * ticksPerSlot,
 		entries:        []Entry{},
-		slotHashQueue:  NewSlotHashQueue(100),
+		slotHashQueue:  NewSlotHashQueue(),
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
 	}
@@ -83,7 +83,7 @@ func (r *PohRecorder) Tick() *Entry {
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
 
 	r.tickHeight++
-	if r.isLastTickOfSlot() {
+	if r.IsLastTickOfSlot() {
 		logx.Debug("PohRecorder", fmt.Sprintf("Putting slot hash %d %x", r.tickHeight/r.ticksPerSlot, entry.Hash))
 		r.slotHashQueue.Put(r.tickHeight/r.ticksPerSlot, entry.Hash)
 	}
@@ -91,7 +91,7 @@ func (r *PohRecorder) Tick() *Entry {
 	return &entry
 }
 
-func (r *PohRecorder) isLastTickOfSlot() bool {
+func (r *PohRecorder) IsLastTickOfSlot() bool {
 	return r.tickHeight%r.ticksPerSlot == 0
 }
 
@@ -102,6 +102,14 @@ func (r *PohRecorder) DrainEntries() []Entry {
 	entries := r.entries
 	r.entries = nil
 	return entries
+}
+
+func (r *PohRecorder) CurrentPassedSlot() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// +1 to make slot start from 1
+	return r.tickHeight / r.ticksPerSlot
 }
 
 func (r *PohRecorder) CurrentSlot() uint64 {
@@ -127,4 +135,9 @@ func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {
 		return [32]byte{}
 	}
 	return hash
+}
+
+// GetSlotHashFromQueue returns slot hash from in-memory queue if available
+func (r *PohRecorder) GetSlotHashFromQueue(slot uint64) ([32]byte, bool) {
+	return r.slotHashQueue.Get(slot)
 }

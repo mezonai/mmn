@@ -88,7 +88,7 @@ func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter
 		return nil, nil, nil, nil, fmt.Errorf("failed to create transaction meta store: %w", err)
 	}
 
-	blkStore, err := NewGenericBlockStore(provider, txStore, eventRouter)
+	blkStore, err := NewGenericBlockStore(provider, txStore, txMetaStore, eventRouter)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to create block store: %w", err)
 	}
@@ -111,7 +111,7 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider
 		return db.NewLevelDBProvider(config.Directory)
 
 	case RocksDBStoreType:
-		return db.NewRocksDBProvider(config.Directory)
+		return db.NewOptimizedRocksDBProvider(config.Directory)
 
 	case RedisStoreType:
 		// just for debug

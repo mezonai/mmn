@@ -3,8 +3,9 @@ package types
 import "github.com/mezonai/mmn/transaction"
 
 const (
-	TxStatusFailed  = 0
-	TxStatusSuccess = 1
+	TxStatusFailed    = 0
+	TxStatusSuccess   = 1
+	TxStatusProcessed = 2
 )
 
 type TransactionMeta struct {

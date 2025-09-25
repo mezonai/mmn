@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
 )
 
@@ -18,13 +19,14 @@ const (
 )
 
 type BlockCore struct {
-	Slot      uint64
-	PrevHash  [32]byte // hash of the last entry in the previous block
-	LeaderID  string
-	Timestamp uint64
-	Hash      [32]byte
-	Signature []byte
-	Status    BlockStatus
+	Slot       uint64
+	PrevHash   [32]byte // hash of the last entry in the previous block
+	LeaderID   string
+	Timestamp  uint64 // unix nanos
+	Hash       [32]byte
+	Signature  []byte
+	Status     BlockStatus
+	InvalidPoH bool
 }
 
 type Block struct {
@@ -33,6 +35,10 @@ type Block struct {
 }
 
 func (b *Block) LastEntryHash() [32]byte {
+	if len(b.Entries) == 0 {
+		logx.Warn("BLOCK", "LastEntryHash called on block with no entries, returning zero hash")
+		return [32]byte{}
+	}
 	return b.Entries[len(b.Entries)-1].Hash
 }
 
@@ -49,6 +55,10 @@ func (b *BlockCore) HashString() string {
 // PrevHashString returns the previous block hash as a hex string
 func (b *BlockCore) PrevHashString() string {
 	return hex.EncodeToString(b.PrevHash[:])
+}
+
+func (b *BlockCore) CreationTimestamp() time.Time {
+	return time.Unix(0, int64(b.Timestamp))
 }
 
 func AssembleBlock(
@@ -103,9 +113,13 @@ func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
 }
 
 func (b *BroadcastedBlock) VerifyPoH() error {
-	return poh.VerifyEntries(b.PrevHash, b.Entries)
+	return poh.VerifyEntries(b.PrevHash, b.Entries, b.Slot)
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {
+	if len(b.Entries) == 0 {
+		logx.Warn("BLOCK", "LastEntryHash called on broadcasted block with no entries, returning zero hash")
+		return [32]byte{}
+	}
 	return b.Entries[len(b.Entries)-1].Hash
 }

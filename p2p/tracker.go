@@ -98,9 +98,9 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
 			// probe checkpoint every tick
-			latest := bs.GetLatestSlot()
-			if latest >= MaxScanRange {
-				checkpoint := (latest / MaxScanRange) * MaxScanRange
+			latest := bs.GetLatestFinalizedSlot()
+			if latest >= MaxcheckpointScanBlocksRange {
+				checkpoint := (latest / MaxcheckpointScanBlocksRange) * MaxcheckpointScanBlocksRange
 				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
 				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
 			}
@@ -119,30 +119,12 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 		case <-ticker.C:
 			ln.CleanupExpiredRequests()
 			ln.cleanupOldMissingBlocksTracker()
+			ln.cleanupOldRecentlyRequestedSlots()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
 		}
 	}
-}
-
-func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
-	// wait network setup
-	time.Sleep(2 * time.Second)
-
-	ctx := context.Background()
-
-	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
-	}
-	// sync from 0
-	if err := ln.RequestBlockSync(ctx, 0); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
-	}
-
-	// wait for sync all blocks end before start scan
-	time.Sleep(15 * time.Second)
-	ln.scanMissingBlocks(bs)
 }
 
 func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
@@ -153,6 +135,18 @@ func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	for requestID, info := range ln.activeSyncRequests {
 		if !info.IsActive || now.Sub(info.StartTime) > 5*time.Minute {
 			delete(ln.activeSyncRequests, requestID)
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) cleanupOldRecentlyRequestedSlots() {
+	ln.recentlyRequestedMu.Lock()
+	defer ln.recentlyRequestedMu.Unlock()
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+	for slot, requestTime := range ln.recentlyRequestedSlots {
+		if requestTime.Before(cutoff) {
+			delete(ln.recentlyRequestedSlots, slot)
 		}
 	}
 }

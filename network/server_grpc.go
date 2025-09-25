@@ -18,6 +18,7 @@ import (
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
@@ -43,6 +44,8 @@ type server struct {
 	mempool       *mempool.Mempool
 	eventRouter   *events.EventRouter                    // Event router for complex event logic
 	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
+	txSvc         interfaces.TxService
+	acctSvc       interfaces.AccountService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
@@ -63,6 +66,10 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		txTracker:     txTracker,
 	}
 
+	// Initialize shared services
+	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
+	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
+
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterVoteServiceServer(grpcSrv, s)
@@ -82,274 +89,27 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
-	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
-	tx, err := utils.FromProtoSignedTx(in)
-	if err != nil {
-		logx.Error("GRPC ADD TX", "FromProtoSignedTx error ", err)
-		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
-	}
-
-	// Generate server-side timestamp for security
-	// Todo: remove from input and update client
-	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
-
-	txHash, err := s.mempool.AddTx(tx, true)
-	if err != nil {
-		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
-	}
-	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
+	return s.txSvc.AddTx(ctx, in)
 }
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
-	addr := in.Address
-	acc, err := s.ledger.GetAccount(addr)
-	if err != nil {
-		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
-	}
-	if acc == nil {
-		return &pb.GetAccountResponse{
-			Address:  addr,
-			Balance:  "0",
-			Nonce:    0,
-			Decimals: uint32(config.GetDecimalsFactor()),
-		}, nil
-	}
-	balance := utils.Uint256ToString(acc.Balance)
-	logx.Info("GRPC", fmt.Sprintf("GetAccount response for address: %s, nonce: %d, balance: %s", addr, acc.Nonce, balance))
-
-	return &pb.GetAccountResponse{
-		Address:  addr,
-		Balance:  balance,
-		Nonce:    acc.Nonce,
-		Decimals: uint32(config.GetDecimalsFactor()),
-	}, nil
+	return s.acctSvc.GetAccount(ctx, in)
 }
 
 func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
-	addr := in.Address
-	tag := in.Tag
-	logx.Info("GRPC", fmt.Sprintf("GetCurrentNonce request for address: %s, tag: %s", addr, tag))
-
-	// Validate tag parameter
-	if tag != "latest" && tag != "pending" {
-		return &pb.GetCurrentNonceResponse{
-			Error: "invalid tag: must be 'latest' or 'pending'",
-		}, nil
-	}
-
-	// Get account from ledger
-	// TODO: verify this segment
-	acc, err := s.ledger.GetAccount(addr)
-	if err != nil {
-		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-			Error:   err.Error(),
-		}, nil
-	}
-	if acc == nil {
-		logx.Warn("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-		}, nil
-	}
-
-	var currentNonce uint64
-
-	if tag == "latest" {
-		// For "latest", return the current nonce from the most recent mined block
-		currentNonce = acc.Nonce
-		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
-	} else { // tag == "pending"
-		// For "pending", return the largest nonce among pending transactions, processing transactions, or current ledger nonce
-		ledgerNonce := acc.Nonce
-		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
-
-		var largestProcessingNonce uint64
-		if s.txTracker != nil {
-			largestProcessingNonce = s.txTracker.GetLargestProcessingNonce(addr)
-		}
-
-		// Find the maximum nonce across all sources
-		currentNonce = ledgerNonce
-		if largestPendingNonce > currentNonce {
-			currentNonce = largestPendingNonce
-		}
-		if largestProcessingNonce > currentNonce {
-			currentNonce = largestProcessingNonce
-		}
-
-		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
-			addr, ledgerNonce, largestPendingNonce, largestProcessingNonce, currentNonce))
-	}
-
-	return &pb.GetCurrentNonceResponse{
-		Address: addr,
-		Nonce:   currentNonce,
-		Tag:     tag,
-	}, nil
+	return s.acctSvc.GetCurrentNonce(ctx, in)
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
-	if err != nil {
-		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
-	}
-	amount := utils.Uint256ToString(tx.Amount)
-
-	txInfo := &pb.TxInfo{
-		Sender:    tx.Sender,
-		Recipient: tx.Recipient,
-		Amount:    amount,
-		Timestamp: tx.Timestamp,
-		TextData:  tx.TextData,
-		Nonce:     tx.Nonce,
-		Slot:      txMeta.Slot,
-		Blockhash: txMeta.BlockHash,
-		Status:    txMeta.Status,
-		ErrMsg:    txMeta.Error,
-		ExtraInfo: tx.ExtraInfo,
-	}
-	return &pb.GetTxByHashResponse{
-		Tx:       txInfo,
-		Decimals: uint32(config.GetDecimalsFactor()),
-	}, nil
+	return s.txSvc.GetTxByHash(ctx, in)
 }
 
-func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
-	addr := in.Address
-	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
-	txMetas := make([]*pb.TxMeta, len(txs))
-	for i, tx := range txs {
-		amount := utils.Uint256ToString(tx.Amount)
-
-		txMetas[i] = &pb.TxMeta{
-			Sender:    tx.Sender,
-			Recipient: tx.Recipient,
-			Amount:    amount,
-			Nonce:     tx.Nonce,
-			Timestamp: tx.Timestamp,
-			Status:    pb.TxMeta_CONFIRMED,
-			ExtraInfo: tx.ExtraInfo,
-		}
-	}
-	return &pb.GetTxHistoryResponse{
-		Total:    total,
-		Txs:      txMetas,
-		Decimals: uint32(config.GetDecimalsFactor()),
-	}, nil
-}
-
-// GetTransactionStatus returns real-time status by checking mempool and blockstore.
 func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
-	txHash := in.TxHash
-
-	// 1) Check mempool
-	if s.mempool != nil {
-		data, ok := s.mempool.GetTransaction(txHash)
-		if ok {
-			// Parse tx to compute client-hash
-			tx, err := utils.ParseTx(data)
-			if err == nil {
-				if tx.Hash() == txHash {
-					return &pb.TransactionStatusInfo{
-						TxHash:        txHash,
-						Status:        pb.TransactionStatus_PENDING,
-						Confirmations: 0, // No confirmations for mempool transactions
-						Timestamp:     uint64(time.Now().Unix()),
-						ExtraInfo:     tx.ExtraInfo,
-						Amount:        utils.Uint256ToString(tx.Amount),
-						TextData:      tx.TextData,
-					}, nil
-				}
-			}
-		}
-	}
-
-	// 2) Search in stored blocks
-	if s.blockStore != nil {
-		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
-		if found {
-			confirmations := s.blockStore.GetConfirmations(slot)
-			status := pb.TransactionStatus_CONFIRMED
-			if confirmations > 1 {
-				status = pb.TransactionStatus_FINALIZED
-			}
-			tx, _, err := s.ledger.GetTxByHash(txHash)
-			if err != nil {
-				return nil, err
-			}
-
-			return &pb.TransactionStatusInfo{
-				TxHash:        txHash,
-				Status:        status,
-				BlockSlot:     slot,
-				BlockHash:     blk.HashString(),
-				Confirmations: confirmations,
-				Timestamp:     uint64(time.Now().Unix()),
-				ExtraInfo:     tx.ExtraInfo,
-				Amount:        utils.Uint256ToString(tx.Amount),
-				TextData:      tx.TextData,
-			}, nil
-		}
-	}
-
-	// 3) Transaction not found anywhere -> return nil and error
-	return nil, fmt.Errorf("transaction not found: %s", txHash)
+	return s.txSvc.GetTransactionStatus(ctx, in)
 }
 
-// GetPendingTransactions returns all pending transactions from mempool with total count
-// Uses GetOrderedTransactions to get all transactions in FIFO order
 func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
-	if s.mempool == nil {
-		return &pb.GetPendingTransactionsResponse{
-			TotalCount: 0,
-			PendingTxs: []*pb.TransactionData{},
-			Error:      "mempool not available",
-		}, nil
-	}
-
-	// Get all ordered transaction hashes from mempool
-	orderedTxHashes := s.mempool.GetOrderedTransactions()
-	totalCount := uint64(len(orderedTxHashes))
-
-	// Convert transaction hashes to detailed transaction info
-	var pendingTxs []*pb.TransactionData
-	for _, txHash := range orderedTxHashes {
-		// Get transaction data from mempool
-		txData, exists := s.mempool.GetTransaction(txHash)
-		if !exists {
-			continue // Skip if transaction not found
-		}
-
-		// Parse transaction to get details
-		tx, err := utils.ParseTx(txData)
-		if err != nil {
-			continue // Skip if parsing fails
-		}
-		// Create pending transaction info
-		pendingTx := &pb.TransactionData{
-			TxHash:    txHash,
-			Sender:    tx.Sender,
-			Recipient: tx.Recipient,
-			Amount:    utils.Uint256ToString(tx.Amount),
-			Nonce:     tx.Nonce,
-			Timestamp: tx.Timestamp,
-			Status:    pb.TransactionStatus_PENDING,
-		}
-
-		pendingTxs = append(pendingTxs, pendingTx)
-	}
-
-	return &pb.GetPendingTransactionsResponse{
-		TotalCount: totalCount,
-		PendingTxs: pendingTxs,
-		Error:      "",
-	}, nil
+	return s.txSvc.GetPendingTransactions(ctx, in)
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system
@@ -550,7 +310,7 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 	currentBlock := uint64(0)
 
 	if s.blockStore != nil {
-		currentBlock = s.blockStore.GetLatestSlot()
+		currentBlock = s.blockStore.GetLatestFinalizedSlot()
 	}
 
 	return &pb.GetBlockNumberResponse{
@@ -560,6 +320,7 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 
 // GetBlockByNumber retrieves a block by its number
 func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieving blocks %v", in.BlockNumbers))
 	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
 
 	for _, num := range in.BlockNumbers {
@@ -582,18 +343,14 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
 		for _, txHash := range allTxHashes {
-			tx, _, err := s.ledger.GetTxByHash(txHash)
+			tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
 
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+			if errTx != nil || errTxMeta != nil {
+				errMsg := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
+				return nil, status.Errorf(codes.NotFound, "tx %s not found: %v", txHash, errMsg)
 			}
 
-			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
-			}
-
-			txStatus := info.Status
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
@@ -603,6 +360,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Timestamp: tx.Timestamp,
 				Status:    txStatus,
 				TextData:  tx.TextData,
+				ExtraInfo: tx.ExtraInfo,
 			})
 		}
 
@@ -620,6 +378,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		blocks = append(blocks, pbBlock)
 	}
 
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieved blocks %v", in.BlockNumbers))
 	return &pb.GetBlockByNumberResponse{
 		Blocks:   blocks,
 		Decimals: uint32(config.GetDecimalsFactor()),
@@ -628,18 +387,5 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 // GetAccountByAddress is a convenience RPC under AccountService to fetch account info
 func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
-	if in == nil || in.Address == "" {
-		return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
-	}
-
-	acc, err := s.ledger.GetAccount(in.Address)
-	if err != nil {
-		return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
-	}
-	if acc == nil {
-		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
-	}
-	return &pb.GetAccountByAddressResponse{
-		Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
-	}, nil
+	return s.acctSvc.GetAccountByAddress(ctx, in)
 }
