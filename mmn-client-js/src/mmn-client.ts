@@ -34,6 +34,8 @@ const TX_TYPE = {
   FAUCET: 1,
 } as const;
 
+const DECIMALS = 6;
+
 export class MmnClient {
   private config: MmnClientConfig;
   private axiosInstance: AxiosInstance;
@@ -418,9 +420,10 @@ export class MmnClient {
    * Get current nonce for an account
    */
   async getCurrentNonce(
-    address: string,
+    userId: string,
     tag: 'latest' | 'pending' = 'latest'
   ): Promise<GetCurrentNonceResponse> {
+    const address = this.getAddressFromUserId(userId);
     return this.makeRequest<GetCurrentNonceResponse>(
       'account.getcurrentnonce',
       { address, tag }
@@ -438,7 +441,7 @@ export class MmnClient {
 
   scaleAmountToDecimals(
     originalAmount: string | number,
-    decimals: number
+    decimals = DECIMALS
   ): string {
     let scaledAmount = BigInt(originalAmount);
     for (let i = 0; i < decimals; i++) {
