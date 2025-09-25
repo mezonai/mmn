@@ -138,71 +138,73 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 	logx.Info("NETWORK:SCAN", "Completed processing all ")
 }
 
-func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs store.BlockStore, slot uint64) bool {
-	latest := bs.GetLatestFinalizedSlot()
-	if latest < 1 {
-		return false
-	}
+// TODO: enable for missing around block
+// func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs store.BlockStore, slot uint64) bool {
+// 	latest := bs.GetLatestFinalizedSlot()
+// 	if latest < 1 {
+// 		return false
+// 	}
 
-	if slot > latest {
-		return false
-	}
+// 	if slot > latest {
+// 		return false
+// 	}
 
-	ln.scanMu.RLock()
-	lastScanned := ln.lastScannedSlot
-	ln.scanMu.RUnlock()
+// 	ln.scanMu.RLock()
+// 	lastScanned := ln.lastScannedSlot
+// 	ln.scanMu.RUnlock()
 
-	if lastScanned == 0 || slot > lastScanned {
-		return true
-	}
+// 	if lastScanned == 0 || slot > lastScanned {
+// 		return true
+// 	}
 
-	return false
-}
+// 	return false
+// }
 
-func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot uint64) {
-	if !ln.shouldCheckAroundSlot(bs, slot) {
-		logx.Debug("NETWORK:SCAN", "Skipping check around slot ", slot, " not needed")
-		return
-	}
+// TODO: enable for missing around block
+// func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot uint64) {
+// 	if !ln.shouldCheckAroundSlot(bs, slot) {
+// 		logx.Debug("NETWORK:SCAN", "Skipping check around slot ", slot, " not needed")
+// 		return
+// 	}
 
-	latest := bs.GetLatestFinalizedSlot()
+// 	latest := bs.GetLatestFinalizedSlot()
 
-	startSlot := uint64(0)
-	if slot > 0 {
-		startSlot = slot - 1
-	}
+// 	startSlot := uint64(0)
+// 	if slot > 0 {
+// 		startSlot = slot - 1
+// 	}
 
-	endSlot := slot + 1
-	if endSlot > latest {
-		endSlot = latest
-	}
+// 	endSlot := slot + 1
+// 	if endSlot > latest {
+// 		endSlot = latest
+// 	}
 
-	var missingSlots []uint64
-	for s := startSlot; s <= endSlot; s++ {
-		if bs.Block(s) != nil {
-			continue
-		}
+// 	var missingSlots []uint64
+// 	for s := startSlot; s <= endSlot; s++ {
+// 		if bs.Block(s) != nil {
+// 			continue
+// 		}
 
-		// Skip if already tracked as missing
-		if ln.isSlotAlreadyTracked(s) {
-			continue
-		}
+// 		// Skip if already tracked as missing
+// 		if ln.isSlotAlreadyTracked(s) {
+// 			continue
+// 		}
 
-		// Skip if already requested recently
-		if ln.isSlotRecentlyRequested(s) {
-			continue
-		}
+// 		// Skip if already requested recently
+// 		if ln.isSlotRecentlyRequested(s) {
+// 			continue
+// 		}
 
-		missingSlots = append(missingSlots, s)
-	}
+// 		missingSlots = append(missingSlots, s)
+// 	}
 
-	if len(missingSlots) > 0 {
-		peers := ln.host.Network().Peers()
-		if len(peers) > 0 {
-			ln.requestMissingBlocks(missingSlots)
-		}
-	}
-}
+// 	if len(missingSlots) > 0 {
+// 		peers := ln.host.Network().Peers()
+// 		if len(peers) > 0 {
+// 			ln.requestMissingBlocks(missingSlots)
+// 		}
+// 	}
+// }
 
 func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
 	latest := bs.GetLatestFinalizedSlot()
@@ -225,25 +227,26 @@ func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
 	return false
 }
 
-func (ln *Libp2pNetwork) startContinuousGapDetection(bs store.BlockStore) {
-	time.Sleep(15 * time.Second)
+// TODO: enable for missing around block
+// func (ln *Libp2pNetwork) startContinuousGapDetection(bs store.BlockStore) {
+// 	time.Sleep(15 * time.Second)
 
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+// 	ticker := time.NewTicker(30 * time.Second)
+// 	defer ticker.Stop()
 
-	logx.Info("NETWORK:SCAN", "Starting continuous gap detection")
+// 	logx.Info("NETWORK:SCAN", "Starting continuous gap detection")
 
-	for {
-		select {
-		case <-ticker.C:
-			if len(ln.host.Network().Peers()) > 0 && ln.shouldScanForMissingBlocks(bs) {
-				ln.scanMissingBlocks(bs)
-			}
-		case <-ln.ctx.Done():
-			return
-		}
-	}
-}
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			if len(ln.host.Network().Peers()) > 0 && ln.shouldScanForMissingBlocks(bs) {
+// 				ln.scanMissingBlocks(bs)
+// 			}
+// 		case <-ln.ctx.Done():
+// 			return
+// 		}
+// 	}
+// }
 
 func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs store.BlockStore) {
 	ln.missingBlocksMu.Lock()

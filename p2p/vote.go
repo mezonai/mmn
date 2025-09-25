@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
