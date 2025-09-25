@@ -33,6 +33,7 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	joinAfterSync bool,
 	pohCfg *config.PohConfig,
 ) (*Libp2pNetwork, error) {
 
@@ -96,6 +97,7 @@ func NewNetWork(
 		recentlyRequestedSlots: make(map[uint64]time.Time),
 		ctx:                    ctx,
 		cancel:                 cancel,
+		joinAfterSync:          joinAfterSync,
 		worldLatestSlot:        0,
 		worldLatestPohSlot:     0,
 		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),

@@ -40,6 +40,8 @@ type Libp2pNetwork struct {
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
+	topicSnapshotAnnounce  *pubsub.Topic
+	topicSnapshotRequest   *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
@@ -50,6 +52,7 @@ type Libp2pNetwork struct {
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
 	OnGetLatestPohSlot     func() uint64
+	onSnapshotAnnounce     func(SnapshotAnnounce) error
 
 	maxPeers int
 
@@ -82,12 +85,21 @@ type Libp2pNetwork struct {
 	ready              atomic.Bool
 
 	// New field for join behavior control
+	joinAfterSync      bool
 	worldLatestSlot    uint64
 	worldLatestPohSlot uint64
 	// Global block ordering queue
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
 	blockOrderingMu    sync.RWMutex
+
+	// Snapshot UDP port
+	snapshotUDPPort string
+
+	// Snapshot download coordination (allow only one active download)
+	snapshotDlMu     sync.Mutex
+	snapshotDlActive bool
+	snapshotDlSlot   uint64
 
 	OnStartPoh       func()
 	OnStartValidator func()
@@ -183,6 +195,7 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error
+	OnSnapshotAnnounce     func(SnapshotAnnounce) error
 }
 
 type CheckpointHashRequest struct {

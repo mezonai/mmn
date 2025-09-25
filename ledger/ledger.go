@@ -247,4 +247,8 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 	return tx, txMeta, nil, nil
 }
 
+func (l *Ledger) GetAccountStore() store.AccountStore {
+	return l.accountStore
+}
+
 var ErrInvalidNonce = errors.New("invalid nonce")

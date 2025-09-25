@@ -15,6 +15,7 @@ type AccountStore interface {
 	StoreBatch(accounts []*types.Account) error
 	GetByAddr(addr string) (*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
+	GetAll() ([]*types.Account, error)
 	MustClose()
 }
 
@@ -115,6 +116,39 @@ func (as *GenericAccountStore) MustClose() {
 
 func (as *GenericAccountStore) getDbKey(addr string) []byte {
 	return []byte(PrefixAccount + addr)
+}
+
+// GetAll returns all accounts from the database
+func (as *GenericAccountStore) GetAll() ([]*types.Account, error) {
+	as.mu.RLock()
+	defer as.mu.RUnlock()
+
+	// Check if provider supports iteration
+	iterable, ok := as.dbProvider.(db.IterableProvider)
+	if !ok {
+		return nil, fmt.Errorf("database provider does not support iteration")
+	}
+
+	var accounts []*types.Account
+	prefix := []byte(PrefixAccount)
+
+	err := iterable.IteratePrefix(prefix, func(key, value []byte) bool {
+		// Deserialize account
+		var acc types.Account
+		if err := jsonx.Unmarshal(value, &acc); err != nil {
+			// Skip invalid accounts
+			return true
+		}
+
+		accounts = append(accounts, &acc)
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate accounts: %w", err)
+	}
+
+	return accounts, nil
 }
 
 var ErrFailedMarshalAccount = fmt.Errorf("failed marshal account")
