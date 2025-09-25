@@ -18,10 +18,21 @@ import {
   TxMsg,
 } from './types';
 
+// Cryptographic constants
+const CRYPTO_CONSTANTS = {
+  ED25519_PRIVATE_KEY_LENGTH: 32,
+  ED25519_PUBLIC_KEY_LENGTH: 32,
+  MNEMONIC_ENTROPY_BITS: 128,
+  PKCS8_VERSION: 0,
+  ASN1_SEQUENCE_TAG: 0x30,
+  ASN1_OCTET_STRING_TAG: 0x04,
+  ASN1_INTEGER_TAG: 0x02,
+} as const;
+
 const TX_TYPE = {
   TRANSFER: 0,
   FAUCET: 1,
-};
+} as const;
 
 export class MmnClient {
   private config: MmnClientConfig;
@@ -89,28 +100,78 @@ export class MmnClient {
     }
   }
 
+  /**
+   * Securely convert raw Ed25519 private key to PKCS#8 format
+   * @param raw - Raw 32-byte Ed25519 private key
+   * @returns PKCS#8 formatted private key in hex
+   * @throws Error if input validation fails
+   */
   private rawEd25519ToPkcs8Hex(raw: Buffer): string {
-    // Ed25519 OID: 1.3.101.112
-    const ed25519Oid = Buffer.from([0x06, 0x03, 0x2b, 0x65, 0x70]);
+    // Input validation
+    if (!Buffer.isBuffer(raw)) {
+      throw new Error('Private key must be a Buffer');
+    }
 
-    // Create PKCS#8 structure
-    const version = Buffer.from([0x02, 0x01, 0x00]); // INTEGER 0
-    const algorithm = Buffer.concat([Buffer.from([0x30, 0x0b]), ed25519Oid]); // SEQUENCE with OID
-    const privateKey = Buffer.concat([
-      Buffer.from([0x04, 0x22]), // OCTET STRING
-      Buffer.from([0x04, 0x20]), // inner OCTET STRING
-      raw,
-    ]);
+    if (raw.length !== CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH) {
+      throw new Error(
+        `Ed25519 private key must be exactly ${CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH} bytes`
+      );
+    }
 
-    // Combine all parts
-    const body = Buffer.concat([version, algorithm, privateKey]);
-    const pkcs8 = Buffer.concat([
-      Buffer.from([0x30]),
-      this.encodeLength(body.length),
-      body,
-    ]);
+    try {
+      // Ed25519 OID: 1.3.101.112 (constant-time)
+      const ED25519_OID = Buffer.from([0x06, 0x03, 0x2b, 0x65, 0x70]);
+      const VERSION_BYTES = Buffer.from([
+        CRYPTO_CONSTANTS.ASN1_INTEGER_TAG,
+        0x01,
+        CRYPTO_CONSTANTS.PKCS8_VERSION,
+      ]); // INTEGER 0
 
-    return pkcs8.toString('hex');
+      // Create algorithm identifier sequence
+      const algorithmId = Buffer.concat([
+        Buffer.from([0x30, 0x0b]), // SEQUENCE, length 11
+        ED25519_OID,
+      ]);
+
+      // Create private key octet string
+      const privateKeyOctetString = Buffer.concat([
+        Buffer.from([CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG, 0x22]), // OCTET STRING, length 34
+        Buffer.from([CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG, 0x20]), // inner OCTET STRING, length 32
+        raw,
+      ]);
+
+      // Create PKCS#8 body
+      const pkcs8Body = Buffer.concat([
+        VERSION_BYTES,
+        algorithmId,
+        privateKeyOctetString,
+      ]);
+
+      // Create final PKCS#8 structure
+      const pkcs8 = Buffer.concat([
+        Buffer.from([CRYPTO_CONSTANTS.ASN1_SEQUENCE_TAG]), // SEQUENCE
+        this.encodeLength(pkcs8Body.length),
+        pkcs8Body,
+      ]);
+
+      const result = pkcs8.toString('hex');
+
+      // Clear sensitive data from memory
+      raw.fill(0);
+      privateKeyOctetString.fill(0);
+      pkcs8Body.fill(0);
+      pkcs8.fill(0);
+
+      return result;
+    } catch (error) {
+      // Clear sensitive data on error
+      raw.fill(0);
+      throw new Error(
+        `Failed to convert private key to PKCS#8: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
   }
 
   private encodeLength(length: number): Buffer {
@@ -126,28 +187,69 @@ export class MmnClient {
     return Buffer.from([0x80 | bytes.length, ...bytes]);
   }
 
+  /**
+   * Securely generate ephemeral key pair with proper entropy
+   * @returns Ephemeral key pair with private and public keys
+   * @throws Error if key generation fails
+   */
   public generateEphemeralKeyPair(): IEphemeralKeyPair {
     try {
-      const mnemonic = bip39.generateMnemonic(128);
+      // Generate cryptographically secure mnemonic
+      const mnemonic = bip39.generateMnemonic(
+        CRYPTO_CONSTANTS.MNEMONIC_ENTROPY_BITS
+      );
 
       if (!bip39.validateMnemonic(mnemonic)) {
         throw new Error('Generated mnemonic failed validation');
       }
 
+      // Convert mnemonic to seed
       const seed = bip39.mnemonicToSeedSync(mnemonic);
-      const privateKey = seed.subarray(0, 32);
 
-      const kp = nacl.sign.keyPair.fromSeed(privateKey);
-      const publicKeyBytes = kp.publicKey;
+      // Extract first 32 bytes as private key
+      const privateKey = seed.subarray(
+        0,
+        CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH
+      );
 
+      // Validate private key length
+      if (privateKey.length !== CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH) {
+        throw new Error(
+          `Invalid private key length: expected ${CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH}, got ${privateKey.length}`
+        );
+      }
+
+      // Generate key pair from seed
+      const keyPair = nacl.sign.keyPair.fromSeed(privateKey);
+      const publicKeyBytes = keyPair.publicKey;
+
+      // Validate public key
+      if (
+        publicKeyBytes.length !== CRYPTO_CONSTANTS.ED25519_PUBLIC_KEY_LENGTH
+      ) {
+        throw new Error(
+          `Invalid public key length: expected ${CRYPTO_CONSTANTS.ED25519_PUBLIC_KEY_LENGTH}, got ${publicKeyBytes.length}`
+        );
+      }
+
+      // Convert private key to PKCS#8 format
       const privateKeyHex = this.rawEd25519ToPkcs8Hex(privateKey);
+
+      // Clear sensitive data
+      seed.fill(0);
+      privateKey.fill(0);
+      keyPair.secretKey.fill(0);
 
       return {
         privateKey: privateKeyHex,
         publicKey: bs58.encode(publicKeyBytes),
       };
     } catch (error) {
-      throw new Error('Failed to generate wallet');
+      throw new Error(
+        `Failed to generate ephemeral key pair: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
     }
   }
 
@@ -198,29 +300,80 @@ export class MmnClient {
   }
 
   /**
-   * Sign a transaction with Ed25519
+   * Securely sign a transaction with Ed25519
+   * @param tx - Transaction message to sign
+   * @param privateKeyHex - Private key in PKCS#8 hex format
+   * @returns Base58 encoded signature
+   * @throws Error if signing fails
    */
   private signTransaction(tx: TxMsg, privateKeyHex: string): string {
-    const serializedData = this.serializeTransaction(tx);
+    try {
+      // Validate inputs
+      if (!tx || typeof tx !== 'object') {
+        throw new Error('Invalid transaction object');
+      }
 
-    // Extract the Ed25519 seed from the private key for nacl signing
-    const privateKeyDer = Buffer.from(privateKeyHex, 'hex');
-    const seed = privateKeyDer.subarray(-32);
-    const keyPair = nacl.sign.keyPair.fromSeed(seed);
+      if (!privateKeyHex || typeof privateKeyHex !== 'string') {
+        throw new Error('Invalid private key format');
+      }
 
-    // Sign using Ed25519 (nacl)
-    const signature = nacl.sign.detached(serializedData, keyPair.secretKey);
+      // Serialize transaction data
+      const serializedData = this.serializeTransaction(tx);
 
-    if (tx.type === TX_TYPE.FAUCET) {
-      return bs58.encode(Buffer.from(signature));
+      if (!serializedData || serializedData.length === 0) {
+        throw new Error('Failed to serialize transaction');
+      }
+
+      // Extract the Ed25519 seed from the private key for nacl signing
+      const privateKeyDer = Buffer.from(privateKeyHex, 'hex');
+
+      if (privateKeyDer.length < CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH) {
+        throw new Error(
+          `Invalid private key length: expected at least ${CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH} bytes, got ${privateKeyDer.length}`
+        );
+      }
+
+      const seed = privateKeyDer.subarray(
+        -CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH
+      ); // Last 32 bytes
+      const keyPair = nacl.sign.keyPair.fromSeed(seed);
+
+      // Validate key pair
+      if (!keyPair.publicKey || !keyPair.secretKey) {
+        throw new Error('Failed to create key pair from seed');
+      }
+
+      // Sign using Ed25519 (nacl) - constant time operation
+      const signature = nacl.sign.detached(serializedData, keyPair.secretKey);
+
+      if (!signature || signature.length === 0) {
+        throw new Error('Failed to generate signature');
+      }
+
+      // Clear sensitive data
+      privateKeyDer.fill(0);
+      seed.fill(0);
+      keyPair.secretKey.fill(0);
+
+      // Return signature based on transaction type
+      if (tx.type === TX_TYPE.FAUCET) {
+        return bs58.encode(Buffer.from(signature));
+      }
+
+      // For regular transactions, wrap signature with public key
+      const userSig = {
+        PubKey: Buffer.from(keyPair.publicKey).toString('base64'),
+        Sig: Buffer.from(signature).toString('base64'),
+      };
+
+      return bs58.encode(Buffer.from(JSON.stringify(userSig)));
+    } catch (error) {
+      throw new Error(
+        `Transaction signing failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
     }
-
-    const userSig = {
-      PubKey: Buffer.from(keyPair.publicKey).toString('base64'),
-      Sig: Buffer.from(signature).toString('base64'),
-    };
-
-    return bs58.encode(Buffer.from(JSON.stringify(userSig)));
   }
 
   /**
