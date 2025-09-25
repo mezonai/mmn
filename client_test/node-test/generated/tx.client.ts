@@ -4,6 +4,14 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { TxService } from "./tx";
+import type { GetPendingTransactionsResponse } from "./tx";
+import type { GetPendingTransactionsRequest } from "./tx";
+import type { SubscribeTransactionStatusRequest } from "./tx";
+import type { ServerStreamingCall } from "@protobuf-ts/runtime-rpc";
+import type { TransactionStatusInfo } from "./tx";
+import type { GetTransactionStatusRequest } from "./tx";
+import type { GetTxByHashResponse } from "./tx";
+import type { GetTxByHashRequest } from "./tx";
 import type { AddTxResponse } from "./tx";
 import { stackIntercept } from "@protobuf-ts/runtime-rpc";
 import type { TxResponse } from "./tx";
@@ -22,6 +30,28 @@ export interface ITxServiceClient {
      * @generated from protobuf rpc: AddTx
      */
     addTx(input: SignedTxMsg, options?: RpcOptions): UnaryCall<SignedTxMsg, AddTxResponse>;
+    /**
+     * @generated from protobuf rpc: GetTxByHash
+     */
+    getTxByHash(input: GetTxByHashRequest, options?: RpcOptions): UnaryCall<GetTxByHashRequest, GetTxByHashResponse>;
+    /**
+     * Get current status of a transaction
+     *
+     * @generated from protobuf rpc: GetTransactionStatus
+     */
+    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo>;
+    /**
+     * Subscribe to status updates for all transactions
+     *
+     * @generated from protobuf rpc: SubscribeTransactionStatus
+     */
+    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo>;
+    /**
+     * Get all pending transactions from mempool
+     *
+     * @generated from protobuf rpc: GetPendingTransactions
+     */
+    getPendingTransactions(input: GetPendingTransactionsRequest, options?: RpcOptions): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse>;
 }
 /**
  * @generated from protobuf service mmn.TxService
@@ -45,5 +75,39 @@ export class TxServiceClient implements ITxServiceClient, ServiceInfo {
     addTx(input: SignedTxMsg, options?: RpcOptions): UnaryCall<SignedTxMsg, AddTxResponse> {
         const method = this.methods[1], opt = this._transport.mergeOptions(options);
         return stackIntercept<SignedTxMsg, AddTxResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: GetTxByHash
+     */
+    getTxByHash(input: GetTxByHashRequest, options?: RpcOptions): UnaryCall<GetTxByHashRequest, GetTxByHashResponse> {
+        const method = this.methods[2], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetTxByHashRequest, GetTxByHashResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * Get current status of a transaction
+     *
+     * @generated from protobuf rpc: GetTransactionStatus
+     */
+    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo> {
+        const method = this.methods[3], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetTransactionStatusRequest, TransactionStatusInfo>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * Subscribe to status updates for all transactions
+     *
+     * @generated from protobuf rpc: SubscribeTransactionStatus
+     */
+    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo> {
+        const method = this.methods[4], opt = this._transport.mergeOptions(options);
+        return stackIntercept<SubscribeTransactionStatusRequest, TransactionStatusInfo>("serverStreaming", this._transport, method, opt, input);
+    }
+    /**
+     * Get all pending transactions from mempool
+     *
+     * @generated from protobuf rpc: GetPendingTransactions
+     */
+    getPendingTransactions(input: GetPendingTransactionsRequest, options?: RpcOptions): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse> {
+        const method = this.methods[5], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetPendingTransactionsRequest, GetPendingTransactionsResponse>("unary", this._transport, method, opt, input);
     }
 }

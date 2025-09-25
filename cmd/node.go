@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,15 +14,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mezonai/mmn/api"
-	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/zkverify"
+
+	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/jsonrpc"
+	"github.com/mezonai/mmn/network"
+	"github.com/mezonai/mmn/service"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
-	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/validator"
@@ -38,6 +47,7 @@ const (
 var (
 	dataDir            string
 	listenAddr         string
+	jsonrpcAddr        string
 	p2pPort            string
 	bootstrapAddresses []string
 	grpcAddr           string
@@ -61,6 +71,7 @@ func init() {
 	// Run command flags
 	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
+	runCmd.Flags().StringVar(&jsonrpcAddr, "jsonrpc-addr", ":8080", "Listen address for JSON-RPC server :<port>")
 	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
 	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
@@ -81,6 +92,11 @@ func getRandomFreePort() (string, error) {
 }
 
 func runNode() {
+	initializeFileLogger()
+	monitoring.InitMetrics()
+
+	logx.Info("NODE", "Running node")
+
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -90,12 +106,12 @@ func runNode() {
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, "privkey.txt")
 	genesisPath := filepath.Join(dataDir, "genesis.yml")
-	blockstoreDir := filepath.Join(dataDir, "blockstore")
+	zkVerifyPath := filepath.Join(dataDir, "verifying_key.b64")
+	dbStoreDir := filepath.Join(dataDir, "store")
 
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir %s' first to initialize the node", dataDir)
 		return
 	}
 
@@ -105,8 +121,14 @@ func runNode() {
 		genesisPath = "config/genesis.yml"
 	}
 
+	// Check if zk verify key exists in data dir, fallback to config/verifying_key.b64
+	if _, err := os.Stat(zkVerifyPath); os.IsNotExist(err) {
+		logx.Info("NODE", "Zk verify key file not found in data directory, using default config/verifying_key.b64")
+		zkVerifyPath = "config/verifying_key.b64"
+	}
+
 	// Create blockstore directory if it doesn't exist
-	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
+	if err := os.MkdirAll(dbStoreDir, 0755); err != nil {
 		logx.Error("NODE", "Failed to create blockstore directory:", err.Error())
 		return
 	}
@@ -117,26 +139,22 @@ func runNode() {
 		return
 	}
 
-	// Initialize tx store
-	// TODO: avoid duplication with cmd.initializeNode
-	txStoreDir := filepath.Join(initDataDir, "txstore")
-	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
-		return
-	}
-	ts, err := initializeTxStore(txStoreDir, initDatabase)
-	if err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
-		return
-	}
-	defer ts.Close()
+	// --- Event Bus ---
+	eventBus := events.NewEventBus()
 
-	// Initialize blockstore with data directory
-	bs, err := initializeBlockstore(blockstoreDir, databaseBackend, ts)
+	// --- Event Router ---
+	eventRouter := events.NewEventRouter(eventBus)
+
+	// Initialize db store inside directory
+	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
 	}
+	defer bs.MustClose()
+	defer ts.MustClose()
+	defer tms.MustClose()
+	defer as.MustClose()
 
 	// Handle optional p2p-port: use random free port if not specified
 	if p2pPort == "" {
@@ -161,20 +179,18 @@ func runNode() {
 		PrivKeyPath:        privKeyPath,
 		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
 		ListenAddr:         listenAddr,
+		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
 	}
 
-	ld := ledger.NewLedger(ts)
+	txTracker := transaction.NewTransactionTracker()
 
-	// Load ledger state from disk (includes alloc account from genesis)
-	if err := ld.LoadLedger(); err != nil {
-		log.Fatalf("Failed to load ledger state: %v", err)
-	}
-	logx.Info("LEDGER", "Loaded ledger state from disk")
+	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
 
 	// Initialize PoH components
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath)
+	latestSlot := bs.GetLatestFinalizedSlot()
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
 		log.Fatalf("Failed to initialize PoH: %v", err)
 	}
@@ -186,13 +202,16 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey, &cfg.Poh)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
+	// Initialize zk verify
+	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
+
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -202,13 +221,15 @@ func runNode() {
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
-	// Start services
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp)
+	libP2pClient.OnStartPoh = func() { pohService.Start() }
+	libP2pClient.OnStartValidator = func() { val.Run() }
+
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -232,37 +253,32 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	return cfg, nil
 }
 
-// initializeTxStore initializes the tx storage backend
-func initializeTxStore(dataDir string, backend string) (blockstore.TxStore, error) {
-	dbProvider, err := blockstore.CreateDBProvider(blockstore.DBVendor(backend), blockstore.DBOptions{
-		Directory: dataDir,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("unable to create db provider: %w", err)
+// initializeDBStore initializes the block storage backend using the factory pattern
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
+	// Create data folder if not exist
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		logx.Error("INIT", "Failed to create db store directory:", err.Error())
+		return nil, nil, nil, nil, err
 	}
-	return blockstore.NewGenericTxStore(dbProvider)
-}
 
-// initializeBlockstore initializes the block storage backend using the factory pattern
-func initializeBlockstore(dataDir string, backend string, ts blockstore.TxStore) (blockstore.Store, error) {
 	// Create store configuration with StoreType
-	storeType := blockstore.StoreType(backend)
-	config := &blockstore.StoreConfig{
+	storeType := store.StoreType(backend)
+	storeCfg := &store.StoreConfig{
 		Type:      storeType,
 		Directory: dataDir,
 	}
 
 	// Validate the configuration (this will check if the backend is supported)
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+	if err := storeCfg.Validate(); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
 	}
 
 	// Use the factory pattern to create the store
-	return blockstore.CreateStore(config, ts)
+	return store.CreateStore(storeCfg, eventRouter)
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string, latestSlot uint64) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -280,16 +296,15 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
-	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule)
+	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule, latestSlot)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
-	pohService.Start()
 
 	return pohEngine, pohService, recorder, nil
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -297,26 +312,27 @@ func initializeNetwork(self config.NodeConfig, bs blockstore.Store, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		pohCfg,
 	)
 
 	return libp2pNetwork, err
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string,
+	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker, zkVerify)
 	return mp, nil
 }
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs blockstore.Store, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -336,18 +352,20 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
-		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
+		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs,
 	)
-	val.Run()
+
+	// Cache leader schedule inside p2p for local leader checks
+	p2pClient.ApplyLeaderSchedule(val.Schedule)
 
 	return val, nil
 }
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs blockstore.Store, mp *mempool.Mempool) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -367,10 +385,33 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		val,
 		bs,
 		mp,
+		eventRouter,
+		txTracker,
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start API server on a different port
-	apiSrv := api.NewAPIServer(mp, ld, nodeConfig.ListenAddr)
-	apiSrv.Start()
+	// Start JSON-RPC server on dedicated JSON-RPC address using shared services
+	txSvc := service.NewTxService(ld, mp, bs, txTracker)
+	acctSvc := service.NewAccountService(ld, mp, txTracker)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc)
+
+	// Apply CORS from environment variables via jsonrpc helper (default denies all)
+	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
+		rpcSrv.SetCORSConfig(corsCfg)
+	}
+
+	rpcSrv.Start()
+	serveMetricsApi(nodeConfig.ListenAddr)
+}
+
+func serveMetricsApi(listenAddr string) {
+	mux := http.NewServeMux()
+	monitoring.RegisterMetrics(mux)
+	exception.SafeGo("serveMetricsApi", func() {
+		err := http.ListenAndServe(listenAddr, mux)
+		if err != nil {
+			logx.Error("NODE", fmt.Sprintf("Failed to expose metrics for monitoring: %v", err))
+			os.Exit(1)
+		}
+	})
 }

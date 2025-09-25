@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+
+	"github.com/mezonai/mmn/monitoring"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -50,8 +55,12 @@ func init() {
 	initCmd.Flags().StringVar(&initPrivKeyPath, "privkey-path", "", "Path to existing private key file (optional)")
 }
 
-// initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data
+// initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data.
+// This method is idempotent and safe to run multiple time
 func initializeNode() {
+	initializeFileLogger()
+	monitoring.InitMetrics()
+
 	// Ensure data directory exists
 	if err := os.MkdirAll(initDataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create data directory:", err.Error())
@@ -181,35 +190,20 @@ func initializeNode() {
 
 	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
 
-	// Initialize tx store
-	txStoreDir := filepath.Join(initDataDir, "txstore")
-	if err := os.MkdirAll(txStoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
-		return
-	}
-	ts, err := initializeTxStore(txStoreDir, initDatabase)
+	// Initialize db store inside directory
+	dbStoreDir := filepath.Join(initDataDir, "store")
+	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, initDatabase, nil)
 	if err != nil {
-		logx.Error("INIT", "Failed to create txstore directory:", err.Error())
+		logx.Error("INIT", "Failed to initialize db store:", err.Error())
 		return
 	}
-	defer ts.Close()
-
-	// Initialize blockstore
-	blockstoreDir := filepath.Join(initDataDir, "blockstore")
-	if err := os.MkdirAll(blockstoreDir, 0755); err != nil {
-		logx.Error("INIT", "Failed to create blockstore directory:", err.Error())
-		return
-	}
-
-	bs, err := initializeBlockstore(blockstoreDir, initDatabase, ts)
-	if err != nil {
-		logx.Error("INIT", "Failed to initialize blockstore:", err.Error())
-		return
-	}
-	defer bs.Close()
+	defer bs.MustClose()
+	defer ts.MustClose()
+	defer tms.MustClose()
+	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts)
+	ld := ledger.NewLedger(ts, tms, as, nil, nil)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -270,14 +264,45 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 		return nil, fmt.Errorf("failed to create genesis alloc account: %w", err)
 	}
 
-	// Save ledger snapshot to persist alloc account
-	if err := ld.SaveSnapshot("ledger/snapshot.gob"); err != nil {
-		return nil, fmt.Errorf("failed to save ledger snapshot: %w", err)
-	}
-
 	logx.Info("GENESIS", fmt.Sprintf("Successfully initialized genesis block using AssembleBlock with alloc account %s", cfg.Alloc.Addresses))
 	logx.Info("GENESIS", "Ledger snapshot saved to ledger/snapshot.gob")
 	logx.Info("GENESIS", fmt.Sprintf("Genesis block hash: %x", genesisBlock.Hash))
 
 	return genesisBlock, nil
+}
+
+func initializeFileLogger() {
+	// Load config log file name
+	logFile := "./logs/mmn.log"
+	if logFileConfig := os.Getenv("LOGFILE"); logFileConfig != "" {
+		logFile = "./logs/" + logFileConfig
+	}
+
+	// Load config log file size
+	maxSizeConfig := os.Getenv("LOGFILE_MAX_SIZE_MB")
+	if maxSizeConfig == "" {
+		panic("LOGFILE_MAX_SIZE_MB env variable not set")
+	}
+	maxSizeMB, err := strconv.Atoi(maxSizeConfig)
+	if err != nil {
+		panic("Invalid value for LOGFILE_MAX_SIZE_MB" + err.Error())
+	}
+
+	// Load config log file
+	maxAgeConfig := os.Getenv("LOGFILE_MAX_AGE_DAYS")
+	if maxAgeConfig == "" {
+		panic("LOGFILE_MAX_AGE_DAYS env variable not set")
+	}
+	maxAgeDays, err := strconv.Atoi(maxAgeConfig)
+	if err != nil {
+		panic("Invalid value for LOGFILE_MAX_AGE_DAYS" + err.Error())
+	}
+
+	lumberjackLogger := &lumberjack.Logger{
+		Filename: logFile,
+		MaxSize:  maxSizeMB,
+		MaxAge:   maxAgeDays,
+	}
+
+	logx.InitWithOutput(lumberjackLogger)
 }

@@ -3,12 +3,16 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/mezonai/mmn/blockstore"
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/store"
+
 	"github.com/mezonai/mmn/discovery"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
@@ -29,7 +33,8 @@ func NewNetWork(
 	selfPrivKey ed25519.PrivateKey,
 	listenAddr string,
 	bootstrapPeers []string,
-	blockStore blockstore.Store,
+	blockStore store.BlockStore,
+	pohCfg *config.PohConfig,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -77,26 +82,32 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:               h,
-		pubsub:             ps,
-		selfPubKey:         selfPubKey,
-		selfPrivKey:        selfPrivKey,
-		peers:              make(map[peer.ID]*PeerInfo),
-		syncStreams:        make(map[peer.ID]network.Stream),
-		blockStore:         blockStore,
-		maxPeers:           int(P2pMaxPeerConnections),
-		activeSyncRequests: make(map[string]*SyncRequestInfo),
-		syncRequests:       make(map[string]*SyncRequestTracker),
-		authenticatedPeers: make(map[peer.ID]*AuthenticatedPeer),
-		pendingChallenges:  make(map[peer.ID][]byte),
-		allowlist:          make(map[peer.ID]bool),
-		blacklist:          make(map[peer.ID]bool),
-		allowlistEnabled:   false,
-		blacklistEnabled:   true,
-		syncCompleted:      false,
-		activeSyncCount:    0,
-		ctx:                ctx,
-		cancel:             cancel,
+		host:                   h,
+		pubsub:                 ps,
+		selfPubKey:             selfPubKey,
+		selfPrivKey:            selfPrivKey,
+		peers:                  make(map[peer.ID]*PeerInfo),
+		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
+		blockStore:             blockStore,
+		maxPeers:               int(MaxPeers),
+		activeSyncRequests:     make(map[string]*SyncRequestInfo),
+		syncRequests:           make(map[string]*SyncRequestTracker),
+		authenticatedPeers:     make(map[peer.ID]*AuthenticatedPeer),
+		pendingChallenges:      make(map[peer.ID][]byte),
+		allowlist:              make(map[peer.ID]bool),
+		blacklist:              make(map[peer.ID]bool),
+		allowlistEnabled:       false,
+		blacklistEnabled:       true,
+		missingBlocksTracker:   make(map[uint64]*MissingBlockInfo),
+		lastScannedSlot:        0,
+		recentlyRequestedSlots: make(map[uint64]time.Time),
+		ctx:                    ctx,
+		cancel:                 cancel,
+		worldLatestSlot:        0,
+		worldLatestPohSlot:     0,
+		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlot:       0,
+		pohCfg:                 pohCfg,
 	}
 
 	ln.peerScoringManager = NewPeerScoringManager(ln, DefaultPeerScoringConfig())
@@ -126,8 +137,12 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(AuthProtocol, ln.AuthMiddleware(ln.handleAuthStream))
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.AuthMiddleware(ln.handleBlockSyncRequestStream))
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.AuthMiddleware(ln.handleLatestSlotStream))
+	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
-	ln.SetupPubSubTopics(ctx)
+	// Start latest slot request mechanism
+	ln.startLatestSlotRequestMechanism()
+
+	ln.SetupPubSubSyncTopics(ctx)
 	ln.setupConnectionAuthentication(ctx)
 
 	bootstrapConnected := false
@@ -139,7 +154,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		// Use DNS resolution for bootstrap addresses
 		infos, err := discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
 		if err != nil {
-			logx.Error("NETWORK:SETUP", "Invalid bootstrap address: ", bootstrapPeer, " error: ", err)
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address:", bootstrapPeer, ", error:", err)
 			continue
 		}
 
@@ -156,6 +171,8 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 
 		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 		bootstrapConnected = true
+
+		ln.bootstrapPeerIDs[info.ID] = struct{}{}
 
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
 			ln.RequestNodeInfo(bootstrapPeer, &info)
@@ -294,7 +311,8 @@ func (ln *Libp2pNetwork) GetActiveSyncCount() int {
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
-	return len(ln.peers)
+	// Minus by 1 to exclude self node in the peer list
+	return len(ln.host.Network().Peers()) - 1
 }
 
 func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
@@ -308,7 +326,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 
 	var msg map[string]interface{}
-	if err := json.Unmarshal(buf[:n], &msg); err != nil {
+	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
 		return
 	}
@@ -338,4 +356,53 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
 	}
+}
+
+// ApplyLeaderSchedule stores the schedule locally for leader checks inside p2p
+func (ln *Libp2pNetwork) ApplyLeaderSchedule(ls *poh.LeaderSchedule) {
+	ln.leaderSchedule = ls
+}
+
+func (ln *Libp2pNetwork) IsNodeReady() bool {
+	return ln.ready.Load()
+}
+
+func (ln *Libp2pNetwork) setNodeReady() {
+	ln.ready.Store(true)
+}
+
+// startCoreServices starts PoH and Validator (if callbacks provided), sets up pubsub topics, and marks node ready
+func (ln *Libp2pNetwork) startCoreServices(ctx context.Context, withPubsub bool) {
+	if ln.OnStartPoh != nil {
+		ln.OnStartPoh()
+	}
+	if ln.OnStartValidator != nil {
+		ln.OnStartValidator()
+	}
+	if withPubsub {
+		ln.SetupPubSubTopics(ctx)
+	}
+	ln.setNodeReady()
+}
+
+func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
+	// Request latest slot after a delay to allow peers to connect
+	exception.SafeGo("LatestSlotRequest(Initial)", func() {
+		time.Sleep(3 * time.Second) // Wait for peers to connect
+		ln.RequestLatestSlotFromPeers(ln.ctx)
+	})
+
+	// Periodic latest slot request every 30 seconds
+	exception.SafeGo("LatestSlotRequest(Periodic)", func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ln.RequestLatestSlotFromPeers(ln.ctx)
+			case <-ln.ctx.Done():
+				return
+			}
+		}
+	})
 }

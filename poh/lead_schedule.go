@@ -16,6 +16,7 @@ type LeaderScheduleEntry struct {
 // LeaderSchedule maintains an ordered, non-overlapping set of schedule entries.
 type LeaderSchedule struct {
 	entries []LeaderScheduleEntry
+	maxSlot uint64
 }
 
 // NewLeaderSchedule constructs a schedule and validates entries (sorted, non-overlapping).
@@ -24,11 +25,16 @@ func NewLeaderSchedule(entries []LeaderScheduleEntry) (*LeaderSchedule, error) {
 	if err := ls.Validate(); err != nil {
 		return nil, err
 	}
+	ls.maxSlot = entries[len(entries)-1].EndSlot
 	return ls, nil
 }
 
 // LeaderAt returns the leader for a given slot, or false if none assigned.
 func (ls *LeaderSchedule) LeaderAt(slot uint64) (string, bool) {
+	slot = slot % ls.maxSlot
+	if slot == 0 {
+		slot = ls.maxSlot
+	}
 	// binary search since entries sorted by StartSlot
 	i := sort.Search(len(ls.entries), func(i int) bool {
 		return ls.entries[i].StartSlot > slot

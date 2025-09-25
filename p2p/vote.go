@@ -2,11 +2,11 @@ package p2p
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/jsonx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
@@ -26,13 +26,9 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 				logx.Warn("NETWORK:VOTE", "Next error:", err)
 				continue
 			}
-			if msg.ReceivedFrom == ln.host.ID() {
-				logx.Debug("NETWORK:VOTE", "Skipping vote message from self")
-				continue
-			}
 
 			var voteMsg VoteMessage
-			if err := json.Unmarshal(msg.Data, &voteMsg); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &voteMsg); err != nil {
 				logx.Warn("NETWORK:VOTE", "Unmarshal error:", err)
 				continue
 			}
@@ -53,7 +49,7 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 		Signature: vote.Signature,
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonx.Marshal(msg)
 	if err != nil {
 		return err
 	}
