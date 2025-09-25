@@ -228,6 +228,7 @@ func runNode() {
 
 	libP2pClient.OnStartPoh = func() { pohService.Start() }
 	libP2pClient.OnStartValidator = func() { val.Run() }
+	libP2pClient.SetupPubSubSyncTopics(ctx)
 
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
 

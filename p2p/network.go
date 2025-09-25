@@ -132,8 +132,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	// Start latest slot request mechanism
 	ln.startLatestSlotRequestMechanism()
 
-	ln.SetupPubSubSyncTopics(ctx)
-
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
 		if bootstrapPeer == "" {
