@@ -90,53 +90,40 @@ export class MmnClient {
   }
 
   private rawEd25519ToPkcs8Hex(raw: Buffer): string {
-    // Helpers: DER building
-    const concat = (...parts: Uint8Array[]): Uint8Array => {
-      const total = parts.reduce((s, p) => s + p.length, 0);
-      const out = new Uint8Array(total);
-      let offset = 0;
-      for (const p of parts) {
-        out.set(p, offset);
-        offset += p.length;
-      }
-      return out;
-    };
+    // Ed25519 OID: 1.3.101.112
+    const ed25519Oid = Buffer.from([0x06, 0x03, 0x2b, 0x65, 0x70]);
 
-    const derLen = (n: number): Uint8Array => {
-      if (n < 0x80) return Uint8Array.of(n);
-      // support up to 4 bytes length which is plenty here
-      const bytes: number[] = [];
-      let x = n;
-      while (x > 0) {
-        bytes.unshift(x & 0xff);
-        x >>= 8;
-      }
-      return Uint8Array.of(0x80 | bytes.length, ...bytes);
-    };
+    // Create PKCS#8 structure
+    const version = Buffer.from([0x02, 0x01, 0x00]); // INTEGER 0
+    const algorithm = Buffer.concat([Buffer.from([0x30, 0x0b]), ed25519Oid]); // SEQUENCE with OID
+    const privateKey = Buffer.concat([
+      Buffer.from([0x04, 0x22]), // OCTET STRING
+      Buffer.from([0x04, 0x20]), // inner OCTET STRING
+      raw,
+    ]);
 
-    const derIntegerZero = Uint8Array.of(0x02, 0x01, 0x00); // INTEGER 0
+    // Combine all parts
+    const body = Buffer.concat([version, algorithm, privateKey]);
+    const pkcs8 = Buffer.concat([
+      Buffer.from([0x30]),
+      this.encodeLength(body.length),
+      body,
+    ]);
 
-    // AlgorithmIdentifier = SEQUENCE { OID 1.3.101.112 (ed25519), parameters ABSENT }
-    const oidEd25519 = Uint8Array.of(0x06, 0x03, 0x2b, 0x65, 0x70);
-    const algId = concat(
-      Uint8Array.of(0x30),
-      derLen(oidEd25519.length),
-      oidEd25519
-    );
+    return pkcs8.toString('hex');
+  }
 
-    // privateKey = OCTET STRING of inner OCTET STRING (RFC8410 commonly seen form)
-    const innerOctet = concat(Uint8Array.of(0x04, 0x20), new Uint8Array(raw)); // 0x04, len=0x20, 32 bytes
-    const privateKeyField = concat(
-      Uint8Array.of(0x04),
-      derLen(innerOctet.length),
-      innerOctet
-    );
-
-    // PrivateKeyInfo = SEQUENCE { version, algId, privateKey }
-    const body = concat(derIntegerZero, algId, privateKeyField);
-    const pkcs8 = concat(Uint8Array.of(0x30), derLen(body.length), body);
-
-    return Buffer.from(pkcs8).toString('hex');
+  private encodeLength(length: number): Buffer {
+    if (length < 0x80) {
+      return Buffer.from([length]);
+    }
+    const bytes = [];
+    let len = length;
+    while (len > 0) {
+      bytes.unshift(len & 0xff);
+      len >>= 8;
+    }
+    return Buffer.from([0x80 | bytes.length, ...bytes]);
   }
 
   public generateEphemeralKeyPair(): IEphemeralKeyPair {
@@ -148,7 +135,7 @@ export class MmnClient {
       }
 
       const seed = bip39.mnemonicToSeedSync(mnemonic);
-      const privateKey = seed.slice(0, 32);
+      const privateKey = seed.subarray(0, 32);
 
       const kp = nacl.sign.keyPair.fromSeed(privateKey);
       const publicKeyBytes = kp.publicKey;
@@ -160,7 +147,6 @@ export class MmnClient {
         publicKey: bs58.encode(publicKeyBytes),
       };
     } catch (error) {
-      console.error('Error generating wallet:', error);
       throw new Error('Failed to generate wallet');
     }
   }
@@ -219,7 +205,7 @@ export class MmnClient {
 
     // Extract the Ed25519 seed from the private key for nacl signing
     const privateKeyDer = Buffer.from(privateKeyHex, 'hex');
-    const seed = privateKeyDer.slice(-32);
+    const seed = privateKeyDer.subarray(-32);
     const keyPair = nacl.sign.keyPair.fromSeed(seed);
 
     // Sign using Ed25519 (nacl)
