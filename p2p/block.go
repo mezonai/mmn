@@ -183,14 +183,9 @@ func (ln *Libp2pNetwork) convertBlockToBroadcastedBlock(blk *block.Block) *block
 		return nil
 	}
 
-	txStore := ln.blockStore.GetTxStore()
-	if txStore == nil {
-		return nil
-	}
-
 	entries := make([]poh.Entry, len(blk.Entries))
 	for i, persistentEntry := range blk.Entries {
-		transactions, err := txStore.GetBatch(persistentEntry.TxHashes)
+		transactions, err := ln.txStore.GetBatch(persistentEntry.TxHashes)
 		if err != nil {
 			logx.Warn("NETWORK:SYNC BLOCK", fmt.Sprintf("Failed to load transactions for entry %d in block %d: %v", i, blk.Slot, err))
 			transactions = make([]*transaction.Transaction, 0)
