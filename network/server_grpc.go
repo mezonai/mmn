@@ -40,7 +40,7 @@ var globalMissingBlocksTracker = &MissingBlocksTracker{
 	lastCount:  0,
 }
 
-func UpdateMissingBlocks(numBlock uint64) {
+func UpdateMissingBlocksCount(numBlock uint64) {
 	globalMissingBlocksTracker.mu.Lock()
 	defer globalMissingBlocksTracker.mu.Unlock()
 
@@ -55,7 +55,7 @@ func UpdateMissingBlocks(numBlock uint64) {
 	}
 }
 
-func DeleteMissingBlock(numBlock uint64) {
+func DeleteMissingBlocksCount(numBlock uint64) {
 	globalMissingBlocksTracker.mu.Lock()
 	defer globalMissingBlocksTracker.mu.Unlock()
 
@@ -366,11 +366,11 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	for _, num := range in.BlockNumbers {
 		block := s.blockStore.Block(num)
 		if block == nil {
-			UpdateMissingBlocks(num)
+			UpdateMissingBlocksCount(num)
 			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
 		}
 		if _, exists := globalMissingBlocksTracker.missingSet[num]; exists {
-			DeleteMissingBlock(num)
+			DeleteMissingBlocksCount(num)
 		}
 
 		entries := make([]*pb.Entry, 0, len(block.Entries))
