@@ -326,6 +326,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	for _, num := range in.BlockNumbers {
 		block := s.blockStore.Block(num)
 		if block == nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("block %d not found", num))
 			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
 		}
 
@@ -347,6 +348,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 			if errTx != nil || errTxMeta != nil {
 				errMsg := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
+				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found: %v", txHash, errMsg))
 				return nil, status.Errorf(codes.NotFound, "tx %s not found: %v", txHash, errMsg)
 			}
 
