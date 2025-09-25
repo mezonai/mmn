@@ -86,11 +86,11 @@ func (t *SyncRequestTracker) CloseAllPeers() {
 	t.AllPeers = make(map[peer.ID]network.Stream)
 }
 
-// when no peers connected the blocks will not sync must run after 30s if synced stop sync
+// when no peers connected the blocks will not sync must run after 8s if synced stop sync
 func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	// wait network setup
-	time.Sleep(10 * time.Second)
-	ticker := time.NewTicker(30 * time.Second)
+	time.Sleep(3 * time.Second)
+	ticker := time.NewTicker(8 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -111,13 +111,15 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 }
 
 func (ln *Libp2pNetwork) startCleanupRoutine() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(2 * time.Minute) // Reduced from 5 minutes for faster cleanup
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			ln.RefreshAuthenticationForConnectedPeers()
 			ln.CleanupExpiredRequests()
+			ln.CleanupExpiredAuthentications()
 			ln.cleanupOldMissingBlocksTracker()
 			ln.cleanupOldRecentlyRequestedSlots()
 		case <-ln.ctx.Done():
@@ -127,6 +129,20 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 	}
 }
 
+func (ln *Libp2pNetwork) startInitialSync() {
+	// wait network setup
+	time.Sleep(500 * time.Millisecond)
+
+	ctx := context.Background()
+
+	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
+		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
+	}
+	// sync from 0
+	if err := ln.RequestBlockSync(ctx, 0); err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: ", err.Error())
+	}
+}
 func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	ln.syncMu.Lock()
 	defer ln.syncMu.Unlock()

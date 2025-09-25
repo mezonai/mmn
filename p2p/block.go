@@ -40,7 +40,17 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 
 			if blk != nil && ln.onBlockReceived != nil {
 				logx.Info("NETWORK:BLOCK", "Received block from peer:", msg.ReceivedFrom.String(), "slot:", blk.Slot)
-				ln.onBlockReceived(blk)
+
+				// Process block and update peer score based on validity
+				err := ln.onBlockReceived(blk)
+				if err != nil {
+					// Invalid block - penalize peer
+					ln.UpdatePeerScore(msg.ReceivedFrom, "invalid_block", nil)
+					logx.Warn("NETWORK:BLOCK", "Invalid block from peer:", msg.ReceivedFrom.String(), "error:", err)
+				} else {
+					// Valid block - reward peer
+					ln.UpdatePeerScore(msg.ReceivedFrom, "valid_block", nil)
+				}
 			}
 		}
 	}
@@ -73,7 +83,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 				continue
 			}
 
-			logx.Info("NETWORK:SYNC BLOCK", "Received sync request:", req.RequestID, "from slot", req.FromSlot, "to slot", req.ToSlot, "from peer:", msg.ReceivedFrom.String())
+			logx.Info("NETWORK:SYNC BLOCK", "Received sync request: ", req.RequestID, " from slot ", req.FromSlot, " to slot ", req.ToSlot, " from peer: ", msg.ReceivedFrom.String())
 
 			// Check if this request is already being handled with proper locking
 			ln.syncTrackerMu.Lock()
@@ -191,12 +201,12 @@ func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.St
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to set write deadline:", err)
 	}
 
-	bytesWritten, err := s.Write(data)
+	n, err := s.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write batch to stream: %w", err)
 	}
 
-	logx.Info("NETWORK:SYNC BLOCK", "Successfully wrote batch of", bytesWritten, "bytes", "numBlocks=", len(batch))
+	logx.Info("NETWORK:SYNC BLOCK", "Successfully wrote batch of", n, "bytes", "numBlocks=", len(batch))
 	return nil
 }
 
