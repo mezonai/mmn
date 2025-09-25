@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
@@ -106,12 +107,12 @@ func runNode() {
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, "privkey.txt")
 	genesisPath := filepath.Join(dataDir, "genesis.yml")
+	zkVerifyPath := filepath.Join(dataDir, "verifying_key.b64")
 	dbStoreDir := filepath.Join(dataDir, "store")
 
 	// Check if private key exists, fallback to default genesis.yml if genesis.yml not found in data dir
 	if _, err := os.Stat(privKeyPath); os.IsNotExist(err) {
 		logx.Error("NODE", "Private key file not found at:", privKeyPath)
-		logx.Error("NODE", "Please run 'mmn init --data-dir' first to initialize the node", dataDir)
 		return
 	}
 
@@ -119,6 +120,12 @@ func runNode() {
 	if _, err := os.Stat(genesisPath); os.IsNotExist(err) {
 		logx.Info("NODE", "Genesis file not found in data directory, using default config/genesis.yml")
 		genesisPath = "config/genesis.yml"
+	}
+
+	// Check if zk verify key exists in data dir, fallback to config/verifying_key.b64
+	if _, err := os.Stat(zkVerifyPath); os.IsNotExist(err) {
+		logx.Info("NODE", "Zk verify key file not found in data directory, using default config/verifying_key.b64")
+		zkVerifyPath = "config/verifying_key.b64"
 	}
 
 	// Create blockstore directory if it doesn't exist
@@ -196,13 +203,16 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, privKey, &cfg.Poh)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
 
+	// Initialize zk verify
+	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
+
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -212,12 +222,14 @@ func runNode() {
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, ld, collector, privKey, genesisPath, latestSlot)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
-	// Start services
+	libP2pClient.OnStartPoh = func() { pohService.Start() }
+	libP2pClient.OnStartValidator = func() { val.Run() }
+
 	startServices(nodeConfig, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
@@ -288,13 +300,12 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 	recorder := poh.NewPohRecorder(pohEngine, ticksPerSlot, pubKey, pohSchedule, latestSlot)
 
 	pohService := poh.NewPohService(recorder, tickInterval)
-	pohService.Start()
 
 	return pohEngine, pohService, recorder, nil
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -302,26 +313,27 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, privKey ed25
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		pohCfg,
 	)
 
 	return libp2pNetwork, err
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) (*mempool.Mempool, error) {
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string,
+	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker, zkVerify)
 	return mp, nil
 }
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, ld *ledger.Ledger,
-	collector *consensus.Collector, privKey ed25519.PrivateKey, genesisPath string, lastSlot uint64) (*validator.Validator, error) {
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -341,11 +353,13 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 	val := validator.NewValidator(
 		nodeConfig.PubKey, privKey, recorder, pohService,
-		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp, pohCfg.TicksPerSlot,
+		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, ld, collector, lastSlot,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs,
 	)
-	val.Run()
+
+	// Cache leader schedule inside p2p for local leader checks
+	p2pClient.ApplyLeaderSchedule(val.Schedule)
 
 	return val, nil
 }

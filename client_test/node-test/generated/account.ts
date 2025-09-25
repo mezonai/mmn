@@ -167,6 +167,49 @@ export interface GetCurrentNonceResponse {
      */
     error: string;
 }
+/**
+ * Get account by address (convenience wrapper)
+ *
+ * @generated from protobuf message mmn.GetAccountByAddressRequest
+ */
+export interface GetAccountByAddressRequest {
+    /**
+     * @generated from protobuf field: string address = 1
+     */
+    address: string;
+}
+/**
+ * @generated from protobuf message mmn.GetAccountByAddressResponse
+ */
+export interface GetAccountByAddressResponse {
+    /**
+     * @generated from protobuf field: mmn.AccountData account = 1
+     */
+    account?: AccountData; // null fields if not found
+    /**
+     * @generated from protobuf field: string error = 2
+     */
+    error: string;
+}
+/**
+ * Account data structure
+ *
+ * @generated from protobuf message mmn.AccountData
+ */
+export interface AccountData {
+    /**
+     * @generated from protobuf field: string address = 1
+     */
+    address: string;
+    /**
+     * @generated from protobuf field: string balance = 2
+     */
+    balance: string;
+    /**
+     * @generated from protobuf field: uint64 nonce = 3
+     */
+    nonce: bigint;
+}
 // @generated message type with reflection information, may provide speed optimized methods
 class GetAccountRequest$Type extends MessageType<GetAccountRequest> {
     constructor() {
@@ -640,11 +683,176 @@ class GetCurrentNonceResponse$Type extends MessageType<GetCurrentNonceResponse> 
  * @generated MessageType for protobuf message mmn.GetCurrentNonceResponse
  */
 export const GetCurrentNonceResponse = new GetCurrentNonceResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetAccountByAddressRequest$Type extends MessageType<GetAccountByAddressRequest> {
+    constructor() {
+        super("mmn.GetAccountByAddressRequest", [
+            { no: 1, name: "address", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetAccountByAddressRequest>): GetAccountByAddressRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.address = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetAccountByAddressRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetAccountByAddressRequest): GetAccountByAddressRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string address */ 1:
+                    message.address = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetAccountByAddressRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string address = 1; */
+        if (message.address !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.address);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetAccountByAddressRequest
+ */
+export const GetAccountByAddressRequest = new GetAccountByAddressRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetAccountByAddressResponse$Type extends MessageType<GetAccountByAddressResponse> {
+    constructor() {
+        super("mmn.GetAccountByAddressResponse", [
+            { no: 1, name: "account", kind: "message", T: () => AccountData },
+            { no: 2, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetAccountByAddressResponse>): GetAccountByAddressResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.error = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetAccountByAddressResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetAccountByAddressResponse): GetAccountByAddressResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* mmn.AccountData account */ 1:
+                    message.account = AccountData.internalBinaryRead(reader, reader.uint32(), options, message.account);
+                    break;
+                case /* string error */ 2:
+                    message.error = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetAccountByAddressResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* mmn.AccountData account = 1; */
+        if (message.account)
+            AccountData.internalBinaryWrite(message.account, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* string error = 2; */
+        if (message.error !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.error);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetAccountByAddressResponse
+ */
+export const GetAccountByAddressResponse = new GetAccountByAddressResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AccountData$Type extends MessageType<AccountData> {
+    constructor() {
+        super("mmn.AccountData", [
+            { no: 1, name: "address", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "balance", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+        ]);
+    }
+    create(value?: PartialMessage<AccountData>): AccountData {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.address = "";
+        message.balance = "";
+        message.nonce = 0n;
+        if (value !== undefined)
+            reflectionMergePartial<AccountData>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AccountData): AccountData {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string address */ 1:
+                    message.address = reader.string();
+                    break;
+                case /* string balance */ 2:
+                    message.balance = reader.string();
+                    break;
+                case /* uint64 nonce */ 3:
+                    message.nonce = reader.uint64().toBigInt();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AccountData, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string address = 1; */
+        if (message.address !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.address);
+        /* string balance = 2; */
+        if (message.balance !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.balance);
+        /* uint64 nonce = 3; */
+        if (message.nonce !== 0n)
+            writer.tag(3, WireType.Varint).uint64(message.nonce);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.AccountData
+ */
+export const AccountData = new AccountData$Type();
 /**
  * @generated ServiceType for protobuf service mmn.AccountService
  */
 export const AccountService = new ServiceType("mmn.AccountService", [
     { name: "GetAccount", options: {}, I: GetAccountRequest, O: GetAccountResponse },
     { name: "GetTxHistory", options: {}, I: GetTxHistoryRequest, O: GetTxHistoryResponse },
-    { name: "GetCurrentNonce", options: {}, I: GetCurrentNonceRequest, O: GetCurrentNonceResponse }
+    { name: "GetCurrentNonce", options: {}, I: GetCurrentNonceRequest, O: GetCurrentNonceResponse },
+    { name: "GetAccountByAddress", options: {}, I: GetAccountByAddressRequest, O: GetAccountByAddressResponse }
 ]);

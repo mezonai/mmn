@@ -227,8 +227,8 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum(rate(mmn_node_tx_in_block_sum[$__rate_interval])) / sum(rate(mmn_node_tx_in_block_count[$__rate_interval]))",
-          "legendFormat": "Average",
+          "expr": "sum(increase(mmn_node_tx_in_block_sum[$__range])) / sum(increase(mmn_node_tx_in_block_count[$__range]))",
+          "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
@@ -277,7 +277,7 @@
         "x": 0,
         "y": 5
       },
-      "id": 19,
+      "id": 22,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -303,13 +303,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_executed_tps_count[$__rate_interval]))",
+          "expr": "sum(round(increase(mmn_node_received_client_tx_count[$__range])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Executed TPS (Add to mempool)",
+      "title": "Receive Transaction",
       "type": "stat"
     },
     {
@@ -340,7 +340,7 @@
         "x": 6,
         "y": 5
       },
-      "id": 18,
+      "id": 23,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -366,13 +366,13 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_ingress_tps_count[$__rate_interval]))",
+          "expr": "ceil(avg(increase(mmn_node_executed_tps_count[$__range])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Ingress TPS (Include in Block)",
+      "title": "Included in Block",
       "type": "stat"
     },
     {
@@ -403,6 +403,132 @@
         "x": 12,
         "y": 5
       },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.5",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "avg(rate(mmn_node_executed_tps_count[$__range]))",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Executed TPS (Included In Block)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.5",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "avg(rate(mmn_node_ingress_tps_count[$__range]))",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Ingress TPS (Add to Mempool)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 10
+      },
       "id": 17,
       "options": {
         "colorMode": "value",
@@ -429,7 +555,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_finalized_tps_count[$__rate_interval])) - avg(rate(mmn_node_failed_tps_count[$__rate_interval]))",
+          "expr": "avg(rate(mmn_node_finalized_tps_count[$__range])) - (avg(rate(mmn_node_failed_tps_count[$__range])) or vector(0))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -454,10 +580,6 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -467,8 +589,8 @@
       "gridPos": {
         "h": 5,
         "w": 6,
-        "x": 18,
-        "y": 5
+        "x": 6,
+        "y": 10
       },
       "id": 20,
       "options": {
@@ -496,7 +618,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_failed_tps_count[$__rate_interval]))",
+          "expr": "sum(floor(increase(mmn_node_failed_tps_count[$__range])))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -506,12 +628,77 @@
       "type": "stat"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 10
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.5",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (\r\n  increase(mmn_node_failed_tps_count{reason!=\"\"}[$__range])\r\n)\r\nor\r\nsum by (reason) (\r\n  label_replace(\r\n    increase(mmn_node_failed_tps_count{reason=\"\"}[$__range]),\r\n    \"reason\", \"other\", \"\", \"\"\r\n  )\r\n)\r\n",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Failed Reason",
+      "type": "piechart"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 10
+        "y": 15
       },
       "id": 5,
       "panels": [],
@@ -528,6 +715,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "max": 5,
           "min": 0,
@@ -550,7 +738,7 @@
         "h": 7,
         "w": 4,
         "x": 0,
-        "y": 11
+        "y": 16
       },
       "id": 14,
       "options": {
@@ -578,7 +766,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(mmn_node_panic_count)",
+          "expr": "sum(increase(mmn_node_panic_count[$__range]))",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -597,6 +785,7 @@
           "color": {
             "mode": "thresholds"
           },
+          "decimals": 0,
           "mappings": [],
           "max": 5,
           "thresholds": {
@@ -634,7 +823,7 @@
         "h": 7,
         "w": 4,
         "x": 4,
-        "y": 11
+        "y": 16
       },
       "id": 15,
       "options": {
@@ -662,7 +851,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(mmn_node_invalid_poh_count)",
+          "expr": "sum(increase(mmn_node_invalid_poh_count[$__range]))",
           "legendFormat": "{{node}}",
           "range": true,
           "refId": "A"
@@ -732,7 +921,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 11
+        "y": 16
       },
       "id": 12,
       "options": {
@@ -791,7 +980,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 11
+        "y": 16
       },
       "id": 2,
       "options": {
@@ -822,7 +1011,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "sum by (reason) (mmn_node_rejected_tx_count)",
+          "expr": "sum by (reason) (increase(mmn_node_rejected_tx_count[$__range]))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -891,7 +1080,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 23
       },
       "id": 9,
       "options": {
@@ -915,7 +1104,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "avg(rate(mmn_node_ingress_tx_count[$__rate_interval]))",
+          "expr": "avg(rate(mmn_node_received_client_tx_count[$__rate_interval]))",
           "legendFormat": "Average",
           "range": true,
           "refId": "A"
@@ -985,7 +1174,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 23
       },
       "id": 10,
       "options": {
@@ -1079,7 +1268,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 23
       },
       "id": 1,
       "options": {
@@ -1114,7 +1303,7 @@
     }
   ],
   "preload": false,
-  "refresh": "30s",
+  "refresh": "",
   "schemaVersion": 41,
   "tags": [],
   "templating": {

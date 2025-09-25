@@ -8,6 +8,7 @@ import (
 
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/block"
@@ -43,9 +44,11 @@ type Mempool struct {
 	readyQueue  []*transaction.Transaction                // ready-to-process transactions
 	eventRouter *events.EventRouter                       // Event router for transaction status updates
 	txTracker   interfaces.TransactionTrackerInterface    // Transaction state tracker
+	zkVerify    *zkverify.ZkVerify                        // Zk verify for zk transactions
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Mempool {
+func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter,
+	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
 	return &Mempool{
 		txsBuf:      make(map[string][]byte, max),
 		txOrder:     make([]string, 0, max),
@@ -58,6 +61,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		readyQueue:  make([]*transaction.Transaction, 0),
 		eventRouter: eventRouter,
 		txTracker:   txTracker,
+		zkVerify:    zkVerify,
 	}
 }
 
@@ -218,9 +222,9 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 // Stateless validation, simple for tx
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
-	if !tx.Verify() {
+	if !tx.Verify(mp.zkVerify) {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
-		return fmt.Errorf("invalid signature")
+		return fmt.Errorf("invalid signature or zk proof")
 	}
 
 	// 2. Check for zero amount
@@ -619,23 +623,14 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 	mp.readyQueue = newReadyQueue
 }
 
-// GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
-// Returns 0 if no pending transactions exist for the sender
-func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
+func (mp *Mempool) GetLargestReadyTransactionNonce(sender string) uint64 {
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
 
-	var largestNonce uint64 = 0
-	// Check in pending map
-	pendingMap, exists := mp.pendingTxs[sender]
-	if exists && len(pendingMap) > 0 {
-		for nonce := range pendingMap {
-			if nonce > largestNonce {
-				largestNonce = nonce
-			}
-		}
+	if len(mp.readyQueue) == 0 {
+		return 0
 	}
-
+	var largestNonce uint64 = 0
 	// Check in ready queue
 	for _, tx := range mp.readyQueue {
 		if tx.Sender == sender {
@@ -644,8 +639,31 @@ func (mp *Mempool) GetLargestPendingNonce(sender string) uint64 {
 			}
 		}
 	}
-
 	return largestNonce
+}
+
+// GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
+// Returns 0 if no pending transactions exist for the sender
+func (mp *Mempool) GetLargestConsecutivePendingNonce(sender string, fromNonce uint64) uint64 {
+	mp.mu.RLock()
+	defer mp.mu.RUnlock()
+
+	// Check in pending map
+	pendingMap, exists := mp.pendingTxs[sender]
+	if !exists || len(pendingMap) == 0 {
+		return fromNonce
+	}
+
+	currentNonce := fromNonce
+	for {
+		if _, exists := pendingMap[currentNonce+1]; exists {
+			currentNonce++
+		} else {
+			break
+		}
+	}
+
+	return currentNonce
 }
 
 // GetMempoolStats returns current mempool statistics
