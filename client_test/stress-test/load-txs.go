@@ -450,7 +450,7 @@ func (lt *LoadTester) fundAccount(accountIndex int) error {
 
 		// Wait for funding tx to be confirmed to ensure account exists before any send
 		if resp.TxHash != "" {
-			_ = lt.waitTxConfirmed(resp.TxHash, 15*time.Second)
+			_ = lt.waitTxConfirmed(resp.TxHash, 1*time.Second)
 		} else {
 			time.Sleep(500 * time.Millisecond)
 		}
@@ -514,7 +514,7 @@ func (lt *LoadTester) refillAccount(accountIndex int) error {
 
 	// Wait for transaction to be confirmed to ensure balance available
 	if resp.TxHash != "" {
-		_ = lt.waitTxConfirmed(resp.TxHash, 10*time.Second)
+		_ = lt.waitTxConfirmed(resp.TxHash, 1*time.Second)
 	} else {
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -730,7 +730,6 @@ func (lt *LoadTester) PrintStats() {
 	lt.logger.LogFinalStats(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
 }
 
-// ===== Nonce helpers (follow performance test patterns) =====
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (stringIndex(s, sub) >= 0)
 }
