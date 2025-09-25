@@ -10,8 +10,6 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/poh"
-	"github.com/mezonai/mmn/transaction"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -178,41 +176,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 }
 
-func (ln *Libp2pNetwork) convertBlockToBroadcastedBlock(blk *block.Block) *block.BroadcastedBlock {
-	if blk == nil {
-		return nil
-	}
-
-	txStore := ln.blockStore.GetTxStore()
-	if txStore == nil {
-		return nil
-	}
-
-	entries := make([]poh.Entry, len(blk.Entries))
-	for i, persistentEntry := range blk.Entries {
-		transactions, err := txStore.GetBatch(persistentEntry.TxHashes)
-		if err != nil {
-			logx.Warn("NETWORK:SYNC BLOCK", fmt.Sprintf("Failed to load transactions for entry %d in block %d: %v", i, blk.Slot, err))
-			transactions = make([]*transaction.Transaction, 0)
-		}
-
-		entries[i] = poh.Entry{
-			NumHashes:    persistentEntry.NumHashes,
-			Hash:         persistentEntry.Hash,
-			Transactions: transactions,
-			Tick:         persistentEntry.Tick,
-		}
-	}
-
-	broadcastedBlock := &block.BroadcastedBlock{
-		BlockCore: blk.BlockCore,
-		Entries:   entries,
-	}
-
-	return broadcastedBlock
-}
-
-func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.BroadcastedBlock, s network.Stream) error {
+func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -294,7 +258,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		return
 	}
 
-	var batch []*block.BroadcastedBlock
+	var batch []*block.Block
 	totalBlocksSent := 0
 	currentFromSlot := req.FromSlot
 	currentToSlot := req.ToSlot
@@ -326,8 +290,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		for slot <= currentToSlot {
 			blk := ln.blockStore.Block(slot)
 			if blk != nil {
-				broadcastedBlock := ln.convertBlockToBroadcastedBlock(blk)
-				batch = append(batch, broadcastedBlock)
+				batch = append(batch, blk)
 			}
 
 			if len(batch) >= int(SyncBlocksBatchSize) {
