@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
@@ -384,6 +385,132 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	return &pb.GetBlockByNumberResponse{
 		Blocks:   blocks,
 		Decimals: uint32(config.GetDecimalsFactor()),
+	}, nil
+}
+
+// GetBlockByRange retrieves blocks in a range with optimized response structure
+func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequest) (*pb.GetBlockByRangeResponse, error) {
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieving blocks from %d to %d", in.FromSlot, in.ToSlot))
+
+	// Validate input
+	if in.FromSlot > in.ToSlot {
+		logx.Error("GRPC SERVER", fmt.Sprintf("from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot))
+		return nil, status.Errorf(codes.InvalidArgument, "from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot)
+	}
+
+	// Calculate total blocks in range
+	totalBlocks := in.ToSlot - in.FromSlot + 1
+
+	// Reject if range is too large
+	const maxRange = 500
+	if totalBlocks > maxRange {
+		logx.Error("GRPC SERVER", fmt.Sprintf("range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange))
+		return nil, status.Errorf(codes.InvalidArgument, "range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange)
+	}
+
+	// Prepare slot range for batch operation
+	slots := make([]uint64, 0, totalBlocks)
+	for slot := in.FromSlot; slot <= in.ToSlot; slot++ {
+		slots = append(slots, slot)
+	}
+
+	// Use batch operation to get all blocks - single CGO call!
+	blockMap, err := s.blockStore.GetBatch(slots)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to batch get blocks: %v", err)
+	}
+
+	// Collect ALL transaction hashes from ALL blocks first
+	var allTxHashes []string
+	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
+	errors := make([]string, 0)
+
+	for _, slot := range slots {
+		block, exists := blockMap[slot]
+		if !exists {
+			logx.Error("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
+			errors = append(errors, fmt.Sprintf("Block %d not found, skipping", slot))
+			continue
+		}
+
+		var blockTxHashes []string
+		for _, entry := range block.Entries {
+			blockTxHashes = append(blockTxHashes, entry.TxHashes...)
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+		blockTxMap[slot] = blockTxHashes
+	}
+
+	// Single batch call for ALL transactions across ALL blocks!
+	txs, txMetas, err := s.ledger.GetTxBatch(allTxHashes)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to batch get all transactions: %v", err)
+	}
+
+	// Create tx lookup maps for fast access
+	txMap := make(map[string]*transaction.Transaction, len(txs))
+	for _, tx := range txs {
+		txMap[tx.Hash()] = tx
+	}
+
+	blocks := make([]*pb.BlockInfo, 0, len(blockMap))
+
+	// Process blocks in order
+	for _, slot := range slots {
+		block, exists := blockMap[slot]
+		if !exists {
+			continue // Already logged warning above
+		}
+
+		blockTxHashes := blockTxMap[slot]
+		blockTxs := make([]*pb.TransactionData, 0, len(blockTxHashes))
+
+		for _, txHash := range blockTxHashes {
+			tx, txExists := txMap[txHash]
+			txMeta, metaExists := txMetas[txHash]
+
+			if !txExists || !metaExists {
+				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				continue
+			}
+
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    utils.Uint256ToString(tx.Amount),
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    txStatus,
+				TextData:  tx.TextData,
+				ExtraInfo: tx.ExtraInfo,
+			})
+		}
+
+		// Create optimized block (without entries duplication)
+		optimizedBlock := &pb.BlockInfo{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, optimizedBlock)
+	}
+
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieved %d blocks (requested range: %d)",
+		len(blocks), totalBlocks))
+
+	return &pb.GetBlockByRangeResponse{
+		Blocks:      blocks,
+		TotalBlocks: uint32(len(blocks)),
+		Decimals:    uint32(config.GetDecimalsFactor()),
+		Errors:      errors,
 	}, nil
 }
 

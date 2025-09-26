@@ -93,6 +93,37 @@ func (p *RocksDBProvider) Get(key []byte) ([]byte, error) {
 	return result, nil
 }
 
+// GetBatch retrieves multiple values by keys in a single operation
+func (p *RocksDBProvider) GetBatch(keys [][]byte) (map[string][]byte, error) {
+	if len(keys) == 0 {
+		return make(map[string][]byte), nil
+	}
+
+	// Use RocksDB MultiGet for efficient batch reads
+	values, err := p.db.MultiGet(p.ro, keys...)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]byte, len(keys))
+
+	for i, value := range values {
+		keyStr := string(keys[i])
+
+		if value.Data() != nil {
+			// Copy the data since we're freeing the slice
+			data := value.Data()
+			result[keyStr] = make([]byte, len(data))
+			copy(result[keyStr], data)
+		}
+		// If value.Data() is nil, the key doesn't exist - don't add to result
+
+		value.Free() // Free each value
+	}
+
+	return result, nil
+}
+
 // Put stores a key-value pair
 func (p *RocksDBProvider) Put(key, value []byte) error {
 	return p.db.Put(p.wo, key, value)
