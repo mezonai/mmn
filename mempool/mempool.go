@@ -385,25 +385,18 @@ func (mp *Mempool) GetTransactionCount() int {
 
 // New method: HasTransaction - check if transaction exists (read-only)
 func (mp *Mempool) HasTransaction(txHash string) bool {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
 	_, exists := mp.txsBuf[txHash]
 	return exists
 }
 
 // New method: GetTransaction - retrieve transaction data (read-only)
 func (mp *Mempool) GetTransaction(txHash string) ([]byte, bool) {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
 	data, exists := mp.txsBuf[txHash]
 	return data, exists
 }
 
 // New method: GetOrderedTransactions - get transactions in FIFO order (read-only)
 func (mp *Mempool) GetOrderedTransactions() []string {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
-
 	// Return a copy to avoid external modification
 	result := make([]string, len(mp.txOrder))
 	copy(result, mp.txOrder)
@@ -625,9 +618,6 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 }
 
 func (mp *Mempool) GetLargestReadyTransactionNonce(sender string) uint64 {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
-
 	if len(mp.readyQueue) == 0 {
 		return 0
 	}
@@ -646,9 +636,6 @@ func (mp *Mempool) GetLargestReadyTransactionNonce(sender string) uint64 {
 // GetLargestPendingNonce returns the largest nonce among pending transactions for a given sender
 // Returns 0 if no pending transactions exist for the sender
 func (mp *Mempool) GetLargestConsecutivePendingNonce(sender string, fromNonce uint64) uint64 {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
-
 	// Check in pending map
 	pendingMap, exists := mp.pendingTxs[sender]
 	if !exists || len(pendingMap) == 0 {
@@ -669,9 +656,6 @@ func (mp *Mempool) GetLargestConsecutivePendingNonce(sender string, fromNonce ui
 
 // GetMempoolStats returns current mempool statistics
 func (mp *Mempool) GetMempoolStats() map[string]interface{} {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
-
 	totalPending := 0
 	pendingBySender := make(map[string]int)
 
