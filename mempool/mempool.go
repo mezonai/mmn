@@ -308,6 +308,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 // PullBatch implements smart dependency resolution for zero-fee blockchain
 func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	mp.mu.Lock()
+	defer mp.mu.Unlock()
 
 	batch := make([][]byte, 0, batchSize)
 	processedCount := 0
