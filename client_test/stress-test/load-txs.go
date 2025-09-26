@@ -130,6 +130,10 @@ const (
 	ZkVerifyUrl         = "http://localhost:8282"
 )
 
+// Local copies of node-side limits to throttle faucet
+const FaucetMaxFutureNonceWindow = 64
+const FaucetMaxPendingPerSender = 60
+
 // logRealTimeMetrics logs current system metrics and transaction stats
 func (lt *LoadTester) logRealTimeMetrics() {
 	// Get current transaction stats
@@ -179,8 +183,8 @@ func parseFlags() Config {
 	var config Config
 
 	flag.StringVar(&config.ServerAddress, "server", "127.0.0.1:9001", "gRPC server address")
-	flag.IntVar(&config.AccountCount, "accounts", 100, "Number of accounts to create")
-	flag.IntVar(&config.TxPerSecond, "rate", 50, "Transactions per second")
+	flag.IntVar(&config.AccountCount, "accounts", 1000, "Number of accounts to create")
+	flag.IntVar(&config.TxPerSecond, "rate", 1000, "Transactions per second")
 	flag.IntVar(&config.SwitchAfterTx, "switch", 10, "Switch account after N transactions")
 	flag.IntVar(&config.Workers, "workers", 100, "Number of concurrent send workers")
 	flag.Uint64Var(&config.FundAmount, "fund", 10000000000, "Amount to fund each account")
@@ -809,8 +813,46 @@ func (lt *LoadTester) getNextFaucetNonce() (uint64, error) {
 		lt.faucetNonceInit = true
 		return lt.faucetNonce, nil
 	}
-	lt.faucetNonce++
-	return lt.faucetNonce, nil
+	// Refresh base to avoid drift if blocks advanced
+	current, err := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "pending")
+	if err == nil {
+		// If our local pointer lags behind, fast-forward
+		minAllowed := current + 1
+		if lt.faucetNonce < minAllowed {
+			lt.faucetNonce = minAllowed
+		}
+	}
+
+	// Throttle so that next nonce never exceeds current + window - 1
+	for {
+		// Re-fetch current pending to compute headroom
+		cur, err2 := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "pending")
+		if err2 != nil {
+			// Best-effort sleep and retry a bit; caller has retries too
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		// Also check backlog vs latest to avoid exceeding pending-per-sender limit
+		latestCur, err3 := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "latest")
+		if err3 == nil {
+			if cur >= latestCur {
+				backlog := cur - latestCur
+				if backlog >= FaucetMaxPendingPerSender {
+					// Too many pending, wait for chain to include some
+					time.Sleep(150 * time.Millisecond)
+					continue
+				}
+			}
+		}
+		maxAllowed := cur + FaucetMaxFutureNonceWindow
+		next := lt.faucetNonce + 1
+		if next <= maxAllowed {
+			lt.faucetNonce = next
+			return lt.faucetNonce, nil
+		}
+		// Too far in the future, wait for chain/mempool to catch up
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (lt *LoadTester) rollbackFaucetNonce(allocated uint64) {
