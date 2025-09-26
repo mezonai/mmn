@@ -89,8 +89,10 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, er
 // GetBatch retrieves multiple transactions by their hashes using true batch operation
 func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transaction, error) {
 	if len(txHashes) == 0 {
+		logx.Info("TX_STORE", "GetBatch: no transactions to retrieve")
 		return []*transaction.Transaction{}, nil
 	}
+	logx.Info("TX_STORE", fmt.Sprintf("GetBatch: retrieving %d transactions", len(txHashes)))
 
 	// Prepare keys for batch operation
 	keys := make([][]byte, len(txHashes))
@@ -107,8 +109,8 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 	transactions := make([]*transaction.Transaction, 0, len(txHashes))
 
 	for _, txHash := range txHashes {
-		keyStr := string(ts.getDbKey(txHash))
-		data, exists := dataMap[keyStr]
+		key := ts.getDbKey(txHash)
+		data, exists := dataMap[string(key)]
 
 		if !exists {
 			logx.Warn("TX_STORE", fmt.Sprintf("Transaction %s not found in batch result", txHash))

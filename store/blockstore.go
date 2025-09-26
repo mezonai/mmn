@@ -226,8 +226,10 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 // GetBatch retrieves multiple blocks by their slots using true batch operation
 func (s *GenericBlockStore) GetBatch(slots []uint64) (map[uint64]*block.Block, error) {
 	if len(slots) == 0 {
+		logx.Info("BLOCKSTORE", "GetBatch: no slots to retrieve")
 		return make(map[uint64]*block.Block), nil
 	}
+	logx.Info("BLOCKSTORE", fmt.Sprintf("GetBatch: retrieving %d blocks", len(slots)))
 
 	// Prepare keys for batch operation
 	keys := make([][]byte, len(slots))

@@ -616,9 +616,9 @@ func (x *GetBlockByRangeRequest) GetToSlot() uint64 {
 type GetBlockByRangeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Blocks        []*BlockInfo           `protobuf:"bytes,1,rep,name=blocks,proto3" json:"blocks,omitempty"`
-	TotalBlocks   uint64                 `protobuf:"varint,2,opt,name=total_blocks,json=totalBlocks,proto3" json:"total_blocks,omitempty"` // Total blocks in the requested range
-	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
-	Decimals      uint32                 `protobuf:"varint,5,opt,name=decimals,proto3" json:"decimals,omitempty"` // Number of fractional digits for amount formatting
+	TotalBlocks   uint32                 `protobuf:"varint,2,opt,name=total_blocks,json=totalBlocks,proto3" json:"total_blocks,omitempty"` // Total blocks in the requested range
+	Errors        []string               `protobuf:"bytes,3,rep,name=errors,proto3" json:"errors,omitempty"`
+	Decimals      uint32                 `protobuf:"varint,4,opt,name=decimals,proto3" json:"decimals,omitempty"` // Number of fractional digits for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -660,18 +660,18 @@ func (x *GetBlockByRangeResponse) GetBlocks() []*BlockInfo {
 	return nil
 }
 
-func (x *GetBlockByRangeResponse) GetTotalBlocks() uint64 {
+func (x *GetBlockByRangeResponse) GetTotalBlocks() uint32 {
 	if x != nil {
 		return x.TotalBlocks
 	}
 	return 0
 }
 
-func (x *GetBlockByRangeResponse) GetError() string {
+func (x *GetBlockByRangeResponse) GetErrors() []string {
 	if x != nil {
-		return x.Error
+		return x.Errors
 	}
-	return ""
+	return nil
 }
 
 func (x *GetBlockByRangeResponse) GetDecimals() uint32 {
@@ -728,12 +728,12 @@ const file_block_proto_rawDesc = "" +
 	"\x10transaction_data\x18\a \x03(\v2\x14.mmn.TransactionDataR\x0ftransactionData\"N\n" +
 	"\x16GetBlockByRangeRequest\x12\x1b\n" +
 	"\tfrom_slot\x18\x01 \x01(\x04R\bfromSlot\x12\x17\n" +
-	"\ato_slot\x18\x02 \x01(\x04R\x06toSlot\"\x96\x01\n" +
+	"\ato_slot\x18\x02 \x01(\x04R\x06toSlot\"\x98\x01\n" +
 	"\x17GetBlockByRangeResponse\x12&\n" +
 	"\x06blocks\x18\x01 \x03(\v2\x0e.mmn.BlockInfoR\x06blocks\x12!\n" +
-	"\ftotal_blocks\x18\x02 \x01(\x04R\vtotalBlocks\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\x12\x1a\n" +
-	"\bdecimals\x18\x05 \x01(\rR\bdecimals2\xd1\x02\n" +
+	"\ftotal_blocks\x18\x02 \x01(\rR\vtotalBlocks\x12\x16\n" +
+	"\x06errors\x18\x03 \x03(\tR\x06errors\x12\x1a\n" +
+	"\bdecimals\x18\x04 \x01(\rR\bdecimals2\xd1\x02\n" +
 	"\fBlockService\x12/\n" +
 	"\tBroadcast\x12\n" +
 	".mmn.Block\x1a\x16.mmn.BroadcastResponse\x120\n" +

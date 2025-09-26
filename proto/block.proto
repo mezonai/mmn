@@ -63,9 +63,9 @@ message GetBlockByRangeRequest {
 
 message GetBlockByRangeResponse {
   repeated BlockInfo blocks = 1;
-  uint64 total_blocks = 2; // Total blocks in the requested range
-  string error = 4;
-  uint32 decimals = 5; // Number of fractional digits for amount formatting
+  uint32 total_blocks = 2; // Total blocks in the requested range
+  repeated string errors = 3;
+  uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
 service BlockService {

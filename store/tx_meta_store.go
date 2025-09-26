@@ -88,8 +88,10 @@ func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta,
 // GetBatch retrieves multiple transaction metas by their hashes using true batch operation
 func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.TransactionMeta, error) {
 	if len(txHashes) == 0 {
+		logx.Info("TX_META_STORE", "GetBatch: no transaction metas to retrieve")
 		return map[string]*types.TransactionMeta{}, nil
 	}
+	logx.Info("TX_META_STORE", fmt.Sprintf("GetBatch: retrieving %d transaction metas", len(txHashes)))
 
 	// Prepare keys for batch operation
 	keys := make([][]byte, len(txHashes))
@@ -106,8 +108,8 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 	txMetas := make(map[string]*types.TransactionMeta, len(txHashes))
 
 	for _, txHash := range txHashes {
-		keyStr := string(tms.getDbKey(txHash))
-		data, exists := dataMap[keyStr]
+		key := tms.getDbKey(txHash)
+		data, exists := dataMap[string(key)]
 
 		if !exists {
 			logx.Warn("TX_META_STORE", fmt.Sprintf("Transaction meta %s not found in batch result", txHash))

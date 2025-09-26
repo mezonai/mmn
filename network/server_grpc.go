@@ -423,11 +423,13 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 	// Collect ALL transaction hashes from ALL blocks first
 	var allTxHashes []string
 	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
+	errors := make([]string, 0)
 
 	for _, slot := range slots {
 		block, exists := blockMap[slot]
 		if !exists {
-			logx.Warn("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
+			logx.Error("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
+			errors = append(errors, fmt.Sprintf("Block %d not found, skipping", slot))
 			continue
 		}
 
@@ -468,7 +470,8 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 			txMeta, metaExists := txMetas[txHash]
 
 			if !txExists || !metaExists {
-				logx.Warn("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
 				continue
 			}
 
@@ -505,8 +508,9 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 
 	return &pb.GetBlockByRangeResponse{
 		Blocks:      blocks,
-		TotalBlocks: totalBlocks,
+		TotalBlocks: uint32(len(blocks)),
 		Decimals:    uint32(config.GetDecimalsFactor()),
+		Errors:      errors,
 	}, nil
 }
 
