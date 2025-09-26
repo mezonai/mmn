@@ -147,19 +147,23 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	txHash := tx.Hash()
-	account, err := mp.ledger.GetAccount(tx.Sender)
-	if err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("could not get account: %v", err))
-		return // Handle error appropriately based on context
+	// based on ready queue and processing tracker
+	largestReady := mp.GetLargestReadyTransactionNonce(tx.Sender)
+	var largestProcessing uint64 = 0
+	if mp.txTracker != nil {
+		largestProcessing = mp.txTracker.GetLargestProcessingNonce(tx.Sender)
 	}
-	currentNonce := account.Nonce
-	isReady := tx.Nonce == currentNonce+1
+	currentKnown := largestReady
+	if largestProcessing > currentKnown {
+		currentKnown = largestProcessing
+	}
+	isReady := tx.Nonce == currentKnown+1
 
 	if isReady {
 		// Add to ready queue for immediate processing
 		mp.readyQueue = append(mp.readyQueue, tx)
 		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
+			txHash, tx.Sender[:8], tx.Nonce, currentKnown+1))
 	} else {
 		// Add to pending transactions
 		if mp.pendingTxs[tx.Sender] == nil {
@@ -170,7 +174,7 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 			Timestamp: time.Now(),
 		}
 		logx.Info("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentNonce+1))
+			txHash, tx.Sender[:8], tx.Nonce, currentKnown+1))
 	}
 }
 
@@ -304,10 +308,10 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 // PullBatch implements smart dependency resolution for zero-fee blockchain
 func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	mp.mu.Lock()
-	defer mp.mu.Unlock()
 
 	batch := make([][]byte, 0, batchSize)
 	processedCount := 0
+	processedTxs := make([]*transaction.Transaction, 0, batchSize)
 
 	// Clean up stale transactions first
 	// mp.cleanupStaleTransactions()
@@ -324,12 +328,7 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 		for _, tx := range readyTxs {
 			batch = append(batch, tx.Bytes())
 			txHash := tx.Hash()
-
-			// Track transaction as processing when pulled from mempool
-			if mp.txTracker != nil {
-				mp.txTracker.TrackProcessingTransaction(tx)
-			}
-
+			processedTxs = append(processedTxs, tx)
 			mp.removeTransaction(tx)
 			processedCount++
 
@@ -339,6 +338,15 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 		// Check if any pending transactions became ready after processing
 		mp.promotePendingTransactions(readyTxs)
 	}
+	// Unlock before calling external components like txTracker
+	mp.mu.Unlock()
+
+	// Track transactions as processing outside of mempool lock
+	if mp.txTracker != nil {
+		for _, tx := range processedTxs {
+			mp.txTracker.TrackProcessingTransaction(tx)
+		}
+	}
 
 	logx.Info("MEMPOOL", fmt.Sprintf("PullBatch returning %d transactions", len(batch)))
 	return batch
@@ -346,14 +354,7 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 
 func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transaction) {
 	for _, tx := range readyTxs {
-		account, err := mp.ledger.GetAccount(tx.Sender)
-		if err != nil {
-			logx.Error("MEMPOOL", fmt.Sprintf("Error getting account for sender %s: %v", tx.Sender, err))
-			return
-		}
-		currentNonce := account.Nonce
-		expectedNonce := currentNonce + 1
-
+		expectedNonce := tx.Nonce + 1
 		if pendingMap, exists := mp.pendingTxs[tx.Sender]; exists {
 			if pendingTx, hasNonce := pendingMap[expectedNonce]; hasNonce {
 				// Move transaction from pending to ready queue
