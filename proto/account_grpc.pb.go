@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AccountService_GetAccount_FullMethodName      = "/mmn.AccountService/GetAccount"
-	AccountService_GetTxHistory_FullMethodName    = "/mmn.AccountService/GetTxHistory"
-	AccountService_GetCurrentNonce_FullMethodName = "/mmn.AccountService/GetCurrentNonce"
+	AccountService_GetAccount_FullMethodName          = "/mmn.AccountService/GetAccount"
+	AccountService_GetTxHistory_FullMethodName        = "/mmn.AccountService/GetTxHistory"
+	AccountService_GetCurrentNonce_FullMethodName     = "/mmn.AccountService/GetCurrentNonce"
+	AccountService_GetAccountByAddress_FullMethodName = "/mmn.AccountService/GetAccountByAddress"
 )
 
 // AccountServiceClient is the client API for AccountService service.
@@ -31,6 +32,7 @@ type AccountServiceClient interface {
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error)
 	GetTxHistory(ctx context.Context, in *GetTxHistoryRequest, opts ...grpc.CallOption) (*GetTxHistoryResponse, error)
 	GetCurrentNonce(ctx context.Context, in *GetCurrentNonceRequest, opts ...grpc.CallOption) (*GetCurrentNonceResponse, error)
+	GetAccountByAddress(ctx context.Context, in *GetAccountByAddressRequest, opts ...grpc.CallOption) (*GetAccountByAddressResponse, error)
 }
 
 type accountServiceClient struct {
@@ -71,6 +73,16 @@ func (c *accountServiceClient) GetCurrentNonce(ctx context.Context, in *GetCurre
 	return out, nil
 }
 
+func (c *accountServiceClient) GetAccountByAddress(ctx context.Context, in *GetAccountByAddressRequest, opts ...grpc.CallOption) (*GetAccountByAddressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAccountByAddressResponse)
+	err := c.cc.Invoke(ctx, AccountService_GetAccountByAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AccountServiceServer is the server API for AccountService service.
 // All implementations must embed UnimplementedAccountServiceServer
 // for forward compatibility.
@@ -78,6 +90,7 @@ type AccountServiceServer interface {
 	GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error)
 	GetTxHistory(context.Context, *GetTxHistoryRequest) (*GetTxHistoryResponse, error)
 	GetCurrentNonce(context.Context, *GetCurrentNonceRequest) (*GetCurrentNonceResponse, error)
+	GetAccountByAddress(context.Context, *GetAccountByAddressRequest) (*GetAccountByAddressResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
 
@@ -96,6 +109,9 @@ func (UnimplementedAccountServiceServer) GetTxHistory(context.Context, *GetTxHis
 }
 func (UnimplementedAccountServiceServer) GetCurrentNonce(context.Context, *GetCurrentNonceRequest) (*GetCurrentNonceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCurrentNonce not implemented")
+}
+func (UnimplementedAccountServiceServer) GetAccountByAddress(context.Context, *GetAccountByAddressRequest) (*GetAccountByAddressResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAccountByAddress not implemented")
 }
 func (UnimplementedAccountServiceServer) mustEmbedUnimplementedAccountServiceServer() {}
 func (UnimplementedAccountServiceServer) testEmbeddedByValue()                        {}
@@ -172,6 +188,24 @@ func _AccountService_GetCurrentNonce_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AccountService_GetAccountByAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAccountByAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AccountServiceServer).GetAccountByAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AccountService_GetAccountByAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AccountServiceServer).GetAccountByAddress(ctx, req.(*GetAccountByAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AccountService_ServiceDesc is the grpc.ServiceDesc for AccountService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +224,10 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCurrentNonce",
 			Handler:    _AccountService_GetCurrentNonce_Handler,
+		},
+		{
+			MethodName: "GetAccountByAddress",
+			Handler:    _AccountService_GetAccountByAddress_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

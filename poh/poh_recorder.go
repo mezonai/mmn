@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
 )
 
@@ -12,20 +13,22 @@ type PohRecorder struct {
 	poh            *Poh
 	leaderSchedule *LeaderSchedule
 
-	myPubkey     string
-	ticksPerSlot uint64
-	tickHeight   uint64
-	entries      []Entry
-	mu           sync.Mutex
+	myPubkey      string
+	ticksPerSlot  uint64
+	tickHeight    uint64
+	entries       []Entry
+	slotHashQueue *SlotHashQueue
+	mu            sync.Mutex
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
-func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule) *PohRecorder {
+func NewPohRecorder(poh *Poh, ticksPerSlot uint64, myPubkey string, schedule *LeaderSchedule, latestSlot uint64) *PohRecorder {
 	return &PohRecorder{
 		poh:            poh,
 		ticksPerSlot:   ticksPerSlot,
-		tickHeight:     0,
+		tickHeight:     latestSlot * ticksPerSlot,
 		entries:        []Entry{},
+		slotHashQueue:  NewSlotHashQueue(),
 		leaderSchedule: schedule,
 		myPubkey:       myPubkey,
 	}
@@ -37,6 +40,7 @@ func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.tickHeight = slot * r.ticksPerSlot
 	r.poh.Reset(lastHash)
 	r.entries = make([]Entry, 0)
+	r.slotHashQueue.Put(slot, lastHash)
 }
 
 // Assume fromSlot is the last seen slot, toSlot is the target slot
@@ -71,7 +75,6 @@ func (r *PohRecorder) Tick() *Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// fmt.Println("Starting Tick")
 	pohEntry := r.poh.Tick()
 	if pohEntry == nil {
 		return nil
@@ -80,7 +83,16 @@ func (r *PohRecorder) Tick() *Entry {
 	entry := NewTickEntry(pohEntry.NumHashes, pohEntry.Hash)
 
 	r.tickHeight++
+	if r.IsLastTickOfSlot() {
+		logx.Debug("PohRecorder", fmt.Sprintf("Putting slot hash %d %x", r.tickHeight/r.ticksPerSlot, entry.Hash))
+		r.slotHashQueue.Put(r.tickHeight/r.ticksPerSlot, entry.Hash)
+	}
+	logx.Debug("PohRecorder", fmt.Sprintf("Tick done %x", entry.Hash))
 	return &entry
+}
+
+func (r *PohRecorder) IsLastTickOfSlot() bool {
+	return r.tickHeight%r.ticksPerSlot == 0
 }
 
 func (r *PohRecorder) DrainEntries() []Entry {
@@ -90,6 +102,14 @@ func (r *PohRecorder) DrainEntries() []Entry {
 	entries := r.entries
 	r.entries = nil
 	return entries
+}
+
+func (r *PohRecorder) CurrentPassedSlot() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// +1 to make slot start from 1
+	return r.tickHeight / r.ticksPerSlot
 }
 
 func (r *PohRecorder) CurrentSlot() uint64 {
@@ -106,4 +126,18 @@ func HashTransactions(txs []*transaction.Transaction) [32]byte {
 		all = append(all, tx.Bytes()...)
 	}
 	return sha256.Sum256(all)
+}
+
+func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {
+	hash, ok := r.slotHashQueue.Get(slot)
+	if !ok {
+		logx.Warn("PohRecorder", fmt.Sprintf("Slot hash not found for slot %d", slot))
+		return [32]byte{}
+	}
+	return hash
+}
+
+// GetSlotHashFromQueue returns slot hash from in-memory queue if available
+func (r *PohRecorder) GetSlotHashFromQueue(slot uint64) ([32]byte, bool) {
+	return r.slotHashQueue.Get(slot)
 }

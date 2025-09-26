@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+
+	"github.com/mezonai/mmn/monitoring"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -50,8 +55,12 @@ func init() {
 	initCmd.Flags().StringVar(&initPrivKeyPath, "privkey-path", "", "Path to existing private key file (optional)")
 }
 
-// initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data
+// initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data.
+// This method is idempotent and safe to run multiple time
 func initializeNode() {
+	initializeFileLogger()
+	monitoring.InitMetrics()
+
 	// Ensure data directory exists
 	if err := os.MkdirAll(initDataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create data directory:", err.Error())
@@ -194,7 +203,7 @@ func initializeNode() {
 	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts, tms, as, nil)
+	ld := ledger.NewLedger(ts, tms, as, nil, nil)
 
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
@@ -260,4 +269,40 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	logx.Info("GENESIS", fmt.Sprintf("Genesis block hash: %x", genesisBlock.Hash))
 
 	return genesisBlock, nil
+}
+
+func initializeFileLogger() {
+	// Load config log file name
+	logFile := "./logs/mmn.log"
+	if logFileConfig := os.Getenv("LOGFILE"); logFileConfig != "" {
+		logFile = "./logs/" + logFileConfig
+	}
+
+	// Load config log file size
+	maxSizeConfig := os.Getenv("LOGFILE_MAX_SIZE_MB")
+	if maxSizeConfig == "" {
+		panic("LOGFILE_MAX_SIZE_MB env variable not set")
+	}
+	maxSizeMB, err := strconv.Atoi(maxSizeConfig)
+	if err != nil {
+		panic("Invalid value for LOGFILE_MAX_SIZE_MB" + err.Error())
+	}
+
+	// Load config log file
+	maxAgeConfig := os.Getenv("LOGFILE_MAX_AGE_DAYS")
+	if maxAgeConfig == "" {
+		panic("LOGFILE_MAX_AGE_DAYS env variable not set")
+	}
+	maxAgeDays, err := strconv.Atoi(maxAgeConfig)
+	if err != nil {
+		panic("Invalid value for LOGFILE_MAX_AGE_DAYS" + err.Error())
+	}
+
+	lumberjackLogger := &lumberjack.Logger{
+		Filename: logFile,
+		MaxSize:  maxSizeMB,
+		MaxAge:   maxAgeDays,
+	}
+
+	logx.InitWithOutput(lumberjackLogger)
 }

@@ -120,8 +120,9 @@ func (x *GetAccountRequest) GetAddress() string {
 type GetAccountResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	Balance       uint64                 `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
+	Balance       string                 `protobuf:"bytes,2,opt,name=balance,proto3" json:"balance,omitempty"`
 	Nonce         uint64                 `protobuf:"varint,3,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Decimals      uint32                 `protobuf:"varint,4,opt,name=decimals,proto3" json:"decimals,omitempty"` // Number of fractional digits for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -163,16 +164,23 @@ func (x *GetAccountResponse) GetAddress() string {
 	return ""
 }
 
-func (x *GetAccountResponse) GetBalance() uint64 {
+func (x *GetAccountResponse) GetBalance() string {
 	if x != nil {
 		return x.Balance
 	}
-	return 0
+	return ""
 }
 
 func (x *GetAccountResponse) GetNonce() uint64 {
 	if x != nil {
 		return x.Nonce
+	}
+	return 0
+}
+
+func (x *GetAccountResponse) GetDecimals() uint32 {
+	if x != nil {
+		return x.Decimals
 	}
 	return 0
 }
@@ -249,10 +257,11 @@ type TxMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sender        string                 `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`       // sender address
 	Recipient     string                 `protobuf:"bytes,2,opt,name=recipient,proto3" json:"recipient,omitempty"` // recipient address
-	Amount        uint64                 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`      // amount
+	Amount        string                 `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`       // amount
 	Nonce         uint64                 `protobuf:"varint,4,opt,name=nonce,proto3" json:"nonce,omitempty"`        // nonce
 	Timestamp     uint64                 `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Status        TxMeta_Status          `protobuf:"varint,6,opt,name=status,proto3,enum=mmn.TxMeta_Status" json:"status,omitempty"`
+	ExtraInfo     string                 `protobuf:"bytes,7,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -301,11 +310,11 @@ func (x *TxMeta) GetRecipient() string {
 	return ""
 }
 
-func (x *TxMeta) GetAmount() uint64 {
+func (x *TxMeta) GetAmount() string {
 	if x != nil {
 		return x.Amount
 	}
-	return 0
+	return ""
 }
 
 func (x *TxMeta) GetNonce() uint64 {
@@ -329,10 +338,18 @@ func (x *TxMeta) GetStatus() TxMeta_Status {
 	return TxMeta_PENDING
 }
 
+func (x *TxMeta) GetExtraInfo() string {
+	if x != nil {
+		return x.ExtraInfo
+	}
+	return ""
+}
+
 type GetTxHistoryResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Total         uint32                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
 	Txs           []*TxMeta              `protobuf:"bytes,2,rep,name=txs,proto3" json:"txs,omitempty"`
+	Decimals      uint32                 `protobuf:"varint,3,opt,name=decimals,proto3" json:"decimals,omitempty"` // Number of fractional digits for amount formatting
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -379,6 +396,13 @@ func (x *GetTxHistoryResponse) GetTxs() []*TxMeta {
 		return x.Txs
 	}
 	return nil
+}
+
+func (x *GetTxHistoryResponse) GetDecimals() uint32 {
+	if x != nil {
+		return x.Decimals
+	}
+	return 0
 }
 
 type GetCurrentNonceRequest struct {
@@ -501,38 +525,200 @@ func (x *GetCurrentNonceResponse) GetError() string {
 	return ""
 }
 
+// Get account by address (convenience wrapper)
+type GetAccountByAddressRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAccountByAddressRequest) Reset() {
+	*x = GetAccountByAddressRequest{}
+	mi := &file_proto_account_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAccountByAddressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAccountByAddressRequest) ProtoMessage() {}
+
+func (x *GetAccountByAddressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_account_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAccountByAddressRequest.ProtoReflect.Descriptor instead.
+func (*GetAccountByAddressRequest) Descriptor() ([]byte, []int) {
+	return file_proto_account_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetAccountByAddressRequest) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+type GetAccountByAddressResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Account       *AccountData           `protobuf:"bytes,1,opt,name=account,proto3" json:"account,omitempty"` // null fields if not found
+	Error         string                 `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAccountByAddressResponse) Reset() {
+	*x = GetAccountByAddressResponse{}
+	mi := &file_proto_account_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAccountByAddressResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAccountByAddressResponse) ProtoMessage() {}
+
+func (x *GetAccountByAddressResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_account_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAccountByAddressResponse.ProtoReflect.Descriptor instead.
+func (*GetAccountByAddressResponse) Descriptor() ([]byte, []int) {
+	return file_proto_account_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetAccountByAddressResponse) GetAccount() *AccountData {
+	if x != nil {
+		return x.Account
+	}
+	return nil
+}
+
+func (x *GetAccountByAddressResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// Account data structure
+type AccountData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Balance       string                 `protobuf:"bytes,2,opt,name=balance,proto3" json:"balance,omitempty"`
+	Nonce         uint64                 `protobuf:"varint,3,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccountData) Reset() {
+	*x = AccountData{}
+	mi := &file_proto_account_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccountData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccountData) ProtoMessage() {}
+
+func (x *AccountData) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_account_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccountData.ProtoReflect.Descriptor instead.
+func (*AccountData) Descriptor() ([]byte, []int) {
+	return file_proto_account_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AccountData) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *AccountData) GetBalance() string {
+	if x != nil {
+		return x.Balance
+	}
+	return ""
+}
+
+func (x *AccountData) GetNonce() uint64 {
+	if x != nil {
+		return x.Nonce
+	}
+	return 0
+}
+
 var File_proto_account_proto protoreflect.FileDescriptor
 
 const file_proto_account_proto_rawDesc = "" +
 	"\n" +
 	"\x13proto/account.proto\x12\x03mmn\"-\n" +
 	"\x11GetAccountRequest\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\"^\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\"z\n" +
 	"\x12GetAccountResponse\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n" +
-	"\abalance\x18\x02 \x01(\x04R\abalance\x12\x14\n" +
-	"\x05nonce\x18\x03 \x01(\x04R\x05nonce\"u\n" +
+	"\abalance\x18\x02 \x01(\tR\abalance\x12\x14\n" +
+	"\x05nonce\x18\x03 \x01(\x04R\x05nonce\x12\x1a\n" +
+	"\bdecimals\x18\x04 \x01(\rR\bdecimals\"u\n" +
 	"\x13GetTxHistoryRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\rR\x05limit\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\rR\x06offset\x12\x16\n" +
-	"\x06filter\x18\x04 \x01(\rR\x06filter\"\xf7\x01\n" +
+	"\x06filter\x18\x04 \x01(\rR\x06filter\"\x96\x02\n" +
 	"\x06TxMeta\x12\x16\n" +
 	"\x06sender\x18\x01 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x04R\x06amount\x12\x14\n" +
+	"\x06amount\x18\x03 \x01(\tR\x06amount\x12\x14\n" +
 	"\x05nonce\x18\x04 \x01(\x04R\x05nonce\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x04R\ttimestamp\x12*\n" +
-	"\x06status\x18\x06 \x01(\x0e2\x12.mmn.TxMeta.StatusR\x06status\"?\n" +
+	"\x06status\x18\x06 \x01(\x0e2\x12.mmn.TxMeta.StatusR\x06status\x12\x1d\n" +
+	"\n" +
+	"extra_info\x18\a \x01(\tR\textraInfo\"?\n" +
 	"\x06Status\x12\v\n" +
 	"\aPENDING\x10\x00\x12\r\n" +
 	"\tCONFIRMED\x10\x01\x12\r\n" +
 	"\tFINALIZED\x10\x02\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x03\"K\n" +
+	"\x06FAILED\x10\x03\"g\n" +
 	"\x14GetTxHistoryResponse\x12\x14\n" +
 	"\x05total\x18\x01 \x01(\rR\x05total\x12\x1d\n" +
-	"\x03txs\x18\x02 \x03(\v2\v.mmn.TxMetaR\x03txs\"D\n" +
+	"\x03txs\x18\x02 \x03(\v2\v.mmn.TxMetaR\x03txs\x12\x1a\n" +
+	"\bdecimals\x18\x03 \x01(\rR\bdecimals\"D\n" +
 	"\x16GetCurrentNonceRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x10\n" +
 	"\x03tag\x18\x02 \x01(\tR\x03tag\"q\n" +
@@ -540,12 +726,22 @@ const file_proto_account_proto_rawDesc = "" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\x04R\x05nonce\x12\x10\n" +
 	"\x03tag\x18\x03 \x01(\tR\x03tag\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error2\xe2\x01\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"6\n" +
+	"\x1aGetAccountByAddressRequest\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\"_\n" +
+	"\x1bGetAccountByAddressResponse\x12*\n" +
+	"\aaccount\x18\x01 \x01(\v2\x10.mmn.AccountDataR\aaccount\x12\x14\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\"W\n" +
+	"\vAccountData\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n" +
+	"\abalance\x18\x02 \x01(\tR\abalance\x12\x14\n" +
+	"\x05nonce\x18\x03 \x01(\x04R\x05nonce2\xbc\x02\n" +
 	"\x0eAccountService\x12=\n" +
 	"\n" +
 	"GetAccount\x12\x16.mmn.GetAccountRequest\x1a\x17.mmn.GetAccountResponse\x12C\n" +
 	"\fGetTxHistory\x12\x18.mmn.GetTxHistoryRequest\x1a\x19.mmn.GetTxHistoryResponse\x12L\n" +
-	"\x0fGetCurrentNonce\x12\x1b.mmn.GetCurrentNonceRequest\x1a\x1c.mmn.GetCurrentNonceResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
+	"\x0fGetCurrentNonce\x12\x1b.mmn.GetCurrentNonceRequest\x1a\x1c.mmn.GetCurrentNonceResponse\x12X\n" +
+	"\x13GetAccountByAddress\x12\x1f.mmn.GetAccountByAddressRequest\x1a .mmn.GetAccountByAddressResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
 
 var (
 	file_proto_account_proto_rawDescOnce sync.Once
@@ -560,31 +756,37 @@ func file_proto_account_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_account_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_account_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_account_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_proto_account_proto_goTypes = []any{
-	(TxMeta_Status)(0),              // 0: mmn.TxMeta.Status
-	(*GetAccountRequest)(nil),       // 1: mmn.GetAccountRequest
-	(*GetAccountResponse)(nil),      // 2: mmn.GetAccountResponse
-	(*GetTxHistoryRequest)(nil),     // 3: mmn.GetTxHistoryRequest
-	(*TxMeta)(nil),                  // 4: mmn.TxMeta
-	(*GetTxHistoryResponse)(nil),    // 5: mmn.GetTxHistoryResponse
-	(*GetCurrentNonceRequest)(nil),  // 6: mmn.GetCurrentNonceRequest
-	(*GetCurrentNonceResponse)(nil), // 7: mmn.GetCurrentNonceResponse
+	(TxMeta_Status)(0),                  // 0: mmn.TxMeta.Status
+	(*GetAccountRequest)(nil),           // 1: mmn.GetAccountRequest
+	(*GetAccountResponse)(nil),          // 2: mmn.GetAccountResponse
+	(*GetTxHistoryRequest)(nil),         // 3: mmn.GetTxHistoryRequest
+	(*TxMeta)(nil),                      // 4: mmn.TxMeta
+	(*GetTxHistoryResponse)(nil),        // 5: mmn.GetTxHistoryResponse
+	(*GetCurrentNonceRequest)(nil),      // 6: mmn.GetCurrentNonceRequest
+	(*GetCurrentNonceResponse)(nil),     // 7: mmn.GetCurrentNonceResponse
+	(*GetAccountByAddressRequest)(nil),  // 8: mmn.GetAccountByAddressRequest
+	(*GetAccountByAddressResponse)(nil), // 9: mmn.GetAccountByAddressResponse
+	(*AccountData)(nil),                 // 10: mmn.AccountData
 }
 var file_proto_account_proto_depIdxs = []int32{
-	0, // 0: mmn.TxMeta.status:type_name -> mmn.TxMeta.Status
-	4, // 1: mmn.GetTxHistoryResponse.txs:type_name -> mmn.TxMeta
-	1, // 2: mmn.AccountService.GetAccount:input_type -> mmn.GetAccountRequest
-	3, // 3: mmn.AccountService.GetTxHistory:input_type -> mmn.GetTxHistoryRequest
-	6, // 4: mmn.AccountService.GetCurrentNonce:input_type -> mmn.GetCurrentNonceRequest
-	2, // 5: mmn.AccountService.GetAccount:output_type -> mmn.GetAccountResponse
-	5, // 6: mmn.AccountService.GetTxHistory:output_type -> mmn.GetTxHistoryResponse
-	7, // 7: mmn.AccountService.GetCurrentNonce:output_type -> mmn.GetCurrentNonceResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: mmn.TxMeta.status:type_name -> mmn.TxMeta.Status
+	4,  // 1: mmn.GetTxHistoryResponse.txs:type_name -> mmn.TxMeta
+	10, // 2: mmn.GetAccountByAddressResponse.account:type_name -> mmn.AccountData
+	1,  // 3: mmn.AccountService.GetAccount:input_type -> mmn.GetAccountRequest
+	3,  // 4: mmn.AccountService.GetTxHistory:input_type -> mmn.GetTxHistoryRequest
+	6,  // 5: mmn.AccountService.GetCurrentNonce:input_type -> mmn.GetCurrentNonceRequest
+	8,  // 6: mmn.AccountService.GetAccountByAddress:input_type -> mmn.GetAccountByAddressRequest
+	2,  // 7: mmn.AccountService.GetAccount:output_type -> mmn.GetAccountResponse
+	5,  // 8: mmn.AccountService.GetTxHistory:output_type -> mmn.GetTxHistoryResponse
+	7,  // 9: mmn.AccountService.GetCurrentNonce:output_type -> mmn.GetCurrentNonceResponse
+	9,  // 10: mmn.AccountService.GetAccountByAddress:output_type -> mmn.GetAccountByAddressResponse
+	7,  // [7:11] is the sub-list for method output_type
+	3,  // [3:7] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_proto_account_proto_init() }
@@ -598,7 +800,7 @@ func file_proto_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_account_proto_rawDesc), len(file_proto_account_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
