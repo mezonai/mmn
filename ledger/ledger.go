@@ -247,4 +247,24 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 	return tx, txMeta, nil, nil
 }
 
+// GetTxBatch retrieves multiple transactions and their metadata using batch operations
+func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
+	if len(hashes) == 0 {
+		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil
+	}
+
+	// Use batch operations - only 2 CGO calls instead of 2*N!
+	txs, errTx := l.txStore.GetBatch(hashes)
+	txMetas, errTxMeta := l.txMetaStore.GetBatch(hashes)
+
+	if errTx != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transactions: %w", errTx)
+	}
+	if errTxMeta != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transaction metas: %w", errTxMeta)
+	}
+
+	return txs, txMetas, nil
+}
+
 var ErrInvalidNonce = errors.New("invalid nonce")
