@@ -157,6 +157,15 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	if largestProcessing > currentKnown {
 		currentKnown = largestProcessing
 	}
+
+	// Fallback: if both ready and processing are 0 (empty mempool), get nonce from ledger
+	if currentKnown == 0 && mp.ledger != nil {
+		account, err := mp.ledger.GetAccount(tx.Sender)
+		if err == nil && account != nil {
+			currentKnown = account.Nonce
+		}
+	}
+
 	isReady := tx.Nonce == currentKnown+1
 
 	if isReady {
@@ -308,7 +317,6 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 // PullBatch implements smart dependency resolution for zero-fee blockchain
 func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 	mp.mu.Lock()
-	defer mp.mu.Unlock()
 
 	batch := make([][]byte, 0, batchSize)
 	processedCount := 0
