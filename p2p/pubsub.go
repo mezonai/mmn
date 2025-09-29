@@ -274,6 +274,19 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 					})
 					return
 				}
+
+				for {
+					// Only sync at the time when the poh clock is synchronized with the slot of the finalized block
+					if ln.worldLatestSlot > 0 &&
+						!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
+						ln.worldLatestPohSlot > 0 &&
+						!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
+						ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold {
+						break
+					}
+					ln.RequestLatestSlotFromPeers(ctx)
+					time.Sleep(WaitWorldLatestSlotTimeInterval)
+				}
 				// Otherwise, world has progressed; request sync from latest.
 				ln.RequestBlockSyncFromLatest(ln.ctx)
 				return
