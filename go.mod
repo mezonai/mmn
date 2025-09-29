@@ -10,6 +10,7 @@ require (
 	github.com/creachadair/jrpc2 v1.3.2
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/holiman/uint256 v1.3.2
+	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/json-iterator/go v1.1.12
 	github.com/libp2p/go-libp2p v0.43.0
 	github.com/libp2p/go-libp2p-kad-dht v0.33.1

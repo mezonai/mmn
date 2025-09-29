@@ -3,9 +3,9 @@ package transaction
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
@@ -16,23 +16,34 @@ const defaultRemovalThreshold = 10 * time.Minute
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
 // Only tracks transactions after they are pulled from mempool until they are applied to ledger
 type TransactionTracker struct {
-	// processingTxs maps transaction hash to transaction
-	processingTxs sync.Map
+	// processingCache keeps transactions being processed with TTL to avoid leaks
+	processingCache *ttlcache.Cache[string, *Transaction]
 
 	// senderTxs maps sender address to list of transaction hashes
 	senderTxs sync.Map
 
+	// historyList is a blacklist to prevent re-tracking recently removed txs
 	historyList sync.Map
 
-	processingCount int64
-	senderCount     int64
-	stopCh          chan struct{}
+	stopCh chan struct{}
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
 func NewTransactionTracker() *TransactionTracker {
 	tt := &TransactionTracker{}
 	tt.stopCh = make(chan struct{})
+
+	// Initialize TTL cache for processing transactions
+	// Default TTL to auto-expire forgotten items; can be tuned if needed
+	processingTTL := 1 * time.Minute
+	tt.processingCache = ttlcache.New(
+		ttlcache.WithTTL[string, *Transaction](processingTTL),
+	)
+
+	exception.SafeGo("Start Processing Cache", func() {
+		tt.processingCache.Start()
+	})
+
 	exception.SafeGo("StartAppliedCleanup", func() {
 		tt.StartAppliedCleanup(10 * time.Minute)
 	})
@@ -46,11 +57,8 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 		t.historyList.Delete(txHash)
 		return
 	}
-	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
-	if !loadedProcessing {
-		atomic.AddInt64(&t.processingCount, 1)
-	}
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
+
+	t.processingCache.Set(txHash, tx, ttlcache.DefaultTTL)
 	// Update sender transaction list
 	var txHashes []string
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
@@ -59,23 +67,22 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	} else {
 		txHashes = []string{txHash}
 		t.senderTxs.Store(tx.Sender, txHashes)
-		atomic.AddInt64(&t.senderCount, 1)
 	}
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
+	t.updateTrackerMetrics()
 	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
 
 // RemoveTransaction removes a transaction from tracking
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
-	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
-	if !exists {
+	txItem := t.processingCache.Get(txHash)
+	if txItem == nil {
 		t.MarkRemoved(txHash)
 		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}
-	atomic.AddInt64(&t.processingCount, -1)
-	tx := txInterface.(*Transaction)
+	tx := txItem.Value()
+	t.processingCache.Delete(txHash)
 
 	// Update sender transaction list
 	if existing, ok := t.senderTxs.Load(tx.Sender); ok {
@@ -84,14 +91,12 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		if isRemoved {
 			if len(updatedHashes) == 0 {
 				t.senderTxs.Delete(tx.Sender)
-				atomic.AddInt64(&t.senderCount, -1)
 			} else {
 				t.senderTxs.Store(tx.Sender, updatedHashes)
 			}
 		}
 	}
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
-	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
+	t.updateTrackerMetrics()
 	logx.Info("TRACKER", fmt.Sprintf("Remove transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
@@ -111,8 +116,8 @@ func (t *TransactionTracker) GetLargestProcessingNonce(sender string) uint64 {
 
 	largestNonce := uint64(0)
 	for _, txHash := range txHashes {
-		if txInterface, exists := t.processingTxs.Load(txHash); exists {
-			tx := txInterface.(*Transaction)
+		if item := t.processingCache.Get(txHash); item != nil {
+			tx := item.Value()
 			if tx.Nonce > largestNonce {
 				largestNonce = tx.Nonce
 			}
@@ -169,4 +174,16 @@ func (t *TransactionTracker) cleanOldItemIsBlackList() {
 		}
 		return true
 	})
+}
+
+func (t *TransactionTracker) updateTrackerMetrics() {
+	monitoring.SetTrackerProcessingTx(int64(t.processingCache.Len()), "processing")
+
+	uniqueSenders := make(map[string]struct{})
+	t.processingCache.Range(func(itm *ttlcache.Item[string, *Transaction]) bool {
+		tx := itm.Value()
+		uniqueSenders[tx.Sender] = struct{}{}
+		return true
+	})
+	monitoring.SetTrackerProcessingTx(int64(len(uniqueSenders)), "senders")
 }
