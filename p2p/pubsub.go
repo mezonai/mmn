@@ -257,6 +257,28 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 
 		if localLatestSlot == 0 {
+			if ln.worldLatestSlot == 0 {
+				retryCount := 0
+				for retryCount < InitRequestLatestSlotMaxRetries {
+					if ln.worldLatestSlot > 0 {
+						break
+					}
+					ln.RequestLatestSlotFromPeers(ctx)
+					time.Sleep(WaitWorldLatestSlotTimeInterval)
+					retryCount++
+				}
+				if ln.worldLatestSlot == 0 {
+					ln.enableFullModeOnce.Do(func() {
+						logx.Info("NETWORK", "No world latest slot discovered; starting PoH/Validator for genesis")
+						ln.startCoreServices(ln.ctx, true)
+					})
+					return
+				}
+				// Otherwise, world has progressed; request sync from latest.
+				ln.RequestBlockSyncFromLatest(ln.ctx)
+				return
+			}
+
 			ln.enableFullModeOnce.Do(func() {
 				// Start PoH/Validator immediately without sync
 				logx.Info("NETWORK", "Starting PoH/Validator immediately")
