@@ -39,6 +39,8 @@ type Libp2pNetwork struct {
 	topicVotes             *pubsub.Topic
 	topicTxs               *pubsub.Topic
 	topicBlockSyncReq      *pubsub.Topic
+	topicMissingBlockReq   *pubsub.Topic
+	topicMissingBlockResp  *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
 
@@ -46,6 +48,7 @@ type Libp2pNetwork struct {
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
+	onMissingBlockReceived func(*block.BroadcastedBlock) error
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
@@ -89,6 +92,10 @@ type Libp2pNetwork struct {
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
 	blockOrderingMu    sync.RWMutex
+
+	blockQueueOrdering       map[uint64]*block.BroadcastedBlock
+	nextExpectedSlotForQueue uint64
+	blockQueueOrderingMu     sync.RWMutex
 
 	OnStartPoh       func()
 	OnStartValidator func()
@@ -184,6 +191,7 @@ type Callbacks struct {
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error
+	OnMissingBlockReceived func(*block.BroadcastedBlock) error
 }
 
 type CheckpointHashRequest struct {
@@ -219,4 +227,15 @@ type SnapshotAnnounce struct {
 }
 
 type SnapshotRequest struct {
+}
+
+type MissingBlockRequest struct {
+	RequestID string `json:"request_id"`
+	Slot      uint64 `json:"slot"`
+}
+
+type MissingBlockResponse struct {
+	RequestID string                  `json:"request_id"`
+	Slot      uint64                  `json:"slot"`
+	Block     *block.BroadcastedBlock `json:"block"`
 }

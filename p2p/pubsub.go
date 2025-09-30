@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/jsonx"
-	"github.com/mezonai/mmn/monitoring"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -27,6 +26,7 @@ import (
 func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
 	latestSlot := bs.GetLatestFinalizedSlot()
 	ln.SetNextExpectedSlot(latestSlot + 1)
+	ln.SetNextExpectedSlotForQueue(latestSlot + 1)
 
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
@@ -34,42 +34,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			// Verify PoH. If invalid, mark block and continue to process as a failed block
-			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
-			if err := blk.VerifyPoH(); err != nil {
-				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
-				blk.InvalidPoH = true
-				monitoring.IncreaseInvalidPohCount()
-			}
-
-			// Reset poh to sync poh clock with leader
-			if blk.Slot > bs.GetLatestStoreSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-				}
-			}
-
+			// Store block immediately before enqueueing for ordered application
 			if err := bs.AddBlockPending(blk); err != nil {
-				logx.Error("BLOCK", "Failed to store block: ", err)
-				return err
+				logx.Error("BLOCK", "Failed to store block on receipt:", err)
+				return nil
 			}
+			err := ln.AddBlockToQueueOrdering(blk, ld, mp, collector, latestSlot)
 
-			// Remove transactions in block from mempool and add tx tracker if node is follower
-			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-				mp.BlockCleanup(blk)
-			}
-
-			vote := &consensus.Vote{
-				Slot:      blk.Slot,
-				BlockHash: blk.Hash,
-				VoterID:   self.PubKey,
-			}
-			vote.Sign(privKey)
-
-			// verify passed broadcast vote
-			ln.BroadcastVote(context.Background(), vote)
-			return nil
+			return err
 		},
 		OnEmptyBlockReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("EMPTY_BLOCK", "Processing", len(blocks), "empty blocks")
@@ -93,25 +65,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
 			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-			committed, needApply, err := collector.AddVote(vote)
-			if err != nil {
-				logx.Error("VOTE", "Failed to add vote: ", err)
-				return err
-			}
 
-			// not leader => maybe vote come before block received => if dont have block just return
-			if bs.Block(vote.Slot) == nil {
-				logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
-				return nil
-			}
-			if committed && needApply {
-				logx.Info("VOTE", "Committed vote from OnVote Received: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-				err := ln.applyDataToBlock(vote, bs, ld, mp)
-				if err != nil {
-					logx.Error("VOTE", "Failed to apply data to block: ", err)
-					return err
-				}
-			}
+			ln.ProcessVote(bs, ld, mp, vote, collector)
 
 			return nil
 		},
@@ -169,6 +124,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			return nil
 		},
+		OnMissingBlockReceived: func(blk *block.BroadcastedBlock) error {
+			err := ln.AddBlockToQueueOrdering(blk, ld, mp, collector, latestSlot)
+			return err
+		},
 	})
 
 	// clean sync request expireds every 1 minute
@@ -215,6 +174,29 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 				exception.SafeGoWithPanic("handleBlockSyncRequestTopic", func() {
 					ln.handleBlockSyncRequestTopic(ctx, sub)
 				})
+			}
+
+			// Missing single block sync topics
+			if ln.topicMissingBlockReq == nil {
+				if topic, err := ln.pubsub.Join(MissingBlockRequestTopic); err == nil {
+					ln.topicMissingBlockReq = topic
+					if sub, err := ln.topicMissingBlockReq.Subscribe(); err == nil {
+						exception.SafeGoWithPanic("HandleMissingBlockRequestTopic", func() {
+							ln.HandleMissingBlockRequestTopic(ctx, sub)
+						})
+					}
+				}
+			}
+
+			if ln.topicMissingBlockResp == nil {
+				if topic, err := ln.pubsub.Join(MissingBlockResponseTopic); err == nil {
+					ln.topicMissingBlockResp = topic
+					if sub, err := ln.topicMissingBlockResp.Subscribe(); err == nil {
+						exception.SafeGoWithPanic("HandleMissingBlockResponseTopic", func() {
+							ln.HandleMissingBlockResponseTopic(ctx, sub)
+						})
+					}
+				}
 			}
 		}
 	}
@@ -493,5 +475,8 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	}
 	if cbs.OnSyncResponseReceived != nil {
 		ln.onSyncResponseReceived = cbs.OnSyncResponseReceived
+	}
+	if cbs.OnMissingBlockReceived != nil {
+		ln.onMissingBlockReceived = cbs.OnMissingBlockReceived
 	}
 }

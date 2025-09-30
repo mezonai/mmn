@@ -2,15 +2,21 @@ package p2p
 
 import (
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/mempool"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -31,6 +37,10 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 					return
 				}
 				logx.Warn("NETWORK:BLOCK", "Next error:", err)
+				continue
+			}
+
+			if msg.ReceivedFrom == ln.host.ID() {
 				continue
 			}
 
@@ -353,27 +363,6 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed sync for peer:", targetPeer.String(), "total blocks sent:", totalBlocksSent)
 }
-
-func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {
-	stream, err := ln.host.NewStream(context.Background(), targetPeer, RequestBlockSyncStream)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-	defer stream.Close()
-
-	data, err := jsonx.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	_, err = stream.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to write request: %w", err)
-	}
-
-	return nil
-}
-
 func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.Subscription) {
 	logx.Info("NETWORK:LATEST SLOT", "Starting latest slot topic handler")
 
@@ -473,4 +462,119 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 		}
 	}
 	return nil
+}
+
+func (ln *Libp2pNetwork) ProcessBlock(bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool, blk *block.BroadcastedBlock, collector *consensus.Collector, privKey ed25519.PrivateKey) error {
+	// Verify PoH. If invalid, mark block and continue to process as a failed block
+	logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
+	if err := blk.VerifyPoH(); err != nil {
+		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+		blk.InvalidPoH = true
+		monitoring.IncreaseInvalidPohCount()
+	}
+
+	// Reset poh to sync poh clock with leader
+	if blk.Slot > bs.GetLatestStoreSlot() {
+		logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+		if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+			logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+		}
+	}
+
+	if err := bs.AddBlockPending(blk); err != nil {
+		logx.Error("BLOCK", "Failed to store block: ", err)
+		return err
+	}
+
+	if ln.selfPubKey != blk.LeaderID && !blk.InvalidPoH {
+		mp.BlockCleanup(blk)
+	}
+
+	vote := &consensus.Vote{
+		Slot:      blk.Slot,
+		BlockHash: blk.Hash,
+		VoterID:   ln.selfPubKey,
+	}
+	vote.Sign(privKey)
+
+	// verify passed broadcast vote
+	ln.ProcessVote(bs, ld, mp, vote, collector)
+	ln.BroadcastVote(context.Background(), vote)
+	return nil
+}
+
+func (ln *Libp2pNetwork) HandleMissingBlockRequestTopic(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				continue
+			}
+			if msg.ReceivedFrom == ln.host.ID() {
+				continue
+			}
+			var req MissingBlockRequest
+			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
+				logx.Error("NETWORK:MISSING", "Failed to unmarshal missing block request:", err)
+				continue
+			}
+			// fetch block
+			blk := ln.blockStore.Block(req.Slot)
+			if blk == nil {
+				continue
+			}
+
+			bcast := ln.convertBlockToBroadcastedBlock(blk)
+			resp := MissingBlockResponse{RequestID: req.RequestID, Slot: req.Slot, Block: bcast}
+			data, err := jsonx.Marshal(resp)
+			if err != nil {
+				logx.Error("NETWORK:MISSING", "marshal response error:", err)
+				continue
+			}
+			if ln.topicMissingBlockResp != nil {
+				if err := ln.topicMissingBlockResp.Publish(ctx, data); err != nil {
+					logx.Error("NETWORK:MISSING", "publish response error:", err)
+				}
+			}
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) HandleMissingBlockResponseTopic(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				continue
+			}
+			if msg.ReceivedFrom == ln.host.ID() {
+				continue
+			}
+			var resp MissingBlockResponse
+			if err := jsonx.Unmarshal(msg.Data, &resp); err != nil {
+				logx.Error("NETWORK:MISSING", "Failed to unmarshal missing block response:", err)
+				continue
+			}
+			if resp.Block == nil {
+				continue
+			}
+			if ln.onMissingBlockReceived != nil {
+				if err := ln.onMissingBlockReceived(resp.Block); err != nil {
+					logx.Error("NETWORK:MISSING", "onMissingBlockReceived error:", err)
+				}
+			}
+		}
+	}
 }

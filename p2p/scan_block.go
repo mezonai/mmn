@@ -1,142 +1,12 @@
 package p2p
 
 import (
-	"fmt"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 )
-
-func (ln *Libp2pNetwork) scanMissingBlocks(bs store.BlockStore) {
-	latest := bs.GetLatestFinalizedSlot()
-	if latest < 1 {
-		logx.Info("NETWORK:SCAN", "No blocks in store, skipping scan")
-		return
-	}
-
-	ln.scanMu.Lock()
-	lastScannedSlot := ln.lastScannedSlot
-	ln.scanMu.Unlock()
-
-	var scanStart uint64
-	if lastScannedSlot > 0 {
-		scanStart = lastScannedSlot + 1
-	} else {
-		scanStart = 0
-	}
-
-	scanEnd := latest
-	if scanEnd-scanStart > MaxcheckpointScanBlocksRange {
-		scanEnd = scanStart + MaxcheckpointScanBlocksRange
-	}
-
-	logx.Info("NETWORK:SCAN", "Scanning for missing blocks from slot ", scanStart, " to ", scanEnd, " (range: ", scanEnd-scanStart+1, " slots)")
-
-	var missingSlots []uint64
-	var totalChecked int
-
-	for slot := scanStart; slot <= scanEnd; slot++ {
-		totalChecked++
-
-		// Skip if block already exists
-		if bs.Block(slot) != nil {
-			continue
-		}
-
-		// Skip if already tracked as missing
-		if ln.isSlotAlreadyTracked(slot) {
-			continue
-		}
-
-		// Skip if already requested recently
-		if ln.isSlotRecentlyRequested(slot) {
-			logx.Debug("NETWORK:SCAN", "Slot", slot, "recently requested, skipping")
-			continue
-		}
-
-		missingSlots = append(missingSlots, slot)
-
-		// Track missing block
-		ln.trackMissingBlock(slot)
-	}
-
-	// Update last scanned position
-	ln.scanMu.Lock()
-	ln.lastScannedSlot = scanEnd
-	ln.scanMu.Unlock()
-
-	// Enhanced logging
-	ln.missingBlocksMu.RLock()
-	trackedMissing := len(ln.missingBlocksTracker)
-	ln.missingBlocksMu.RUnlock()
-	logx.Info("NETWORK:SCAN", "Scan completed: checked", totalChecked, " slots, found ", len(missingSlots), " new missing blocks; tracked total:", trackedMissing)
-
-	if len(missingSlots) > 0 {
-		ln.requestMissingBlocks(missingSlots)
-	}
-
-	ln.checkRetryMissingBlocks(bs)
-}
-
-func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
-	if len(missingSlots) == 0 {
-		return
-	}
-
-	if len(ln.host.Network().Peers()) == 0 {
-		return
-	}
-
-	missingBatchSize := int(SyncBlocksBatchSize)
-
-	batchCount := 0
-	for i := 0; i < len(missingSlots); i += missingBatchSize {
-		batchCount++
-		end := i + missingBatchSize
-		if end > len(missingSlots) {
-			end = len(missingSlots)
-		}
-
-		batch := missingSlots[i:end]
-		fromSlot := batch[0]
-		toSlot := batch[len(batch)-1]
-
-		requestID := fmt.Sprintf("missing_blocks_%d_%d", fromSlot, toSlot)
-		req := SyncRequest{
-			RequestID: requestID,
-			FromSlot:  fromSlot,
-			ToSlot:    toSlot,
-		}
-
-		for _, slot := range batch {
-			ln.markSlotAsRequested(slot)
-		}
-
-		// Filter out bootstrap peers
-		allPeers := ln.host.Network().Peers()
-		var compatiblePeers []peer.ID
-		for _, p := range allPeers {
-			if _, isBootstrap := ln.bootstrapPeerIDs[p]; isBootstrap {
-				continue
-			}
-			compatiblePeers = append(compatiblePeers, p)
-		}
-		for _, targetPeer := range compatiblePeers {
-			exception.SafeGoWithPanic("sendSyncRequestToPeer", func() {
-				func(peer peer.ID) {
-					if err := ln.sendSyncRequestToPeer(req, peer); err != nil {
-						logx.Warn("NETWORK:SCAN", "Request scan fail to peer: ", peer.String(), " : ", err)
-					}
-				}(targetPeer)
-			})
-		}
-	}
-
-	logx.Info("NETWORK:SCAN", "Completed processing all ")
-}
 
 func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs store.BlockStore, slot uint64) bool {
 	latest := bs.GetLatestFinalizedSlot()
@@ -159,7 +29,8 @@ func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs store.BlockStore, slot uint64)
 	return false
 }
 
-func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot uint64) {
+func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot uint64, isCheckNext bool) {
+	logx.Debug("NETWORK:SCAN", "check around slot =", slot)
 	if !ln.shouldCheckAroundSlot(bs, slot) {
 		logx.Debug("NETWORK:SCAN", "Skipping check around slot ", slot, " not needed")
 		return
@@ -167,137 +38,87 @@ func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot u
 
 	latest := bs.GetLatestFinalizedSlot()
 
-	startSlot := uint64(0)
+	// Check previous slot (slot-1)
 	if slot > 0 {
-		startSlot = slot - 1
-	}
-
-	endSlot := slot + 1
-	if endSlot > latest {
-		endSlot = latest
-	}
-
-	var missingSlots []uint64
-	for s := startSlot; s <= endSlot; s++ {
-		if bs.Block(s) != nil {
-			continue
-		}
-
-		// Skip if already tracked as missing
-		if ln.isSlotAlreadyTracked(s) {
-			continue
-		}
-
-		// Skip if already requested recently
-		if ln.isSlotRecentlyRequested(s) {
-			continue
-		}
-
-		missingSlots = append(missingSlots, s)
-	}
-
-	if len(missingSlots) > 0 {
-		peers := ln.host.Network().Peers()
-		if len(peers) > 0 {
-			ln.requestMissingBlocks(missingSlots)
-		}
-	}
-}
-
-func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
-	latest := bs.GetLatestFinalizedSlot()
-	if latest < 1 {
-		return false
-	}
-
-	ln.scanMu.RLock()
-	lastScanned := ln.lastScannedSlot
-	ln.scanMu.RUnlock()
-
-	if lastScanned == 0 {
-		return true
-	}
-
-	if latest > lastScanned {
-		return true
-	}
-
-	return false
-}
-
-func (ln *Libp2pNetwork) startContinuousGapDetection(bs store.BlockStore) {
-	time.Sleep(15 * time.Second)
-
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	logx.Info("NETWORK:SCAN", "Starting continuous gap detection")
-
-	for {
-		select {
-		case <-ticker.C:
-			if len(ln.host.Network().Peers()) > 0 && ln.shouldScanForMissingBlocks(bs) {
-				ln.scanMissingBlocks(bs)
+		prev := slot - 1
+		if prev <= latest && bs.Block(prev) == nil && !ln.isSlotAlreadyTracked(prev) && !ln.isSlotRecentlyRequested(prev) {
+			if ln.topicMissingBlockReq != nil {
+				logx.Debug("NETWORK:SCAN", "request missing slot =", slot)
+				ln.requestSingleMissingBlock(prev)
 			}
-		case <-ln.ctx.Done():
-			return
 		}
+	}
+
+	// Check next slot (slot+1)
+	if isCheckNext {
+		next := slot + 1
+		if next <= latest && bs.Block(next) == nil && !ln.isSlotAlreadyTracked(next) && !ln.isSlotRecentlyRequested(next) {
+			if ln.topicMissingBlockReq != nil {
+				logx.Debug("NETWORK:SCAN", "request missing slot =", slot)
+				ln.requestSingleMissingBlock(next)
+			}
+		}
+	}
+
+}
+
+func (ln *Libp2pNetwork) requestSingleMissingBlock(slot uint64) {
+	// mark before request to avoid duplicate spamming
+	ln.markSlotAsRequested(slot)
+	req := MissingBlockRequest{
+		RequestID: GenerateSyncRequestID(),
+		Slot:      slot,
+	}
+	data, err := jsonx.Marshal(req)
+	if err != nil {
+		logx.Warn("NETWORK:MISSING", "marshal request error:", err)
+		return
+	}
+	if err := ln.topicMissingBlockReq.Publish(ln.ctx, data); err != nil {
+		logx.Warn("NETWORK:MISSING", "publish request error:", err)
 	}
 }
 
-func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs store.BlockStore) {
+func (ln *Libp2pNetwork) incrementMissingRetry(slot uint64) bool {
 	ln.missingBlocksMu.Lock()
 	defer ln.missingBlocksMu.Unlock()
 
-	now := time.Now()
-	var retrySlots []uint64
-
-	for slot, info := range ln.missingBlocksTracker {
-		// Skip if block was found
-		if bs.Block(slot) != nil {
-			delete(ln.missingBlocksTracker, slot)
-			continue
+	info, exists := ln.missingBlocksTracker[slot]
+	if !exists {
+		ln.missingBlocksTracker[slot] = &MissingBlockInfo{
+			Slot:       slot,
+			FirstSeen:  time.Now(),
+			LastRetry:  time.Now(),
+			RetryCount: 0,
+			MaxRetries: MaxMissingRetry,
 		}
-
-		// Check if it's time to retry
-		if info.RetryCount < info.MaxRetries &&
-			(info.LastRetry.IsZero() || now.Sub(info.LastRetry) > 30*time.Second) {
-			retrySlots = append(retrySlots, slot)
-			info.LastRetry = now
-			info.RetryCount++
-		}
-
-		// Remove if max retries exceeded
-		if info.RetryCount >= info.MaxRetries {
-			delete(ln.missingBlocksTracker, slot)
-		}
+		return true
 	}
 
-	// Request retry blocks
-	if len(retrySlots) > 0 {
-		go ln.requestMissingBlocks(retrySlots)
+	if ln.blockStore.Block(slot) != nil {
+		delete(ln.missingBlocksTracker, slot)
+		return false
 	}
+
+	info.RetryCount++
+	info.LastRetry = time.Now()
+
+	logx.Warn("NETWORK:SCAN", "requestmissing retry for slot =", slot, "retry count =", info.RetryCount)
+
+	if info.RetryCount >= info.MaxRetries {
+		if slot == ln.nextExpectedSlotForQueue {
+			ln.nextExpectedSlotForQueue = slot + 1
+		}
+		delete(ln.missingBlocksTracker, slot)
+		return false
+	}
+	return true
 }
 
 func (ln *Libp2pNetwork) removeFromMissingTracker(slot uint64) {
 	ln.missingBlocksMu.Lock()
 	defer ln.missingBlocksMu.Unlock()
 	delete(ln.missingBlocksTracker, slot)
-}
-
-func (ln *Libp2pNetwork) trackMissingBlock(slot uint64) {
-	ln.missingBlocksMu.Lock()
-	defer ln.missingBlocksMu.Unlock()
-
-	if _, exists := ln.missingBlocksTracker[slot]; !exists {
-		ln.missingBlocksTracker[slot] = &MissingBlockInfo{
-			Slot:       slot,
-			FirstSeen:  time.Now(),
-			LastRetry:  time.Time{},
-			RetryCount: 0,
-			MaxRetries: 1,
-		}
-	}
 }
 
 func (ln *Libp2pNetwork) isSlotAlreadyTracked(slot uint64) bool {

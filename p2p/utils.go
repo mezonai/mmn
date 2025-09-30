@@ -80,11 +80,21 @@ func (ln *Libp2pNetwork) CleanupExpiredRequests() {
 	ln.syncTrackerMu.Lock()
 	defer ln.syncTrackerMu.Unlock()
 
-	cutoff := time.Now().Add(-5 * time.Minute)
+	cutoff := time.Now().Add(-30 * time.Minute)
 
 	for requestID, tracker := range ln.syncRequests {
 		if tracker.StartTime.Before(cutoff) {
-			tracker.CloseRequest()
+			// If the tracker is still active, only close unused (non-active) streams
+			if tracker.IsActive {
+				// Close all other peer streams but keep the active one
+				tracker.CloseAllOtherPeers()
+				// Bump StartTime to avoid immediate re-cleanup while the active stream continues
+				tracker.StartTime = time.Now()
+				continue
+			}
+
+			// If not active, close all streams and remove the tracker
+			tracker.CloseAllPeers()
 			delete(ln.syncRequests, requestID)
 		}
 	}
