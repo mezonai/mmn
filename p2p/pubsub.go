@@ -267,16 +267,13 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 				}
 
 				ln.waitUntilSyncWindowAligned(ctx)
-				// Otherwise, world has progressed; request sync from latest.
 				ln.RequestBlockSyncFromLatest(ln.ctx)
 				return
 			}
 
-			ln.enableFullModeOnce.Do(func() {
-				// Start PoH/Validator immediately without sync
-				logx.Info("NETWORK", "Starting PoH/Validator immediately")
-				ln.startCoreServices(ln.ctx, true)
-			})
+			ln.waitUntilSyncWindowAligned(ctx)
+			ln.RequestBlockSyncFromLatest(ln.ctx)
+			return
 		}
 
 		ln.waitForWorldPohSlot()
