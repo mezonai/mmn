@@ -257,68 +257,116 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 
 		if localLatestSlot == 0 {
-			ln.enableFullModeOnce.Do(func() {
-				// Start PoH/Validator immediately without sync
-				logx.Info("NETWORK", "Starting PoH/Validator immediately")
-				ln.startCoreServices(ln.ctx, true)
-			})
-		} else {
-			for {
-				// Handle restart all nodes, check poh slot first
-				if ln.worldLatestPohSlot > 0 {
-					if localLatestSlot >= ln.worldLatestPohSlot {
-						logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
-						var seed [32]byte
-						if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
-							seed = blk.LastEntryHash()
-						}
-						if ln.OnForceResetPOH != nil {
-							ln.OnForceResetPOH(seed, localLatestSlot)
-						}
+			if ln.worldLatestSlot == 0 {
+				if !ln.ensureWorldLatestSlotInitialized(ctx) {
+					ln.enableFullModeOnce.Do(func() {
+						logx.Info("NETWORK", "No world latest slot discovered; starting PoH/Validator for genesis")
 						ln.startCoreServices(ln.ctx, true)
-						return
-					}
-					break
+					})
+					return
 				}
-				time.Sleep(WaitWorldLatestSlotTimeInterval)
+
+				ln.waitUntilSyncWindowAligned(ctx)
+				ln.RequestBlockSyncFromLatest(ln.ctx)
+				return
 			}
 
-			// Handle node crash, should catchup to world latest slot
-			for {
-				// Only sync at the time when the poh clock is synchronized with the slot of the finalized block
-				if ln.worldLatestSlot > 0 &&
-					!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
-					ln.worldLatestPohSlot > 0 &&
-					!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
-					ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold {
-					break
+			ln.waitUntilSyncWindowAligned(ctx)
+			ln.RequestBlockSyncFromLatest(ln.ctx)
+			return
+		}
+
+		ln.waitForWorldPohSlot()
+		if ln.handlePohResetIfNeeded(localLatestSlot) {
+			return
+		}
+
+		// Handle node crash, should catchup to world latest slot
+		ln.waitUntilSyncWindowAligned(ctx)
+		if localLatestSlot < ln.worldLatestSlot {
+			logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
+			ln.RequestBlockSyncFromLatest(ln.ctx)
+		} else {
+			// No sync required; start services based on local latest state
+			logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
+			ln.enableFullModeOnce.Do(func() {
+				latest := ln.blockStore.GetLatestFinalizedSlot()
+				var seed [32]byte
+				if latest > 0 {
+					if blk := ln.blockStore.Block(latest); blk != nil {
+						seed = blk.LastEntryHash()
+					}
 				}
-				ln.RequestLatestSlotFromPeers(ctx)
-				time.Sleep(WaitWorldLatestSlotTimeInterval)
-			}
-			if localLatestSlot < ln.worldLatestSlot {
-				logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
-				ln.RequestBlockSyncFromLatest(ln.ctx)
-			} else {
-				// No sync required; start services based on local latest state
-				logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
-				ln.enableFullModeOnce.Do(func() {
-					latest := ln.blockStore.GetLatestFinalizedSlot()
-					var seed [32]byte
-					if latest > 0 {
-						if blk := ln.blockStore.Block(latest); blk != nil {
-							seed = blk.LastEntryHash()
-						}
-					}
-					if ln.OnForceResetPOH != nil {
-						ln.OnForceResetPOH(seed, latest)
-					}
-					ln.startCoreServices(ln.ctx, true)
-				})
-			}
+				if ln.OnForceResetPOH != nil {
+					ln.OnForceResetPOH(seed, latest)
+				}
+				ln.startCoreServices(ln.ctx, true)
+			})
 		}
 	})
 
+}
+
+func (ln *Libp2pNetwork) ensureWorldLatestSlotInitialized(ctx context.Context) bool {
+	if ln.worldLatestSlot > 0 {
+		return true
+	}
+	retryCount := 0
+	for retryCount < InitRequestLatestSlotMaxRetries {
+		if ln.worldLatestSlot > 0 {
+			break
+		}
+		ln.RequestLatestSlotFromPeers(ctx)
+		time.Sleep(WaitWorldLatestSlotTimeInterval)
+		retryCount++
+	}
+	return ln.worldLatestSlot > 0
+}
+
+// isSyncWindowAligned checks if PoH slot and finalized slot are aligned sufficiently to start syncing
+func (ln *Libp2pNetwork) isSyncWindowAligned() bool {
+	return ln.worldLatestSlot > 0 &&
+		!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
+		ln.worldLatestPohSlot > 0 &&
+		!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
+		ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold
+}
+
+func (ln *Libp2pNetwork) waitUntilSyncWindowAligned(ctx context.Context) {
+	for {
+		if ln.isSyncWindowAligned() {
+			break
+		}
+		ln.RequestLatestSlotFromPeers(ctx)
+		time.Sleep(WaitWorldLatestSlotTimeInterval)
+	}
+}
+
+func (ln *Libp2pNetwork) waitForWorldPohSlot() {
+	for {
+		if ln.worldLatestPohSlot > 0 {
+			break
+		}
+		time.Sleep(WaitWorldLatestSlotTimeInterval)
+	}
+}
+
+func (ln *Libp2pNetwork) handlePohResetIfNeeded(localLatestSlot uint64) bool {
+	if ln.worldLatestPohSlot > 0 {
+		if localLatestSlot >= ln.worldLatestPohSlot {
+			logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
+			var seed [32]byte
+			if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
+				seed = blk.LastEntryHash()
+			}
+			if ln.OnForceResetPOH != nil {
+				ln.OnForceResetPOH(seed, localLatestSlot)
+			}
+			ln.startCoreServices(ln.ctx, true)
+			return true
+		}
+	}
+	return false
 }
 
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
