@@ -58,10 +58,7 @@ func (ln *Libp2pNetwork) processConsecutiveBlocksInQueue(ledger *ledger.Ledger, 
 			continue
 		} else {
 			if ln.topicMissingBlockReq != nil {
-				isMaxRetry := ln.incrementMissingRetry(nextSlot)
-				if !isMaxRetry {
-					ln.requestSingleMissingBlock(nextSlot)
-				}
+				ln.retryMissingBlockAsync(nextSlot, MaxMissingRetry, MissingRetryInterval)
 			}
 			break
 		}
@@ -87,7 +84,9 @@ func (ln *Libp2pNetwork) processBlockInQueue(blk *block.BroadcastedBlock, ledger
 	if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
 		return err
 	}
+	logx.Debug("NETWORK:SCAN", "APPLY TO LEDGER BLOCK at slot =", blk.Slot)
 	ln.BroadcastVote(ln.ctx, vote)
+
 	if blk.Slot >= latestSlot {
 		ln.checkForMissingBlocksAround(ln.blockStore, blk.Slot, false)
 	} else {
@@ -98,6 +97,13 @@ func (ln *Libp2pNetwork) processBlockInQueue(blk *block.BroadcastedBlock, ledger
 
 func (ln *Libp2pNetwork) getNextExpectedSlotForQueue() uint64 {
 	return ln.nextExpectedSlotForQueue
+}
+
+func (ln *Libp2pNetwork) hasBlockInOrderingQueue(slot uint64) bool {
+	ln.blockQueueOrderingMu.RLock()
+	defer ln.blockQueueOrderingMu.RUnlock()
+	_, exists := ln.blockQueueOrdering[slot]
+	return exists
 }
 
 func (ln *Libp2pNetwork) SetNextExpectedSlotForQueue(slot uint64) {

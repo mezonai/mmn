@@ -3,6 +3,7 @@ package p2p
 import (
 	"time"
 
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
@@ -103,7 +104,7 @@ func (ln *Libp2pNetwork) incrementMissingRetry(slot uint64) bool {
 	info.RetryCount++
 	info.LastRetry = time.Now()
 
-	logx.Warn("NETWORK:SCAN", "requestmissing retry for slot =", slot, "retry count =", info.RetryCount)
+	logx.Warn("NETWORK:SCAN", "request missing retry for slot =", slot, "retry count =", info.RetryCount)
 
 	if info.RetryCount >= info.MaxRetries {
 		if slot == ln.nextExpectedSlotForQueue {
@@ -166,4 +167,26 @@ func (ln *Libp2pNetwork) cleanupOldMissingBlocksTracker() {
 	for _, slot := range toRemove {
 		delete(ln.missingBlocksTracker, slot)
 	}
+}
+
+func (ln *Libp2pNetwork) retryMissingBlockAsync(slot uint64, attempts int, interval time.Duration) {
+	exception.SafeGoWithPanic("RetryMissingBlockAsync", func() {
+		for i := 0; i < attempts; i++ {
+			if ln.blockStore.Block(slot) != nil || ln.hasBlockInOrderingQueue(slot) {
+				ln.removeFromMissingTracker(slot)
+				return
+			}
+
+			// incrementMissingRetry returns true when we should continue retrying
+			canRetry := ln.incrementMissingRetry(slot)
+			if !canRetry {
+				return
+			}
+			if ln.topicMissingBlockReq != nil {
+				ln.requestSingleMissingBlock(slot)
+			}
+
+			time.Sleep(interval)
+		}
+	})
 }

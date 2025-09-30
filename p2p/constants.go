@@ -36,4 +36,6 @@ var (
 	LatestSlotSyncGapThreshold      uint64        = 1
 	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
 	MaxMissingRetry                 int           = 2
+	InitRequestLatestSlotMaxRetries int           = 3
+	MissingRetryInterval            time.Duration = 50 * time.Millisecond
 )

@@ -2,21 +2,15 @@ package p2p
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/jsonx"
-	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/mempool"
-	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/poh"
-	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -449,6 +443,16 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
 
+	if ln.topicBlocks != nil {
+		meshPeers := ln.topicBlocks.ListPeers()
+		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
+		for i, peer := range meshPeers {
+			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+		}
+	} else {
+		logx.Error("BLOCK", "Block topic is nil")
+	}
+
 	data, err := jsonx.Marshal(blk)
 	if err != nil {
 		logx.Error("BLOCK", "Failed to marshal block: ", err)
@@ -461,45 +465,6 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 			logx.Error("BLOCK", "Failed to publish block:", err)
 		}
 	}
-	return nil
-}
-
-func (ln *Libp2pNetwork) ProcessBlock(bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool, blk *block.BroadcastedBlock, collector *consensus.Collector, privKey ed25519.PrivateKey) error {
-	// Verify PoH. If invalid, mark block and continue to process as a failed block
-	logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
-	if err := blk.VerifyPoH(); err != nil {
-		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
-		blk.InvalidPoH = true
-		monitoring.IncreaseInvalidPohCount()
-	}
-
-	// Reset poh to sync poh clock with leader
-	if blk.Slot > bs.GetLatestStoreSlot() {
-		logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
-		if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
-			logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
-		}
-	}
-
-	if err := bs.AddBlockPending(blk); err != nil {
-		logx.Error("BLOCK", "Failed to store block: ", err)
-		return err
-	}
-
-	if ln.selfPubKey != blk.LeaderID && !blk.InvalidPoH {
-		mp.BlockCleanup(blk)
-	}
-
-	vote := &consensus.Vote{
-		Slot:      blk.Slot,
-		BlockHash: blk.Hash,
-		VoterID:   ln.selfPubKey,
-	}
-	vote.Sign(privKey)
-
-	// verify passed broadcast vote
-	ln.ProcessVote(bs, ld, mp, vote, collector)
-	ln.BroadcastVote(context.Background(), vote)
 	return nil
 }
 
