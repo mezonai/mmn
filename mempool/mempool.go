@@ -45,6 +45,9 @@ type Mempool struct {
 	eventRouter *events.EventRouter                       // Event router for transaction status updates
 	txTracker   interfaces.TransactionTrackerInterface    // Transaction state tracker
 	zkVerify    *zkverify.ZkVerify                        // Zk verify for zk transactions
+
+	// Performance optimization: index map to avoid O(n) scans in ready queue
+	readyQueueIndex map[string]map[uint64]bool // sender -> nonce -> exists (for O(1) duplicate check)
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter,
@@ -57,11 +60,12 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		ledger:      ledger,
 
 		// Initialize zero-fee optimization fields
-		pendingTxs:  make(map[string]map[uint64]*PendingTransaction),
-		readyQueue:  make([]*transaction.Transaction, 0),
-		eventRouter: eventRouter,
-		txTracker:   txTracker,
-		zkVerify:    zkVerify,
+		pendingTxs:      make(map[string]map[uint64]*PendingTransaction),
+		readyQueue:      make([]*transaction.Transaction, 0),
+		readyQueueIndex: make(map[string]map[uint64]bool),
+		eventRouter:     eventRouter,
+		txTracker:       txTracker,
+		zkVerify:        zkVerify,
 	}
 }
 
@@ -171,6 +175,11 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 	if isReady {
 		// Add to ready queue for immediate processing
 		mp.readyQueue = append(mp.readyQueue, tx)
+		// Update index for O(1) lookup
+		if mp.readyQueueIndex[tx.Sender] == nil {
+			mp.readyQueueIndex[tx.Sender] = make(map[uint64]bool)
+		}
+		mp.readyQueueIndex[tx.Sender][tx.Nonce] = true
 		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
 			txHash, tx.Sender[:8], tx.Nonce, currentKnown+1))
 	} else {
@@ -299,9 +308,9 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		}
 	}
 
-	// 8. Check for duplicate nonce in ready queue
-	for _, readyTx := range mp.readyQueue {
-		if readyTx.Sender == tx.Sender && readyTx.Nonce == tx.Nonce {
+	// 8. Check for duplicate nonce in ready queue - O(1) with index
+	if senderNonces, exists := mp.readyQueueIndex[tx.Sender]; exists {
+		if senderNonces[tx.Nonce] {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
 				tx.Nonce, tx.Sender[:8])
@@ -372,6 +381,11 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 			if pendingTx, hasNonce := pendingMap[expectedNonce]; hasNonce {
 				// Move transaction from pending to ready queue
 				mp.readyQueue = append(mp.readyQueue, pendingTx.Tx)
+				// Update index
+				if mp.readyQueueIndex[tx.Sender] == nil {
+					mp.readyQueueIndex[tx.Sender] = make(map[uint64]bool)
+				}
+				mp.readyQueueIndex[tx.Sender][expectedNonce] = true
 				delete(pendingMap, expectedNonce)
 
 				// Cleanup empty pending maps
@@ -424,6 +438,13 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transactio
 	for len(mp.readyQueue) > 0 && len(readyTxs) < maxCount {
 		tx := mp.readyQueue[0]
 		mp.readyQueue = mp.readyQueue[1:]
+		// Remove from index
+		if senderNonces, exists := mp.readyQueueIndex[tx.Sender]; exists {
+			delete(senderNonces, tx.Nonce)
+			if len(senderNonces) == 0 {
+				delete(mp.readyQueueIndex, tx.Sender)
+			}
+		}
 		readyTxs = append(readyTxs, tx)
 	}
 
@@ -454,14 +475,13 @@ func (mp *Mempool) findReadyTransactions(maxCount int) []*transaction.Transactio
 }
 
 // removeTransaction removes a transaction from all tracking structures
+// NOTE: This is O(n) for txOrder removal. For batch removals, use removeTransactionBatch instead.
 func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 	txHash := tx.Hash()
-
-	// Remove from txsBuf
 	delete(mp.txsBuf, txHash)
 	monitoring.SetMempoolSize(mp.Size())
 
-	// Remove from txOrder
+	// O(n) linear search - prefer batch removal when removing multiple txs
 	for i, hash := range mp.txOrder {
 		if hash == txHash {
 			mp.txOrder = append(mp.txOrder[:i], mp.txOrder[i+1:]...)
@@ -470,16 +490,44 @@ func (mp *Mempool) removeTransaction(tx *transaction.Transaction) {
 	}
 }
 
+// removeTransactionBatch removes multiple transactions efficiently using a hash set
+// This is O(n) instead of O(n*m) where n=txOrder length, m=number of txs to remove
+func (mp *Mempool) removeTransactionBatch(txs []*transaction.Transaction) {
+	if len(txs) == 0 {
+		return
+	}
+
+	// Build hash set for O(1) lookup
+	txHashSet := make(map[string]bool, len(txs))
+	for _, tx := range txs {
+		txHash := tx.Hash()
+		txHashSet[txHash] = true
+		delete(mp.txsBuf, txHash)
+	}
+
+	// Single pass filter - O(n) instead of O(n*m)
+	newTxOrder := make([]string, 0, len(mp.txOrder))
+	for _, hash := range mp.txOrder {
+		if !txHashSet[hash] {
+			newTxOrder = append(newTxOrder, hash)
+		}
+	}
+	mp.txOrder = newTxOrder
+	monitoring.SetMempoolSize(mp.Size())
+}
+
 // cleanupStaleTransactions removes transactions that have been pending too long
 func (mp *Mempool) cleanupStaleTransactions() {
 	now := time.Now()
 	staleThreshold := now.Add(-StaleTimeout)
 
+	// Collect all stale transactions for batch removal
+	staleTxs := make([]*transaction.Transaction, 0)
+
 	for sender, pendingMap := range mp.pendingTxs {
 		for nonce, pendingTx := range pendingMap {
 			if pendingTx.Timestamp.Before(staleThreshold) {
-				// Remove stale transaction
-				mp.removeTransaction(pendingTx.Tx)
+				staleTxs = append(staleTxs, pendingTx.Tx)
 				delete(pendingMap, nonce)
 				logx.Info("MEMPOOL", fmt.Sprintf("Removed stale transaction (sender: %s, nonce: %d)",
 					sender[:8], nonce))
@@ -489,6 +537,12 @@ func (mp *Mempool) cleanupStaleTransactions() {
 			delete(mp.pendingTxs, sender)
 		}
 	}
+
+	// Batch remove from txsBuf and txOrder - O(n) instead of O(n*m)
+	if len(staleTxs) > 0 {
+		mp.removeTransactionBatch(staleTxs)
+		logx.Info("MEMPOOL", fmt.Sprintf("Batch removed %d stale transactions", len(staleTxs)))
+	}
 }
 
 func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
@@ -497,6 +551,14 @@ func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
 
 	// Track removed transactions for logging
 	removedCount := 0
+
+	// Pre-build hash set for O(1) lookup instead of O(n) search
+	txHashSet := make(map[string]bool)
+	for _, entry := range block.Entries {
+		for _, tx := range entry.Transactions {
+			txHashSet[tx.Hash()] = true
+		}
+	}
 
 	// Iterate through all entries in the block and clean up all transaction references
 	for _, entry := range block.Entries {
@@ -511,37 +573,50 @@ func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
 			// Remove from main transaction buffer
 			if _, exists := mp.txsBuf[txHash]; exists {
 				delete(mp.txsBuf, txHash)
-				monitoring.SetMempoolSize(mp.Size())
-
-				// Remove from txOrder
-				for i, hash := range mp.txOrder {
-					if hash == txHash {
-						mp.txOrder = append(mp.txOrder[:i], mp.txOrder[i+1:]...)
-						break
-					}
-				}
-
 				removedCount++
 			}
+		}
+	}
 
-			// Remove from ready queue
-			for i := len(mp.readyQueue) - 1; i >= 0; i-- {
-				if mp.readyQueue[i].Hash() == txHash {
-					mp.readyQueue = append(mp.readyQueue[:i], mp.readyQueue[i+1:]...)
+	// Bulk update monitoring after all removals
+	if removedCount > 0 {
+		monitoring.SetMempoolSize(mp.Size())
+	}
+
+	// Remove from txOrder - use filtering instead of repeated slice operations
+	newTxOrder := make([]string, 0, len(mp.txOrder))
+	for _, hash := range mp.txOrder {
+		if !txHashSet[hash] {
+			newTxOrder = append(newTxOrder, hash)
+		}
+	}
+	mp.txOrder = newTxOrder
+
+	// Remove from ready queue - use filtering instead of repeated slice operations
+	newReadyQueue := make([]*transaction.Transaction, 0, len(mp.readyQueue))
+	for _, tx := range mp.readyQueue {
+		if !txHashSet[tx.Hash()] {
+			newReadyQueue = append(newReadyQueue, tx)
+		} else {
+			// Remove from index
+			if senderNonces, exists := mp.readyQueueIndex[tx.Sender]; exists {
+				delete(senderNonces, tx.Nonce)
+				if len(senderNonces) == 0 {
+					delete(mp.readyQueueIndex, tx.Sender)
 				}
 			}
+		}
+	}
+	mp.readyQueue = newReadyQueue
 
-			// Remove from pending transactions
-			for sender, nonceTxs := range mp.pendingTxs {
-				for nonce, pendingTx := range nonceTxs {
-					if pendingTx.Tx.Hash() == txHash {
-						delete(nonceTxs, nonce)
-						// Clean up empty sender map
-						if len(nonceTxs) == 0 {
-							delete(mp.pendingTxs, sender)
-						}
-						break
-					}
+	// Remove from pending transactions - optimize by using sender lookup from transactions
+	for _, entry := range block.Entries {
+		for _, tx := range entry.Transactions {
+			if nonceTxs, exists := mp.pendingTxs[tx.Sender]; exists {
+				delete(nonceTxs, tx.Nonce)
+				// Clean up empty sender map
+				if len(nonceTxs) == 0 {
+					delete(mp.pendingTxs, tx.Sender)
 				}
 			}
 		}
@@ -577,19 +652,52 @@ func (mp *Mempool) PeriodicCleanup() {
 }
 
 func (mp *Mempool) cleanupOutdatedTransactions() {
+	// Optimization: Batch collect all unique senders first to minimize repeated DB calls
+	uniqueSenders := make([]string, 0, len(mp.pendingTxs)+len(mp.readyQueue))
+	senderSet := make(map[string]bool)
+	for sender := range mp.pendingTxs {
+		if !senderSet[sender] {
+			uniqueSenders = append(uniqueSenders, sender)
+			senderSet[sender] = true
+		}
+	}
+	for _, tx := range mp.readyQueue {
+		if !senderSet[tx.Sender] {
+			uniqueSenders = append(uniqueSenders, tx.Sender)
+			senderSet[tx.Sender] = true
+		}
+	}
+
+	// Batch get all account states - SINGLE CGO CALL instead of N calls!
+	accounts, err := mp.ledger.GetAccountBatch(uniqueSenders)
+	if err != nil {
+		logx.Error("MEMPOOL", "Error batch getting accounts: ", err)
+		return
+	}
+
+	// Build nonce cache from batch results
+	senderNonceCache := make(map[string]uint64, len(accounts))
+	for addr, account := range accounts {
+		if account != nil {
+			senderNonceCache[addr] = account.Nonce
+		}
+	}
+
+	// Collect outdated transactions for batch removal
+	outdatedTxs := make([]*transaction.Transaction, 0)
+
+	// Process pending transactions with cached nonces
 	for sender, pendingMap := range mp.pendingTxs {
-		account, err := mp.ledger.GetAccount(sender)
-		if err != nil {
-			logx.Error("MEMPOOL", "Error getting account for sender ", sender, ": ", err)
+		currentNonce, exists := senderNonceCache[sender]
+		if !exists {
 			continue
 		}
-		currentNonce := account.Nonce
 		expectedNonce := currentNonce + 1
 
-		// Remove any transactions with nonce <= current account nonce
+		// Collect transactions with nonce <= current account nonce
 		for nonce, pendingTx := range pendingMap {
 			if nonce <= currentNonce {
-				mp.removeTransaction(pendingTx.Tx)
+				outdatedTxs = append(outdatedTxs, pendingTx.Tx)
 				delete(pendingMap, nonce)
 			}
 		}
@@ -603,6 +711,11 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 		// Promote ready transaction if it exists
 		if pendingTx, exists := pendingMap[expectedNonce]; exists {
 			mp.readyQueue = append(mp.readyQueue, pendingTx.Tx)
+			// Update index
+			if mp.readyQueueIndex[sender] == nil {
+				mp.readyQueueIndex[sender] = make(map[uint64]bool)
+			}
+			mp.readyQueueIndex[sender][expectedNonce] = true
 			delete(pendingMap, expectedNonce)
 
 			if len(pendingMap) == 0 {
@@ -611,23 +724,35 @@ func (mp *Mempool) cleanupOutdatedTransactions() {
 		}
 	}
 
-	// Clean up ready queue of outdated transactions
+	// Clean up ready queue of outdated transactions with cached nonces
 	newReadyQueue := make([]*transaction.Transaction, 0, len(mp.readyQueue))
 	for _, tx := range mp.readyQueue {
-		account, err := mp.ledger.GetAccount(tx.Sender)
-		if err != nil {
-			// Skip this transaction if we can't get the account
-			logx.Error("MEMPOOL", "Error getting account for sender ", tx.Sender, ": ", err)
+		currentNonce, exists := senderNonceCache[tx.Sender]
+		if !exists {
+			// Skip if we couldn't get account
 			continue
 		}
-		currentNonce := account.Nonce
 		if tx.Nonce > currentNonce {
 			newReadyQueue = append(newReadyQueue, tx)
 		} else {
-			mp.removeTransaction(tx)
+			// Collect for batch removal
+			outdatedTxs = append(outdatedTxs, tx)
+			// Remove from index
+			if senderNonces, idxExists := mp.readyQueueIndex[tx.Sender]; idxExists {
+				delete(senderNonces, tx.Nonce)
+				if len(senderNonces) == 0 {
+					delete(mp.readyQueueIndex, tx.Sender)
+				}
+			}
 		}
 	}
 	mp.readyQueue = newReadyQueue
+
+	// Batch remove all outdated transactions - O(n) instead of O(n*m)
+	if len(outdatedTxs) > 0 {
+		mp.removeTransactionBatch(outdatedTxs)
+		logx.Info("MEMPOOL", fmt.Sprintf("Batch removed %d outdated transactions", len(outdatedTxs)))
+	}
 }
 
 func (mp *Mempool) GetLargestReadyTransactionNonce(sender string) uint64 {
