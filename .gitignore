@@ -26,6 +26,8 @@ go.work.sum
 
 # env file
 .env
+.env.*
+!.env.example
 
 # Editor/IDE
 # .idea/
@@ -44,5 +46,4 @@ node-data
 mmn*.log
 
 # Prometheus config
-/monitoring/prometheus/targets/nodes.yml
-
+/monitoring/config/prometheus/targets/nodes.yml

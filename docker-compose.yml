@@ -1,13 +1,14 @@
 name: mmn
 
 services:
+  # ==================== BOOTSTRAP NODE ====================
+  # Bootstrap node that help new node to join blockchain network
   bootnode:
     build:
       context: .
       args:
         DB_VENDOR: ${DB_VENDOR:-rocksdb} #rocksdb or leveldb
     image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: bootnode
     command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
     ports:
       - "9000:9000"
@@ -20,26 +21,30 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - bootstrap
 
-  node1:
+  # ==================== CORE BLOCKCHAIN NODE ====================
+  # End users (nodes) will always run this
+  node:
+    container_name: ${COMPOSE_PROJECT_NAME}
     image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: node1
     command: >
       sh -c '
-        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn init --data-dir "./node-data/${NODE_NAME}" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/${NODE_PRIVKEY_FILE}" &&
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/${NODE_NAME}" --jsonrpc-addr ":${NODE_API_PORT}" --grpc-addr ":${NODE_GRPC_PORT}" --bootstrap-addresses "${BOOTSTRAP_NODE_ADDR}"
       '
-    depends_on:
-      - bootnode
     ports:
-      - "8001:8001"
-      - "8081:8081"
-      - "9001:9001"
+      - ${NODE_API_PORT}:${NODE_API_PORT}
+      - ${NODE_GRPC_PORT}:${NODE_GRPC_PORT}
     volumes:
       - node_data:/app/node-data
       - logs_data:/app/logs
+      - ./config:/app/config:ro
     environment:
-      - LOGFILE=mmn-node1.log
+      - NODE_NAME=${NODE_NAME}
+      - LOGFILE=${NODE_NAME}.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
       - CORS_ALLOWED_ORIGINS=*
@@ -48,122 +53,82 @@ services:
     networks:
       - mezon
     restart: unless-stopped
-      
-  node2:
-    image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: node2
-    command: >
-      sh -c '
-        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
-      '
-    depends_on:
-      - bootnode
-    ports:
-      - "8002:8002"
-      - "8082:8082"
-      - "9002:9002"
-    volumes:
-      - node_data:/app/node-data
-      - logs_data:/app/logs
-    environment:
-      - LOGFILE=mmn-node2.log
-      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
-      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
-      - CORS_ALLOWED_ORIGINS=*
-      - CORS_ALLOWED_METHODS=POST,OPTIONS
-      - CORS_ALLOWED_HEADERS=Content-Type
-    networks:
-      - mezon
-    restart: unless-stopped
-  node3:
-    image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: node3
-    command: >
-      sh -c '
-        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
-      '
-    depends_on:
-      - bootnode
-    ports:
-      - "8003:8003"
-      - "8083:8083"
-      - "9003:9003"
-    volumes:
-      - node_data:/app/node-data
-      - logs_data:/app/logs
-    environment:
-      - LOGFILE=mmn-node3.log
-      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
-      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
-      - CORS_ALLOWED_ORIGINS=*
-      - CORS_ALLOWED_METHODS=POST,OPTIONS
-      - CORS_ALLOWED_HEADERS=Content-Type
-    networks:
-      - mezon
-    restart: unless-stopped
+    profiles:
+      - dev
+      - node
+      - monitored-node
+      - promtail-node
 
-  loki:
-    image: grafana/loki:3.5.0
-    container_name: loki
-    command: ["-config.file=/etc/loki/config.yml"]
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./monitoring/loki-config.yml:/etc/loki/config.yml:ro
-      - loki_data:/loki
-    networks:
-      - mezon
-    restart: unless-stopped
-
-  promtail:
-    image: grafana/promtail:3.5.0
-    container_name: promtail
-    command: ["-config.file=/etc/promtail/config.yml"]
-    volumes:
-      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml:ro
-      - logs_data:/var/log/mmn:ro
-    depends_on:
-      - loki
-    networks:
-      - mezon
-    restart: unless-stopped
-
+  # ==================== MONITORING SERVICES ====================
+  # Services that help monitor blockchain and individual nodes
   grafana:
     image: grafana/grafana:11.6.5
-    container_name: grafana
     environment:
       - GF_PLUGINS_PREINSTALL=grafana-lokiexplore-app
     ports:
       - "3300:3000"
     volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/config/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-    depends_on:
-      - loki
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
+
+  loki:
+    image: grafana/loki:3.5.0
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/config/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    networks:
+      - mezon
+    restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
 
   prometheus:
     image: prom/prometheus:v3.5.0
-    container_name: prometheus
-    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    command: [ "--config.file=/etc/prometheus/prometheus.yml" ]
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/prometheus/targets:/etc/prometheus/targets:ro
+      - ./monitoring/config/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/config/prometheus/targets:/etc/prometheus/targets:ro
       - prom_data:/prometheus
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - monitoring-center
+
+  promtail:
+    image: grafana/promtail:3.5.0
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+      - "-config.expand-env=true"
+    volumes:
+      - ./monitoring/config/promtail-config.yml:/etc/promtail/config.yml:ro
+      - logs_data:/var/log/mmn:ro
+    environment:
+      - LOKI_ADDR=${LOKI_ADDR}
+    networks:
+      - mezon
+    restart: unless-stopped
+    profiles:
+      - dev
+      - monitored-node
+      - promtail-node
 
   node-exporter:
     image: prom/node-exporter:v1.9.1
-    container_name: node-exporter
     ports:
       - "9100:9100"
     volumes:
@@ -178,9 +143,14 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    profiles:
+      - dev
+      - monitored-node
 
 networks:
   mezon:
+    external: true
+    name: mmn_mezon
 
 volumes:
   node_data:

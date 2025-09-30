@@ -1,5 +1,63 @@
 <img width="1061" height="695" alt="1754016094020_image" src="https://github.com/user-attachments/assets/c2df9920-e7e6-48ed-baa3-994b281a7575" />
 
+# How to run?
+
+## Prerequisites
+1. **Initialize configuration files**: 
+```bash
+./scripts/init-configs.sh
+```
+
+2. **Build the image from source**
+## Running Services
+Run services on demand using [Docker compose profiles](https://docs.docker.com/compose/how-tos/profiles/),
+which help to run a group of related services at once quickly.
+
+Each service inside `docker-compose.yml` can also be separately interacted using
+`docker compose <command> <services>` as normal
+
+### Available profiles:
+- `bootstrap`: run bootstrap node
+- `node`: run node without monitoring services
+- `monitored-node`: run node with monitoring services (promtail, node-exporter...)
+- `monitoring-center`: run central monitoring services (grafana, loki, prometheus...)
+- `promtail-node`: run node with promtail (node, promtail)
+- `dev`: run all
+
+### Commands:
+```bash
+# Run specific profile
+docker compose --env-file .env --profile <profile> up -d
+
+# Examples:
+docker compose --env-file .env --profile bootstrap up -d
+docker compose --env-file .env --profile monitoring-center up -d
+docker compose --env-file .env --profile dev up -d
+```
+
+# Run more nodes
+- Add a new private key to the config folder
+
+- Create a new environment file for new node with a unique composer project name set. For example:
+  ```
+  # File: .env.node2
+  COMPOSE_PROJECT_NAME=second-node
+  NODE_PRIVKEY_FILE=<name-file-private-key>
+  # More variables...
+  ```
+
+- Run the new node with the newly created env file:
+  ```bash
+  docker compose --env-file .env.node2 --profile node up -d
+  # or with monitoring:
+  docker compose --env-file .env.node2 --profile promtail-node up -d
+  ```
+- Down all services related to node2. Use `--env-file` to specify which compose project to down
+  and `--profile` to specify which service inside compose project to down
+  ```bash
+  docker compose --env-file .env.node2 --profile dev down [-v]
+  ```
+- Remember to add more targets into [prometheus targets config file](monitoring/config/prometheus/targets/nodes.yml)
 
 # run (dev)
 go mod tidy
@@ -54,28 +112,6 @@ MSYS_NO_PATHCONV=1 go run main.go node \
 
 Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
 
-# Run with docker
-## Build and run nodes
-- To override configs inside `docker-compose.yaml`, create `.env` file with variables declared in `.env.example`
-  ```
-  docker compose build
-  docker compose up
-  ```
-
-## Build & run with LevelDB
-
--Use direct command
-  ```
-  DB_VENDOR=leveldb docker compose up -d --build
-  ```
--Use .env file
-  - Create `.env` file in the root directory of source
-    ```
-    DB_VENDOR=leveldb
-    ```
-  - Run `docker compose up -d --build` to build and run nodes
-
-
 # Build
 go build -o bin/mmn ./cmd
 ## Run Bootnode
@@ -115,9 +151,9 @@ go build -o bin/mmn ./cmd
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
 
-## Monitoring stack (Grafana + Loki + Promtail + Prometheus)
+# Monitoring stack (Grafana + Loki + Promtail + Prometheus)
 
-- Create prometheus targets config file named `nodes.yaml` inside `./monitoring/prometheus/targets`, take a look at [example file](monitoring/prometheus/targets/nodes.example.yml)
+- Create prometheus targets config file named `nodes.yml` inside `./monitoring/config/prometheus/targets`, take a look at [example file](monitoring/config/prometheus/targets/nodes.example.yml)
 - Open grafana at http://localhost:3300 (admin / admin)
 - Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
 - Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs

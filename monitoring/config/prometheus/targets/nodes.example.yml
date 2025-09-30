@@ -1,0 +1,11 @@
+- targets: ['node:8081']
+  labels:
+    job: node
+    node: node-01
+
+- targets: ['node-exporter:9100']
+  labels:
+    job: exporter
+    node: node-01
+
+# more targets...

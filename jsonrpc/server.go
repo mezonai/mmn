@@ -3,6 +3,8 @@ package jsonrpc
 import (
 	"context"
 	"fmt"
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -156,6 +158,7 @@ type getAccountByAddressResponse struct {
 // --- Server ---
 
 type Server struct {
+	mux        *http.ServeMux
 	addr       string
 	txSvc      interfaces.TxService
 	acctSvc    interfaces.AccountService
@@ -171,6 +174,7 @@ type CORSConfig struct {
 
 func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *Server {
 	return &Server{
+		mux:     http.NewServeMux(),
 		addr:    addr,
 		txSvc:   txSvc,
 		acctSvc: acctSvc,
@@ -196,8 +200,18 @@ func (s *Server) Start() {
 		jh.ServeHTTP(w, r)
 	})
 
-	http.Handle("/", h)
-	go http.ListenAndServe(s.addr, nil)
+	s.mux.Handle("/", h)
+	go func() {
+		err := http.ListenAndServe(s.addr, s.mux)
+		if err != nil {
+			logx.Fatal("JSONRPC", "Failed to start server: ", err)
+		}
+	}()
+}
+
+// ServePromMetricsApi expose /metrics api with metrics registered from monitoring package
+func (s *Server) ServePromMetricsApi() {
+	monitoring.RegisterMetrics(s.mux)
 }
 
 // SetCORSConfig allows configuring CORS settings
