@@ -415,8 +415,8 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 	}
 }
 
-func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
-	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector, latestSlot); err != nil {
+func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
+	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector); err != nil {
 		logx.Error("BLOCK", "Failed to process block before broadcast:", err)
 		return err
 	}
@@ -529,7 +529,7 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 	return nil
 }
 
-func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
 
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
 		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
