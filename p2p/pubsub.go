@@ -244,7 +244,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 		for {
 			peerCount := ln.GetPeersConnected()
-			if peerCount > 1 {
+			if peerCount > 0 {
 				break
 			}
 			// Check if we've waited too long

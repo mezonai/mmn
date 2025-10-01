@@ -42,6 +42,8 @@ const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
 	leveldbBlockDir = "blockstore/leveldb"
+	LISTEN_MODE     = "listen"
+	FULL_MODE       = "fill"
 )
 
 var (
@@ -78,7 +80,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().StringVar(&nodeMode, "mode", "full", "Node mode: full or listen")
+	runCmd.Flags().StringVar(&nodeMode, "mode", FULL_MODE, "Node mode: full or listen")
 
 }
 
@@ -230,7 +232,7 @@ func runNode() {
 	}
 
 	// In listen mode, do not start PoH or Validator
-	if nodeConfig.Mode != "listen" {
+	if nodeConfig.Mode != LISTEN_MODE {
 		libP2pClient.OnStartPoh = func() { pohService.Start() }
 		libP2pClient.OnStartValidator = func() { val.Run() }
 	}
