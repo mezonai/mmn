@@ -449,7 +449,6 @@ func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *
 				return err
 			}
 		}
-
 	}
 
 	return nil
