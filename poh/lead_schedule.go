@@ -88,3 +88,7 @@ func (ls *LeaderSchedule) Validate() error {
 	}
 	return nil
 }
+
+func (ls *LeaderSchedule) Len() int {
+	return len(ls.entries)
+}

@@ -227,37 +227,56 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		}
 	}
 
+	if ln.leaderSchedule.Len() == 1 {
+		ln.startImmediatelyFromLocalLatestSlot()
+		return
+	}
+
 	exception.SafeGo("WaitPeersAndStart", func() {
-		// wait until network has more than 1 peer, max 3 seconds
-		startTime := time.Now()
-		maxWaitTime := 3 * time.Second
+		ln.startAfterSyncWithPeers(ctx)
+	})
+}
 
-		for {
-			peerCount := ln.GetPeersConnected()
-			if peerCount > 1 {
-				break
-			}
-			// Check if we've waited too long
-			if time.Since(startTime) > maxWaitTime {
-				break
-			}
+func (ln *Libp2pNetwork) startImmediatelyFromLocalLatestSlot() {
+	latest := ln.blockStore.GetLatestFinalizedSlot()
+	var seed [32]byte
+	if latest > 0 {
+		if blk := ln.blockStore.Block(latest); blk != nil {
+			seed = blk.LastEntryHash()
+		}
+	}
+	if ln.OnForceResetPOH != nil {
+		ln.OnForceResetPOH(seed, latest)
+	}
+	ln.startCoreServices(ln.ctx, true)
+}
 
+func (ln *Libp2pNetwork) startAfterSyncWithPeers(ctx context.Context) {
+	// wait until network has more than 1 peer, max 3 seconds
+	startTime := time.Now()
+	maxWaitTime := 3 * time.Second
+
+	for {
+		peerCount := ln.GetPeersConnected()
+		if peerCount > 1 {
+			break
+		}
+		// Check if we've waited too long
+		if time.Since(startTime) > maxWaitTime {
+			break
 		}
 
-		localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
+	}
 
-		if localLatestSlot == 0 {
-			if ln.worldLatestSlot == 0 {
-				if !ln.ensureWorldLatestSlotInitialized(ctx) {
-					ln.enableFullModeOnce.Do(func() {
-						logx.Info("NETWORK", "No world latest slot discovered; starting PoH/Validator for genesis")
-						ln.startCoreServices(ln.ctx, true)
-					})
-					return
-				}
+	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 
-				ln.waitUntilSyncWindowAligned(ctx)
-				ln.RequestBlockSyncFromLatest(ln.ctx)
+	if localLatestSlot == 0 {
+		if ln.worldLatestSlot == 0 {
+			if !ln.ensureWorldLatestSlotInitialized(ctx) {
+				ln.enableFullModeOnce.Do(func() {
+					logx.Info("NETWORK", "No world latest slot discovered; starting PoH/Validator for genesis")
+					ln.startCoreServices(ln.ctx, true)
+				})
 				return
 			}
 
@@ -266,35 +285,28 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 			return
 		}
 
-		ln.waitForWorldPohSlot()
-		if ln.handlePohResetIfNeeded(localLatestSlot) {
-			return
-		}
-
-		// Handle node crash, should catchup to world latest slot
 		ln.waitUntilSyncWindowAligned(ctx)
-		if localLatestSlot < ln.worldLatestSlot {
-			logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
-			ln.RequestBlockSyncFromLatest(ln.ctx)
-		} else {
-			// No sync required; start services based on local latest state
-			logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
-			ln.enableFullModeOnce.Do(func() {
-				latest := ln.blockStore.GetLatestFinalizedSlot()
-				var seed [32]byte
-				if latest > 0 {
-					if blk := ln.blockStore.Block(latest); blk != nil {
-						seed = blk.LastEntryHash()
-					}
-				}
-				if ln.OnForceResetPOH != nil {
-					ln.OnForceResetPOH(seed, latest)
-				}
-				ln.startCoreServices(ln.ctx, true)
-			})
-		}
-	})
+		ln.RequestBlockSyncFromLatest(ln.ctx)
+		return
+	}
 
+	ln.waitForWorldPohSlot()
+	if ln.handlePohResetIfNeeded(localLatestSlot) {
+		return
+	}
+
+	// Handle node crash, should catchup to world latest slot
+	ln.waitUntilSyncWindowAligned(ctx)
+	if localLatestSlot < ln.worldLatestSlot {
+		logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
+		ln.RequestBlockSyncFromLatest(ln.ctx)
+	} else {
+		// No sync required; start services based on local latest state
+		logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
+		ln.enableFullModeOnce.Do(func() {
+			ln.startImmediatelyFromLocalLatestSlot()
+		})
+	}
 }
 
 func (ln *Libp2pNetwork) ensureWorldLatestSlotInitialized(ctx context.Context) bool {
