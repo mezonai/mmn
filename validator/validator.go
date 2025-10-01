@@ -43,7 +43,6 @@ type Validator struct {
 	BatchSize                 int
 
 	netClient  interfaces.Broadcaster
-	p2pClient  *p2p.Libp2pNetwork
 	blockStore store.BlockStore
 	// Slot & entry buffer
 	leaderStartAtSlot uint64
@@ -89,7 +88,6 @@ func NewValidator(
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
 		netClient:                 p2pClient,
-		p2pClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		collector:                 collector,
