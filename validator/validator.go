@@ -222,9 +222,11 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			// Reset buffer
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
-			if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector); err != nil {
-				logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
-			}
+			exception.SafeGo("onBroadcastBlock", func() {
+				if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector); err != nil {
+					logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
+				}
+			})
 		} else {
 			logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", lastSlot))
 		}
