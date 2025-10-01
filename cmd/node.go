@@ -52,6 +52,7 @@ var (
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
+	nodeMode           string
 	// legacy init command
 	// database backend
 	databaseBackend string
@@ -77,6 +78,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
+	runCmd.Flags().StringVar(&nodeMode, "mode", "full", "Node mode: full or listen")
 
 }
 
@@ -182,6 +184,7 @@ func runNode() {
 		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
+		Mode:               nodeMode,
 	}
 
 	txTracker := transaction.NewTransactionTracker()
@@ -226,8 +229,11 @@ func runNode() {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
-	libP2pClient.OnStartPoh = func() { pohService.Start() }
-	libP2pClient.OnStartValidator = func() { val.Run() }
+	// In listen mode, do not start PoH or Validator
+	if nodeConfig.Mode != "listen" {
+		libP2pClient.OnStartPoh = func() { pohService.Start() }
+		libP2pClient.OnStartValidator = func() { val.Run() }
+	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
