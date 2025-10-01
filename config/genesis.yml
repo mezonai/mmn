@@ -3,12 +3,6 @@ config:
     - start_slot: 1
       end_slot: 10
       leader: "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" # node 1/key1
-    - start_slot: 11
-      end_slot: 20
-      leader: "7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV" # node 2/key2
-    - start_slot: 21
-      end_slot: 30
-      leader: "S5MrFRhc92vmczcrDpNG8CLoDPh2jZH8f6Na11bFyDt" # node 3/key3
   alloc: # support array
     addresses: 
       - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
