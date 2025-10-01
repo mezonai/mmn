@@ -1,11 +1,10 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
 )
@@ -22,7 +21,6 @@ type TxMetaStore interface {
 
 // GenericTxMetaStore provides transaction meta storage operations
 type GenericTxMetaStore struct {
-	mu         sync.RWMutex
 	dbProvider db.DatabaseProvider
 }
 
@@ -48,16 +46,13 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 		logx.Info("TX_META_STORE", "StoreBatch: no transaction metas to store")
 		return nil
 	}
-	logx.Info("TX_META_STORE", "StoreBatch: storing", len(txMetas), "transaction metas")
-
-	tms.mu.Lock()
-	defer tms.mu.Unlock()
+	logx.Info("TX_META_STORE", fmt.Sprintf("StoreBatch: storing %d transaction metas", len(txMetas)))
 
 	batch := tms.dbProvider.Batch()
 	defer batch.Close()
 
 	for _, txMeta := range txMetas {
-		data, err := json.Marshal(txMeta)
+		data, err := jsonx.Marshal(txMeta)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction meta: %w", err)
 		}
@@ -70,7 +65,7 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 		return fmt.Errorf("failed to write transaction meta to database: %w", err)
 	}
 
-	logx.Info("TX_META_STORE", "StoreBatch: stored", len(txMetas), "transaction metas")
+	logx.Info("TX_META_STORE", fmt.Sprintf("StoreBatch: stored %d transaction metas", len(txMetas)))
 	return nil
 }
 
@@ -82,7 +77,7 @@ func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta,
 	}
 
 	var txMeta types.TransactionMeta
-	err = json.Unmarshal(data, &txMeta)
+	err = jsonx.Unmarshal(data, &txMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal transaction meta %s: %w", txHash, err)
 	}
@@ -90,26 +85,39 @@ func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta,
 	return &txMeta, nil
 }
 
-// GetBatch retrieves multiple transaction metas by their hashes
+// GetBatch retrieves multiple transaction metas by their hashes using true batch operation
 func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.TransactionMeta, error) {
 	if len(txHashes) == 0 {
+		logx.Info("TX_META_STORE", "GetBatch: no transaction metas to retrieve")
 		return map[string]*types.TransactionMeta{}, nil
 	}
+	logx.Info("TX_META_STORE", fmt.Sprintf("GetBatch: retrieving %d transaction metas", len(txHashes)))
 
-	tms.mu.RLock()
-	defer tms.mu.RUnlock()
+	// Prepare keys for batch operation
+	keys := make([][]byte, len(txHashes))
+	for i, txHash := range txHashes {
+		keys[i] = tms.getDbKey(txHash)
+	}
+
+	// Use true batch read - single CGO call!
+	dataMap, err := tms.dbProvider.GetBatch(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get transaction metas: %w", err)
+	}
 
 	txMetas := make(map[string]*types.TransactionMeta, len(txHashes))
+
 	for _, txHash := range txHashes {
-		// Direct database access without nested locking
-		data, err := tms.dbProvider.Get(tms.getDbKey(txHash))
-		if err != nil {
-			logx.Warn("TX_META_STORE", fmt.Sprintf("Could not get transaction meta %s from database: %s", txHash, err.Error()))
+		key := tms.getDbKey(txHash)
+		data, exists := dataMap[string(key)]
+
+		if !exists {
+			logx.Warn("TX_META_STORE", fmt.Sprintf("Transaction meta %s not found in batch result", txHash))
 			continue
 		}
 
 		var txMeta types.TransactionMeta
-		err = json.Unmarshal(data, &txMeta)
+		err = jsonx.Unmarshal(data, &txMeta)
 		if err != nil {
 			logx.Warn("TX_META_STORE", fmt.Sprintf("Failed to unmarshal transaction meta %s: %s", txHash, err.Error()))
 			continue
@@ -118,6 +126,7 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 		txMetas[txHash] = &txMeta
 	}
 
+	logx.Info("TX_META_STORE", fmt.Sprintf("GetBatch: retrieved %d/%d transaction metas", len(txMetas), len(txHashes)))
 	return txMetas, nil
 }
 

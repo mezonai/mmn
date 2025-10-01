@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/mem_blockstore"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -31,8 +34,10 @@ type Libp2pNetwork struct {
 
 	blockStore    store.BlockStore
 	memBlockStore *mem_blockstore.MemBlockStore
+	txStore       store.TxStore
 
 	topicBlocks            *pubsub.Topic
+	topicEmptyBlocks       *pubsub.Topic
 	topicVotes             *pubsub.Topic
 	topicCerts             *pubsub.Topic
 	topicTxs               *pubsub.Topic
@@ -41,12 +46,15 @@ type Libp2pNetwork struct {
 	topicCheckpointRequest *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
+	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onCertReceived         func(*consensus.Cert) error
 	onTransactionReceived  func(*transaction.Transaction) error
-	onSyncResponseReceived func([]*block.BroadcastedBlock) error
-	onLatestSlotReceived   func(uint64, string) error
+	onSyncResponseReceived func(*block.BroadcastedBlock) error
+	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
+	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
+	OnGetLatestPohSlot     func() uint64
 
 	maxPeers int
 
@@ -70,6 +78,27 @@ type Libp2pNetwork struct {
 
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
+
+	// cached leader schedule for local leader checks
+	leaderSchedule *poh.LeaderSchedule
+
+	// readiness control
+	enableFullModeOnce sync.Once
+	ready              atomic.Bool
+
+	// New field for join behavior control
+	worldLatestSlot    uint64
+	worldLatestPohSlot uint64
+	// Global block ordering queue
+	blockOrderingQueue map[uint64]*block.BroadcastedBlock
+	nextExpectedSlot   uint64
+	blockOrderingMu    sync.RWMutex
+
+	OnStartPoh       func()
+	OnStartValidator func()
+
+	// PoH config
+	pohCfg *config.PohConfig
 }
 
 type PeerInfo struct {
@@ -135,8 +164,15 @@ type LatestSlotRequest struct {
 }
 
 type LatestSlotResponse struct {
-	LatestSlot uint64 `json:"latest_slot"`
-	PeerID     string `json:"peer_id"`
+	LatestSlot    uint64 `json:"latest_slot"`
+	PeerID        string `json:"peer_id"`
+	LatestPohSlot uint64 `json:"latest_poh_slot"`
+}
+
+type SnapshotSyncRequest struct {
+	RequesterID string `json:"requester_id"`
+	RequestTime int64  `json:"request_time"`
+	Slot        uint64 `json:"slot"`
 }
 
 type SyncRequestInfo struct {
@@ -164,11 +200,12 @@ type SyncRequestTracker struct {
 
 type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
+	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
 	OnCertReceived         func(*consensus.Cert) error
 	OnTransactionReceived  func(*transaction.Transaction) error
-	OnLatestSlotReceived   func(uint64, string) error
-	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+	OnLatestSlotReceived   func(uint64, uint64, string) error
+	OnSyncResponseReceived func(*block.BroadcastedBlock) error
 }
 
 type CheckpointHashRequest struct {
@@ -190,4 +227,18 @@ type MissingBlockInfo struct {
 	LastRetry  time.Time `json:"last_retry"`
 	RetryCount int       `json:"retry_count"`
 	MaxRetries int       `json:"max_retries"`
+}
+
+// Snapshot gossip messages
+type SnapshotAnnounce struct {
+	Slot      uint64 `json:"slot"`
+	BankHash  string `json:"bank_hash"`
+	Size      int64  `json:"size"`
+	UDPAddr   string `json:"udp_addr"`
+	ChunkSize int    `json:"chunk_size"`
+	CreatedAt int64  `json:"created_at"`
+	PeerID    string `json:"peer_id"`
+}
+
+type SnapshotRequest struct {
 }

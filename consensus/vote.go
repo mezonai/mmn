@@ -1,10 +1,10 @@
 package consensus
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/herumi/bls-eth-go-binary/bls"
+	"github.com/mezonai/mmn/jsonx"
 )
 
 type VoteType int
@@ -28,7 +28,7 @@ type Vote struct {
 
 // serializeVote to sign and verify (without Signature + PubKey to keep the same message)
 func (v *Vote) serializeVote() []byte {
-	data, _ := json.Marshal(struct {
+	data, _ := jsonx.Marshal(struct {
 		Slot      uint64
 		VoteType  VoteType
 		BlockHash [32]byte

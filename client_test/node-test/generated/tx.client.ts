@@ -4,6 +4,8 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { TxService } from "./tx";
+import type { GetPendingTransactionsResponse } from "./tx";
+import type { GetPendingTransactionsRequest } from "./tx";
 import type { SubscribeTransactionStatusRequest } from "./tx";
 import type { ServerStreamingCall } from "@protobuf-ts/runtime-rpc";
 import type { TransactionStatusInfo } from "./tx";
@@ -44,6 +46,12 @@ export interface ITxServiceClient {
      * @generated from protobuf rpc: SubscribeTransactionStatus
      */
     subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo>;
+    /**
+     * Get all pending transactions from mempool
+     *
+     * @generated from protobuf rpc: GetPendingTransactions
+     */
+    getPendingTransactions(input: GetPendingTransactionsRequest, options?: RpcOptions): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse>;
 }
 /**
  * @generated from protobuf service mmn.TxService
@@ -92,5 +100,14 @@ export class TxServiceClient implements ITxServiceClient, ServiceInfo {
     subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo> {
         const method = this.methods[4], opt = this._transport.mergeOptions(options);
         return stackIntercept<SubscribeTransactionStatusRequest, TransactionStatusInfo>("serverStreaming", this._transport, method, opt, input);
+    }
+    /**
+     * Get all pending transactions from mempool
+     *
+     * @generated from protobuf rpc: GetPendingTransactions
+     */
+    getPendingTransactions(input: GetPendingTransactionsRequest, options?: RpcOptions): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse> {
+        const method = this.methods[5], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetPendingTransactionsRequest, GetPendingTransactionsResponse>("unary", this._transport, method, opt, input);
     }
 }

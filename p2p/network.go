@@ -3,11 +3,14 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/mem_blockstore"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/discovery"
@@ -32,6 +35,8 @@ func NewNetWork(
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
 	memBlockStore *mem_blockstore.MemBlockStore,
+	txStore store.TxStore,
+	pohCfg *config.PohConfig,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -72,7 +77,12 @@ func NewNetWork(
 
 	customDiscovery.Advertise(ctx, AdvertiseName)
 
-	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()))
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()),
+		pubsub.WithMaxMessageSize(5*1024*1024),
+		pubsub.WithValidateQueueSize(128),
+		pubsub.WithPeerOutboundQueueSize(128),
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)
@@ -87,6 +97,7 @@ func NewNetWork(
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
 		blockStore:             blockStore,
 		memBlockStore:          memBlockStore,
+		txStore:                txStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
 		syncRequests:           make(map[string]*SyncRequestTracker),
@@ -95,6 +106,11 @@ func NewNetWork(
 		recentlyRequestedSlots: make(map[uint64]time.Time),
 		ctx:                    ctx,
 		cancel:                 cancel,
+		worldLatestSlot:        0,
+		worldLatestPohSlot:     0,
+		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlot:       0,
+		pohCfg:                 pohCfg,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -122,7 +138,8 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 	ln.host.SetStreamHandler(RepairBlockProtocol, ln.handleRepairBlockStream)
 
-	ln.SetupPubSubTopics(ctx)
+	// Start latest slot request mechanism
+	ln.startLatestSlotRequestMechanism()
 
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
@@ -151,7 +168,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		logx.Info("NETWORK:SETUP", "Connected to bootstrap peer:", bootstrapPeer)
 		bootstrapConnected = true
 
-		// Record bootstrap peer ID for filtering later
 		ln.bootstrapPeerIDs[info.ID] = struct{}{}
 
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
@@ -205,7 +221,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 
 	var msg map[string]interface{}
-	if err := json.Unmarshal(buf[:n], &msg); err != nil {
+	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
 		return
 	}
@@ -235,4 +251,53 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
 	}
+}
+
+// ApplyLeaderSchedule stores the schedule locally for leader checks inside p2p
+func (ln *Libp2pNetwork) ApplyLeaderSchedule(ls *poh.LeaderSchedule) {
+	ln.leaderSchedule = ls
+}
+
+func (ln *Libp2pNetwork) IsNodeReady() bool {
+	return ln.ready.Load()
+}
+
+func (ln *Libp2pNetwork) setNodeReady() {
+	ln.ready.Store(true)
+}
+
+// startCoreServices starts PoH and Validator (if callbacks provided), sets up pubsub topics, and marks node ready
+func (ln *Libp2pNetwork) startCoreServices(ctx context.Context, withPubsub bool) {
+	if ln.OnStartPoh != nil {
+		ln.OnStartPoh()
+	}
+	if ln.OnStartValidator != nil {
+		ln.OnStartValidator()
+	}
+	if withPubsub {
+		ln.SetupPubSubTopics(ctx)
+	}
+	ln.setNodeReady()
+}
+
+func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
+	// Request latest slot after a delay to allow peers to connect
+	exception.SafeGo("LatestSlotRequest(Initial)", func() {
+		time.Sleep(3 * time.Second) // Wait for peers to connect
+		ln.RequestLatestSlotFromPeers(ln.ctx)
+	})
+
+	// Periodic latest slot request every 30 seconds
+	exception.SafeGo("LatestSlotRequest(Periodic)", func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ln.RequestLatestSlotFromPeers(ln.ctx)
+			case <-ln.ctx.Done():
+				return
+			}
+		}
+	})
 }
