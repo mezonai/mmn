@@ -54,7 +54,7 @@ var (
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
-	nodeMode           string
+	mode               string
 	// legacy init command
 	// database backend
 	databaseBackend string
@@ -80,7 +80,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().StringVar(&nodeMode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 
 }
 
@@ -186,7 +186,7 @@ func runNode() {
 		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
-		Mode:               nodeMode,
+		Mode:               mode,
 	}
 
 	txTracker := transaction.NewTransactionTracker()
@@ -207,7 +207,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -313,7 +313,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -323,6 +323,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		bs,
 		ts,
 		pohCfg,
+		mode == LISTEN_MODE,
 	)
 
 	return libp2pNetwork, err

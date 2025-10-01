@@ -7,13 +7,3 @@
   labels:
     job: exporter
     node: node1
-
-- targets: ['node2:8002']
-  labels:
-    job: node
-    node: node2
-
-- targets: ['node-exporter:9100']
-  labels:
-    job: exporter
-    node: node2

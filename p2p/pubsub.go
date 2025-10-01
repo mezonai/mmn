@@ -55,24 +55,26 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
-			// Remove transactions in block from mempool and add tx tracker if node is follower
-			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-				mp.BlockCleanup(blk)
-			}
+			if !ln.isListener {
+				// Remove transactions in block from mempool and add tx tracker if node is follower
+				if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
+					mp.BlockCleanup(blk)
+				}
 
-			vote := &consensus.Vote{
-				Slot:      blk.Slot,
-				BlockHash: blk.Hash,
-				VoterID:   self.PubKey,
-			}
-			vote.Sign(privKey)
+				vote := &consensus.Vote{
+					Slot:      blk.Slot,
+					BlockHash: blk.Hash,
+					VoterID:   self.PubKey,
+				}
+				vote.Sign(privKey)
 
-			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
-				return err
-			}
+				if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+					return err
+				}
 
-			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
-				return err
+				if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
@@ -378,11 +380,13 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
-		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("HandleTransactionTopic", func() {
-				ln.HandleTransactionTopic(ctx, sub)
-			})
+	if !ln.isListener {
+		if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
+			if sub, err := ln.topicTxs.Subscribe(); err == nil {
+				exception.SafeGoWithPanic("HandleTransactionTopic", func() {
+					ln.HandleTransactionTopic(ctx, sub)
+				})
+			}
 		}
 	}
 
