@@ -423,16 +423,6 @@ func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *
 
 	if ln.topicBlocks != nil {
 		meshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
-		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("BLOCK", "Block topic is nil")
-	}
-
-	if ln.topicBlocks != nil {
-		meshPeers := ln.topicBlocks.ListPeers()
 		for i, peer := range meshPeers {
 			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
 		}
@@ -447,8 +437,21 @@ func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *
 	if ln.topicBlocks != nil {
 		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
 			logx.Error("BLOCK", "Failed to publish block:", err)
+		} else {
+			vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
+			vote.Sign(ln.selfPrivKey)
+
+			if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
+				return err
+			}
+
+			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
+				return err
+			}
 		}
+
 	}
+
 	return nil
 }
 
@@ -533,17 +536,6 @@ func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock
 
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
 		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
-		return err
-	}
-
-	vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
-	vote.Sign(ln.selfPrivKey)
-
-	if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
-		return err
-	}
-
-	if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
 		return err
 	}
 
