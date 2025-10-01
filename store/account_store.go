@@ -1,11 +1,11 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
 )
@@ -37,14 +37,14 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
-	accountData, err := json.Marshal(account)
+	accountData, err := jsonx.Marshal(account)
 	if err != nil {
-		return fmt.Errorf("failed to marshal account: %w", err)
+		return fmt.Errorf("%w failed to marshal account: %w", ErrFailedMarshalAccount, err)
 	}
 
 	err = as.dbProvider.Put(as.getDbKey(account.Address), accountData)
 	if err != nil {
-		return fmt.Errorf("failed to write account to db: %w", err)
+		return fmt.Errorf("%w failed to write account to db: %w", ErrFaliedWriteAccount, err)
 	}
 
 	return nil
@@ -58,7 +58,7 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 	defer batch.Close()
 
 	for _, account := range accounts {
-		accountData, err := json.Marshal(account)
+		accountData, err := jsonx.Marshal(account)
 		if err != nil {
 			return fmt.Errorf("failed to marshal account: %w", err)
 		}
@@ -76,9 +76,6 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 
 // GetByAddr returns account instance from db, return both nil if not exist
 func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-
 	data, err := as.dbProvider.Get(as.getDbKey(addr))
 	if err != nil {
 		return nil, fmt.Errorf("could not get account %s from db: %w", addr, err)
@@ -91,7 +88,7 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 
 	// Deserialize account
 	var acc types.Account
-	err = json.Unmarshal(data, &acc)
+	err = jsonx.Unmarshal(data, &acc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal account %s: %w", addr, err)
 	}
@@ -100,9 +97,6 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 }
 
 func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-
 	return as.dbProvider.Has(as.getDbKey(addr))
 }
 
@@ -116,3 +110,6 @@ func (as *GenericAccountStore) MustClose() {
 func (as *GenericAccountStore) getDbKey(addr string) []byte {
 	return []byte(PrefixAccount + addr)
 }
+
+var ErrFailedMarshalAccount = fmt.Errorf("failed marshal account")
+var ErrFaliedWriteAccount = fmt.Errorf("failed write account")

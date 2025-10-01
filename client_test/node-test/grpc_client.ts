@@ -45,6 +45,8 @@ export class GrpcClient {
       text_data: string;
       nonce: number;
       extra_info: string;
+      zk_proof: string;
+      zk_pub: string;
     },
     signature: string
   ): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
@@ -57,6 +59,8 @@ export class GrpcClient {
       textData: txMsg.text_data,
       nonce: BigInt(txMsg.nonce),
       extraInfo: txMsg.extra_info,
+      zkProof: txMsg.zk_proof,
+      zkPub: txMsg.zk_pub,
     };
     const req: GenSignedTxMsg = { txMsg: genTx, signature };
 

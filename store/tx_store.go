@@ -1,11 +1,10 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 
 	"github.com/mezonai/mmn/transaction"
@@ -22,7 +21,6 @@ type TxStore interface {
 
 // GenericTxStore provides transaction storage operations
 type GenericTxStore struct {
-	mu         sync.RWMutex
 	dbProvider db.DatabaseProvider
 }
 
@@ -48,16 +46,13 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 		logx.Info("TX_STORE", "StoreBatch: no transactions to store")
 		return nil
 	}
-	logx.Info("TX_STORE", "StoreBatch: storing", len(txs), "transactions")
-
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
+	logx.Info("TX_STORE", fmt.Sprintf("StoreBatch: storing %d transactions", len(txs)))
 
 	batch := ts.dbProvider.Batch()
 	defer batch.Close()
 
 	for _, tx := range txs {
-		txData, err := json.Marshal(tx)
+		txData, err := jsonx.Marshal(tx)
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction: %w", err)
 		}
@@ -70,7 +65,7 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 		return fmt.Errorf("failed to write transaction to database: %w", err)
 	}
 
-	logx.Info("TX_STORE", "StoreBatch: stored", len(txs), "transactions")
+	logx.Info("TX_STORE", fmt.Sprintf("StoreBatch: stored %d transactions", len(txs)))
 	return nil
 }
 
@@ -83,7 +78,7 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, er
 
 	// Deserialize transaction
 	var tx transaction.Transaction
-	err = json.Unmarshal(data, &tx)
+	err = jsonx.Unmarshal(data, &tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txHash, err)
 	}
@@ -91,27 +86,40 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, er
 	return &tx, nil
 }
 
-// GetBatch retrieves multiple transactions by their hashes
+// GetBatch retrieves multiple transactions by their hashes using true batch operation
 func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transaction, error) {
 	if len(txHashes) == 0 {
+		logx.Info("TX_STORE", "GetBatch: no transactions to retrieve")
 		return []*transaction.Transaction{}, nil
 	}
+	logx.Info("TX_STORE", fmt.Sprintf("GetBatch: retrieving %d transactions", len(txHashes)))
 
-	ts.mu.RLock()
-	defer ts.mu.RUnlock()
+	// Prepare keys for batch operation
+	keys := make([][]byte, len(txHashes))
+	for i, txHash := range txHashes {
+		keys[i] = ts.getDbKey(txHash)
+	}
+
+	// Use true batch read - single CGO call!
+	dataMap, err := ts.dbProvider.GetBatch(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get transactions: %w", err)
+	}
 
 	transactions := make([]*transaction.Transaction, 0, len(txHashes))
+
 	for _, txHash := range txHashes {
-		// Direct database access without nested locking
-		data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
-		if err != nil {
-			logx.Warn("TX_STORE", fmt.Sprintf("Could not get transaction %s from database: %s", txHash, err.Error()))
+		key := ts.getDbKey(txHash)
+		data, exists := dataMap[string(key)]
+
+		if !exists {
+			logx.Warn("TX_STORE", fmt.Sprintf("Transaction %s not found in batch result", txHash))
 			continue
 		}
 
 		// Deserialize transaction
 		var tx transaction.Transaction
-		err = json.Unmarshal(data, &tx)
+		err = jsonx.Unmarshal(data, &tx)
 		if err != nil {
 			logx.Warn("TX_STORE", fmt.Sprintf("Failed to unmarshal transaction %s: %s", txHash, err.Error()))
 			continue
@@ -120,6 +128,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 		transactions = append(transactions, &tx)
 	}
 
+	logx.Info("TX_STORE", fmt.Sprintf("GetBatch: retrieved %d/%d transactions", len(transactions), len(txHashes)))
 	return transactions, nil
 }
 

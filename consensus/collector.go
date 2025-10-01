@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -33,7 +34,9 @@ func NewCollector(n int) *Collector {
 		maxSlot:   0,
 	}
 	// Start periodic cleanup to prevent memory leak
-	collector.StartPeriodicCleanup(DefaultVoteRetentionSlots, DefaultVoteCleanupInterval)
+	exception.SafeGo("StartPeriodicCleanup", func() {
+		collector.StartPeriodicCleanup(DefaultVoteRetentionSlots, DefaultVoteCleanupInterval)
+	})
 	return collector
 }
 
@@ -114,17 +117,17 @@ func (c *Collector) CleanupOldVotes(currentSlot uint64, keepRecentSlots uint64) 
 
 // StartPeriodicCleanup starts a background goroutine that periodically cleans up old votes
 func (c *Collector) StartPeriodicCleanup(keepRecentSlots uint64, cleanupInterval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(cleanupInterval)
-		defer ticker.Stop()
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
 
-		for range ticker.C {
-			// Use maxSlot instead of iterating through all votes
-			currentSlot := c.maxSlot
+	for range ticker.C {
+		// Use maxSlot instead of iterating through all votes
+		currentSlot := c.maxSlot
 
-			if currentSlot > 0 {
+		if currentSlot > 0 {
+			exception.SafeGo("CleanupOldVotes", func() {
 				c.CleanupOldVotes(currentSlot, keepRecentSlots)
-			}
+			})
 		}
-	}()
+	}
 }

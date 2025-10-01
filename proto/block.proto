@@ -1,7 +1,7 @@
 syntax = "proto3";
 package mmn;
 option go_package = "mmn/proto;proto";
-import "proto/tx.proto";
+import "tx.proto";
 
 message Entry {
   uint64 num_hashes = 1;
@@ -9,8 +9,6 @@ message Entry {
   repeated bytes transactions = 3;
   repeated string tx_hashes = 4;
 }
-
-
 
 message Block {
   uint64 slot     = 1;
@@ -48,9 +46,32 @@ message GetBlockByNumberResponse {
   uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
+message BlockInfo {
+  uint64 slot = 1;
+  bytes prev_hash = 2;
+  string leader_id = 3;
+  uint64 timestamp = 4;
+  bytes hash = 5;
+  bytes signature = 6;
+  repeated TransactionData transaction_data = 7; // Only transaction data, no entries
+}
+
+message GetBlockByRangeRequest {
+  uint64 from_slot = 1;
+  uint64 to_slot = 2;
+}
+
+message GetBlockByRangeResponse {
+  repeated BlockInfo blocks = 1;
+  uint32 total_blocks = 2; // Total blocks in the requested range
+  repeated string errors = 3;
+  uint32 decimals = 4; // Number of fractional digits for amount formatting
+}
+
 service BlockService {
   rpc Broadcast(Block) returns (BroadcastResponse);
   rpc Subscribe(SubscribeRequest) returns (stream Block);
   rpc GetBlockNumber(EmptyParams) returns (GetBlockNumberResponse);
   rpc GetBlockByNumber(GetBlockByNumberRequest) returns (GetBlockByNumberResponse);
+  rpc GetBlockByRange(GetBlockByRangeRequest) returns (GetBlockByRangeResponse);
 }

@@ -85,6 +85,7 @@ type TransactionData struct {
 	Timestamp     uint64                 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Status        TransactionStatus      `protobuf:"varint,7,opt,name=status,proto3,enum=mmn.TransactionStatus" json:"status,omitempty"`
 	TextData      string                 `protobuf:"bytes,8,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
+	ExtraInfo     string                 `protobuf:"bytes,9,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -175,6 +176,13 @@ func (x *TransactionData) GetTextData() string {
 	return ""
 }
 
+func (x *TransactionData) GetExtraInfo() string {
+	if x != nil {
+		return x.ExtraInfo
+	}
+	return ""
+}
+
 type TxMsg struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          int32                  `protobuf:"varint,1,opt,name=type,proto3" json:"type,omitempty"`
@@ -185,6 +193,8 @@ type TxMsg struct {
 	TextData      string                 `protobuf:"bytes,6,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
 	Nonce         uint64                 `protobuf:"varint,7,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	ExtraInfo     string                 `protobuf:"bytes,8,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,9,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,10,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -271,6 +281,20 @@ func (x *TxMsg) GetNonce() uint64 {
 func (x *TxMsg) GetExtraInfo() string {
 	if x != nil {
 		return x.ExtraInfo
+	}
+	return ""
+}
+
+func (x *TxMsg) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *TxMsg) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
 	}
 	return ""
 }
@@ -713,6 +737,7 @@ func (x *GetTransactionStatusRequest) GetTxHash() string {
 }
 
 // Unified transaction status message used for both unary and streaming responses
+// TODO: consider to have single field as wrapper for all original transaction attributes (amount, text data, extra...) to avoid code duplication
 type TransactionStatusInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
@@ -968,7 +993,7 @@ var File_tx_proto protoreflect.FileDescriptor
 
 const file_tx_proto_rawDesc = "" +
 	"\n" +
-	"\btx.proto\x12\x03mmn\"\xf9\x01\n" +
+	"\btx.proto\x12\x03mmn\"\x98\x02\n" +
 	"\x0fTransactionData\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
@@ -977,7 +1002,9 @@ const file_tx_proto_rawDesc = "" +
 	"\x05nonce\x18\x05 \x01(\x04R\x05nonce\x12\x1c\n" +
 	"\ttimestamp\x18\x06 \x01(\x04R\ttimestamp\x12.\n" +
 	"\x06status\x18\a \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1b\n" +
-	"\ttext_data\x18\b \x01(\tR\btextData\"\xd9\x01\n" +
+	"\ttext_data\x18\b \x01(\tR\btextData\x12\x1d\n" +
+	"\n" +
+	"extra_info\x18\t \x01(\tR\textraInfo\"\x8b\x02\n" +
 	"\x05TxMsg\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\x05R\x04type\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
@@ -987,7 +1014,10 @@ const file_tx_proto_rawDesc = "" +
 	"\ttext_data\x18\x06 \x01(\tR\btextData\x12\x14\n" +
 	"\x05nonce\x18\a \x01(\x04R\x05nonce\x12\x1d\n" +
 	"\n" +
-	"extra_info\x18\b \x01(\tR\textraInfo\"N\n" +
+	"extra_info\x18\b \x01(\tR\textraInfo\x12\x19\n" +
+	"\bzk_proof\x18\t \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\n" +
+	" \x01(\tR\x05zkPub\"N\n" +
 	"\vSignedTxMsg\x12!\n" +
 	"\x06tx_msg\x18\x01 \x01(\v2\n" +
 	".mmn.TxMsgR\x05txMsg\x12\x1c\n" +
@@ -1114,8 +1144,8 @@ var file_tx_proto_depIdxs = []int32{
 	0,  // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_proto_tx_proto_init() }
-func file_proto_tx_proto_init() {
+func init() { file_tx_proto_init() }
+func file_tx_proto_init() {
 	if File_tx_proto != nil {
 		return
 	}

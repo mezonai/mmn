@@ -1,9 +1,11 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
-	"github.com/syndtr/goleveldb/leveldb"
 	"sync"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // LevelDBProvider implements DatabaseProvider for LevelDB
@@ -32,6 +34,33 @@ func (p *LevelDBProvider) Get(key []byte) ([]byte, error) {
 		return nil, err
 	}
 	return value, nil
+}
+
+// GetBatch retrieves multiple values by keys in a single operation
+func (p *LevelDBProvider) GetBatch(keys [][]byte) (map[string][]byte, error) {
+	if len(keys) == 0 {
+		return make(map[string][]byte), nil
+	}
+
+	result := make(map[string][]byte, len(keys))
+
+	// LevelDB doesn't have native MultiGet, so we use individual gets
+	// but at least we batch them in a single function call
+	for _, key := range keys {
+		value, err := p.db.Get(key, nil)
+		if err != nil {
+			if err != leveldb.ErrNotFound {
+				return nil, err // Return error for non-NotFound errors
+			}
+			// Skip not found keys - don't add to result
+			continue
+		}
+
+		keyStr := string(key)
+		result[keyStr] = value
+	}
+
+	return result, nil
 }
 
 // Put stores a key-value pair
@@ -65,6 +94,34 @@ func (p *LevelDBProvider) Batch() DatabaseBatch {
 		batch: new(leveldb.Batch),
 		db:    p.db,
 	}
+}
+
+// IteratePrefix iterates over all key-value pairs with the given prefix
+func (p *LevelDBProvider) IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error {
+	iter := p.db.NewIterator(nil, nil)
+	defer iter.Release()
+
+	// Seek to the prefix
+	iter.Seek(prefix)
+
+	// Iterate through all keys with the prefix
+	for iter.Valid() {
+		key := iter.Key()
+
+		// Check if key still starts with prefix
+		if len(key) < len(prefix) || !bytes.HasPrefix(key, prefix) {
+			break
+		}
+
+		// Call callback function
+		if !callback(key, iter.Value()) {
+			break
+		}
+
+		iter.Next()
+	}
+
+	return iter.Error()
 }
 
 // LevelDBBatch implements DatabaseBatch for LevelDB

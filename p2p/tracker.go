@@ -99,8 +99,8 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 			ln.cleanupOldSyncRequests()
 			// probe checkpoint every tick
 			latest := bs.GetLatestFinalizedSlot()
-			if latest >= MaxScanRange {
-				checkpoint := (latest / MaxScanRange) * MaxScanRange
+			if latest >= MaxcheckpointScanBlocksRange {
+				checkpoint := (latest / MaxcheckpointScanBlocksRange) * MaxcheckpointScanBlocksRange
 				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
 				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
 			}
@@ -125,25 +125,6 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 			return
 		}
 	}
-}
-
-func (ln *Libp2pNetwork) startInitialSync(bs store.BlockStore) {
-	// wait network setup
-	time.Sleep(2 * time.Second)
-
-	ctx := context.Background()
-
-	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
-	}
-	// sync from 0
-	if err := ln.RequestBlockSync(ctx, 0); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request:", err)
-	}
-
-	// wait for sync all blocks end before start scan
-	time.Sleep(15 * time.Second)
-	ln.scanMissingBlocks(bs)
 }
 
 func (ln *Libp2pNetwork) cleanupOldSyncRequests() {

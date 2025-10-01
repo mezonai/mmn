@@ -8,6 +8,9 @@ type DatabaseProvider interface {
 	// Get retrieves a value by key
 	Get(key []byte) ([]byte, error)
 
+	// GetBatch retrieves multiple values by keys in a single operation
+	GetBatch(keys [][]byte) (map[string][]byte, error)
+
 	// Put stores a key-value pair
 	Put(key, value []byte) error
 
@@ -22,6 +25,15 @@ type DatabaseProvider interface {
 
 	// Batch returns a new batch for atomic operations
 	Batch() DatabaseBatch
+}
+
+// IterableProvider extends DatabaseProvider with iteration capabilities
+type IterableProvider interface {
+	DatabaseProvider
+
+	// IteratePrefix iterates over all key-value pairs with the given prefix
+	// The callback function should return false to stop iteration
+	IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error
 }
 
 // DatabaseBatch provides atomic batch operations
