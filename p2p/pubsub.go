@@ -68,14 +68,19 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			vote.Sign(privKey)
 
-			// verify passed broadcast vote
 			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
 				return err
 			}
-			ln.BroadcastVote(context.Background(), vote)
-			err := ln.AddBlockToQueueOrdering(blk, ld, collector, latestSlot)
 
-			return err
+			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
+				return err
+			}
+
+			if err := ln.AddBlockToQueueOrdering(blk, ld, collector, latestSlot); err != nil {
+				return err
+			}
+
+			return nil
 		},
 		OnEmptyBlockReceived: func(blocks []*block.BroadcastedBlock) error {
 			logx.Info("EMPTY_BLOCK", "Processing", len(blocks), "empty blocks")

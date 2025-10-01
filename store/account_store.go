@@ -14,6 +14,7 @@ type AccountStore interface {
 	Store(account *types.Account) error
 	StoreBatch(accounts []*types.Account) error
 	GetByAddr(addr string) (*types.Account, error)
+	GetBatch(addrs []string) (map[string]*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
 	MustClose()
 }
@@ -94,6 +95,45 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	}
 
 	return &acc, nil
+}
+
+// GetBatch retrieves multiple accounts by their addresses using batch operation
+func (as *GenericAccountStore) GetBatch(addrs []string) (map[string]*types.Account, error) {
+	if len(addrs) == 0 {
+		return make(map[string]*types.Account), nil
+	}
+
+	// Prepare keys for batch operation
+	keys := make([][]byte, len(addrs))
+	keyToAddr := make(map[string]string, len(addrs))
+	for i, addr := range addrs {
+		key := as.getDbKey(addr)
+		keys[i] = key
+		keyToAddr[string(key)] = addr
+	}
+
+	// Use batch read - single CGO call!
+	dataMap, err := as.dbProvider.GetBatch(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get accounts: %w", err)
+	}
+
+	accounts := make(map[string]*types.Account, len(addrs))
+	for keyStr, data := range dataMap {
+		addr := keyToAddr[keyStr]
+
+		// Deserialize account
+		var acc types.Account
+		err = jsonx.Unmarshal(data, &acc)
+		if err != nil {
+			logx.Warn("ACCOUNT_STORE", fmt.Sprintf("Failed to unmarshal account %s: %s", addr, err.Error()))
+			continue
+		}
+
+		accounts[addr] = &acc
+	}
+
+	return accounts, nil
 }
 
 func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {

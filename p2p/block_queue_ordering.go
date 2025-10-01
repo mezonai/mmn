@@ -7,7 +7,6 @@ import (
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/utils"
 )
@@ -123,22 +122,4 @@ func (ln *Libp2pNetwork) SetNextExpectedSlotForQueue(slot uint64) {
 
 	ln.nextExpectedSlotForQueue = slot
 	logx.Info("BLOCK:QUEUE:ORDERING", "Set next expected slot to", slot)
-}
-
-func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
-
-	if err := ln.blockStore.AddBlockPending(blk); err != nil {
-		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
-		return err
-	}
-
-	vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
-	vote.Sign(ln.selfPrivKey)
-
-	if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
-		return err
-	}
-	ln.BroadcastVote(ln.ctx, vote)
-	err := ln.AddBlockToQueueOrdering(blk, ledger, collector, latestSlot)
-	return err
 }

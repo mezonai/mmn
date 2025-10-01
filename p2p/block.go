@@ -394,6 +394,45 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 	}
 }
 
+func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector, latestSlot); err != nil {
+		logx.Error("BLOCK", "Failed to process block before broadcast:", err)
+		return err
+	}
+
+	if ln.topicBlocks != nil {
+		meshPeers := ln.topicBlocks.ListPeers()
+		for i, peer := range meshPeers {
+			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+		}
+	}
+
+	data, err := jsonx.Marshal(blk)
+	if err != nil {
+		logx.Error("BLOCK", "Failed to marshal block: ", err)
+		return err
+	}
+
+	if ln.topicBlocks != nil {
+		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
+			logx.Error("BLOCK", "Failed to publish block:", err)
+		} else {
+			vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
+			vote.Sign(ln.selfPrivKey)
+
+			if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
+				return err
+			}
+
+			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
 	return ln.blockStore.GetLatestFinalizedSlot()
 }
@@ -441,43 +480,6 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 			logx.Error("NETWORK:LATEST SLOT", "Error in latest slot callback:", err)
 		}
 	}
-}
-
-func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
-	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector, latestSlot); err != nil {
-		logx.Error("BLOCK", "Failed to process block before broadcast:", err)
-		return err
-	}
-
-	if ln.topicBlocks != nil {
-		meshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
-		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("BLOCK", "Block topic is nil")
-	}
-
-	if ln.topicBlocks != nil {
-		meshPeers := ln.topicBlocks.ListPeers()
-		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
-		}
-	}
-
-	data, err := jsonx.Marshal(blk)
-	if err != nil {
-		logx.Error("BLOCK", "Failed to marshal block: ", err)
-		return err
-	}
-
-	if ln.topicBlocks != nil {
-		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
-			logx.Error("BLOCK", "Failed to publish block:", err)
-		}
-	}
-	return nil
 }
 
 func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
@@ -582,4 +584,15 @@ func (ln *Libp2pNetwork) HandleMissingBlockResponseTopic(ctx context.Context, su
 			}
 		}
 	}
+}
+
+func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+
+	if err := ln.blockStore.AddBlockPending(blk); err != nil {
+		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
+		return err
+	}
+
+	err := ln.AddBlockToQueueOrdering(blk, ledger, collector, latestSlot)
+	return err
 }
