@@ -9,9 +9,10 @@ import (
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/utils"
 )
 
-func (ln *Libp2pNetwork) AddBlockToQueueOrdering(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+func (ln *Libp2pNetwork) AddBlockToQueueOrdering(blk *block.BroadcastedBlock, ledger *ledger.Ledger, collector *consensus.Collector, latestSlot uint64) error {
 	if blk == nil {
 		return fmt.Errorf("block is nil")
 	}
@@ -27,10 +28,10 @@ func (ln *Libp2pNetwork) AddBlockToQueueOrdering(blk *block.BroadcastedBlock, le
 	ln.blockQueueOrdering[blk.Slot] = blk
 	logx.Info("BLOCK:QUEUE:ORDERING", "Added block to queue ordering with slot", blk.Slot)
 
-	return ln.processConsecutiveBlocksInQueue(ledger, mempool, collector, latestSlot)
+	return ln.processConsecutiveBlocksInQueue(ledger, collector, latestSlot)
 }
 
-func (ln *Libp2pNetwork) processConsecutiveBlocksInQueue(ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+func (ln *Libp2pNetwork) processConsecutiveBlocksInQueue(ledger *ledger.Ledger, collector *consensus.Collector, latestSlot uint64) error {
 	var processedBlocks []*block.BroadcastedBlock
 
 	nextSlot := ln.getNextExpectedSlotForQueue()
@@ -57,6 +58,14 @@ func (ln *Libp2pNetwork) processConsecutiveBlocksInQueue(ledger *ledger.Ledger, 
 			nextSlot++
 			continue
 		} else {
+			leaderPeerID, leaderExists := ln.GetLeaderForSlot(nextSlot)
+			if !leaderExists || !ln.IsPeerConnected(leaderPeerID) {
+				ln.nextExpectedSlotForQueue = nextSlot + 1
+				nextSlot++
+				logx.Debug("BLOCK:QUEUE:ORDERING", "is not connected, breaking block processing", nextSlot)
+				break
+			}
+
 			if ln.topicMissingBlockReq != nil {
 				ln.retryMissingBlockAsync(nextSlot, MaxMissingRetry, MissingRetryInterval)
 			}
@@ -65,7 +74,7 @@ func (ln *Libp2pNetwork) processConsecutiveBlocksInQueue(ledger *ledger.Ledger, 
 	}
 
 	for _, blk := range processedBlocks {
-		if err := ln.processBlockInQueue(blk, ledger, mempool, collector, latestSlot); err != nil {
+		if err := ln.processBlockInQueue(ledger, blk, collector, latestSlot); err != nil {
 			logx.Warn("BLOCK:QUEUE:ORDERING", "Failed to process block at slot", blk.Slot, ":", err.Error())
 			continue
 		}
@@ -78,14 +87,16 @@ func (ln *Libp2pNetwork) processConsecutiveBlocksInQueue(ledger *ledger.Ledger, 
 	return nil
 }
 
-func (ln *Libp2pNetwork) processBlockInQueue(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
-	vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
-	vote.Sign(ln.selfPrivKey)
-	if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
-		return err
+func (ln *Libp2pNetwork) processBlockInQueue(ld *ledger.Ledger, blk *block.BroadcastedBlock, collector *consensus.Collector, latestSlot uint64) error {
+	committed, needApply := collector.CheckVoteStatus(blk.Slot)
+	logx.Warn("Check Vote Status", committed, needApply)
+	if committed && needApply {
+		if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+			return fmt.Errorf("apply block error: %w", err)
+		}
+
+		logx.Info("VOTE", "Block finalized via P2P! slot=", blk.Slot)
 	}
-	logx.Debug("NETWORK:SCAN", "APPLY TO LEDGER BLOCK at slot =", blk.Slot)
-	ln.BroadcastVote(ln.ctx, vote)
 
 	if blk.Slot >= latestSlot {
 		ln.checkForMissingBlocksAround(ln.blockStore, blk.Slot, false)
@@ -112,4 +123,22 @@ func (ln *Libp2pNetwork) SetNextExpectedSlotForQueue(slot uint64) {
 
 	ln.nextExpectedSlotForQueue = slot
 	logx.Info("BLOCK:QUEUE:ORDERING", "Set next expected slot to", slot)
+}
+
+func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+
+	if err := ln.blockStore.AddBlockPending(blk); err != nil {
+		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
+		return err
+	}
+
+	vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
+	vote.Sign(ln.selfPrivKey)
+
+	if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
+		return err
+	}
+	ln.BroadcastVote(ln.ctx, vote)
+	err := ln.AddBlockToQueueOrdering(blk, ledger, collector, latestSlot)
+	return err
 }

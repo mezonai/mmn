@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/monitoring"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -34,12 +35,45 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			// Store block immediately before enqueueing for ordered application
-			if err := bs.AddBlockPending(blk); err != nil {
-				logx.Error("BLOCK", "Failed to store block on receipt:", err)
-				return nil
+			// Verify PoH. If invalid, mark block and continue to process as a failed block
+			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
+			if err := blk.VerifyPoH(); err != nil {
+				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+				blk.InvalidPoH = true
+				monitoring.IncreaseInvalidPohCount()
 			}
-			err := ln.AddBlockToQueueOrdering(blk, ld, mp, collector, latestSlot)
+
+			// Reset poh to sync poh clock with leader
+			if blk.Slot > bs.GetLatestStoreSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
+
+			if err := bs.AddBlockPending(blk); err != nil {
+				logx.Error("BLOCK", "Failed to store block: ", err)
+				return err
+			}
+
+			// Remove transactions in block from mempool and add tx tracker if node is follower
+			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
+				mp.BlockCleanup(blk)
+			}
+
+			vote := &consensus.Vote{
+				Slot:      blk.Slot,
+				BlockHash: blk.Hash,
+				VoterID:   self.PubKey,
+			}
+			vote.Sign(privKey)
+
+			// verify passed broadcast vote
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+				return err
+			}
+			ln.BroadcastVote(context.Background(), vote)
+			err := ln.AddBlockToQueueOrdering(blk, ld, collector, latestSlot)
 
 			return err
 		},
@@ -66,7 +100,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		OnVoteReceived: func(vote *consensus.Vote) error {
 			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
 
-			ln.ProcessVote(bs, ld, mp, vote, collector)
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+				return err
+			}
 
 			return nil
 		},
@@ -103,6 +139,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				if gap <= ReadyGapThreshold {
 					logx.Info("NETWORK:SYNC BLOCK", fmt.Sprintf("Gap is less than or equal to ready gap threshold, gap: %d", gap))
 					ln.enableFullModeOnce.Do(func() {
+						ln.SetNextExpectedSlotForQueue(latestProcessed.Slot + 1)
 						ln.OnForceResetPOH(latestProcessed.LastEntryHash(), latestProcessed.Slot)
 						ln.startCoreServices(ln.ctx, true)
 					})
@@ -130,12 +167,45 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
-			// Store block immediately before enqueueing for ordered application
-			if err := bs.AddBlockPending(blk); err != nil {
-				logx.Error("BLOCK", "Failed to store block on receipt:", err)
-				return nil
+			// Verify PoH. If invalid, mark block and continue to process as a failed block
+			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
+			if err := blk.VerifyPoH(); err != nil {
+				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+				blk.InvalidPoH = true
+				monitoring.IncreaseInvalidPohCount()
 			}
-			err := ln.AddBlockToQueueOrdering(blk, ld, mp, collector, latestSlot)
+
+			// Reset poh to sync poh clock with leader
+			if blk.Slot > bs.GetLatestStoreSlot() {
+				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
+				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+				}
+			}
+
+			if err := bs.AddBlockPending(blk); err != nil {
+				logx.Error("BLOCK", "Failed to store block: ", err)
+				return err
+			}
+
+			// Remove transactions in block from mempool and add tx tracker if node is follower
+			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
+				mp.BlockCleanup(blk)
+			}
+
+			vote := &consensus.Vote{
+				Slot:      blk.Slot,
+				BlockHash: blk.Hash,
+				VoterID:   self.PubKey,
+			}
+			vote.Sign(privKey)
+
+			// verify passed broadcast vote
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+				return err
+			}
+			ln.BroadcastVote(context.Background(), vote)
+			err := ln.AddBlockToQueueOrdering(blk, ld, collector, latestSlot)
 			return err
 		},
 	})
@@ -144,7 +214,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	go ln.startCleanupRoutine()
 }
 
-func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
+func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore) error {
 	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
@@ -167,11 +237,6 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		return fmt.Errorf("mark block as finalized error: %w", err)
 	}
 
-	if err := ld.ApplyBlock(block); err != nil {
-		return fmt.Errorf("apply block error: %w", err)
-	}
-
-	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
 	return nil
 }
 
