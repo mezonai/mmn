@@ -32,6 +32,7 @@ type SlotBoundary struct {
 // It is the minimal interface required by validator and network layers.
 type BlockStore interface {
 	Block(slot uint64) *block.Block
+	GetBatch(slots []uint64) (map[uint64]*block.Block, error)
 	HasCompleteBlock(slot uint64) bool
 	LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool)
 	GetLatestFinalizedSlot() uint64
@@ -220,6 +221,50 @@ func (s *GenericBlockStore) Block(slot uint64) *block.Block {
 	}
 
 	return &blk
+}
+
+// GetBatch retrieves multiple blocks by their slots using true batch operation
+func (s *GenericBlockStore) GetBatch(slots []uint64) (map[uint64]*block.Block, error) {
+	if len(slots) == 0 {
+		logx.Info("BLOCKSTORE", "GetBatch: no slots to retrieve")
+		return make(map[uint64]*block.Block), nil
+	}
+	logx.Info("BLOCKSTORE", fmt.Sprintf("GetBatch: retrieving %d blocks", len(slots)))
+
+	// Prepare keys for batch operation
+	keys := make([][]byte, len(slots))
+	slotToKey := make(map[string]uint64, len(slots)) // Map key back to slot
+
+	for i, slot := range slots {
+		key := slotToBlockKey(slot)
+		keys[i] = key
+		slotToKey[string(key)] = slot
+	}
+
+	// Use true batch read - single CGO call!
+	dataMap, err := s.provider.GetBatch(keys)
+	if err != nil {
+		logx.Error("BLOCKSTORE", fmt.Sprintf("Failed to batch get blocks: %v", err))
+		return nil, fmt.Errorf("failed to batch get blocks: %w", err)
+	}
+
+	blocks := make(map[uint64]*block.Block, len(slots))
+
+	for keyStr, data := range dataMap {
+		slot := slotToKey[keyStr]
+
+		var blk block.Block
+		err = jsonx.Unmarshal(data, &blk)
+		if err != nil {
+			logx.Warn("BLOCKSTORE", fmt.Sprintf("Failed to unmarshal block %d: %s", slot, err.Error()))
+			continue
+		}
+
+		blocks[slot] = &blk
+	}
+
+	logx.Info("BLOCKSTORE", fmt.Sprintf("GetBatch: retrieved %d/%d blocks", len(blocks), len(slots)))
+	return blocks, nil
 }
 
 // HasCompleteBlock checks if a complete block exists at the given slot

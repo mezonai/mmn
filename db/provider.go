@@ -8,6 +8,9 @@ type DatabaseProvider interface {
 	// Get retrieves a value by key
 	Get(key []byte) ([]byte, error)
 
+	// GetBatch retrieves multiple values by keys in a single operation
+	GetBatch(keys [][]byte) (map[string][]byte, error)
+
 	// Put stores a key-value pair
 	Put(key, value []byte) error
 

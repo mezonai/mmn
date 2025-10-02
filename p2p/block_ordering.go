@@ -7,9 +7,9 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
@@ -98,7 +98,9 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
 	// Verify PoH
 	if err := blk.VerifyPoH(); err != nil {
-		return fmt.Errorf("invalid PoH for block at slot %d: %w", blk.Slot, err)
+		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+		blk.InvalidPoH = true
+		monitoring.IncreaseInvalidPohCount()
 	}
 
 	if err := bs.AddBlockPending(blk); err != nil {
@@ -109,7 +111,7 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("failed to finalize block at slot %d: %w", blk.Slot, err)
 	}
 
-	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+	if err := ld.ApplyBlock(blk); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
 

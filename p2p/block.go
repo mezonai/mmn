@@ -10,6 +10,8 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/poh"
+	"github.com/mezonai/mmn/transaction"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -176,7 +178,36 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 }
 
-func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.Block, s network.Stream) error {
+func (ln *Libp2pNetwork) convertBlockToBroadcastedBlock(blk *block.Block) *block.BroadcastedBlock {
+	if blk == nil {
+		return nil
+	}
+
+	entries := make([]poh.Entry, len(blk.Entries))
+	for i, persistentEntry := range blk.Entries {
+		transactions, err := ln.txStore.GetBatch(persistentEntry.TxHashes)
+		if err != nil {
+			logx.Warn("NETWORK:SYNC BLOCK", fmt.Sprintf("Failed to load transactions for entry %d in block %d: %v", i, blk.Slot, err))
+			transactions = make([]*transaction.Transaction, 0)
+		}
+
+		entries[i] = poh.Entry{
+			NumHashes:    persistentEntry.NumHashes,
+			Hash:         persistentEntry.Hash,
+			Transactions: transactions,
+			Tick:         persistentEntry.Tick,
+		}
+	}
+
+	broadcastedBlock := &block.BroadcastedBlock{
+		BlockCore: blk.BlockCore,
+		Entries:   entries,
+	}
+
+	return broadcastedBlock
+}
+
+func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.BroadcastedBlock, s network.Stream) error {
 	if len(batch) == 0 {
 		return nil
 	}
@@ -258,7 +289,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		return
 	}
 
-	var batch []*block.Block
+	var batch []*block.BroadcastedBlock
 	totalBlocksSent := 0
 	currentFromSlot := req.FromSlot
 	currentToSlot := req.ToSlot
@@ -290,7 +321,8 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		for slot <= currentToSlot {
 			blk := ln.blockStore.Block(slot)
 			if blk != nil {
-				batch = append(batch, blk)
+				broadcastedBlock := ln.convertBlockToBroadcastedBlock(blk)
+				batch = append(batch, broadcastedBlock)
 			}
 
 			if len(batch) >= int(SyncBlocksBatchSize) {
@@ -427,6 +459,16 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 
 func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
 	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
+
+	if ln.topicBlocks != nil {
+		meshPeers := ln.topicBlocks.ListPeers()
+		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
+		for i, peer := range meshPeers {
+			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+		}
+	} else {
+		logx.Error("BLOCK", "Block topic is nil")
+	}
 
 	data, err := jsonx.Marshal(blk)
 	if err != nil {

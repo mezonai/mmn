@@ -41,8 +41,23 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
 	return &consensus.Vote{
 		Slot:      msg.Slot,
-		VoterID:   msg.VoterID,
+		VoteType:  consensus.VoteType(msg.VoteType),
+		BlockHash: msg.BlockHash,
+		PubKey:    msg.PubKey,
 		Signature: msg.Signature,
+	}
+}
+
+func (ln *Libp2pNetwork) ConvertMessageToCert(msg CertMessage) *consensus.Cert {
+	return &consensus.Cert{
+		Slot:                 msg.Slot,
+		CertType:             consensus.CertType(msg.CertType),
+		BlockHash:            msg.BlockHash,
+		Stake:                msg.Stake,
+		AggregateSig:         msg.AggregateSig,
+		AggregateSigFallback: msg.AggregateSigFallback,
+		ListPubKeys:          msg.ListPubKeys,
+		ListPubKeysFallback:  msg.ListPubKeysFallback,
 	}
 }
 

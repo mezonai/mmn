@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"encoding/hex"
 	"fmt"
 
+	"github.com/herumi/bls-eth-go-binary/bls"
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
@@ -221,4 +223,26 @@ func TxMetaStatusToProtoTxStatus(status int32) pb.TransactionStatus {
 		return pb.TransactionStatus_CONFIRMED
 	}
 	return pb.TransactionStatus_PENDING
+}
+
+func BytesToBlsSignature(data []byte) (bls.Sign, error) {
+	var sign bls.Sign
+	if err := sign.Deserialize(data); err != nil {
+		return bls.Sign{}, err
+	}
+	return sign, nil
+}
+
+func StringToBlsPubkey(pubkeys []string) []bls.PublicKey {
+	var blsPubkeys []bls.PublicKey
+	for _, pubkey := range pubkeys {
+		pubkeyBytes, err := hex.DecodeString(pubkey)
+		if err != nil {
+			continue
+		}
+		var blsPubkey bls.PublicKey
+		blsPubkey.Deserialize(pubkeyBytes)
+		blsPubkeys = append(blsPubkeys, blsPubkey)
+	}
+	return blsPubkeys
 }

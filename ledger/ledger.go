@@ -104,7 +104,7 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block) error {
+func (l *Ledger) ApplyBlock(b *block.BroadcastedBlock) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
@@ -114,10 +114,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	}
 
 	for _, entry := range b.Entries {
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
+		if len(entry.Transactions) == 0 {
+			continue
 		}
+
+		txs := entry.Transactions
 		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
 		for _, tx := range txs {
@@ -245,6 +246,26 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 		return nil, nil, errTx, errTxMeta
 	}
 	return tx, txMeta, nil, nil
+}
+
+// GetTxBatch retrieves multiple transactions and their metadata using batch operations
+func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
+	if len(hashes) == 0 {
+		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil
+	}
+
+	// Use batch operations - only 2 CGO calls instead of 2*N!
+	txs, errTx := l.txStore.GetBatch(hashes)
+	txMetas, errTxMeta := l.txMetaStore.GetBatch(hashes)
+
+	if errTx != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transactions: %w", errTx)
+	}
+	if errTxMeta != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transaction metas: %w", errTxMeta)
+	}
+
+	return txs, txMetas, nil
 }
 
 var ErrInvalidNonce = errors.New("invalid nonce")

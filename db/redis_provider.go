@@ -71,6 +71,43 @@ func (p *RedisProvider) Get(key []byte) ([]byte, error) {
 	return []byte(value), nil
 }
 
+// GetBatch retrieves multiple values by keys in a single operation
+func (p *RedisProvider) GetBatch(keys [][]byte) (map[string][]byte, error) {
+	if len(keys) == 0 {
+		return make(map[string][]byte), nil
+	}
+
+	// Convert keys to Redis format
+	redisKeys := make([]string, len(keys))
+	keyMapping := make(map[string][]byte, len(keys)) // Map redis key back to original key
+
+	for i, key := range keys {
+		redisKey := convertKeyToHumanReadable(key)
+		redisKeys[i] = redisKey
+		keyMapping[redisKey] = key
+	}
+
+	// Use Redis MGET for efficient batch reads
+	values, err := p.client.MGet(p.ctx, redisKeys...).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]byte, len(keys))
+
+	for i, value := range values {
+		if value != nil {
+			// Convert back to original key format
+			originalKey := keyMapping[redisKeys[i]]
+			keyStr := string(originalKey)
+			result[keyStr] = []byte(value.(string))
+		}
+		// If value is nil, the key doesn't exist - don't add to result
+	}
+
+	return result, nil
+}
+
 // Put stores a key-value pair
 func (p *RedisProvider) Put(key, value []byte) error {
 	redisKey := convertKeyToHumanReadable(key)

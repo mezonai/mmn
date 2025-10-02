@@ -46,6 +46,7 @@ require (
 	github.com/google/pprof v0.0.0-20250820193118-f64d9cf942d6 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/ingonyama-zk/icicle-gnark/v3 v3.2.2 // indirect
+	github.com/herumi/bls-eth-go-binary v1.36.4 // indirect
 	github.com/ipfs/boxo v0.30.0 // indirect
 	github.com/ipfs/go-datastore v0.8.2 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect

@@ -76,9 +76,6 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 
 // GetByAddr returns account instance from db, return both nil if not exist
 func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-
 	data, err := as.dbProvider.Get(as.getDbKey(addr))
 	if err != nil {
 		return nil, fmt.Errorf("could not get account %s from db: %w", addr, err)
@@ -100,9 +97,6 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 }
 
 func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {
-	as.mu.RLock()
-	defer as.mu.RUnlock()
-
 	return as.dbProvider.Has(as.getDbKey(addr))
 }
 

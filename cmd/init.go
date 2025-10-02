@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/herumi/bls-eth-go-binary/bls"
 	"github.com/mezonai/mmn/monitoring"
 
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -25,10 +26,11 @@ const ZERO_ADDRESS = "0000000000000000000000000000000000000000000000000000000000
 
 var (
 	// Init command specific variables
-	initGenesisPath string
-	initDataDir     string
-	initDatabase    string
-	initPrivKeyPath string
+	initGenesisPath    string
+	initDataDir        string
+	initDatabase       string
+	initPrivKeyPath    string
+	initBlsPrivKeyPath string
 )
 
 var initCmd = &cobra.Command{
@@ -53,6 +55,7 @@ func init() {
 	initCmd.Flags().StringVar(&initDataDir, "data-dir", ".", "Directory to save node data")
 	initCmd.Flags().StringVar(&initDatabase, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	initCmd.Flags().StringVar(&initPrivKeyPath, "privkey-path", "", "Path to existing private key file (optional)")
+	initCmd.Flags().StringVar(&initBlsPrivKeyPath, "bls-privkey-path", "", "Path to existing private key file (optional)")
 }
 
 // initializeNode generates a new Ed25519 seed, creates genesis block, and initializes node data.
@@ -60,6 +63,11 @@ func init() {
 func initializeNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
+
+	// Initialize BLS library
+	if err := bls.Init(bls.BLS12_381); err != nil {
+		return
+	}
 
 	// Ensure data directory exists
 	if err := os.MkdirAll(initDataDir, 0755); err != nil {
@@ -71,7 +79,11 @@ func initializeNode() {
 	privKeyFile := filepath.Join(initDataDir, "privkey.txt")
 	pubKeyFile := filepath.Join(initDataDir, "pubkey.txt")
 
+	blsPrivKeyFile := filepath.Join(initDataDir, "bls_privkey.txt")
+	blsPubKeyFile := filepath.Join(initDataDir, "bls_pubkey.txt")
+
 	var pubKeyHex string
+	var blsPubKeyHex string
 	var err error
 
 	// Check if privkey-path is provided
@@ -166,6 +178,42 @@ func initializeNode() {
 			logx.Info("INIT", "Public key saved to:", pubKeyFile)
 		}
 	}
+
+	// Repeat the same process for BLS keys
+	if initBlsPrivKeyPath != "" {
+		// Use provided private key file
+		logx.Info("INIT", "Using provided BLS private key from:", initBlsPrivKeyPath)
+
+		// Load public key from provided private key
+		blsPubKeyHex, err = config.LoadBlsPubKeyFromPriv(initBlsPrivKeyPath)
+		if err != nil {
+			logx.Error("INIT", "Failed to load BLS public key from provided private key:", err.Error())
+			return
+		}
+
+		// Copy the private key to data directory
+		blsPrivKeyData, err := os.ReadFile(initBlsPrivKeyPath)
+		if err != nil {
+			logx.Error("INIT", "Failed to read provided BLS private key file:", err.Error())
+			return
+		}
+
+		err = os.WriteFile(blsPrivKeyFile, blsPrivKeyData, 0600)
+		if err != nil {
+			logx.Error("INIT", "Failed to copy BLS private key to data directory:", err.Error())
+			return
+		}
+
+		// Save public key
+		err = os.WriteFile(blsPubKeyFile, []byte(blsPubKeyHex), 0644)
+		if err != nil {
+			logx.Error("INIT", "Failed to write BLS public key to file:", err.Error())
+			return
+		}
+		logx.Info("INIT", "BLS Private key copied to:", blsPrivKeyFile)
+		logx.Info("INIT", "BLS Public key saved to:", blsPubKeyFile)
+	}
+	//TODO: if no bls key provided, generate new one
 
 	// Load genesis configuration
 	cfg, err := loadConfiguration(initGenesisPath)

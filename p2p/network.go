@@ -9,6 +9,7 @@ import (
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -33,6 +34,8 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	memBlockStore *mem_blockstore.MemBlockStore,
+	txStore store.TxStore,
 	pohCfg *config.PohConfig,
 ) (*Libp2pNetwork, error) {
 
@@ -74,7 +77,12 @@ func NewNetWork(
 
 	customDiscovery.Advertise(ctx, AdvertiseName)
 
-	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()))
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()),
+		pubsub.WithMaxMessageSize(5*1024*1024),
+		pubsub.WithValidateQueueSize(128),
+		pubsub.WithPeerOutboundQueueSize(128),
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)
@@ -88,6 +96,8 @@ func NewNetWork(
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
 		blockStore:             blockStore,
+		memBlockStore:          memBlockStore,
+		txStore:                txStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
 		syncRequests:           make(map[string]*SyncRequestTracker),
@@ -126,11 +136,10 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
+	ln.host.SetStreamHandler(RepairBlockProtocol, ln.handleRepairBlockStream)
 
 	// Start latest slot request mechanism
 	ln.startLatestSlotRequestMechanism()
-
-	ln.SetupPubSubSyncTopics(ctx)
 
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {

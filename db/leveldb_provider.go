@@ -36,6 +36,33 @@ func (p *LevelDBProvider) Get(key []byte) ([]byte, error) {
 	return value, nil
 }
 
+// GetBatch retrieves multiple values by keys in a single operation
+func (p *LevelDBProvider) GetBatch(keys [][]byte) (map[string][]byte, error) {
+	if len(keys) == 0 {
+		return make(map[string][]byte), nil
+	}
+
+	result := make(map[string][]byte, len(keys))
+
+	// LevelDB doesn't have native MultiGet, so we use individual gets
+	// but at least we batch them in a single function call
+	for _, key := range keys {
+		value, err := p.db.Get(key, nil)
+		if err != nil {
+			if err != leveldb.ErrNotFound {
+				return nil, err // Return error for non-NotFound errors
+			}
+			// Skip not found keys - don't add to result
+			continue
+		}
+
+		keyStr := string(key)
+		result[keyStr] = value
+	}
+
+	return result, nil
+}
+
 // Put stores a key-value pair
 func (p *LevelDBProvider) Put(key, value []byte) error {
 	return p.db.Put(key, value, nil)
