@@ -54,7 +54,7 @@ services:
     container_name: listener
     command: >
       sh -c '
-        ./mmn init --data-dir "./node-data/listener" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/listener.txt" &&
+        ./mmn init --data-dir "./node-data/listener" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
         ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/listener" --listen-addr ":8004" --jsonrpc-addr ":8084" --grpc-addr ":9004" --mode listen --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:

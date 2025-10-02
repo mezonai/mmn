@@ -56,26 +56,29 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			if !ln.isListener {
-				// Remove transactions in block from mempool and add tx tracker if node is follower
-				if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-					mp.BlockCleanup(blk)
-				}
-
-				vote := &consensus.Vote{
-					Slot:      blk.Slot,
-					BlockHash: blk.Hash,
-					VoterID:   self.PubKey,
-				}
-				vote.Sign(privKey)
-
-				if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
-					return err
-				}
-
-				if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
-					return err
-				}
+				return nil
 			}
+
+			// Remove transactions in block from mempool and add tx tracker if node is follower
+			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
+				mp.BlockCleanup(blk)
+			}
+
+			vote := &consensus.Vote{
+				Slot:      blk.Slot,
+				BlockHash: blk.Hash,
+				VoterID:   self.PubKey,
+			}
+			vote.Sign(privKey)
+
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+				return err
+			}
+
+			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
+				return err
+			}
+
 			return nil
 		},
 		OnEmptyBlockReceived: func(blocks []*block.BroadcastedBlock) error {
