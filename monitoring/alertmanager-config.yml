@@ -10,6 +10,16 @@ route:
       receiver: 'mezon-webhook'
       group_wait: 5s
       repeat_interval: 30m
+    - match:
+        alert_type: inode_usage
+      receiver: 'mezon-webhook'
+      group_wait: 5s
+      repeat_interval: 30m
+    - match:
+        alert_type: log_growth
+      receiver: 'mezon-webhook'
+      group_wait: 5s
+      repeat_interval: 15m
 
 receivers:
   - name: 'mezon-webhook'

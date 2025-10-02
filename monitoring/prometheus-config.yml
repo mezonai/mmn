@@ -20,4 +20,4 @@ scrape_configs:
       - files: ["/etc/prometheus/targets/nodes.yml"]
 
 rule_files:
-  - "/etc/prometheus/rules/disk_usage.yml"
+  - "/etc/prometheus/rules/*.yml"

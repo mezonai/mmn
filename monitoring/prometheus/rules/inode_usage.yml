@@ -1,0 +1,32 @@
+groups:
+  - name: inode_usage_alerts
+    rules:
+      - alert: InodeUsageWarning
+        expr: |
+          100 * (1 - (sum by (node) (node_filesystem_files_free{node="$node", job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}) / sum by (node) (node_filesystem_files{node="$node",job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}))) > 70
+        for: 30s
+        labels:
+          severity: warning
+          alert_type: inode_usage
+        annotations:
+          summary: "Inode usage warning on {{ $labels.node }}"
+          description: "Inode usage is {{ $value }}% on {{ $labels.node }}"
+          message: |
+            @here [WARNING]
+            Inode Usage: {{ $value }}%
+            Node: {{ $labels.node }}
+
+      - alert: InodeUsageCritical
+        expr: |
+          100 * (1 - (sum by (node) (node_filesystem_files_free{node="$node", job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}) / sum by (node) (node_filesystem_files{node="$node",job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}))) > 85
+        for: 30s
+        labels:
+          severity: critical
+          alert_type: inode_usage
+        annotations:
+          summary: "Inode usage critical on {{ $labels.node }}"
+          description: "Inode usage is {{ $value }}% on {{ $labels.node }}"
+          message: |
+            @here [CRITICAL]
+            Inode Usage: {{ $value }}%
+            Node: {{ $labels.node }}
