@@ -206,6 +206,11 @@ func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
 	return l.accountStore.GetByAddr(addr)
 }
 
+// GetAccountBatch returns multiple accounts for the given addresses using batch operation
+func (l *Ledger) GetAccountBatch(addrs []string) (map[string]*types.Account, error) {
+	return l.accountStore.GetBatch(addrs)
+}
+
 // Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
 func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
 	if tx == nil {
