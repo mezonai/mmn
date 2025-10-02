@@ -3,7 +3,7 @@ groups:
     rules:
       - alert: InodeUsageWarning
         expr: |
-          100 * (1 - (sum by (node) (node_filesystem_files_free{node="$node", job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}) / sum by (node) (node_filesystem_files{node="$node",job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}))) > 70
+          100 * (1 - (sum by (node) (node_filesystem_files_free{job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}) / sum by (node) (node_filesystem_files{job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}))) > 70
         for: 30s
         labels:
           severity: warning
@@ -18,7 +18,7 @@ groups:
 
       - alert: InodeUsageCritical
         expr: |
-          100 * (1 - (sum by (node) (node_filesystem_files_free{node="$node", job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}) / sum by (node) (node_filesystem_files{node="$node",job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}))) > 85
+          100 * (1 - (sum by (node) (node_filesystem_files_free{job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}) / sum by (node) (node_filesystem_files{job="exporter",fstype!="tmpfs",fstype!="overlay",fstype!="9p"}))) > 85
         for: 30s
         labels:
           severity: critical

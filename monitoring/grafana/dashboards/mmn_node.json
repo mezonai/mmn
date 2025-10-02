@@ -969,7 +969,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "100 * (1 - (sum by (node) (node_filesystem_files_free{node=\"$node\", job=\"exporter\",fstype!=\"tmpfs\",fstype!=\"overlay\",fstype!=\"9p\"}) / sum by (node) (node_filesystem_files{node=\"$node\",job=\"exporter\",fstype!=\"tmpfs\",fstype!=\"overlay\",fstype!=\"9p\"})))",
+          "expr": "100 * (1 - (sum(node_filesystem_files_free{node=\"$node\",fstype!=\"tmpfs\",fstype!=\"overlay\",fstype!=\"9p\"}) / sum(node_filesystem_files{node=\"$node\",fstype!=\"tmpfs\",fstype!=\"overlay\",fstype!=\"9p\"})))",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -1326,5 +1326,5 @@
   "timezone": "browser",
   "title": "MMN Node",
   "uid": "bexqdzc2ufrpcf",
-  "version": 1
+  "version": 21
 }
