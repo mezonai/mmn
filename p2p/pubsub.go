@@ -55,6 +55,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
+			if ln.isListener {
+				return nil
+			}
+
 			// Remove transactions in block from mempool and add tx tracker if node is follower
 			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
 				mp.BlockCleanup(blk)
@@ -74,6 +78,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
 				return err
 			}
+
 			return nil
 		},
 		OnEmptyBlockReceived: func(blocks []*block.BroadcastedBlock) error {
@@ -227,7 +232,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.leaderSchedule.Len() == 1 {
+	if ln.leaderSchedule.Len() == 1 && !ln.isListener {
 		ln.startImmediatelyFromLocalLatestSlot()
 		return
 	}
@@ -390,11 +395,13 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
-		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("HandleTransactionTopic", func() {
-				ln.HandleTransactionTopic(ctx, sub)
-			})
+	if !ln.isListener {
+		if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
+			if sub, err := ln.topicTxs.Subscribe(); err == nil {
+				exception.SafeGoWithPanic("HandleTransactionTopic", func() {
+					ln.HandleTransactionTopic(ctx, sub)
+				})
+			}
 		}
 	}
 

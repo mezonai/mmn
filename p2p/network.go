@@ -35,6 +35,7 @@ func NewNetWork(
 	blockStore store.BlockStore,
 	txStore store.TxStore,
 	pohCfg *config.PohConfig,
+	isListener bool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -108,6 +109,7 @@ func NewNetWork(
 		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
 		nextExpectedSlot:       0,
 		pohCfg:                 pohCfg,
+		isListener:             isListener,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
