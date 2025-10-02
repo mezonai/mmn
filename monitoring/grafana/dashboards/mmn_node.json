@@ -581,8 +581,12 @@
                 "color": "green"
               },
               {
-                "color": "red",
-                "value": 80
+                "color": "dark-yellow",
+                "value": 70
+              },
+              {
+                "color": "dark-red",
+                "value": 85
               }
             ]
           },

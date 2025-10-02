@@ -6,7 +6,7 @@ global:
 alerting:
   alertmanagers:
     - static_configs:
-        - targets: []
+        - targets: ['alertmanager:9093']
 
 scrape_configs:
   - job_name: prometheus
@@ -18,3 +18,6 @@ scrape_configs:
     scrape_interval: 5s
     file_sd_configs:
       - files: ["/etc/prometheus/targets/nodes.yml"]
+
+rule_files:
+  - "/etc/prometheus/rules/disk_usage.yml"

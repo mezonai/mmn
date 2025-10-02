@@ -156,7 +156,34 @@ services:
     volumes:
       - ./monitoring/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/targets:/etc/prometheus/targets:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
       - prom_data:/prometheus
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager-config.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/webhook-templates:/etc/alertmanager/templates:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - mezon
+    restart: unless-stopped
+
+  webhook-receiver:
+    image: golang:1.24-bookworm
+    container_name: webhook-receiver
+    working_dir: /app
+    command: sh -c 'go run main.go'
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./webhook-receiver:/app
     networks:
       - mezon
     restart: unless-stopped
@@ -188,3 +215,4 @@ volumes:
   loki_data:
   grafana_data:
   prom_data:
+  alertmanager_data:
