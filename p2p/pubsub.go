@@ -55,7 +55,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return err
 			}
 
-			if !ln.isListener {
+			if ln.isListener {
 				return nil
 			}
 
