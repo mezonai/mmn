@@ -1,5 +1,9 @@
 package errors
 
+import (
+	"encoding/json"
+)
+
 // NetworkErrorCode represents standardized error codes for network operations
 type NetworkErrorCode string
 
@@ -36,8 +40,11 @@ type NetworkError struct {
 
 // Error implements the error interface
 func (e *NetworkError) Error() string {
-	// Return simple message for direct usage
-	return e.Message
+	err, _ := json.Marshal(NetworkError{
+		Code:    e.Code,
+		Message: e.Message,
+	})
+	return string(err)
 }
 
 // Error message constants - user-friendly and concise
