@@ -89,14 +89,9 @@ func LoadBlsPrivKey(path string) (bls.SecretKey, error) {
 		return blsPrivKey, err
 	}
 	keyHex := strings.TrimSpace(string(data))
-	blsPrivBytes, err := common.DecodeBase58ToBytes(keyHex)
-	if err != nil || len(blsPrivBytes) == 0 {
-		// Fallback to hex
-		hb, herr := hex.DecodeString(keyHex)
-		if herr != nil {
-			return blsPrivKey, fmt.Errorf("failed to decode private key as base58 or hex: %v | %v", err, herr)
-		}
-		blsPrivBytes = hb
+	blsPrivBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return blsPrivKey, fmt.Errorf("failed to decode BLS private key from hex: %w", err)
 	}
 
 	if err := blsPrivKey.Deserialize(blsPrivBytes); err != nil {
@@ -204,14 +199,9 @@ func LoadBlsPubKeyFromPriv(blsPrivKeyPath string) (string, error) {
 
 	keyHex := strings.TrimSpace(string(data))
 
-	blsPrivBytes, err := common.DecodeBase58ToBytes(keyHex)
-	if err != nil || len(blsPrivBytes) == 0 {
-		// Fallback to hex
-		hb, herr := hex.DecodeString(keyHex)
-		if herr != nil {
-			return "", fmt.Errorf("failed to decode private key (base58 and hex): %v | %v", err, herr)
-		}
-		blsPrivBytes = hb
+	blsPrivBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode BLS private key from hex: %w", err)
 	}
 
 	var blsPrivKey bls.SecretKey

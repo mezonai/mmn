@@ -1,10 +1,13 @@
 package pool
 
 import (
+	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/utils"
 )
 
@@ -39,8 +42,10 @@ func (p *Pool) getSlotState(slot uint64) *SlotState {
 }
 
 func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
+	logx.Info("POOL", fmt.Sprintf("Received vote of type %v for block %s in slot %d from %s", v.VoteType, hex.EncodeToString(v.BlockHash[:]), v.Slot, v.PubKey))
+
 	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
-	if v.Slot <= latestFinalizedSlot || v.Slot >= latestFinalizedSlot+2*utils.SLOTS_PER_EPOCH {
+	if v.Slot <= latestFinalizedSlot || v.Slot >= latestFinalizedSlot+2*utils.SLOTS_PER_WINDOW {
 		return false, errors.New("slot out of range")
 	}
 
@@ -51,11 +56,15 @@ func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
 	}
 
 	// Add vote to slot state
+	logx.Info("POOL", fmt.Sprintf("Adding %v vote for block %s in slot %d", v.VoteType, hex.EncodeToString(v.BlockHash[:]), v.Slot))
 	newCerts, newVotorEvents, newRepairBlocks := p.getSlotState(v.Slot).AddVote(v)
 
-	// If new certs created => add them to pool
+	// If new certs created => send events to votor
 	for _, cert := range newCerts {
-		p.addValidCert(&cert)
+		p.votorChannel <- votor.VotorEvent{
+			Type: votor.CERT_CREATED,
+			Cert: &cert,
+		}
 	}
 
 	// If new votor events created => send them to votor
@@ -72,8 +81,10 @@ func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
 }
 
 func (p *Pool) AddCert(c *consensus.Cert) (bool, error) {
+	logx.Info("POOL", fmt.Sprintf("Received certificate of type %v for block %s in slot %d", c.CertType, hex.EncodeToString(c.BlockHash[:]), c.Slot))
+
 	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
-	if c.Slot <= latestFinalizedSlot || c.Slot > latestFinalizedSlot+utils.SLOTS_PER_EPOCH {
+	if c.Slot <= latestFinalizedSlot || c.Slot > latestFinalizedSlot+utils.SLOTS_PER_WINDOW {
 		return false, errors.New("slot out of range")
 	}
 
@@ -95,6 +106,7 @@ func (p *Pool) addValidCert(cert *consensus.Cert) {
 	blockHash := cert.BlockHash
 
 	// Add cert to slot state
+	logx.Info("POOL", fmt.Sprintf("Adding %v certificate for block %s in slot %d", cert.CertType, hex.EncodeToString(cert.BlockHash[:]), cert.Slot))
 	p.getSlotState(slot).AddCert(cert)
 
 	switch cert.CertType {
@@ -138,7 +150,7 @@ func (p *Pool) addValidCert(cert *consensus.Cert) {
 	}
 
 	p.votorChannel <- votor.VotorEvent{
-		Type: votor.CERT_CREATED,
+		Type: votor.CERT_SAVED,
 		Cert: cert,
 	}
 }
@@ -173,12 +185,14 @@ func (p *Pool) AddBlock(blockId BlockId, parentId BlockId) {
 	newParentReady := p.parentReadyTracker.HandleFinalization(finalizationEvent)
 	p.sentParentReadyEvents(newParentReady)
 
+	logx.Info("POOL", fmt.Sprintf("Notify slot %d that parent block %s is known", blockId.Slot, hex.EncodeToString(parentId.BlockHash[:])))
 	p.getSlotState(blockId.Slot).NotifyParentKnown(blockId.BlockHash)
 
 	parentState := p.getSlotState(parentId.Slot)
 
 	if parentState.isNotarFallback(parentId.BlockHash) {
-		event, parentBlockId := p.getSlotState(blockId.Slot).NotifyParentCertified(parentId.BlockHash)
+		event, parentBlockId := p.getSlotState(blockId.Slot).NotifyParentCertified(blockId.BlockHash)
+		logx.Info("POOL", fmt.Sprintf("Notify slot %d that parent block %s is certified", blockId.Slot, hex.EncodeToString(parentId.BlockHash[:])))
 
 		if event != nil {
 			p.votorChannel <- *event

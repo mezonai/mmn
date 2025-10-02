@@ -17,6 +17,22 @@ const (
 	FINAL_VOTE
 )
 
+func (vt VoteType) String() string {
+	switch vt {
+	case NOTAR_VOTE:
+		return "NOTAR_VOTE"
+	case NOTAR_FALLBACK_VOTE:
+		return "NOTAR_FALLBACK_VOTE"
+	case SKIP_VOTE:
+		return "SKIP_VOTE"
+	case SKIP_FALLBACK_VOTE:
+		return "SKIP_FALLBACK_VOTE"
+	case FINAL_VOTE:
+		return "FINAL_VOTE"
+	}
+	return "UNKNOWN_VOTE"
+}
+
 // Vote is a vote for a block of a slot
 type Vote struct {
 	Slot      uint64 // slot number

@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -39,6 +40,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			mbs.AddBlock(blk.Slot, blk)
 
 			//TODO: need to reset PoH somewhere else
+			if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+				logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+			}
 
 			if self.PubKey != blk.LeaderID {
 				go mp.BlockCleanup(blk)
@@ -95,11 +99,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			if cert.CertType == consensus.FINAL_CERT || cert.CertType == consensus.FAST_FINAL_CERT {
+				logx.Info("CERT", fmt.Sprintf("Applying finalized block for slot %d with block %s", cert.Slot, hex.EncodeToString(cert.BlockHash[:])))
 				block := mbs.GetBlock(cert.Slot, cert.BlockHash)
-				ln.applyDataToBlock(block, bs, ld)
+				err := ln.applyDataToBlock(block, bs, ld)
+				// Cleanup mem blockstore
+				if err == nil {
+					mbs.Prune(cert.Slot)
+				}
 			}
-
-			//TODO: handle cleanup mem blockstore
 
 			return nil
 		},
@@ -368,8 +375,8 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicVotes, err = ln.pubsub.Join(TopicVotes); err == nil {
-		if sub, err := ln.topicVotes.Subscribe(); err == nil {
+	if ln.topicCerts, err = ln.pubsub.Join(TopicCerts); err == nil {
+		if sub, err := ln.topicCerts.Subscribe(); err == nil {
 			exception.SafeGoWithPanic("HandleCertTopic", func() {
 				ln.HandleCertTopic(ctx, sub)
 			})

@@ -18,6 +18,23 @@ const (
 	FINAL_CERT
 )
 
+func (ct CertType) String() string {
+	switch ct {
+	case NOTAR_CERT:
+		return "NOTAR_CERT"
+	case NOTAR_FALLBACK_CERT:
+		return "NOTAR_FALLBACK_CERT"
+	case SKIP_CERT:
+		return "SKIP_CERT"
+	case FAST_FINAL_CERT:
+		return "FAST_FINAL_CERT"
+	case FINAL_CERT:
+		return "FINAL_CERT"
+	default:
+		return "UNKNOWN_CERT"
+	}
+}
+
 type Cert struct {
 	Slot                 uint64
 	CertType             CertType
@@ -47,9 +64,11 @@ func (c *Cert) VerifySignature() bool {
 		return helperVerify(c.AggregateSig, c.ListPubKeys, c.createMessage(NOTAR_VOTE))
 
 	case NOTAR_FALLBACK_CERT:
-		return helperVerify(c.AggregateSig, c.ListPubKeys, c.createMessage(NOTAR_VOTE)) &&
-			helperVerify(c.AggregateSigFallback, c.ListPubKeysFallback, c.createMessage(NOTAR_FALLBACK_VOTE))
-
+		valid := helperVerify(c.AggregateSig, c.ListPubKeys, c.createMessage(NOTAR_VOTE))
+		if len(c.AggregateSigFallback) > 0 {
+			valid = valid && helperVerify(c.AggregateSigFallback, c.ListPubKeysFallback, c.createMessage(NOTAR_FALLBACK_VOTE))
+		}
+		return valid
 	case SKIP_CERT:
 		valid := helperVerify(c.AggregateSig, c.ListPubKeys, c.createMessage(SKIP_VOTE))
 		if len(c.AggregateSigFallback) > 0 {
@@ -70,10 +89,6 @@ func (c *Cert) Validate() error {
 
 	if len(c.AggregateSig) == 0 {
 		return fmt.Errorf("missing aggregate signature")
-	}
-
-	if c.CertType == NOTAR_FALLBACK_CERT && len(c.AggregateSigFallback) == 0 {
-		return fmt.Errorf("missing aggregate signature fallback")
 	}
 
 	return nil

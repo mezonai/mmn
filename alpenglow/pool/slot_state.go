@@ -1,11 +1,14 @@
 package pool
 
 import (
+	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/herumi/bls-eth-go-binary/bls"
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/utils"
 )
 
@@ -244,7 +247,7 @@ func (ss *SlotState) AddVote(v *consensus.Vote) ([]consensus.Cert, []votor.Votor
 
 	case consensus.FINAL_VOTE:
 		ss.votes.final[voter] = v
-		newCerts = ss.countFinalStake(v.Slot)
+		newCerts = ss.countFinalStake(v.Slot, v.BlockHash)
 	}
 
 	if voter == ss.ownPubKey {
@@ -380,7 +383,10 @@ func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consens
 			ListPubKeysFallback: nfPubkeys,
 		}
 		newCert.AggregateSignature(nSigns)
-		newCert.AggregateSignatureFallback(nfSigns)
+		if len(nfSigns) > 0 {
+			newCert.AggregateSignatureFallback(nfSigns)
+		}
+		logx.Info("POOL", fmt.Sprintf("Created notar fallback cert for slot %d with block hash %s", slot, hex.EncodeToString(blockHash[:])))
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -394,6 +400,7 @@ func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consens
 			ListPubKeys: nPubkeys,
 		}
 		newCert.AggregateSignature(nSigns)
+		logx.Info("POOL", fmt.Sprintf("Created notar cert for slot %d with block hash %s", slot, hex.EncodeToString(blockHash[:])))
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -407,6 +414,7 @@ func (ss *SlotState) countNotarStake(slot uint64, blockHash [32]byte) ([]consens
 			ListPubKeys: nPubkeys,
 		}
 		newCert.AggregateSignature(nSigns)
+		logx.Info("POOL", fmt.Sprintf("Created fast finalized cert for slot %d with block hash %s", slot, hex.EncodeToString(blockHash[:])))
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -433,7 +441,10 @@ func (ss *SlotState) countNotarFallbackStake(slot uint64, blockHash [32]byte) []
 			ListPubKeysFallback: nfPubkeys,
 		}
 		newCert.AggregateSignature(nSigns)
-		newCert.AggregateSignatureFallback(nfSigns)
+		if len(nfSigns) > 0 {
+			newCert.AggregateSignatureFallback(nfSigns)
+		}
+		logx.Info("POOL", fmt.Sprintf("Created notar fallback cert for slot %d with block hash %s", slot, hex.EncodeToString(blockHash[:])))
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -475,13 +486,19 @@ func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.C
 	totalSkipStake := ss.votedStakes.skip + ss.votedStakes.skipFallback
 	if ss.isQuorum(totalSkipStake) && ss.certificates.skip == nil {
 		sSigns, sPubkeys := ss.getSignsAndPubkeysFromVote(consensus.SKIP_VOTE, [32]byte{})
+		sfSigns, sPubkeysFallback := ss.getSignsAndPubkeysFromVote(consensus.SKIP_FALLBACK_VOTE, [32]byte{})
 		newCert := consensus.Cert{
-			Slot:        slot,
-			CertType:    consensus.SKIP_CERT,
-			Stake:       totalSkipStake,
-			ListPubKeys: sPubkeys,
+			Slot:                slot,
+			CertType:            consensus.SKIP_CERT,
+			Stake:               totalSkipStake,
+			ListPubKeys:         sPubkeys,
+			ListPubKeysFallback: sPubkeysFallback,
 		}
 		newCert.AggregateSignature(sSigns)
+		if len(sfSigns) > 0 {
+			newCert.AggregateSignatureFallback(sfSigns)
+		}
+		logx.Info("POOL", fmt.Sprintf("Created skip cert for slot %d", slot))
 		newCerts = append(newCerts, newCert)
 	}
 
@@ -497,7 +514,7 @@ func (ss *SlotState) countSkipStake(slot uint64, isFallback bool) ([]consensus.C
 	return newCerts, newVotorEvents, newRepairBlocks
 }
 
-func (ss *SlotState) countFinalStake(slot uint64) []consensus.Cert {
+func (ss *SlotState) countFinalStake(slot uint64, blockHash [32]byte) []consensus.Cert {
 	newCerts := []consensus.Cert{}
 
 	ss.votedStakes.final += 1
@@ -508,10 +525,12 @@ func (ss *SlotState) countFinalStake(slot uint64) []consensus.Cert {
 		newCert := consensus.Cert{
 			Slot:        slot,
 			CertType:    consensus.FINAL_CERT,
+			BlockHash:   blockHash,
 			Stake:       ss.votedStakes.final,
 			ListPubKeys: fPubkeys,
 		}
 		newCert.AggregateSignature(fSigns)
+		logx.Info("POOL", fmt.Sprintf("Created final cert for slot %d with block hash %s", slot, hex.EncodeToString(blockHash[:])))
 		newCerts = append(newCerts, newCert)
 	}
 

@@ -12,6 +12,7 @@ const (
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
+	TopicCerts             = "certificates"
 	TopicTxs               = "transactions"
 	TopicEmptyBlocks       = "block-sync/empty-blocks"
 	BlockSyncRequestTopic  = "block-sync/request"

@@ -98,6 +98,12 @@ func getRandomFreePort() (string, error) {
 }
 
 func runNode() {
+	// Initialize BLS library
+	if err := bls.Init(bls.BLS12_381); err != nil {
+		fmt.Println("Failed to init BLS:", err)
+		return
+	}
+
 	initializeFileLogger()
 	monitoring.InitMetrics()
 

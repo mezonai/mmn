@@ -19,7 +19,7 @@ func NewSlotBlockData() *SlotBlockData {
 }
 
 func (s *SlotBlockData) AddBlock(block *block.BroadcastedBlock) {
-	if s.primary != nil {
+	if s.primary != nil && s.primary.Hash != block.Hash {
 		s.repaired[string(block.HashString())] = block
 		s.equivocated = true
 		return
