@@ -28,7 +28,7 @@ func SetMetricsTracker(tracker func(level string, sizeBytes int)) {
 	trackLogMetrics = tracker
 }
 
-func trackLog(level string, message string) {
+func TrackLog(level string, message string) {
 	if trackLogMetrics != nil {
 		trackLogMetrics(level, len(message))
 	}
@@ -39,7 +39,7 @@ func Info(category string, content ...interface{}) {
 	coloredCategory := fmt.Sprintf("%s[INFO][%s]%s", ColorGreen, category, ColorReset)
 	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
 	logger.Print(fullMessage)
-	trackLog("info", fullMessage)
+	TrackLog("info", fullMessage)
 }
 
 func Error(category string, content ...interface{}) {
@@ -47,7 +47,7 @@ func Error(category string, content ...interface{}) {
 	coloredCategory := fmt.Sprintf("%s[ERROR][%s]%s", ColorRed, category, ColorReset)
 	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
 	logger.Print(fullMessage)
-	trackLog("error", fullMessage)
+	TrackLog("error", fullMessage)
 }
 
 func Warn(category string, content ...interface{}) {
@@ -55,7 +55,7 @@ func Warn(category string, content ...interface{}) {
 	coloredCategory := fmt.Sprintf("%s[WARN][%s]%s", ColorYellow, category, ColorReset)
 	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
 	logger.Print(fullMessage)
-	trackLog("warn", fullMessage)
+	TrackLog("warn", fullMessage)
 }
 
 func Debug(category string, content ...interface{}) {
@@ -63,7 +63,7 @@ func Debug(category string, content ...interface{}) {
 	coloredCategory := fmt.Sprintf("%s[DEBUG][%s]%s", ColorBlue, category, ColorReset)
 	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
 	logger.Print(fullMessage)
-	trackLog("debug", fullMessage)
+	TrackLog("debug", fullMessage)
 }
 
 // Errorf logs an error message and returns a formatted error
