@@ -83,9 +83,10 @@ func (ft *FinalityTracker) MarkNotarized(slot uint64, blockHash [32]byte) Finali
 
 	switch old.Status {
 	case NOTARIZED, FINALIZED, IMPLICITLY_FINALIZED:
-		if old.BlockHash == blockHash {
-			return FinalizationEvent{}
+		if old.BlockHash != blockHash {
+			panic("consensus safety violation")
 		}
+		return FinalizationEvent{}
 
 	case IMPLICITLY_SKIPPED:
 		return FinalizationEvent{}
@@ -172,6 +173,7 @@ func (ft *FinalityTracker) handleImplicitlyFinalized(sourceSlot uint64, implicit
 		panic("sourceSlot > implicitlyFinalized.Slot")
 	}
 
+	// Append all implicitly skipped slots
 	for slot := implicitlyFinalized.Slot + 1; slot <= sourceSlot; slot++ {
 		oldStatus := ft.status[slot]
 		ft.status[slot] = StatusEntry{Status: IMPLICITLY_SKIPPED}
@@ -190,6 +192,7 @@ func (ft *FinalityTracker) handleImplicitlyFinalized(sourceSlot uint64, implicit
 		event.ImplicitlySkipped = append(event.ImplicitlySkipped, slot)
 	}
 
+	// Mark implicitly finalized slot
 	oldStatus := ft.status[implicitlyFinalized.Slot]
 	ft.status[implicitlyFinalized.Slot] = StatusEntry{Status: IMPLICITLY_FINALIZED, BlockHash: implicitlyFinalized.BlockHash}
 
@@ -210,7 +213,21 @@ func (ft *FinalityTracker) handleImplicitlyFinalized(sourceSlot uint64, implicit
 	}
 	event.ImplicitlyFinalized = append(event.ImplicitlyFinalized, implicitlyFinalized)
 
+	// Recurse if needed
 	if parent, exists := ft.parents[implicitlyFinalized]; exists {
 		ft.handleImplicitlyFinalized(implicitlyFinalized.Slot, parent, event)
+	}
+}
+
+func (ft *FinalityTracker) Prune() {
+	for slot := range ft.status {
+		if slot < ft.highestFinalizedSlot {
+			delete(ft.status, slot)
+		}
+	}
+	for block, parent := range ft.parents {
+		if block.Slot < ft.highestFinalizedSlot && parent.Slot < ft.highestFinalizedSlot {
+			delete(ft.parents, block)
+		}
 	}
 }

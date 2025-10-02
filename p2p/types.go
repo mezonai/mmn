@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -31,12 +32,14 @@ type Libp2pNetwork struct {
 	// Track bootstrap peers so we can exclude them from certain requests
 	bootstrapPeerIDs map[peer.ID]struct{}
 
-	blockStore store.BlockStore
-	txStore    store.TxStore
+	blockStore    store.BlockStore
+	memBlockStore *mem_blockstore.MemBlockStore
+	txStore       store.TxStore
 
 	topicBlocks            *pubsub.Topic
 	topicEmptyBlocks       *pubsub.Topic
 	topicVotes             *pubsub.Topic
+	topicCerts             *pubsub.Topic
 	topicTxs               *pubsub.Topic
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
@@ -45,6 +48,7 @@ type Libp2pNetwork struct {
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
+	onCertReceived         func(*consensus.Cert) error
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, uint64, string) error
@@ -116,11 +120,22 @@ type BlockMessage struct {
 }
 
 type VoteMessage struct {
-	Slot      uint64 `json:"slot"`
-	VoteType  int    `json:"vote_type"`
-	BlockHash string `json:"block_hash"`
-	VoterID   string `json:"voter_id"`
-	Signature []byte `json:"signature"`
+	Slot      uint64   `json:"slot"`
+	VoteType  int      `json:"vote_type"`
+	BlockHash [32]byte `json:"block_hash"`
+	PubKey    string   `json:"voter_id"`
+	Signature []byte   `json:"signature"`
+}
+
+type CertMessage struct {
+	Slot                 uint64   `json:"slot"`
+	CertType             int      `json:"cert_type"`
+	BlockHash            [32]byte `json:"block_hash"`
+	Stake                uint64   `json:"stake"`
+	AggregateSig         []byte   `json:"aggregate_sig"`
+	AggregateSigFallback []byte   `json:"aggregate_sig_fallback"`
+	ListPubKeys          []string `json:"list_pub_keys"`
+	ListPubKeysFallback  []string `json:"list_pub_keys_fallback"`
 }
 
 type TxMessage struct {
@@ -136,6 +151,11 @@ type SyncRequest struct {
 
 type SyncResponse struct {
 	Blocks []*block.Block `json:"blocks"`
+}
+
+type RepairRequest struct {
+	Slot      uint64   `json:"slot"`
+	BlockHash [32]byte `json:"block_hash"`
 }
 
 type LatestSlotRequest struct {
@@ -182,6 +202,7 @@ type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
+	OnCertReceived         func(*consensus.Cert) error
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error

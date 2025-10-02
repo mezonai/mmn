@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -26,7 +27,7 @@ import (
 	"github.com/mezonai/mmn/transaction"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, mbs *mem_blockstore.MemBlockStore, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, p *pool.Pool, recorder *poh.PohRecorder) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, mbs *mem_blockstore.MemBlockStore, bs store.BlockStore, mp *mempool.Mempool, p *pool.Pool, recorder *poh.PohRecorder) {
 	ln.SetCallbacks(Callbacks{
 		OnBlockReceived: func(blk *block.BroadcastedBlock) error {
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
@@ -39,6 +40,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			mbs.AddBlock(blk.Slot, blk)
 
 			//TODO: need to reset PoH somewhere else
+			if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
+				logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
+			}
 
 			if self.PubKey != blk.LeaderID {
 				go mp.BlockCleanup(blk)
@@ -67,11 +71,45 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
-			p.AddVote(vote)
+			if err := vote.Validate(); err != nil {
+				logx.Error("VOTE", "Invalid vote:", err)
+				return fmt.Errorf("invalid vote: %w", err)
+			}
+
+			_, err := p.AddVote(vote)
+
+			if err != nil {
+				logx.Error("VOTE", "Failed to add vote:", err)
+				return fmt.Errorf("failed to add vote: %w", err)
+			}
 
 			return nil
 		},
+		OnCertReceived: func(cert *consensus.Cert) error {
+			if err := cert.Validate(); err != nil {
+				logx.Error("CERT", "Invalid cert:", err)
+				return fmt.Errorf("invalid cert: %w", err)
+			}
 
+			_, err := p.AddCert(cert)
+
+			if err != nil {
+				logx.Error("CERT", "Failed to add cert:", err)
+				return fmt.Errorf("failed to add cert: %w", err)
+			}
+
+			if cert.CertType == consensus.FINAL_CERT || cert.CertType == consensus.FAST_FINAL_CERT {
+				logx.Info("CERT", fmt.Sprintf("Applying finalized block for slot %d with block %s", cert.Slot, hex.EncodeToString(cert.BlockHash[:])))
+				block := mbs.GetBlock(cert.Slot, cert.BlockHash)
+				err := ln.applyDataToBlock(block, bs, ld)
+				// Cleanup mem blockstore
+				if err == nil {
+					mbs.Prune(cert.Slot)
+				}
+			}
+
+			return nil
+		},
 		OnTransactionReceived: func(txData *transaction.Transaction) error {
 			logx.Info("TX", "Processing received transaction from P2P network")
 
@@ -132,34 +170,26 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	go ln.startCleanupRoutine()
 }
 
-func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
+func (ln *Libp2pNetwork) applyDataToBlock(block *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
 	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
 
-	logx.Info("VOTE", "Block committed: slot=", vote.Slot)
-	// check block apply or not if apply log and return
-	if bs.IsApplied(vote.Slot) {
-		logx.Info("VOTE", "Block already applied: slot=", vote.Slot)
-		return nil
-	}
-	// Apply block to ledger
-	block := bs.Block(vote.Slot)
-	if block == nil {
-		// missing block how to handle
-		return fmt.Errorf("block not found for slot %d", vote.Slot)
-	}
-
-	// Mark block as finalized
-	if err := bs.MarkFinalized(vote.Slot); err != nil {
-		return fmt.Errorf("mark block as finalized error: %w", err)
-	}
-
+	logx.Info("VOTE", "Block committed: slot=", block.Slot)
 	if err := ld.ApplyBlock(block); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
 
-	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
+	// TODO: handle store block and mark finalized together
+	// Store block in block store
+	bs.AddBlockPending(block)
+
+	// Mark block as finalized
+	if err := bs.MarkFinalized(block.Slot); err != nil {
+		return fmt.Errorf("mark block as finalized error: %w", err)
+	}
+
+	logx.Info("VOTE", "Block finalized via P2P! slot=", block.Slot)
 	return nil
 }
 
@@ -345,6 +375,14 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
+	if ln.topicCerts, err = ln.pubsub.Join(TopicCerts); err == nil {
+		if sub, err := ln.topicCerts.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleCertTopic", func() {
+				ln.HandleCertTopic(ctx, sub)
+			})
+		}
+	}
+
 	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
 		if sub, err := ln.topicTxs.Subscribe(); err == nil {
 			exception.SafeGoWithPanic("HandleTransactionTopic", func() {
@@ -491,6 +529,9 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	}
 	if cbs.OnVoteReceived != nil {
 		ln.onVoteReceived = cbs.OnVoteReceived
+	}
+	if cbs.OnCertReceived != nil {
+		ln.onCertReceived = cbs.OnCertReceived
 	}
 	if cbs.OnTransactionReceived != nil {
 		ln.onTransactionReceived = cbs.OnTransactionReceived

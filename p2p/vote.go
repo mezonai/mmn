@@ -2,11 +2,10 @@ package p2p
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mezonai/mmn/consensus"
-	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
@@ -45,8 +44,8 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 	msg := VoteMessage{
 		Slot:      vote.Slot,
 		VoteType:  int(vote.VoteType),
-		BlockHash: fmt.Sprintf("%x", vote.BlockHash),
-		VoterID:   vote.VoterID,
+		BlockHash: vote.BlockHash,
+		PubKey:    vote.PubKey,
 		Signature: vote.Signature,
 	}
 

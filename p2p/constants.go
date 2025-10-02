@@ -8,9 +8,11 @@ const (
 	LatestSlotProtocol     = "/latest-slot-request"
 	CheckpointProtocol     = "/checkpoint-hash"
 	SnapshotSyncProtocol   = "/snapshot-sync"
+	RepairBlockProtocol    = "/repair-block"
 
 	TopicBlocks            = "blocks"
 	TopicVotes             = "votes"
+	TopicCerts             = "certificates"
 	TopicTxs               = "transactions"
 	TopicEmptyBlocks       = "block-sync/empty-blocks"
 	BlockSyncRequestTopic  = "block-sync/request"

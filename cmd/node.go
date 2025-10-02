@@ -17,15 +17,21 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/zkverify"
 
+	"github.com/herumi/bls-eth-go-binary/bls"
+	"github.com/mezonai/mmn/alpenglow"
+
+	"github.com/mezonai/mmn/alpenglow/pool"
+	"github.com/mezonai/mmn/alpenglow/repair_block"
+	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
 	"github.com/mezonai/mmn/config"
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/ledger"
@@ -92,6 +98,12 @@ func getRandomFreePort() (string, error) {
 }
 
 func runNode() {
+	// Initialize BLS library
+	if err := bls.Init(bls.BLS12_381); err != nil {
+		fmt.Println("Failed to init BLS:", err)
+		return
+	}
+
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
@@ -105,6 +117,7 @@ func runNode() {
 
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, "privkey.txt")
+	bslPrivKeyPath := filepath.Join(dataDir, "bls_privkey.txt")
 	genesisPath := filepath.Join(dataDir, "genesis.yml")
 	zkVerifyPath := filepath.Join(dataDir, "verifying_key.b64")
 	dbStoreDir := filepath.Join(dataDir, "store")
@@ -136,6 +149,12 @@ func runNode() {
 	pubKey, err := config.LoadPubKeyFromPriv(privKeyPath)
 	if err != nil {
 		logx.Error("NODE", "Failed to load public key:", err.Error())
+		return
+	}
+
+	blsPubKey, err := config.LoadBlsPubKeyFromPriv(bslPrivKeyPath)
+	if err != nil {
+		logx.Error("NODE", "Failed to load BLS public key:", err.Error())
 		return
 	}
 
@@ -177,6 +196,8 @@ func runNode() {
 	nodeConfig := config.NodeConfig{
 		PubKey:             pubKey,
 		PrivKeyPath:        privKeyPath,
+		BlsPubKey:          blsPubKey,
+		BlsPrivKeyPath:     bslPrivKeyPath,
 		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
 		ListenAddr:         listenAddr,
 		JSONRPCAddr:        jsonrpcAddr,
@@ -201,8 +222,25 @@ func runNode() {
 		log.Fatalf("load private key: %v", err)
 	}
 
+	// Load BLS private key
+	blsPrivKey, err := config.LoadBlsPrivKey(bslPrivKeyPath)
+	if err != nil {
+		log.Fatalf("load BLS private key: %v", err)
+	}
+
+	// Initialize pool
+	genesisBlock := bs.Block(0)
+	votorChannel := make(chan votor.VotorEvent, 100) // create votor channel
+	repairChannel := make(chan pool.BlockId, 100)    // create repair channel
+	prt := pool.NewParentReadyTracker(genesisBlock.Slot, genesisBlock.Hash)
+	ft := pool.NewFinalityTracker()
+	p := pool.NewPool(prt, ft, votorChannel, repairChannel, nodeConfig.BlsPubKey)
+
+	// Initialize mem blockstore
+	mbs := mem_blockstore.NewMemBlockStore(votorChannel, p, genesisBlock)
+
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, mbs, ts, privKey, &cfg.Poh)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -216,9 +254,13 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
+	// Initialize votor
+	initializeVotor(nodeConfig.BlsPubKey, blsPrivKey, votorChannel, libP2pClient)
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
+	// Initialize repair block worker
+	initializeRepairBlockWorker(repairChannel, mbs, libP2pClient)
+
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, mbs, bs, mp, p, recorder)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath)
@@ -230,7 +272,7 @@ func runNode() {
 	libP2pClient.OnStartValidator = func() { val.Run() }
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(cfg, nodeConfig, libP2pClient, ld, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -305,7 +347,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blockstore.MemBlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -313,6 +355,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		mbs,
 		ts,
 		pohCfg,
 	)
@@ -365,8 +408,18 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	return val, nil
 }
 
+func initializeVotor(blsPubKey string, blsPrivKey bls.SecretKey, votorChannel chan votor.VotorEvent, ln *p2p.Libp2pNetwork) {
+	votor := alpenglow.NewVotor(blsPubKey, blsPrivKey, votorChannel, votorChannel, ln)
+	go votor.Run()
+}
+
+func initializeRepairBlockWorker(repairChannel chan pool.BlockId, mbs *mem_blockstore.MemBlockStore, ln *p2p.Libp2pNetwork) {
+	rpw := repair_block.NewRepairBlockWorker(repairChannel, mbs, ln)
+	go rpw.Run(context.Background())
+}
+
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
@@ -381,7 +434,6 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		map[string]ed25519.PublicKey{},
 		fileBlockDir,
 		ld,
-		collector,
 		nodeConfig.PubKey,
 		privKey,
 		val,

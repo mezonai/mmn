@@ -104,7 +104,7 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block) error {
+func (l *Ledger) ApplyBlock(b *block.BroadcastedBlock) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
@@ -114,10 +114,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	}
 
 	for _, entry := range b.Entries {
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
+		if len(entry.Transactions) == 0 {
+			continue
 		}
+
+		txs := entry.Transactions
 		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
 		for _, tx := range txs {

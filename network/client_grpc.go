@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
@@ -53,33 +52,6 @@ func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.BroadcastedB
 			fmt.Printf("[gRPC Client] Broadcast to %s not OK: %s", addr, resp.Error)
 		}
 		fmt.Printf("Broadcasted block %d to %s successfully\n", blk.Slot, addr)
-		conn.Close()
-	}
-	return nil
-}
-
-func (c *GRPCClient) BroadcastVote(ctx context.Context, vt *consensus.Vote) error {
-	pbV := &pb.VoteRequest{
-		Slot:      vt.Slot,
-		BlockHash: vt.BlockHash[:],
-		VoterId:   vt.VoterID,
-		Signature: vt.Signature,
-	}
-	// TODO: should reuse connection instead of creating a new one for each peer
-	for _, addr := range c.peers {
-		conn, err := grpc.NewClient(addr, c.opts...)
-		if err != nil {
-			continue
-		}
-		client := pb.NewVoteServiceClient(conn)
-		fmt.Printf("Broadcasting vote %d to %s\n", vt.Slot, addr)
-		resp, err := client.Vote(ctx, pbV)
-		if err != nil {
-			fmt.Printf("[gRPC Client] Vote to %s error: %v", addr, err)
-		} else if !resp.Ok {
-			fmt.Printf("[gRPC Client] Vote to %s not OK: %s", addr, resp.Error)
-		}
-		fmt.Printf("Broadcasted vote %d to %s successfully\n", vt.Slot, addr)
 		conn.Close()
 	}
 	return nil

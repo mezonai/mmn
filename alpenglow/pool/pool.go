@@ -1,57 +1,70 @@
 package pool
 
 import (
+	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/utils"
 )
 
 type Pool struct {
-	slotState          map[uint64]*SlotState
-	parentReadyTracker *ParentReadyTracker
-	finalityTracker    *FinalityTracker
-	votorChannel       chan votor.VotorEvent
-	ownPubKey          string
+	slotState            map[uint64]*SlotState
+	parentReadyTracker   *ParentReadyTracker
+	finalityTracker      *FinalityTracker
+	s2nWaitingParentCert map[BlockId]BlockId // Safe to notar cert waiting for parent cert
+	votorChannel         chan votor.VotorEvent
+	repairChannel        chan BlockId
+	ownPubKey            string
 }
 
-func NewPool(parentReadyTracker *ParentReadyTracker, finalityTracker *FinalityTracker, votorChannel chan votor.VotorEvent, ownPubKey string) *Pool {
+func NewPool(parentReadyTracker *ParentReadyTracker, finalityTracker *FinalityTracker, votorChannel chan votor.VotorEvent, repairChannel chan BlockId, ownPubKey string) *Pool {
 	return &Pool{
-		slotState:          make(map[uint64]*SlotState),
-		parentReadyTracker: parentReadyTracker,
-		finalityTracker:    finalityTracker,
-		votorChannel:       votorChannel,
-		ownPubKey:          ownPubKey,
+		slotState:            make(map[uint64]*SlotState),
+		parentReadyTracker:   parentReadyTracker,
+		finalityTracker:      finalityTracker,
+		s2nWaitingParentCert: make(map[BlockId]BlockId),
+		votorChannel:         votorChannel,
+		repairChannel:        repairChannel,
+		ownPubKey:            ownPubKey,
 	}
 }
 
-func (p *Pool) CreateSlotState(slot uint64) {
+func (p *Pool) getSlotState(slot uint64) *SlotState {
+	if state, exists := p.slotState[slot]; exists {
+		return state
+	}
 	p.slotState[slot] = NewSlotState(slot, p.ownPubKey)
+	return p.slotState[slot]
 }
 
 func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
+	logx.Info("POOL", fmt.Sprintf("Received vote of type %v for block %s in slot %d from %s", v.VoteType, hex.EncodeToString(v.BlockHash[:]), v.Slot, v.PubKey))
+
 	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
-	if v.Slot <= latestFinalizedSlot || v.Slot > latestFinalizedSlot+utils.SLOTS_PER_EPOCH {
-		return false, nil
+	if v.Slot <= latestFinalizedSlot || v.Slot >= latestFinalizedSlot+2*utils.SLOTS_PER_WINDOW {
+		return false, errors.New("slot out of range")
 	}
 
-	if err := v.Validate(); err != nil {
+	if valid, err := p.getSlotState(v.Slot).CheckSlashableOffense(v); !valid {
 		return false, err
-	}
-
-	if valid, err := p.slotState[v.Slot].CheckSlashableOffense(v); !valid {
-		return false, err
-	} else if p.slotState[v.Slot].ShouldIgnoreVote(v) {
+	} else if p.getSlotState(v.Slot).ContainsVote(v) {
 		return false, errors.New("duplicate vote")
 	}
 
 	// Add vote to slot state
-	newCerts, newVotorEvents := p.slotState[v.Slot].AddVote(v)
+	logx.Info("POOL", fmt.Sprintf("Adding %v vote for block %s in slot %d", v.VoteType, hex.EncodeToString(v.BlockHash[:]), v.Slot))
+	newCerts, newVotorEvents, newRepairBlocks := p.getSlotState(v.Slot).AddVote(v)
 
-	// If new certs created => add them to pool
+	// If new certs created => send events to votor
 	for _, cert := range newCerts {
-		p.addValidCert(cert)
+		p.votorChannel <- votor.VotorEvent{
+			Type: votor.CERT_CREATED,
+			Cert: &cert,
+		}
 	}
 
 	// If new votor events created => send them to votor
@@ -59,47 +72,85 @@ func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
 		p.votorChannel <- event
 	}
 
-	//TODO: handle repair events if needed
+	// If new repair blocks created => send them to repair worker
+	for _, blockId := range newRepairBlocks {
+		p.repairChannel <- blockId
+	}
 
 	return true, nil
 }
 
-func (p *Pool) addValidCert(cert consensus.Cert) {
+func (p *Pool) AddCert(c *consensus.Cert) (bool, error) {
+	logx.Info("POOL", fmt.Sprintf("Received certificate of type %v for block %s in slot %d", c.CertType, hex.EncodeToString(c.BlockHash[:]), c.Slot))
+
+	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
+	if c.Slot <= latestFinalizedSlot || c.Slot > latestFinalizedSlot+utils.SLOTS_PER_WINDOW {
+		return false, errors.New("slot out of range")
+	}
+
+	if valid := c.VerifySignature(); !valid {
+		return false, errors.New("invalid certificate signature")
+	}
+
+	if p.getSlotState(c.Slot).ContainsCert(c) {
+		return false, errors.New("duplicate certificate")
+	}
+
+	p.addValidCert(c)
+
+	return true, nil
+}
+
+func (p *Pool) addValidCert(cert *consensus.Cert) {
+	slot := cert.Slot
+	blockHash := cert.BlockHash
+
 	// Add cert to slot state
-	p.slotState[cert.Slot].AddCert(&cert)
+	logx.Info("POOL", fmt.Sprintf("Adding %v certificate for block %s in slot %d", cert.CertType, hex.EncodeToString(cert.BlockHash[:]), cert.Slot))
+	p.getSlotState(slot).AddCert(cert)
 
 	switch cert.CertType {
 	case consensus.NOTAR_CERT, consensus.NOTAR_FALLBACK_CERT:
 		if cert.CertType == consensus.NOTAR_CERT {
-			finalizationEvent := p.finalityTracker.MarkNotarized(cert.Slot, cert.BlockHash)
+			finalizationEvent := p.finalityTracker.MarkNotarized(slot, blockHash)
 			p.handleFinalization(finalizationEvent)
 		}
 
-		//TODO: if have child block waiting for this parent => notify to them (s2n_waiting_parent_cert - Solana)
+		if childId, exists := p.s2nWaitingParentCert[BlockId{Slot: slot, BlockHash: blockHash}]; exists {
+			event, parentBlockId := p.getSlotState(childId.Slot).NotifyParentCertified(childId.BlockHash)
+			delete(p.s2nWaitingParentCert, BlockId{Slot: slot, BlockHash: blockHash})
 
-		newParentsReady := p.parentReadyTracker.MarkNotarFallback(BlockId{Slot: cert.Slot, BlockHash: cert.BlockHash})
+			if event != nil {
+				p.votorChannel <- *event
+			}
+			if parentBlockId != nil {
+				p.repairChannel <- *parentBlockId
+			}
+		}
+
+		newParentsReady := p.parentReadyTracker.MarkNotarFallback(BlockId{Slot: slot, BlockHash: blockHash})
 		p.sentParentReadyEvents(newParentsReady)
 
-		//TODO: handle repair events if needed
+		p.repairChannel <- BlockId{Slot: slot, BlockHash: blockHash}
 
 	case consensus.SKIP_CERT:
-		newParentReady := p.parentReadyTracker.MarkSkipped(cert.Slot)
+		newParentReady := p.parentReadyTracker.MarkSkipped(slot)
 		p.sentParentReadyEvents(newParentReady)
 
 	case consensus.FAST_FINAL_CERT:
-		finalizationEvent := p.finalityTracker.MarkFastFinalized(cert.Slot, cert.BlockHash)
+		finalizationEvent := p.finalityTracker.MarkFastFinalized(slot, blockHash)
 		p.handleFinalization(finalizationEvent)
 		p.prune()
 
 	case consensus.FINAL_CERT:
-		finalizationEvent := p.finalityTracker.MarkFinalized(cert.Slot)
+		finalizationEvent := p.finalityTracker.MarkFinalized(slot)
 		p.handleFinalization(finalizationEvent)
 		p.prune()
 
 	}
 
 	p.votorChannel <- votor.VotorEvent{
-		Type: votor.CERT_CREATED,
+		Type: votor.CERT_SAVED,
 		Cert: cert,
 	}
 }
@@ -107,7 +158,8 @@ func (p *Pool) addValidCert(cert consensus.Cert) {
 func (p *Pool) handleFinalization(event FinalizationEvent) {
 	newParentsReady := p.parentReadyTracker.HandleFinalization(event)
 	p.sentParentReadyEvents(newParentsReady)
-
+	p.finalityTracker.Prune()
+	p.parentReadyTracker.Prune(p.finalityTracker.GetHighestFinalizedSlot())
 }
 
 func (p *Pool) sentParentReadyEvents(newParentsReadys []SlotBlockId) {
@@ -122,6 +174,38 @@ func (p *Pool) sentParentReadyEvents(newParentsReadys []SlotBlockId) {
 			},
 		}
 	}
+}
+
+func (p *Pool) AddBlock(blockId BlockId, parentId BlockId) {
+	if blockId.Slot <= parentId.Slot {
+		panic("block slot must be greater than parent slot")
+	}
+
+	finalizationEvent := p.finalityTracker.AddParent(blockId, parentId)
+	newParentReady := p.parentReadyTracker.HandleFinalization(finalizationEvent)
+	p.sentParentReadyEvents(newParentReady)
+
+	logx.Info("POOL", fmt.Sprintf("Notify slot %d that parent block %s is known", blockId.Slot, hex.EncodeToString(parentId.BlockHash[:])))
+	p.getSlotState(blockId.Slot).NotifyParentKnown(blockId.BlockHash)
+
+	parentState := p.getSlotState(parentId.Slot)
+
+	if parentState.isNotarFallback(parentId.BlockHash) {
+		event, parentBlockId := p.getSlotState(blockId.Slot).NotifyParentCertified(blockId.BlockHash)
+		logx.Info("POOL", fmt.Sprintf("Notify slot %d that parent block %s is certified", blockId.Slot, hex.EncodeToString(parentId.BlockHash[:])))
+
+		if event != nil {
+			p.votorChannel <- *event
+		}
+		if parentBlockId != nil {
+			p.repairChannel <- *parentBlockId
+
+		}
+
+		return
+	}
+
+	p.s2nWaitingParentCert[parentId] = blockId
 }
 
 func (p *Pool) prune() {
