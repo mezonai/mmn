@@ -10,7 +10,6 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
