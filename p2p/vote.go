@@ -44,6 +44,7 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote) error {
 	msg := VoteMessage{
 		Slot:      vote.Slot,
+		VoteType:  int(vote.VoteType),
 		BlockHash: fmt.Sprintf("%x", vote.BlockHash),
 		VoterID:   vote.VoterID,
 		Signature: vote.Signature,
