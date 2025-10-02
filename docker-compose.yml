@@ -18,6 +18,7 @@ services:
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
     networks:
+      - listener_network
       - mezon
     restart: unless-stopped
 
@@ -75,7 +76,7 @@ services:
       - CORS_ALLOWED_METHODS=POST,OPTIONS
       - CORS_ALLOWED_HEADERS=Content-Type
     networks:
-      - mezon
+      - listener_network
     restart: unless-stopped
 
   loki:
@@ -155,6 +156,15 @@ services:
 
 networks:
   mezon:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  listener_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
 
 volumes:
   node_data:
