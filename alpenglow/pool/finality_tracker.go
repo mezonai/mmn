@@ -108,7 +108,7 @@ func (ft *FinalityTracker) MarkFastFinalized(slot uint64, blockHash [32]byte) Fi
 	if exists {
 		switch old.Status {
 		case FINALIZED, IMPLICITLY_FINALIZED:
-			if old.BlockHash == blockHash {
+			if old.BlockHash != blockHash {
 				panic("consensus safety violation")
 			}
 
@@ -174,7 +174,7 @@ func (ft *FinalityTracker) handleImplicitlyFinalized(sourceSlot uint64, implicit
 	}
 
 	// Append all implicitly skipped slots
-	for slot := implicitlyFinalized.Slot + 1; slot <= sourceSlot; slot++ {
+	for slot := implicitlyFinalized.Slot + 1; slot < sourceSlot; slot++ {
 		oldStatus := ft.status[slot]
 		ft.status[slot] = StatusEntry{Status: IMPLICITLY_SKIPPED}
 
