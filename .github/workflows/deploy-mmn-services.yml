@@ -72,19 +72,12 @@ jobs:
           sudo chmod 600 /etc/mezon/node1_privkey.txt
           sudo chown mmn:mmn /etc/mezon/node1_privkey.txt
 
-          # Faucet private key (nếu cần)
-          if [ -n "${FAUCET_PRIVKEY_B64}" ]; then
-            echo "${FAUCET_PRIVKEY_B64}" | base64 -d | sudo tee /etc/mezon/faucet_privkey.txt >/dev/null
-            sudo chmod 600 /etc/mezon/faucet_privkey.txt
-            sudo chown mmn:mmn /etc/mezon/faucet_privkey.txt
-          fi
-
-          # Verifying key cho proving
+          # Verifying key for proving
           echo "${VERIFYING_KEY_B64}" | base64 -d | sudo tee /etc/mezon/verifying_key >/dev/null
           sudo chmod 600 /etc/mezon/verifying_key
           sudo chown mmn:mmn /etc/mezon/verifying_key
 
-          # Genesis config: thay placeholder bằng secrets
+          # Genesis config:
           mkdir -p /etc/mezon
           sed \
             -e "s|__LEADER_ADDRESS__|${NODE1_ADDRESS}|g" \
@@ -92,7 +85,7 @@ jobs:
             /opt/mezon/mmn/config/genesis.template.yml \
             | sudo tee /etc/mezon/genesis.yml >/dev/null
           sudo chown mmn:mmn /etc/mezon/genesis.yml
-EOS
+          EOS
         env:
           BOOTNODE_PRIVKEY_B64: ${{ secrets.BOOTNODE_PRIVKEY_B64 }}
           NODE1_PRIVKEY_B64:    ${{ secrets.NODE1_PRIVKEY_B64 }}
@@ -112,7 +105,7 @@ EOS
           sudo systemctl restart mezon-bootnode || true
           sleep 2
           sudo systemctl restart mezon-node1 || true
-EOS
+          EOS
 
       - name: Healthcheck
         run: |
