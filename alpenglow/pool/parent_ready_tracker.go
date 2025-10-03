@@ -88,6 +88,7 @@ func (prt *ParentReadyTracker) MarkSkipped(markedSlot uint64) []SlotBlockId {
 		if utils.IsSlotStartOfWindow(slot) {
 			for _, parent := range potentialParents {
 				state.addToReady(parent)
+				newlyCertified = append(newlyCertified, SlotBlockId{Slot: slot, BlockId: parent})
 			}
 		}
 		if !state.Skip {
