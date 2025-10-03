@@ -1,0 +1,119 @@
+﻿name: Deploy MMN
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment (dev|prod)"
+        required: true
+        default: "dev"
+      ref:
+        description: "Git ref (branch, tag, or commit)"
+        required: true
+        default: "master"
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.5"
+
+      - name: Build MMN binary
+        run: |
+          mkdir -p build
+          GOOS=linux GOARCH=amd64 go build -o build/mmn ./cmd/mmn
+          GIT_SHA=$(git rev-parse --short=12 HEAD)
+          echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmn-${{ env.GIT_SHA }}
+          path: build/mmn
+
+  deploy:
+    needs: build
+    runs-on: self-hosted
+    environment: ${{ inputs.env }}
+    env:
+      TARGET_HOST: ${{ inputs.env == 'prod' && secrets.PROD_HOST_ALIAS || secrets.DEV_HOST_ALIAS }}
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: mmn-${{ needs.build.outputs.GIT_SHA || env.GIT_SHA }}
+          path: artifact
+
+      - name: Copy binary to target
+        run: |
+          scp artifact/mmn ${TARGET_HOST}:/opt/mezon/mmn/staging/mmn_new
+
+      - name: Write secrets & config on target
+        run: |
+          ssh ${TARGET_HOST} <<'EOS'
+          set -e
+          sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin
+
+          # Bootnode private key
+          echo "${BOOTNODE_PRIVKEY_B64}" | base64 -d | sudo tee /etc/mezon/bootnode_privkey.txt >/dev/null
+          sudo chmod 600 /etc/mezon/bootnode_privkey.txt
+          sudo chown mmn:mmn /etc/mezon/bootnode_privkey.txt
+
+          # Node1 private key
+          echo "${NODE1_PRIVKEY_B64}" | base64 -d | sudo tee /etc/mezon/node1_privkey.txt >/dev/null
+          sudo chmod 600 /etc/mezon/node1_privkey.txt
+          sudo chown mmn:mmn /etc/mezon/node1_privkey.txt
+
+          # Faucet private key (nếu cần)
+          if [ -n "${FAUCET_PRIVKEY_B64}" ]; then
+            echo "${FAUCET_PRIVKEY_B64}" | base64 -d | sudo tee /etc/mezon/faucet_privkey.txt >/dev/null
+            sudo chmod 600 /etc/mezon/faucet_privkey.txt
+            sudo chown mmn:mmn /etc/mezon/faucet_privkey.txt
+          fi
+
+          # Verifying key cho proving
+          echo "${VERIFYING_KEY_B64}" | base64 -d | sudo tee /etc/mezon/verifying_key >/dev/null
+          sudo chmod 600 /etc/mezon/verifying_key
+          sudo chown mmn:mmn /etc/mezon/verifying_key
+
+          # Genesis config: thay placeholder bằng secrets
+          mkdir -p /etc/mezon
+          sed \
+            -e "s|__LEADER_ADDRESS__|${NODE1_ADDRESS}|g" \
+            -e "s|__FAUCET_ADDRESS__|${FAUCET_ADDRESS}|g" \
+            /opt/mezon/mmn/config/genesis.template.yml \
+            | sudo tee /etc/mezon/genesis.yml >/dev/null
+          sudo chown mmn:mmn /etc/mezon/genesis.yml
+EOS
+        env:
+          BOOTNODE_PRIVKEY_B64: ${{ secrets.BOOTNODE_PRIVKEY_B64 }}
+          NODE1_PRIVKEY_B64:    ${{ secrets.NODE1_PRIVKEY_B64 }}
+          FAUCET_PRIVKEY_B64:   ${{ secrets.FAUCET_PRIVKEY_B64 }}
+          VERIFYING_KEY_B64:    ${{ secrets.VERIFYING_KEY_B64 }}
+          NODE1_ADDRESS:        ${{ secrets.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:       ${{ secrets.FAUCET_ADDRESS }}
+
+      - name: Atomic swap + restart services
+        run: |
+          ssh ${TARGET_HOST} <<'EOS'
+          set -e
+          SHA=$(date +%s)
+          sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
+          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+
+          sudo systemctl restart mezon-bootnode || true
+          sleep 2
+          sudo systemctl restart mezon-node1 || true
+EOS
+
+      - name: Healthcheck
+        run: |
+          ssh ${TARGET_HOST} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"_

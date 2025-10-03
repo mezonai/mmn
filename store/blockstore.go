@@ -329,7 +329,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	slotLock := s.getSlotLock(b.Slot)
 	slotLock.Lock()
 	defer slotLock.Unlock()
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Acquired lock for adding pending block at slot %d", b.Slot))
+	logx.Debug("BLOCKSTORE", fmt.Sprintf("Acquired lock for adding pending block at slot %d", b.Slot))
 
 	key := slotToBlockKey(b.Slot)
 
@@ -342,7 +342,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if exists {
 		return fmt.Errorf("block at slot %d already exists", b.Slot)
 	}
-	logx.Info("BLOCKSTORE", fmt.Sprintf("OK, block does not exist at slot %d", b.Slot))
+	logx.Debug("BLOCKSTORE", fmt.Sprintf("OK, block does not exist at slot %d", b.Slot))
 
 	// Store block
 	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
@@ -353,7 +353,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 		return fmt.Errorf("failed to store block: %w", err)
 	}
 
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Monitoring block size bytes at slot %d", b.Slot))
+	logx.Debug("BLOCKSTORE", fmt.Sprintf("Monitoring block size bytes at slot %d", b.Slot))
 	monitoring.RecordBlockSizeBytes(len(value))
 	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored block at slot %d", b.Slot))
 

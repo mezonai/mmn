@@ -62,7 +62,7 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 		atomic.AddInt64(&t.senderCount, 1)
 	}
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
-	logx.Info("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
+	logx.Debug("TRACKER", fmt.Sprintf("Tracking processing transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
 
@@ -92,7 +92,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	}
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.processingCount), "processing")
 	monitoring.SetTrackerProcessingTx(atomic.LoadInt64(&t.senderCount), "senders")
-	logx.Info("TRACKER", fmt.Sprintf("Remove transaction: %s (sender: %s, nonce: %d)",
+	logx.Debug("TRACKER", fmt.Sprintf("Remove transaction: %s (sender: %s, nonce: %d)",
 		txHash, tx.Sender[:8], tx.Nonce))
 }
 
