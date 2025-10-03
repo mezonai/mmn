@@ -1,7 +1,7 @@
 package errors
 
 import (
-	"encoding/json"
+	"github.com/mezonai/mmn/jsonx"
 )
 
 // NetworkErrorCode represents standardized error codes for network operations
@@ -40,7 +40,7 @@ type NetworkError struct {
 
 // Error implements the error interface
 func (e *NetworkError) Error() string {
-	err, _ := json.Marshal(NetworkError{
+	err, _ := jsonx.Marshal(NetworkError{
 		Code:    e.Code,
 		Message: e.Message,
 	})
