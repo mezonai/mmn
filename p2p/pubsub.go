@@ -34,6 +34,17 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
+			if !ln.leaderSchedule.IsLeaderAt(blk.Slot, blk.LeaderID) {
+				logx.Error("BLOCK", fmt.Sprintf("Not leader at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+				return fmt.Errorf("invalid leader")
+			}
+
+			// Verify signature
+			if !blk.VerifySignature() {
+				logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+				return fmt.Errorf("invalid signature")
+			}
+
 			// Verify PoH. If invalid, mark block and continue to process as a failed block
 			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
