@@ -79,43 +79,61 @@ jobs:
         run: |
           scp artifact/mmn ${TARGET_HOST}:/opt/mezon/mmn/staging/mmn_new
 
-      - name: Write secrets & config on target
+      - name: Write secrets, config, systemd on target
         run: |
-          ssh ${TARGET_HOST} <<'EOS'
-          set -e
-          sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin
+          ssh ${TARGET_HOST} "bash -s" <<'EOS'
+            set -e
+            sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
 
-          # Bootnode private key
-          echo "${BOOTNODE_PRIVKEY_B64}" | base64 -d | sudo tee /etc/mezon/bootnode_privkey.txt >/dev/null
-          sudo chmod 600 /etc/mezon/bootnode_privkey.txt
-          sudo chown mmn:mmn /etc/mezon/bootnode_privkey.txt
+            # Bootnode private key
+            echo "${BOOTNODE_PRIVKEY}" | base64 -d | sudo tee /etc/mezon/bootnode_privkey.txt >/dev/null
+            sudo chmod 600 /etc/mezon/bootnode_privkey.txt
+            sudo chown mmn:mmn /etc/mezon/bootnode_privkey.txt
 
-          # Node1 private key
-          echo "${NODE1_PRIVKEY_B64}" | base64 -d | sudo tee /etc/mezon/node1_privkey.txt >/dev/null
-          sudo chmod 600 /etc/mezon/node1_privkey.txt
-          sudo chown mmn:mmn /etc/mezon/node1_privkey.txt
+            # Node1 private key
+            echo "${NODE1_PRIVKEY}" | base64 -d | sudo tee /etc/mezon/node1_privkey.txt >/dev/null
+            sudo chmod 600 /etc/mezon/node1_privkey.txt
+            sudo chown mmn:mmn /etc/mezon/node1_privkey.txt
 
-          # Verifying key for proving
-          echo "${VERIFYING_KEY_B64}" | base64 -d | sudo tee /etc/mezon/verifying_key >/dev/null
-          sudo chmod 600 /etc/mezon/verifying_key
-          sudo chown mmn:mmn /etc/mezon/verifying_key
+            # Verifying key for proving
+            echo "${VERIFYING_KEY_B64}" | base64 -d | sudo tee /etc/mezon/verifying_key >/dev/null
+            sudo chmod 600 /etc/mezon/verifying_key
+            sudo chown mmn:mmn /etc/mezon/verifying_key
 
-          # Genesis config:
-          mkdir -p /etc/mezon
-          sed \
-            -e "s|__LEADER_ADDRESS__|${NODE1_ADDRESS}|g" \
-            -e "s|__FAUCET_ADDRESS__|${FAUCET_ADDRESS}|g" \
-            /opt/mezon/mmn/config/genesis.template.yml \
-            | sudo tee /etc/mezon/genesis.yml >/dev/null
-          sudo chown mmn:mmn /etc/mezon/genesis.yml
+            # Genesis config
+            sed \
+              -e "s|__LEADER_ADDRESS__|${NODE1_ADDRESS}|g" \
+              -e "s|__FAUCET_ADDRESS__|${FAUCET_ADDRESS}|g" \
+              /opt/mezon/mmn/config/genesis.template.yml \
+              | sudo tee /etc/mezon/genesis.yml >/dev/null
+            sudo chown mmn:mmn /etc/mezon/genesis.yml
+
+            # Systemd unit for node1
+            BOOTNODE_MULTIADDR="/ip4/${BOOTNODE_IP}/tcp/9000/p2p/${BOOTNODE_ID}"
+            sed -e "s|__BOOTNODE_MULTIADDR__|${BOOTNODE_MULTIADDR}|g" \
+                /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
+                | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
+
+            sudo systemctl daemon-reload
+            sudo systemctl enable mezon-node1
+
+            # Init node1 data dir if not exists
+            if [ ! -d "/opt/mezon/node-data/node1" ]; then
+              sudo -u mmn /opt/mezon/mmn/bin/mmn init \
+                --data-dir "/opt/mezon/node-data/node1" \
+                --genesis "/etc/mezon/genesis.yml" \
+                --database rocksdb \
+                --privkey-path "/etc/mezon/node1_privkey.txt"
+            fi
           EOS
         env:
-          BOOTNODE_PRIVKEY_B64: ${{ secrets.BOOTNODE_PRIVKEY_B64 }}
-          NODE1_PRIVKEY_B64:    ${{ secrets.NODE1_PRIVKEY_B64 }}
-          FAUCET_PRIVKEY_B64:   ${{ secrets.FAUCET_PRIVKEY_B64 }}
+          BOOTNODE_PRIVKEY: ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY:    ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64:    ${{ secrets.VERIFYING_KEY_B64 }}
           NODE1_ADDRESS:        ${{ secrets.NODE1_ADDRESS }}
           FAUCET_ADDRESS:       ${{ secrets.FAUCET_ADDRESS }}
+          BOOTNODE_IP:          ${{ secrets.BOOTNODE_IP }}
+          BOOTNODE_ID:          ${{ secrets.BOOTNODE_ID }}
 
       - name: Atomic swap + restart services
         run: |
