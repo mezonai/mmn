@@ -124,10 +124,10 @@ waitLoop:
 				seedHash = seedSlot.Hash
 				break waitLoop
 			} else {
-				logx.Info("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
+				logx.Debug("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
 			}
 		case <-deadline.C:
-			logx.Info("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
+			logx.Warn("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
 			lastSeenSlot := v.blockStore.GetLatestStoreSlot()
 
 			// Try POH recorder for latest slot too
@@ -148,7 +148,7 @@ waitLoop:
 		}
 	}
 
-	logx.Info("LEADER", fmt.Sprintf("Reset POH recorder with hash %x for slot %d", seedHash, prevSlot))
+	logx.Debug("LEADER", fmt.Sprintf("Reset POH recorder with hash %x for slot %d", seedHash, prevSlot))
 	v.Recorder.Reset(seedHash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
@@ -232,7 +232,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 		}
 	} else if v.IsLeader(currentSlot) && v.ReadyToStart(currentSlot) {
 		// Buffer entries only if leader of current slot and ready to start
-		logx.Info("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
+		logx.Debug("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
 		v.collectedEntries = append(v.collectedEntries, entries...)
 	}
 }
@@ -319,7 +319,7 @@ func (v *Validator) leaderBatchLoop() {
 			logx.Info("LEADER", fmt.Sprintf("Pulling batch for slot %d", slot))
 			batch := v.Mempool.PullBatch(v.BatchSize)
 			if len(batch) == 0 && len(v.pendingTxs) == 0 {
-				logx.Info("LEADER", fmt.Sprintf("No batch for slot %d", slot))
+				logx.Debug("LEADER", fmt.Sprintf("No batch for slot %d", slot))
 				continue
 			}
 
@@ -334,7 +334,7 @@ func (v *Validator) leaderBatchLoop() {
 
 			recordTxs := v.peekPendingTxs(v.BatchSize)
 			if recordTxs == nil {
-				logx.Info("LEADER", fmt.Sprintf("No valid transactions for slot %d", slot))
+				logx.Debug("LEADER", fmt.Sprintf("No valid transactions for slot %d", slot))
 				continue
 			}
 			logx.Info("LEADER", fmt.Sprintf("Recording batch for slot %d", slot))

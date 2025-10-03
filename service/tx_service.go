@@ -30,7 +30,7 @@ func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, t
 }
 
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
-	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
+	logx.Debug("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	monitoring.IncreaseReceivedClientTxCount()
 	if err != nil {
