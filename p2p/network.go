@@ -75,7 +75,12 @@ func NewNetWork(
 
 	customDiscovery.Advertise(ctx, AdvertiseName)
 
-	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()))
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()),
+		pubsub.WithMaxMessageSize(5*1024*1024),
+		pubsub.WithValidateQueueSize(128),
+		pubsub.WithPeerOutboundQueueSize(128),
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)

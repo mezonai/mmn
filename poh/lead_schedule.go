@@ -88,3 +88,12 @@ func (ls *LeaderSchedule) Validate() error {
 	}
 	return nil
 }
+
+func (ls *LeaderSchedule) Len() int {
+	return len(ls.entries)
+}
+
+func (ls *LeaderSchedule) IsLeaderAt(slot uint64, leaderID string) bool {
+	leader, has := ls.LeaderAt(slot)
+	return has && leader == leaderID
+}

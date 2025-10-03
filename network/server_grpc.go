@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
@@ -320,36 +323,74 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 
 // GetBlockByNumber retrieves a block by its number
 func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
-	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieving blocks %v", in.BlockNumbers))
-	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieving blocks %d", len(in.BlockNumbers)))
 
-	for _, num := range in.BlockNumbers {
-		block := s.blockStore.Block(num)
-		if block == nil {
-			logx.Error("GRPC SERVER", fmt.Sprintf("block %d not found", num))
-			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+	if len(in.BlockNumbers) == 0 {
+		return &pb.GetBlockByNumberResponse{
+			Blocks:   []*pb.Block{},
+			Decimals: uint32(config.GetDecimalsFactor()),
+		}, nil
+	}
+
+	// Use batch operation to get all blocks - single CGO call!
+	blockMap, err := s.blockStore.GetBatch(in.BlockNumbers)
+	if err != nil {
+		logx.Error("GRPC SERVER", fmt.Sprintf("failed to batch get blocks: %v", err))
+		return nil, status.Errorf(codes.Internal, "failed to batch get blocks: %v", err)
+	}
+
+	// Collect ALL transaction hashes from ALL blocks first
+	var allTxHashes []string
+	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
+
+	for _, slot := range in.BlockNumbers {
+		block, exists := blockMap[slot]
+		if !exists {
+			logx.Error("GRPC SERVER", fmt.Sprintf("block %d not found", slot))
+			return nil, status.Errorf(codes.NotFound, "block %d not found", slot)
 		}
 
-		entries := make([]*pb.Entry, 0, len(block.Entries))
-		var allTxHashes []string
-
+		var blockTxHashes []string
 		for _, entry := range block.Entries {
-			entries = append(entries, &pb.Entry{
-				NumHashes: entry.NumHashes,
-				Hash:      entry.Hash[:],
-				TxHashes:  entry.TxHashes,
-			})
+			blockTxHashes = append(blockTxHashes, entry.TxHashes...)
 			allTxHashes = append(allTxHashes, entry.TxHashes...)
 		}
+		blockTxMap[slot] = blockTxHashes
+	}
 
-		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
-		for _, txHash := range allTxHashes {
-			tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
+	// Batch get ALL transactions and metadata - only 2 CGO calls instead of 2*N!
+	var txs []*transaction.Transaction
+	var txMetaMap map[string]*types.TransactionMeta
+	if len(allTxHashes) > 0 {
+		var errTx error
+		txs, txMetaMap, errTx = s.ledger.GetTxBatch(allTxHashes)
+		if errTx != nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("failed to batch get transactions: %v", errTx))
+			return nil, status.Errorf(codes.Internal, "failed to batch get transactions: %v", errTx)
+		}
+	}
 
-			if errTx != nil || errTxMeta != nil {
-				errMsg := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
-				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found: %v", txHash, errMsg))
-				return nil, status.Errorf(codes.NotFound, "tx %s not found: %v", txHash, errMsg)
+	// Create a map for quick transaction lookup
+	txMap := make(map[string]*transaction.Transaction)
+	for _, tx := range txs {
+		txMap[tx.Hash()] = tx
+	}
+
+	// Build response blocks in the same order as requested
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+	for _, slot := range in.BlockNumbers {
+		block := blockMap[slot]
+		blockTxHashes := blockTxMap[slot]
+
+		// Build transaction data for this block
+		blockTxs := make([]*pb.TransactionData, 0, len(blockTxHashes))
+		for _, txHash := range blockTxHashes {
+			tx, txExists := txMap[txHash]
+			txMeta, metaExists := txMetaMap[txHash]
+
+			if !txExists || !metaExists {
+				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", txHash))
+				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 			}
 
 			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
@@ -369,7 +410,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		pbBlock := &pb.Block{
 			Slot:            block.Slot,
 			PrevHash:        block.PrevHash[:],
-			Entries:         entries,
+			Entries:         []*pb.Entry{}, // Empty as requested - indexer doesn't use this
 			LeaderId:        block.LeaderID,
 			Timestamp:       block.Timestamp,
 			Hash:            block.Hash[:],
@@ -380,10 +421,136 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		blocks = append(blocks, pbBlock)
 	}
 
-	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieved blocks %v", in.BlockNumbers))
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieved %d blocks", len(blocks)))
 	return &pb.GetBlockByNumberResponse{
 		Blocks:   blocks,
 		Decimals: uint32(config.GetDecimalsFactor()),
+	}, nil
+}
+
+// GetBlockByRange retrieves blocks in a range with optimized response structure
+func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequest) (*pb.GetBlockByRangeResponse, error) {
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieving blocks from %d to %d", in.FromSlot, in.ToSlot))
+
+	// Validate input
+	if in.FromSlot > in.ToSlot {
+		logx.Error("GRPC SERVER", fmt.Sprintf("from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot))
+		return nil, status.Errorf(codes.InvalidArgument, "from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot)
+	}
+
+	// Calculate total blocks in range
+	totalBlocks := in.ToSlot - in.FromSlot + 1
+
+	// Reject if range is too large
+	const maxRange = 500
+	if totalBlocks > maxRange {
+		logx.Error("GRPC SERVER", fmt.Sprintf("range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange))
+		return nil, status.Errorf(codes.InvalidArgument, "range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange)
+	}
+
+	// Prepare slot range for batch operation
+	slots := make([]uint64, 0, totalBlocks)
+	for slot := in.FromSlot; slot <= in.ToSlot; slot++ {
+		slots = append(slots, slot)
+	}
+
+	// Use batch operation to get all blocks - single CGO call!
+	blockMap, err := s.blockStore.GetBatch(slots)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to batch get blocks: %v", err)
+	}
+
+	// Collect ALL transaction hashes from ALL blocks first
+	var allTxHashes []string
+	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
+	errors := make([]string, 0)
+
+	for _, slot := range slots {
+		block, exists := blockMap[slot]
+		if !exists {
+			logx.Error("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
+			errors = append(errors, fmt.Sprintf("Block %d not found, skipping", slot))
+			continue
+		}
+
+		var blockTxHashes []string
+		for _, entry := range block.Entries {
+			blockTxHashes = append(blockTxHashes, entry.TxHashes...)
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+		blockTxMap[slot] = blockTxHashes
+	}
+
+	// Single batch call for ALL transactions across ALL blocks!
+	txs, txMetas, err := s.ledger.GetTxBatch(allTxHashes)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to batch get all transactions: %v", err)
+	}
+
+	// Create tx lookup maps for fast access
+	txMap := make(map[string]*transaction.Transaction, len(txs))
+	for _, tx := range txs {
+		txMap[tx.Hash()] = tx
+	}
+
+	blocks := make([]*pb.BlockInfo, 0, len(blockMap))
+
+	// Process blocks in order
+	for _, slot := range slots {
+		block, exists := blockMap[slot]
+		if !exists {
+			continue // Already logged warning above
+		}
+
+		blockTxHashes := blockTxMap[slot]
+		blockTxs := make([]*pb.TransactionData, 0, len(blockTxHashes))
+
+		for _, txHash := range blockTxHashes {
+			tx, txExists := txMap[txHash]
+			txMeta, metaExists := txMetas[txHash]
+
+			if !txExists || !metaExists {
+				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				continue
+			}
+
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    utils.Uint256ToString(tx.Amount),
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    txStatus,
+				TextData:  tx.TextData,
+				ExtraInfo: tx.ExtraInfo,
+			})
+		}
+
+		// Create optimized block (without entries duplication)
+		optimizedBlock := &pb.BlockInfo{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, optimizedBlock)
+	}
+
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieved %d blocks (requested range: %d)",
+		len(blocks), totalBlocks))
+
+	return &pb.GetBlockByRangeResponse{
+		Blocks:      blocks,
+		TotalBlocks: uint32(len(blocks)),
+		Decimals:    uint32(config.GetDecimalsFactor()),
+		Errors:      errors,
 	}, nil
 }
 
