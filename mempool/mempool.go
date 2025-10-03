@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/zkverify"
@@ -80,7 +81,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
-		return "", fmt.Errorf("duplicate transaction")
+		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 	}
 
 	// Check if mempool is full
@@ -88,7 +89,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", "Dropping full mempool")
 		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
-		return "", fmt.Errorf("mempool full")
+		return "", errors.NewError(errors.ErrCodeMempoolFull, errors.ErrMsgMempoolFull)
 	}
 	mp.mu.RUnlock()
 
@@ -100,13 +101,13 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	if _, exists := mp.txsBuf[txHash]; exists {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
-		return "", fmt.Errorf("duplicate transaction")
+		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 	}
 
 	if len(mp.txsBuf) >= mp.max {
 		logx.Error("MEMPOOL", "Dropping full mempool (double-check)")
 		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
-		return "", fmt.Errorf("mempool full")
+		return "", errors.NewError(errors.ErrCodeMempoolFull, errors.ErrMsgMempoolFull)
 	}
 
 	// Validate transaction INSIDE the write lock
@@ -198,10 +199,10 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 
 func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	if tx == nil {
-		return fmt.Errorf("transaction cannot be nil")
+		return errors.NewError(errors.ErrCodeInvalidTransaction, errors.ErrMsgInvalidTransaction)
 	}
 	if tx.Amount == nil {
-		return fmt.Errorf("transaction amount cannot be nil")
+		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
 	if tx.Sender == tx.Recipient {
@@ -210,13 +211,13 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil || senderAccount == nil {
-		return fmt.Errorf("could not get sender account: %w", err)
+		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 
 	// Add nil check for balance
 	if senderAccount.Balance == nil {
 		logx.Warn("MEMPOOL", fmt.Sprintf("Sender account %s has nil balance, treating as zero", tx.Sender[:8]))
-		return fmt.Errorf("sender account has invalid balance")
+		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 
 	availableBalance := new(uint256.Int).Set(senderAccount.Balance)
@@ -238,8 +239,7 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	}
 
 	if availableBalance.Cmp(tx.Amount) < 0 {
-		return fmt.Errorf("insufficient available balance: have %s (after pending: %s), need %s",
-			senderAccount.Balance.String(), availableBalance.String(), tx.Amount.String())
+		return errors.NewError(errors.ErrCodeInsufficientFunds, errors.ErrMsgInsufficientFunds)
 	}
 
 	return nil
@@ -250,29 +250,29 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 1. Verify signature (skip for testing if signature is "test_signature")
 	if !tx.Verify(mp.zkVerify) {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
-		return fmt.Errorf("invalid signature or zk proof")
+		return errors.NewError(errors.ErrCodeInvalidSignature, errors.ErrMsgInvalidSignature)
 	}
 
 	// 2. Check for zero amount
 	if tx.Amount == nil || tx.Amount.IsZero() {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return fmt.Errorf("zero amount not allowed")
+		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
 	// 3. Check sender account exists and get current state
 	if mp.ledger == nil {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return fmt.Errorf("ledger not available for validation")
+		return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return fmt.Errorf("could not get sender account %s", tx.Sender)
+		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 	if senderAccount == nil {
 		monitoring.RecordRejectedTx(monitoring.TxSenderNotExist)
-		return fmt.Errorf("sender account %s does not exist", tx.Sender)
+		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 
 	// 4. Enhanced nonce validation for zero-fee blockchain
@@ -282,29 +282,26 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// Reject old transactions (nonce too low)
 	if tx.Nonce <= currentNonce {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
-		return fmt.Errorf("nonce too low: expected > %d, got %d", currentNonce, tx.Nonce)
+		return errors.NewError(errors.ErrCodeNonceTooLow, errors.ErrMsgNonceTooLow)
 	}
 
 	// Prevent spam with reasonable future nonce limit
 	if tx.Nonce > currentNonce+MaxFutureNonce {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
-		return fmt.Errorf("nonce too high: max allowed %d, got %d",
-			currentNonce+MaxFutureNonce, tx.Nonce)
+		return errors.NewError(errors.ErrCodeNonceTooHigh, errors.ErrMsgNonceTooHigh)
 	}
 
 	// 6. Check pending transaction limits per sender
 	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
 		if len(pendingNonces) >= MaxPendingPerSender {
 			monitoring.RecordRejectedTx(monitoring.TxTooManyPending)
-			return fmt.Errorf("too many pending transactions for sender %s: max %d",
-				tx.Sender[:8], MaxPendingPerSender)
+			return errors.NewError(errors.ErrCodeRateLimited, errors.ErrMsgRateLimited)
 		}
 
 		// 7. Check for duplicate nonce in pending transactions
 		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
-			return fmt.Errorf("duplicate nonce %d for sender %s in pending transactions",
-				tx.Nonce, tx.Sender[:8])
+			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 		}
 	}
 
@@ -312,8 +309,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	if senderNonces, exists := mp.readyQueueIndex[tx.Sender]; exists {
 		if senderNonces[tx.Nonce] {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
-			return fmt.Errorf("duplicate nonce %d for sender %s in ready queue",
-				tx.Nonce, tx.Sender[:8])
+			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 		}
 	}
 
