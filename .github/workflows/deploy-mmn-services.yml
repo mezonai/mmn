@@ -27,6 +27,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.22.5"
+          cache: true
       
       - name: Install build dependencies
         run: |
@@ -61,9 +62,10 @@ jobs:
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && secrets.PROD_HOST_ALIAS || secrets.DEV_HOST_ALIAS }}
     steps:
-      - name: Copy binary to target
+      - name: Copy binary and config to target
         run: |
           scp build/mmn ${TARGET_HOST}:/opt/mezon/mmn/staging/mmn_new
+          scp config/genesis.template.yml ${TARGET_HOST}:/opt/mezon/mmn/config/
 
       - name: Write secrets, config, systemd on target
         run: |
@@ -102,15 +104,6 @@ jobs:
 
             sudo systemctl daemon-reload
             sudo systemctl enable mezon-node1
-
-            # Init node1 data dir if not exists
-            if [ ! -d "/opt/mezon/node-data/node1" ]; then
-              sudo -u mmn /opt/mezon/mmn/bin/mmn init \
-                --data-dir "/opt/mezon/node-data/node1" \
-                --genesis "/etc/mezon/genesis.yml" \
-                --database rocksdb \
-                --privkey-path "/etc/mezon/node1_privkey.txt"
-            fi
           EOS
         env:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
@@ -124,15 +117,29 @@ jobs:
       - name: Atomic swap + restart services
         run: |
           ssh ${TARGET_HOST} <<'EOS'
-            set -e
-            SHA=$(date +%s)
-            sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
-            sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+          set -e
+          SHA=$(date +%s)
 
-            sudo systemctl restart mezon-bootnode || true
-            sleep 2
-            sudo systemctl restart mezon-node1 || true
+          sudo systemctl stop mezon-node1 || true
+          sudo systemctl stop mezon-bootnode || true
+          sudo systemctl stop mezon-proving || true
+
+          sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
+          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+
+          if [ ! -d "/opt/mezon/node-data/node1" ]; then
+            sudo -u mmn /opt/mezon/mmn/bin/mmn init \
+              --data-dir "/opt/mezon/node-data/node1" \
+              --genesis "/etc/mezon/genesis.yml" \
+              --database rocksdb \
+              --privkey-path "/etc/mezon/node1_privkey.txt"
+          fi
+
+          sudo systemctl start mezon-bootnode || true
+          sleep 2
+          sudo systemctl start mezon-node1 || true
           EOS
+
 
       - name: Healthcheck
         run: |
