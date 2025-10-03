@@ -1,0 +1,32 @@
+groups:
+  - name: disk_usage_alerts
+    rules:
+      - alert: DiskUsageWarning
+        expr: |
+          100 * (1 - (sum by (node) (node_filesystem_avail_bytes{job="exporter",fstype!="tmpfs",fstype!="overlay"}) / sum by (node) (node_filesystem_size_bytes{job="exporter",fstype!="tmpfs",fstype!="overlay"}))) > 70
+        for: 30s
+        labels:
+          severity: warning
+          alert_type: disk_usage
+        annotations:
+          summary: "Disk usage warning on {{ $labels.node }}"
+          description: "Disk usage is {{ $value }}% on {{ $labels.node }}"
+          message: |
+            @here [WARNING]
+            Disk Usage: {{ $value }}%
+            Node: {{ $labels.node }}
+
+      - alert: DiskUsageCritical
+        expr: |
+          100 * (1 - (sum by (node) (node_filesystem_avail_bytes{job="exporter",fstype!="tmpfs",fstype!="overlay"}) / sum by (node) (node_filesystem_size_bytes{job="exporter",fstype!="tmpfs",fstype!="overlay"}))) > 85
+        for: 30s
+        labels:
+          severity: critical
+          alert_type: disk_usage
+        annotations:
+          summary: "Disk usage critical on {{ $labels.node }}"
+          description: "Disk usage is {{ $value }}% on {{ $labels.node }}"
+          message: |
+            @here [CRITICAL]
+            Disk Usage: {{ $value }}%
+            Node: {{ $labels.node }}

@@ -18,32 +18,52 @@ const (
 
 var logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lmicroseconds)
 
+var trackLogMetrics func(level string, sizeBytes int)
+
 func InitWithOutput(output io.Writer) {
 	logger.SetOutput(output)
+}
+
+func SetMetricsTracker(tracker func(level string, sizeBytes int)) {
+	trackLogMetrics = tracker
+}
+
+func TrackLog(level string, message string) {
+	if trackLogMetrics != nil {
+		trackLogMetrics(level, len(message))
+	}
 }
 
 func Info(category string, content ...interface{}) {
 	message := strings.TrimSuffix(fmt.Sprintln(content...), "\n")
 	coloredCategory := fmt.Sprintf("%s[INFO][%s]%s", ColorGreen, category, ColorReset)
-	logger.Printf("%s: %s", coloredCategory, message)
+	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
+	logger.Print(fullMessage)
+	TrackLog("info", fullMessage)
 }
 
 func Error(category string, content ...interface{}) {
 	message := strings.TrimSuffix(fmt.Sprintln(content...), "\n")
 	coloredCategory := fmt.Sprintf("%s[ERROR][%s]%s", ColorRed, category, ColorReset)
-	logger.Printf("%s: %s", coloredCategory, message)
+	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
+	logger.Print(fullMessage)
+	TrackLog("error", fullMessage)
 }
 
 func Warn(category string, content ...interface{}) {
 	message := strings.TrimSuffix(fmt.Sprintln(content...), "\n")
 	coloredCategory := fmt.Sprintf("%s[WARN][%s]%s", ColorYellow, category, ColorReset)
-	logger.Printf("%s: %s", coloredCategory, message)
+	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
+	logger.Print(fullMessage)
+	TrackLog("warn", fullMessage)
 }
 
 func Debug(category string, content ...interface{}) {
 	message := strings.TrimSuffix(fmt.Sprintln(content...), "\n")
 	coloredCategory := fmt.Sprintf("%s[DEBUG][%s]%s", ColorBlue, category, ColorReset)
-	logger.Printf("%s: %s", coloredCategory, message)
+	fullMessage := fmt.Sprintf("%s: %s", coloredCategory, message)
+	logger.Print(fullMessage)
+	TrackLog("debug", fullMessage)
 }
 
 // Errorf logs an error message and returns a formatted error

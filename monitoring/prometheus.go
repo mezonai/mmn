@@ -48,6 +48,8 @@ type nodePromMetrics struct {
 	executedTpsCounter    prometheus.Counter
 	finalizedTpsCounter   prometheus.Counter
 	failedTpsCounter      *prometheus.CounterVec
+	logEntriesTotal       *prometheus.CounterVec
+	logSizeBytes          *prometheus.CounterVec
 }
 
 func newNodePromMetrics() *nodePromMetrics {
@@ -163,6 +165,20 @@ func newNodePromMetrics() *nodePromMetrics {
 			},
 			[]string{"reason"},
 		),
+		logEntriesTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "mmn_node_log_entries_total",
+				Help: "The total number of log entries by level",
+			},
+			[]string{"level"},
+		),
+		logSizeBytes: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "mmn_node_log_size_bytes_total",
+				Help: "The total size of logs in bytes by level",
+			},
+			[]string{"level"},
+		),
 	}
 }
 
@@ -172,6 +188,16 @@ var nodeMetrics *nodePromMetrics
 func InitMetrics() {
 	nodeMetrics = newNodePromMetrics()
 	nodeMetrics.nodeUpUnixSeconds.SetToCurrentTime()
+	setupLogMetricsTracking()
+}
+
+func setupLogMetricsTracking() {
+	logMetricsTracker := func(level string, sizeBytes int) {
+		IncreaseLogEntries(level)
+		AddLogSize(level, sizeBytes)
+	}
+
+	_ = logMetricsTracker
 }
 
 func RegisterMetrics(mux *http.ServeMux) {
@@ -248,7 +274,27 @@ func IncreaseFinalizedTpsCount() {
 }
 
 func IncreaseFailedTpsCount(reason string) {
-    nodeMetrics.failedTpsCounter.With(prometheus.Labels{
-        "reason": reason,
-    }).Inc()
+	nodeMetrics.failedTpsCounter.With(prometheus.Labels{
+		"reason": reason,
+	}).Inc()
+}
+
+func IncreaseLogEntries(level string) {
+	nodeMetrics.logEntriesTotal.With(prometheus.Labels{
+		"level": level,
+	}).Inc()
+}
+
+func AddLogSize(level string, sizeBytes int) {
+	nodeMetrics.logSizeBytes.With(prometheus.Labels{
+		"level": level,
+	}).Add(float64(sizeBytes))
+}
+
+
+func GetLogMetricsTracker() func(level string, sizeBytes int) {
+	return func(level string, sizeBytes int) {
+		IncreaseLogEntries(level)
+		AddLogSize(level, sizeBytes)
+	}
 }

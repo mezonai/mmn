@@ -95,6 +95,8 @@ func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
+	logx.SetMetricsTracker(monitoring.GetLogMetricsTracker())
+
 	logx.Info("NODE", "Running node")
 
 	// Handle Docker stop or Ctrl+C
