@@ -180,7 +180,7 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 			mp.readyQueueIndex[tx.Sender] = make(map[uint64]bool)
 		}
 		mp.readyQueueIndex[tx.Sender][tx.Nonce] = true
-		logx.Info("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
+		logx.Debug("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
 			txHash, tx.Sender[:8], tx.Nonce, currentKnown+1))
 	} else {
 		// Add to pending transactions
@@ -191,7 +191,7 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 			Tx:        tx,
 			Timestamp: time.Now(),
 		}
-		logx.Info("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
+		logx.Debug("MEMPOOL", fmt.Sprintf("Added pending tx %s (sender: %s, nonce: %d, expected: %d)",
 			txHash, tx.Sender[:8], tx.Nonce, currentKnown+1))
 	}
 }
@@ -354,7 +354,7 @@ func (mp *Mempool) PullBatch(batchSize int) [][]byte {
 			mp.removeTransaction(tx)
 			processedCount++
 
-			logx.Info("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
+			logx.Debug("MEMPOOL", fmt.Sprintf("Processed tx %s (sender: %s, nonce: %d)",
 				txHash, tx.Sender[:8], tx.Nonce))
 		}
 		// Check if any pending transactions became ready after processing
@@ -393,7 +393,7 @@ func (mp *Mempool) promotePendingTransactions(readyTxs []*transaction.Transactio
 					delete(mp.pendingTxs, tx.Sender)
 				}
 
-				logx.Info("MEMPOOL", fmt.Sprintf("Promoted pending tx for sender %s with nonce %d",
+				logx.Debug("MEMPOOL", fmt.Sprintf("Promoted pending tx for sender %s with nonce %d",
 					tx.Sender[:8], expectedNonce))
 			}
 		}
@@ -529,7 +529,7 @@ func (mp *Mempool) cleanupStaleTransactions() {
 			if pendingTx.Timestamp.Before(staleThreshold) {
 				staleTxs = append(staleTxs, pendingTx.Tx)
 				delete(pendingMap, nonce)
-				logx.Info("MEMPOOL", fmt.Sprintf("Removed stale transaction (sender: %s, nonce: %d)",
+				logx.Debug("MEMPOOL", fmt.Sprintf("Removed stale transaction (sender: %s, nonce: %d)",
 					sender[:8], nonce))
 			}
 		}
