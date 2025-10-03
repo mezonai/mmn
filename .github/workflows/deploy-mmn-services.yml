@@ -59,6 +59,8 @@ jobs:
     needs: build
     runs-on: self-hosted
     environment: ${{ inputs.env }}
+    env:
+      TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
       - name: Copy binary and config to target
         run: |
