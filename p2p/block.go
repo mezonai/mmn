@@ -489,6 +489,8 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 	defer s.Close()
 
+	logx.Debug("RECEIVED REQUEST LATEST SLOT")
+
 	var response LatestSlotResponse
 	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&response); err != nil {
