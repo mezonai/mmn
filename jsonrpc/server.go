@@ -2,7 +2,6 @@ package jsonrpc
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -15,6 +14,7 @@ import (
 	"github.com/creachadair/jrpc2/jhttp"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/jsonx"
 	pb "github.com/mezonai/mmn/proto"
 )
 
@@ -31,7 +31,7 @@ func toJRPC2Error(e *rpcError) error {
 		return nil
 	}
 	var networkError errors.NetworkError
-	err := json.Unmarshal([]byte(e.Message), &networkError)
+	err := jsonx.Unmarshal([]byte(e.Message), &networkError)
 	if err == nil {
 		return jrpc2.Errorf(jrpc2.Code(e.Code), "%s", networkError.Message).WithData(networkError)
 	}
