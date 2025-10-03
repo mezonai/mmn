@@ -21,15 +21,25 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Prepare RocksDB libs
+        run: |
+          sudo mkdir -p /usr/local/lib /usr/local/include
+          sudo cp libs/librocksdb.a /usr/local/lib/
+          sudo cp -r libs/rocksdb /usr/local/include/rocksdb
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.22.5"
 
       - name: Build MMN binary
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-I/usr/local/include"
+          CGO_LDFLAGS: "-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
         run: |
           mkdir -p build
-          GOOS=linux GOARCH=amd64 go build -o build/mmn ./cmd/mmn
+          GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
           GIT_SHA=$(git rev-parse --short=12 HEAD)
           echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
 
