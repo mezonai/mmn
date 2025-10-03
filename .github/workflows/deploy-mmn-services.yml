@@ -15,17 +15,13 @@ on:
 jobs:
   build:
     runs-on: self-hosted
+    outputs:
+      git_sha: ${{ steps.build.outputs.git_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-
-      - name: Prepare RocksDB libs
-        run: |
-          sudo mkdir -p /usr/local/lib /usr/local/include
-          sudo cp libs/librocksdb.a /usr/local/lib/
-          sudo cp -r libs/rocksdb /usr/local/include/rocksdb
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -46,21 +42,17 @@ jobs:
             liburing-dev
 
       - name: Build MMN binary
+        id: build
         env:
           CGO_ENABLED: 1
-          CGO_CFLAGS: "-I/usr/local/include"
-          CGO_LDFLAGS: "-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
+          CGO_CFLAGS: "-I$(pwd)/libs/rocksdb"
+          CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
         run: |
           mkdir -p build
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
           GIT_SHA=$(git rev-parse --short=12 HEAD)
+          echo "git_sha=$GIT_SHA" >> $GITHUB_OUTPUT
           echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mmn-${{ env.GIT_SHA }}
-          path: build/mmn
 
   deploy:
     needs: build
@@ -69,15 +61,9 @@ jobs:
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && secrets.PROD_HOST_ALIAS || secrets.DEV_HOST_ALIAS }}
     steps:
-      - name: Download binary
-        uses: actions/download-artifact@v4
-        with:
-          name: mmn-${{ needs.build.outputs.GIT_SHA || env.GIT_SHA }}
-          path: artifact
-
       - name: Copy binary to target
         run: |
-          scp artifact/mmn ${TARGET_HOST}:/opt/mezon/mmn/staging/mmn_new
+          scp build/mmn ${TARGET_HOST}:/opt/mezon/mmn/staging/mmn_new
 
       - name: Write secrets, config, systemd on target
         run: |
@@ -127,27 +113,28 @@ jobs:
             fi
           EOS
         env:
-          BOOTNODE_PRIVKEY: ${{ secrets.BOOTNODE_PRIVKEY }}
-          NODE1_PRIVKEY:    ${{ secrets.NODE1_PRIVKEY }}
-          VERIFYING_KEY_B64:    ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:        ${{ secrets.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:       ${{ secrets.FAUCET_ADDRESS }}
-          BOOTNODE_IP:          ${{ secrets.BOOTNODE_IP }}
-          BOOTNODE_ID:          ${{ secrets.BOOTNODE_ID }}
+          BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
+          VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
+          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
 
       - name: Atomic swap + restart services
         run: |
           ssh ${TARGET_HOST} <<'EOS'
-          set -e
-          SHA=$(date +%s)
-          sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
-          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+            set -e
+            SHA=$(date +%s)
+            sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
+            sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
 
-          sudo systemctl restart mezon-bootnode || true
-          sleep 2
-          sudo systemctl restart mezon-node1 || true
+            sudo systemctl restart mezon-bootnode || true
+            sleep 2
+            sudo systemctl restart mezon-node1 || true
           EOS
 
       - name: Healthcheck
         run: |
-          ssh ${TARGET_HOST} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"_
+          ssh ${TARGET_HOST} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh ${TARGET_HOST} "curl -sSf http://127.0.0.1:8081/health || true"
