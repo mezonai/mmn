@@ -69,7 +69,7 @@ jobs:
 
       - name: Write secrets, config, systemd on target
         run: |
-          ssh ${TARGET_HOST} "bash -s" <<'EOS'
+          ssh ${{ secrets.HOST_ALIAS }} "bash -s" <<'EOS'
             set -e
             sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
 
@@ -116,7 +116,7 @@ jobs:
 
       - name: Atomic swap + restart services
         run: |
-          ssh ${TARGET_HOST} <<'EOS'
+          ssh ${{ secrets.HOST_ALIAS }} <<'EOS'
           set -e
           SHA=$(date +%s)
 
@@ -128,7 +128,7 @@ jobs:
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
 
           if [ ! -d "/opt/mezon/node-data/node1" ]; then
-            sudo -u mmn /opt/mezon/mmn/bin/mmn init \
+            /opt/mezon/mmn/bin/mmn init \
               --data-dir "/opt/mezon/node-data/node1" \
               --genesis "/etc/mezon/genesis.yml" \
               --database rocksdb \
@@ -143,5 +143,5 @@ jobs:
 
       - name: Healthcheck
         run: |
-          ssh ${TARGET_HOST} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
-          ssh ${TARGET_HOST} "curl -sSf http://127.0.0.1:8081/health || true"
+          ssh ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
