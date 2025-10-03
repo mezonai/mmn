@@ -60,12 +60,11 @@ jobs:
     runs-on: self-hosted
     environment: ${{ inputs.env }}
     env:
-      TARGET_HOST: ${{ inputs.env == 'prod' && secrets.PROD_HOST_ALIAS || secrets.DEV_HOST_ALIAS }}
     steps:
       - name: Copy binary and config to target
         run: |
-          scp build/mmn ${TARGET_HOST}:/opt/mezon/mmn/staging/mmn_new
-          scp config/genesis.template.yml ${TARGET_HOST}:/opt/mezon/mmn/config/
+          scp build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
+          scp config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
 
       - name: Write secrets, config, systemd on target
         run: |
