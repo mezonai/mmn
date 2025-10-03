@@ -117,9 +117,33 @@ const CRYPTO_CONSTANTS = {
   ED25519_PUBLIC_KEY_LENGTH: 32,
   MNEMONIC_ENTROPY_BITS: 128,
   PKCS8_VERSION: 0,
+
+  // ASN.1 DER encoding
   ASN1_SEQUENCE_TAG: 0x30,
   ASN1_OCTET_STRING_TAG: 0x04,
   ASN1_INTEGER_TAG: 0x02,
+  ASN1_LENGTH: 0x80,
+
+  // Ed25519 OID bytes: 1.3.101.112 (RFC 8410)
+  ED25519_OID_BYTES: [0x06, 0x03, 0x2b, 0x65, 0x70],
+
+  // PKCS#8 structure length constants
+  PKCS8_ALGORITHM_ID_LENGTH: 0x0b, // SEQUENCE length for algorithm identifier
+  PKCS8_PRIVATE_KEY_OCTET_OUTER_LENGTH: 0x22, // Outer OCTET STRING length (34 bytes)
+  PKCS8_PRIVATE_KEY_OCTET_INNER_LENGTH: 0x20, // Inner OCTET STRING length (32 bytes)
+} as const;
+
+// PRNG (Pseudo-Random Number Generator) constants
+const PRNG_CONSTANTS = {
+  // Numerical Recipes LCG
+  LCG_MULTIPLIER: 1664525, // LCG multiplier (from Numerical Recipes)
+  LCG_INCREMENT: 1013904223, // LCG increment
+  LCG_MODULUS: 4294967296, // 2^32 modulus for LCG
+
+  TIMESTAMP_MULTIPLIER: 2654435761, // Golden Ratio constant
+  HASH_SUBSTRING_LENGTH: 8,
+  BYTE_SHIFT: 24,
+  BYTE_MASK: 0xff,
 } as const;
 
 const TX_TYPE = {
@@ -214,24 +238,34 @@ export class MmnClient {
     }
 
     try {
-      // Ed25519 OID: 1.3.101.112 (constant-time)
-      const ED25519_OID = BufferCompat.from([0x06, 0x03, 0x2b, 0x65, 0x70]);
+      // Ed25519 OID: 1.3.101.112 (RFC 8410 - Algorithm Identifiers for Ed25519)
+      const ED25519_OID = BufferCompat.from(CRYPTO_CONSTANTS.ED25519_OID_BYTES);
+
       const VERSION_BYTES = BufferCompat.from([
         CRYPTO_CONSTANTS.ASN1_INTEGER_TAG,
-        0x01,
+        0x01, // Length of integer (1 byte)
         CRYPTO_CONSTANTS.PKCS8_VERSION,
-      ]); // INTEGER 0
+      ]);
 
-      // Create algorithm identifier sequence
+      // Create algorithm identifier sequence (AlgorithmIdentifier)
       const algorithmId = BufferCompat.concat([
-        BufferCompat.from([0x30, 0x0b]), // SEQUENCE, length 11
+        BufferCompat.from([
+          CRYPTO_CONSTANTS.ASN1_SEQUENCE_TAG,
+          CRYPTO_CONSTANTS.PKCS8_ALGORITHM_ID_LENGTH,
+        ]),
         ED25519_OID,
       ]);
 
-      // Create private key octet string
+      // Create private key octet string (wrapped Ed25519 private key)
       const privateKeyOctetString = BufferCompat.concat([
-        BufferCompat.from([CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG, 0x22]), // OCTET STRING, length 34
-        BufferCompat.from([CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG, 0x20]), // inner OCTET STRING, length 32
+        BufferCompat.from([
+          CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG,
+          CRYPTO_CONSTANTS.PKCS8_PRIVATE_KEY_OCTET_OUTER_LENGTH,
+        ]), // OCTET STRING, length 34
+        BufferCompat.from([
+          CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG,
+          CRYPTO_CONSTANTS.PKCS8_PRIVATE_KEY_OCTET_INNER_LENGTH,
+        ]), // inner OCTET STRING, length 32
         raw,
       ]);
 
@@ -269,17 +303,29 @@ export class MmnClient {
     }
   }
 
+  /**
+   * Encode length in ASN.1 DER format
+   * ASN.1 length encoding rules:
+   * - Short form (0-127): single byte with the length value
+   * - Long form (128+): first byte is 0x80 + number of length bytes, followed by length bytes
+   * @param length - The length value to encode
+   * @returns ASN.1 DER encoded length bytes
+   */
   private encodeLength(length: number): Uint8Array {
-    if (length < 0x80) {
+    if (length < CRYPTO_CONSTANTS.ASN1_LENGTH) {
       return BufferCompat.from([length]);
     }
     const bytes = [];
     let len = length;
     while (len > 0) {
-      bytes.unshift(len & 0xff);
+      bytes.unshift(len & PRNG_CONSTANTS.BYTE_MASK);
       len >>= 8;
     }
-    return BufferCompat.from([0x80 | bytes.length, ...bytes]);
+
+    return BufferCompat.from([
+      CRYPTO_CONSTANTS.ASN1_LENGTH | bytes.length,
+      ...bytes,
+    ]);
   }
 
   /**
@@ -301,21 +347,32 @@ export class MmnClient {
     // Create initial seed from timestamp and random
     let seed = now + performance + random;
 
-    // Generate bytes using linear congruential generator with multiple mixing
+    // Generate bytes using Linear Congruential Generator (LCG) with multiple entropy sources
+    // This provides a fallback Pseudorandom Number Generator (PRNG) when crypto.getRandomValues is not available
     for (let i = 0; i < targetLength; i++) {
-      // Mix multiple sources
-      seed = (seed * 1664525 + 1013904223) % 4294967296; // LCG
-      seed ^= (now + i) * 2654435761; // Mix with timestamp
-      seed ^= Math.floor(Math.random() * 4294967296); // Mix with Math.random
+      // Xₙ₊₁ = (a * Xₙ + c) mod m
+      seed =
+        (seed * PRNG_CONSTANTS.LCG_MULTIPLIER + PRNG_CONSTANTS.LCG_INCREMENT) %
+        PRNG_CONSTANTS.LCG_MODULUS;
+      // Mix with timestamp to add time-based entropy
+      seed ^= (now + i) * PRNG_CONSTANTS.TIMESTAMP_MULTIPLIER;
+      // Mix with Math.random() for additional browser-provided randomness
+      seed ^= Math.floor(Math.random() * PRNG_CONSTANTS.LCG_MODULUS);
 
-      // Additional mixing with crypto-js if available
+      // Additional cryptographic mixing using SHA256 if CryptoJS is available
       if (typeof CryptoJS !== 'undefined') {
         const hashInput = seed.toString() + i.toString() + now.toString();
         const hash = CryptoJS.SHA256(hashInput).toString();
-        seed ^= parseInt(hash.substring(0, 8), 16);
+        // Extract first 8 hex characters (32 bits) from hash for mixing
+        seed ^= parseInt(
+          hash.substring(0, PRNG_CONSTANTS.HASH_SUBSTRING_LENGTH),
+          16
+        );
       }
 
-      entropy.push((seed >>> 24) & 0xff);
+      entropy.push(
+        (seed >>> PRNG_CONSTANTS.BYTE_SHIFT) & PRNG_CONSTANTS.BYTE_MASK
+      );
     }
 
     return entropy;
