@@ -1,0 +1,21 @@
+config:
+  leader_schedule:
+    - start_slot: 1
+      end_slot: 10
+      leader: "__LEADER_ADDRESS__"
+  alloc:
+    addresses: 
+      - address: "__FAUCET_ADDRESS__"
+        amount: 100000000000000000
+  poh:
+    hashes_per_tick: 10
+    ticks_per_slot: 4
+    tick_interval_ms: 100
+  mempool:
+    max_txs: 100000
+  validator:
+    batch_size: 750
+    leader_timeout: 50
+    leader_timeout_loop_interval: 5
+  native_currency:
+    decimals: 6
