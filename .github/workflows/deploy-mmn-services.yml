@@ -64,12 +64,12 @@ jobs:
     steps:
       - name: Copy binary and config to target
         run: |
-          scp build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
-          scp config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
+          scp -i /home/nccsoft/.ssh/mmn_deploy build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
+          scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
 
       - name: Write secrets, config, systemd on target
         run: |
-          ssh ${{ secrets.HOST_ALIAS }} "bash -s" <<'EOS'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "bash -s" <<'EOS'
             set -e
             sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
 
@@ -116,7 +116,7 @@ jobs:
 
       - name: Atomic swap + restart services
         run: |
-          ssh ${{ secrets.HOST_ALIAS }} <<'EOS'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOS'
           set -e
           SHA=$(date +%s)
 
@@ -143,5 +143,5 @@ jobs:
 
       - name: Healthcheck
         run: |
-          ssh ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
-          ssh ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
