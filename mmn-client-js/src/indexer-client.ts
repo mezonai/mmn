@@ -59,7 +59,9 @@ export class IndexerClient {
     wallet: string,
     page = 1,
     limit = 50,
-    filter: number
+    filter: number,
+    sortBy = 'transaction_timestamp',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<ListTransactionResponse> {
     if (!wallet) {
       throw new Error('wallet address cannot be empty');
@@ -72,8 +74,8 @@ export class IndexerClient {
     const params: Record<string, string | number> = {
       page: page - 1,
       limit,
-      sort_by: 'block_timestamp',
-      sort_order: 'desc',
+      sort_by: sortBy,
+      sort_order: sortOrder,
     };
 
     switch (filter) {
