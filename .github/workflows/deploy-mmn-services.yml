@@ -47,7 +47,7 @@ jobs:
         env:
           CGO_ENABLED: 1
           CGO_CFLAGS: "-I$(pwd)/libs/rocksdb"
-          CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
+          CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
         run: |
           mkdir -p build
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
@@ -69,8 +69,18 @@ jobs:
 
       - name: Write secrets, config, systemd on target
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "bash -s" <<'EOS'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "bash -s" <<EOS
             set -e
+
+            sudo apt-get update
+            sudo apt-get install -y \
+              libsnappy1v5 \
+              zlib1g \
+              libbz2-1.0 \
+              liblz4-1 \
+              libzstd1 \
+              liburing2
+
             sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
 
             # Bootnode private key
@@ -116,13 +126,12 @@ jobs:
 
       - name: Atomic swap + restart services
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOS'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<EOS
           set -e
           SHA=$(date +%s)
 
           sudo systemctl stop mezon-node1 || true
           sudo systemctl stop mezon-bootnode || true
-          sudo systemctl stop mezon-proving || true
 
           sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
