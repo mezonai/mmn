@@ -134,19 +134,23 @@ jobs:
           BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
 
-      - name: Execute remote setup with inline env
+      - name: Execute remote setup correctly with sourced env
         shell: bash
+        env:
+          BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
+          VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
+          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
         run: |
           set -e
-
           scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ secrets.HOST_ALIAS }}:/tmp/
+          
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} \
+            "bash -c 'set -e; source /tmp/mezon_env.sh; /tmp/remote_setup.sh'"
 
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
-            cat /tmp/mezon_env.sh /tmp/remote_setup.sh > /tmp/combined_setup.sh &&
-            chmod +x /tmp/combined_setup.sh &&
-            /bin/bash /tmp/combined_setup.sh &&
-            rm -f /tmp/mezon_env.sh /tmp/remote_setup.sh /tmp/combined_setup.sh
-          "
         
 
 
