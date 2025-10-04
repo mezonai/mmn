@@ -121,6 +121,17 @@ jobs:
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
 
+          echo "==> Creating /etc/mezon/node1.env..."
+          sudo tee /etc/mezon/node1.env >/dev/null <<EOL
+          LOGFILE=/opt/mezon/mmn/logs/node1.log
+          LOGLEVEL=info
+          LOGFILE_MAX_SIZE_MB=50
+          LOG_ROTATE_DAYS=7
+          EOL
+
+          sudo chmod 644 /etc/mezon/node1.env
+          sudo chown mmn:mmn /etc/mezon/node1.env
+
           sudo systemctl daemon-reload
           sudo systemctl enable mezon-node1
 
@@ -186,6 +197,9 @@ jobs:
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
 
           if [ ! -d "/opt/mezon/node-data/node1" ]; then
+            set -a
+            source /etc/mezon/node1.env
+            set +a
             /opt/mezon/mmn/bin/mmn init \
               --data-dir "/opt/mezon/node-data/node1" \
               --genesis "/etc/mezon/genesis.yml" \
