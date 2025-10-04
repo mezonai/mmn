@@ -105,7 +105,7 @@ jobs:
           echo "==> Writing keys..."
           write_text_file "$BOOTNODE_PRIVKEY" /etc/mezon/bootnode_privkey.txt
           write_text_file "$NODE1_PRIVKEY" /etc/mezon/node1_privkey.txt
-          write_text_file "$VERIFYING_KEY_B64" /etc/mezon/verifying_key
+          write_text_file "$VERIFYING_KEY_B64" /etc/mezon/verifying_key.b64
 
           echo "==> Generating genesis.yml..."
           sed \
@@ -123,7 +123,7 @@ jobs:
 
           echo "==> Creating /etc/mezon/node1.env..."
           sudo tee /etc/mezon/node1.env >/dev/null <<EOL
-          LOGFILE=/opt/mezon/mmn/logs/node1.log
+          LOGFILE=node1.log
           LOGLEVEL=info
           LOGFILE_MAX_SIZE_MB=500
           LOGFILE_MAX_AGE_DAYS=30
@@ -180,9 +180,6 @@ jobs:
             bash -c 'set -e; source /tmp/mezon_env.sh; bash /tmp/remote_setup.sh'
             rm -f /tmp/mezon_env.sh /tmp/remote_setup.sh
           "
-
-        
-
 
       - name: Atomic swap + restart services
         run: |
