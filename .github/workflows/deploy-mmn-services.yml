@@ -90,22 +90,22 @@ jobs:
           echo "==> Preparing directories..."
           sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
 
-          decode_and_write() {
+          write_text_file() {
             local var_value="$1"
             local dest="$2"
             if [ -z "$var_value" ]; then
               echo "❌ ERROR: Missing value for $dest"
               exit 1
             fi
-            printf '%s' "$var_value" | base64 -d | sudo tee "$dest" >/dev/null
+            printf '%s' "$var_value" | sudo tee "$dest" >/dev/null
             sudo chmod 600 "$dest"
             sudo chown mmn:mmn "$dest"
           }
 
           echo "==> Writing keys..."
-          decode_and_write "$BOOTNODE_PRIVKEY" /etc/mezon/bootnode_privkey.txt
-          decode_and_write "$NODE1_PRIVKEY" /etc/mezon/node1_privkey.txt
-          decode_and_write "$VERIFYING_KEY_B64" /etc/mezon/verifying_key
+          write_text_file "$BOOTNODE_PRIVKEY" /etc/mezon/bootnode_privkey.txt
+          write_text_file "$NODE1_PRIVKEY" /etc/mezon/node1_privkey.txt
+          write_text_file "$VERIFYING_KEY_B64" /etc/mezon/verifying_key
 
           echo "==> Generating genesis.yml..."
           sed \
@@ -167,7 +167,7 @@ jobs:
             set -e
             chmod +x /tmp/remote_setup.sh
             bash -c 'set -e; source /tmp/mezon_env.sh; bash /tmp/remote_setup.sh'
-            
+            rm -f /tmp/mezon_env.sh /tmp/remote_setup.sh
           "
 
         
