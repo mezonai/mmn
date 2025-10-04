@@ -117,21 +117,24 @@ jobs:
           sudo systemctl enable mezon-node1
           EOF
 
-          cat > mezon_env.sh <<EOF
-          export BOOTNODE_PRIVKEY='${BOOTNODE_PRIVKEY}'
-          export NODE1_PRIVKEY='${NODE1_PRIVKEY}'
-          export VERIFYING_KEY_B64='${VERIFYING_KEY_B64}'
-          export NODE1_ADDRESS='${NODE1_ADDRESS}'
-          export FAUCET_ADDRESS='${FAUCET_ADDRESS}'
-          export BOOTNODE_IP='${BOOTNODE_IP}'
-          export BOOTNODE_ID='${BOOTNODE_ID}'
-          EOF
+          echo "# Mezon env generated at $(date)" > mezon_env.sh
+          printf "export BOOTNODE_PRIVKEY=%q\n" "$BOOTNODE_PRIVKEY" >> mezon_env.sh
+          printf "export NODE1_PRIVKEY=%q\n" "$NODE1_PRIVKEY" >> mezon_env.sh
+          printf "export VERIFYING_KEY_B64=%q\n" "$VERIFYING_KEY_B64" >> mezon_env.sh
+          printf "export NODE1_ADDRESS=%q\n" "$NODE1_ADDRESS" >> mezon_env.sh
+          printf "export FAUCET_ADDRESS=%q\n" "$FAUCET_ADDRESS" >> mezon_env.sh
+          printf "export BOOTNODE_IP=%q\n" "$BOOTNODE_IP" >> mezon_env.sh
+          printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
+
 
       - name: Transfer and execute remotely
         run: |
           scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ secrets.HOST_ALIAS }}:/tmp/
-
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "chmod +x /tmp/remote_setup.sh && bash /tmp/remote_setup.sh && rm -f /tmp/remote_setup.sh /tmp/mezon_env.sh"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+            chmod +x /tmp/remote_setup.sh &&
+            bash -c 'source /tmp/mezon_env.sh && /tmp/remote_setup.sh' &&
+            rm -f /tmp/remote_setup.sh /tmp/mezon_env.sh
+          "
         env:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
