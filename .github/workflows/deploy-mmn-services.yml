@@ -105,7 +105,7 @@ jobs:
           echo "==> Writing keys..."
           write_text_file "$BOOTNODE_PRIVKEY" /etc/mezon/bootnode_privkey.txt
           write_text_file "$NODE1_PRIVKEY" /etc/mezon/node1_privkey.txt
-          write_text_file "$VERIFYING_KEY_B64" /etc/mezon/verifying_key.b64
+          write_text_file "$VERIFYING_KEY_B64" /opt/mezon/mmn/config/verifying_key.b64
 
           echo "==> Generating genesis.yml..."
           sed \
