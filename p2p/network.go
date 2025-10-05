@@ -64,11 +64,17 @@ func NewNetWork(
 		}
 	}
 
+	// Add QUIC support alongside TCP
+	quicAddr := strings.Replace(listenAddr, "/tcp/", "/udp/", 1) + "/quic-v1"
+
 	h, err := libp2p.New(
 		libp2p.Identity(privKey),
-		libp2p.ListenAddrStrings(listenAddr),
+		libp2p.ListenAddrStrings(listenAddr, quicAddr),
 		libp2p.EnableAutoRelayWithStaticRelays(relays),
 		libp2p.EnableRelay(),
+		libp2p.EnableHolePunching(),
+		libp2p.EnableNATService(),
+		libp2p.NATPortMap(),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
 			return ddht, err

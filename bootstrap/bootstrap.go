@@ -31,12 +31,18 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 		return nil, nil, err
 	}
 	bootstrapP2pAddr := fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", bootstrapP2pPort)
+	bootstrapQuicAddr := fmt.Sprintf("/ip4/0.0.0.0/udp/%s/quic-v1", bootstrapP2pPort)
 
 	options := []libp2p.Option{
 		libp2p.ListenAddrStrings(
 			bootstrapP2pAddr,
+			bootstrapQuicAddr,
 		),
+		libp2p.EnableRelay(),
 		libp2p.EnableRelayService(),
+		libp2p.EnableHolePunching(),
+		libp2p.EnableNATService(),
+		libp2p.NATPortMap(),
 		libp2p.ForceReachabilityPublic(),
 		libp2p.ConnectionManager(mgr),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
