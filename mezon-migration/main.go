@@ -20,7 +20,7 @@ func main() {
 	createSenderWallet := flag.Bool("create-sender-wallet", false, "Create sender wallet")
 	runMigration := flag.Bool("run-migration", false, "Run migration")
 	mmnEndpoint := flag.String("mmn-endpoint", "", "MMN endpoint")
-	databaseURL := flag.String("database-url", "", "Database URL")
+	usersDataFilePath := flag.String("users-data-file", "", "Path file .csv user data")
 	privateKeyFile := flag.String("faucet-private-key-file", "", "faucet private key file")
 	privateKey := flag.String("faucet-private-key", "", "faucet private key in hex")
 	flag.Parse()
@@ -35,24 +35,16 @@ func main() {
 		return
 	}
 
-	if *databaseURL == "" {
-		logx.Error("CONFIG", "Database URL is required")
+	if *usersDataFilePath == "" {
+		logx.Error("CONFIG", "Users data file path is required")
 		return
 	}
 
 	logx.Info("CONFIG", fmt.Sprintf("Configuration loaded - MMN Endpoint: %s", *mmnEndpoint))
 
-	// Connect to database for wallet creation
-	db, err := ConnectDatabase(*databaseURL)
+	users, err := GetUsers(*usersDataFilePath)
 	if err != nil {
-		logx.Error("DATABASE", fmt.Sprintf("Database connection failed: %v", err))
-		return
-	}
-	defer db.Close()
-
-	users, err := GetUsers(db)
-	if err != nil {
-		logx.Error("DATABASE", fmt.Sprintf("failed to get all users: %v", err))
+		logx.Error("USERS", fmt.Sprintf("failed to get all users: %v", err))
 		return
 	}
 
