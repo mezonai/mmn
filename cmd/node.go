@@ -43,7 +43,7 @@ const (
 	fileBlockDir    = "./blockstore/blocks"
 	leveldbBlockDir = "blockstore/leveldb"
 	LISTEN_MODE     = "listen"
-	FULL_MODE       = "fill"
+	FULL_MODE       = "full"
 )
 
 var (
