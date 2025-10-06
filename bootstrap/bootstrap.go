@@ -163,7 +163,6 @@ func openSteam(peerID peer.ID, h host.Host) {
 	stream.Write(data)
 }
 
-// sendPeerInfo opens a stream to targetPeer and sends the given peer's ID and addresses.
 func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, localBootstrapAddr ma.Multiaddr) {
 	stream, err := h.NewStream(context.Background(), targetPeer, NodeInfoProtocol)
 	if err != nil {
@@ -172,12 +171,8 @@ func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, local
 	}
 	defer stream.Close()
 
-	// Base addresses known for the announced peer (may not be reachable across networks)
 	baseAddrs := h.Peerstore().Addrs(peerToAnnounce)
 
-	// Construct full relay addresses for the announced peer via the bootstrap addr
-	// that the target peer is known to reach (localBootstrapAddr). Fallback to all
-	// bootstrap addrs if not known.
 	var relayAddrs []string
 	if localBootstrapAddr != nil {
 		relayAddrs = append(relayAddrs, localBootstrapAddr.String()+"/p2p/"+h.ID().String()+"/p2p-circuit/p2p/"+peerToAnnounce.String())
@@ -188,7 +183,6 @@ func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, local
 		}
 	}
 
-	// Combine original and relay addrs (relay first to prefer it)
 	combined := append(relayAddrs, addrStrings(baseAddrs)...)
 
 	info := map[string]interface{}{

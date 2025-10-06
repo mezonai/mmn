@@ -64,7 +64,6 @@ func NewNetWork(
 		}
 	}
 
-	// Add QUIC support alongside TCP
 	quicAddr := strings.Replace(listenAddr, "/tcp/", "/udp/", 1) + "/quic-v1"
 
 	h, err := libp2p.New(
