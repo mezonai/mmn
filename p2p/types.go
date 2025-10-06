@@ -32,6 +32,7 @@ type Libp2pNetwork struct {
 	bootstrapPeerIDs map[peer.ID]struct{}
 
 	blockStore store.BlockStore
+	txStore    store.TxStore
 
 	topicBlocks            *pubsub.Topic
 	topicEmptyBlocks       *pubsub.Topic
@@ -102,23 +103,6 @@ type PeerInfo struct {
 	Version   string    `json:"version"`
 	LastSeen  time.Time `json:"last_seen"`
 	IsActive  bool      `json:"is_active"`
-}
-
-type BlockMessage struct {
-	Slot      uint64    `json:"slot"`
-	PrevHash  string    `json:"prev_hash"`
-	Entries   []string  `json:"entries"`
-	LeaderID  string    `json:"leader_id"`
-	Timestamp time.Time `json:"timestamp"`
-	Hash      string    `json:"hash"`
-	Signature []byte    ` json:"signature"`
-}
-
-type VoteMessage struct {
-	Slot      uint64 `json:"slot"`
-	BlockHash string `json:"block_hash"`
-	VoterID   string `json:"voter_id"`
-	Signature []byte `json:"signature"`
 }
 
 type TxMessage struct {

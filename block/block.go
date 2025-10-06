@@ -9,6 +9,7 @@ import (
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
+	"github.com/mr-tron/base58"
 )
 
 type BlockStatus uint8
@@ -108,7 +109,11 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 	return out
 }
 
-func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
+func (b *BroadcastedBlock) VerifySignature() bool {
+	pubKey, err := base58.Decode(b.LeaderID)
+	if err != nil {
+		return false
+	}
 	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
 }
 

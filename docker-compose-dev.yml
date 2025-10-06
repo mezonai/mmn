@@ -26,7 +26,7 @@ services:
     container_name: node1
     command: >
       sh -c '
-        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
+        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
         ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
@@ -40,6 +40,61 @@ services:
       - logs_data:/app/logs
     environment:
       - LOGFILE=mmn-node1.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
+      - CORS_ALLOWED_ORIGINS=*
+      - CORS_ALLOWED_METHODS=POST,OPTIONS
+      - CORS_ALLOWED_HEADERS=Content-Type
+    networks:
+      - mezon
+    restart: unless-stopped
+      
+  node2:
+    image: mmn-node:${DB_VENDOR:-rocksdb}
+    container_name: node2
+    command: >
+      sh -c '
+        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
+    depends_on:
+      - bootnode
+    ports:
+      - "8002:8002"
+      - "8082:8082"
+      - "9002:9002"
+    volumes:
+      - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-node2.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
+      - CORS_ALLOWED_ORIGINS=*
+      - CORS_ALLOWED_METHODS=POST,OPTIONS
+      - CORS_ALLOWED_HEADERS=Content-Type
+    networks:
+      - mezon
+    restart: unless-stopped
+  node3:
+    image: mmn-node:${DB_VENDOR:-rocksdb}
+    container_name: node3
+    command: >
+      sh -c '
+        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
+    depends_on:
+      - bootnode
+    ports:
+      - "8003:8003"
+      - "8083:8083"
+      - "9003:9003"
+    volumes:
+      - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-node3.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
       - CORS_ALLOWED_ORIGINS=*
