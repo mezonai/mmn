@@ -134,6 +134,7 @@ services:
     networks:
       - mezon
     restart: unless-stopped
+    
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
