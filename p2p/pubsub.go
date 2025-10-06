@@ -34,8 +34,18 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
+			if !ln.leaderSchedule.IsLeaderAt(blk.Slot, blk.LeaderID) {
+				logx.Error("BLOCK", fmt.Sprintf("Not leader at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+				return fmt.Errorf("invalid leader")
+			}
+
+			// Verify signature
+			if !blk.VerifySignature() {
+				logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+				return fmt.Errorf("invalid signature")
+			}
+
 			// Verify PoH. If invalid, mark block and continue to process as a failed block
-			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
@@ -44,7 +54,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			// Reset poh to sync poh clock with leader
 			if blk.Slot > bs.GetLatestStoreSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
 				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
 					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
 				}
@@ -106,7 +115,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnTransactionReceived: func(txData *transaction.Transaction) error {
-			logx.Info("TX", "Processing received transaction from P2P network")
+			logx.Debug("TX", "Processing received transaction from P2P network")
 
 			// Add transaction to mempool
 			_, err := mp.AddTx(txData, false)
@@ -557,7 +566,7 @@ func (ln *Libp2pNetwork) logTopicStatus() {
 		meshPeers := ln.topicBlocks.ListPeers()
 		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Block Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
 		for i, peer := range meshPeers {
-			logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+			logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
 		}
 	} else {
 		logx.Error("NETWORK:PUBSUB:STATUS", "Block Topic: NOT INITIALIZED")

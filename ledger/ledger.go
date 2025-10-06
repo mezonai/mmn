@@ -167,15 +167,13 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				continue
 			}
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			// Remove successful transaction from tracker
 			if l.txTracker != nil {
 				l.txTracker.RemoveTransaction(txHash)
 			}
 
-			// commit the update
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -191,9 +189,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				return err
 			}
+			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 		}
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
+			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
 		}
 	}
 

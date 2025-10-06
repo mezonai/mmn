@@ -12,7 +12,9 @@ import (
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/creachadair/jrpc2/jhttp"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/interfaces"
+	"github.com/mezonai/mmn/jsonx"
 	pb "github.com/mezonai/mmn/proto"
 )
 
@@ -27,6 +29,11 @@ type rpcError struct {
 func toJRPC2Error(e *rpcError) error {
 	if e == nil {
 		return nil
+	}
+	var networkError errors.NetworkError
+	err := jsonx.Unmarshal([]byte(e.Message), &networkError)
+	if err == nil {
+		return jrpc2.Errorf(jrpc2.Code(e.Code), "%s", networkError.Message).WithData(networkError)
 	}
 	return jrpc2.Errorf(jrpc2.Code(e.Code), "%s", e.Message)
 }
@@ -248,7 +255,6 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getPendingTxsResponse), nil
 		}),
-
 		"account.getaccount": handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
 			res, err := s.rpcGetAccount(p)
 			if err != nil {
