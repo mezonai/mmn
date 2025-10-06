@@ -57,6 +57,7 @@ jobs:
           echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
 
   deploy:
+    needs: build
     runs-on: [self-hosted, Linux, mezon-runner]
     environment: ${{ inputs.env }}
     env:
