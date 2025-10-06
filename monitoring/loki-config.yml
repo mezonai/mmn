@@ -30,7 +30,6 @@ limits_config:
   volume_enabled: true
   retention_period: 720h
   max_query_parallelism: 32
-  max_streams_per_user: 10000
 
 pattern_ingester:
   enabled: true
