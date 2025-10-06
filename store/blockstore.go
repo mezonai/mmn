@@ -43,7 +43,6 @@ type BlockStore interface {
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
-	GetTxStore() TxStore
 }
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
@@ -526,9 +525,4 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 	}
 
 	return txMeta.Slot, blk, blk.Status == block.BlockFinalized, true
-}
-
-// GetTxStore returns the transaction store
-func (bs *GenericBlockStore) GetTxStore() TxStore {
-	return bs.txStore
 }
