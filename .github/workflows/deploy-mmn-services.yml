@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, mezon-runner]
+    runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
       git_sha: ${{ steps.build.outputs.git_sha }}
     steps:
