@@ -58,7 +58,6 @@ jobs:
 
   deploy:
     runs-on: [self-hosted, Linux, mezon-runner]
-    runs-on: self-hosted
     environment: ${{ inputs.env }}
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
