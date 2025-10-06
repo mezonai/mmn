@@ -1,0 +1,61 @@
+name: Go
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libsnappy-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-dev \
+            libzstd-dev \
+            liburing-dev \
+            wget \
+            git
+
+      - name: Build RocksDB from source
+        run: |
+          git clone --depth 1 --branch v10.4.2 https://github.com/facebook/rocksdb.git
+          cd rocksdb
+          make static_lib -j$(nproc)
+          mkdir -p /tmp/rocksdb-install/lib /tmp/rocksdb-install/include
+          cp librocksdb.a /tmp/rocksdb-install/lib/
+          cp -r include/rocksdb /tmp/rocksdb-install/include/
+
+      - name: Install RocksDB
+        run: |
+          sudo cp /tmp/rocksdb-install/lib/librocksdb.a /usr/local/lib/
+          sudo cp -r /tmp/rocksdb-install/include/rocksdb /usr/local/include/
+          sudo ldconfig
+
+      - name: Build Go binary
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-I/usr/local/include"
+          CGO_LDFLAGS: "-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
+        run: go build -tags "rocksdb" -o mmn-${{ github.ref_name }} .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./mmn-${{ github.ref_name }}
