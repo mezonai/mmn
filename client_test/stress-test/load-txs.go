@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	crand "crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -258,7 +257,7 @@ func (lt *LoadTester) generateAccounts() error {
 		}
 
 		userId := int64(rand.Intn(100000000))
-		address := hashStringToBase58(strconv.FormatInt(userId, 10))
+		address := client.GenerateAddress(strconv.FormatInt(userId, 10))
 		jwt := generateJwt(userId)
 		publicKeyHex := base58.Encode(publicKey)
 		proofRes, err := generateZkProof(strconv.FormatInt(userId, 10), address, publicKeyHex, jwt)
@@ -281,11 +280,6 @@ func (lt *LoadTester) generateAccounts() error {
 
 	lt.logger.LogInfo("Generated %d accounts", lt.config.AccountCount)
 	return nil
-}
-
-func hashStringToBase58(input string) string {
-	sum := sha256.Sum256([]byte(input))
-	return base58.Encode(sum[:])
 }
 
 func generateJwt(userID int64) string {
