@@ -17,6 +17,7 @@ services:
       - LOGFILE=mmn-bootnode.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:
       - mezon
     restart: unless-stopped
@@ -43,6 +44,7 @@ services:
       - LOGFILE=mmn-node1.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - CORS_ALLOWED_ORIGINS=*
       - CORS_ALLOWED_METHODS=POST,OPTIONS
       - CORS_ALLOWED_HEADERS=Content-Type
@@ -73,6 +75,7 @@ services:
       - LOGFILE=mmn-listener.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - CORS_ALLOWED_ORIGINS=*
       - CORS_ALLOWED_METHODS=POST,OPTIONS
       - CORS_ALLOWED_HEADERS=Content-Type
