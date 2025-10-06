@@ -1,9 +1,9 @@
 - targets: ['node1:8001']
   labels:
-    job: node
+    job: mmn-node
     node: node1
 
-- targets: ['node-exporter:9100']
+- targets: ['listener:8084']
   labels:
-    job: exporter
-    node: node1
+    job: mmn-node
+    node: listener
