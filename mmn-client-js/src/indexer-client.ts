@@ -1,4 +1,3 @@
-import axios, { AxiosInstance } from 'axios';
 import {
   IndexerClientConfig,
   ListTransactionResponse,
@@ -15,38 +14,96 @@ const API_FILTER_PARAMS = {
 };
 
 export class IndexerClient {
-  private axiosInstance: AxiosInstance;
   private endpoint: string;
   private chainId: string;
+  private timeout: number;
+  private headers: Record<string, string>;
 
   constructor(config: IndexerClientConfig) {
     this.endpoint = config.endpoint;
     this.chainId = config.chainId;
+    this.timeout = config.timeout || 30000;
 
-    this.axiosInstance = axios.create({
-      baseURL: this.endpoint,
-      timeout: config.timeout || 30000,
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...(config.headers || {}),
-      },
-    });
+    // Minimal headers to avoid CORS preflight issues
+    this.headers = {
+      Accept: 'application/json',
+      ...(config.headers || {}),
+    };
   }
 
+  /**
+   * Make HTTP request with automatic CORS handling
+   * Works out-of-the-box without CORS configuration
+   * @param method - HTTP method (GET or POST)
+   * @param path - API endpoint path
+   * @param params - URL query parameters
+   * @param body - Request body for POST requests
+   * @returns Promise resolving to response data
+   */
   private async makeRequest<T>(
     method: 'GET' | 'POST',
     path: string,
     params?: Record<string, string | number>,
     body?: any
   ): Promise<T> {
-    const resp = await this.axiosInstance.request<T>({
-      method,
-      url: path,
-      params,
-      data: body,
-    });
-    return resp.data;
+    // Build full URL
+    let url = `${this.endpoint}/${path}`;
+
+    // Add query parameters
+    if (params && Object.keys(params).length > 0) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        searchParams.append(key, String(value));
+      });
+      url += `?${searchParams.toString()}`;
+    }
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      // Simple fetch with automatic CORS handling
+      const requestOptions: RequestInit = {
+        method,
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          ...this.headers,
+        },
+      };
+
+      // Add body and Content-Type for POST requests
+      if (method === 'POST' && body) {
+        requestOptions.body = JSON.stringify(body);
+        (requestOptions.headers as Record<string, string>)['Content-Type'] =
+          'application/json';
+      }
+
+      const response = await fetch(url, requestOptions);
+      clearTimeout(timeoutId);
+
+      // Handle response errors
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      // Parse JSON response
+      const data = await response.json();
+      return data as T;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error(`Request timeout after ${this.timeout}ms`);
+        }
+        throw error;
+      }
+
+      throw new Error('Request failed');
+    }
   }
 
   async getTransactionByHash(hash: string): Promise<Transaction> {
@@ -59,7 +116,9 @@ export class IndexerClient {
     wallet: string,
     page = 1,
     limit = 50,
-    filter: number
+    filter: number,
+    sortBy = 'transaction_timestamp',
+    sortOrder: 'asc' | 'desc' = 'desc'
   ): Promise<ListTransactionResponse> {
     if (!wallet) {
       throw new Error('wallet address cannot be empty');
@@ -72,8 +131,8 @@ export class IndexerClient {
     const params: Record<string, string | number> = {
       page: page - 1,
       limit,
-      sort_by: 'block_timestamp',
-      sort_order: 'desc',
+      sort_by: sortBy,
+      sort_order: sortOrder,
     };
 
     switch (filter) {

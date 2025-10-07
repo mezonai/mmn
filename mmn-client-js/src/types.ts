@@ -1,7 +1,5 @@
 // --- JSON-RPC Types ---
 
-import { AxiosRequestConfig } from 'axios';
-
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
   method: string;
@@ -70,6 +68,20 @@ export interface SignedTx {
   signature: string;
 }
 
+export interface SendTransactionRequest {
+  sender: string;
+  recipient: string;
+  amount: string;
+  nonce: number;
+  timestamp?: number;
+  textData?: string;
+  extraInfo?: ExtraInfo;
+  publicKey: string;
+  privateKey: string;
+  zkProof: string;
+  zkPub: string;
+}
+
 export interface AddTxResponse {
   ok: boolean;
   tx_hash: string;
@@ -96,7 +108,6 @@ export interface MmnClientConfig {
   baseUrl: string;
   timeout?: number;
   headers?: Record<string, string>;
-  axiosConfig?: AxiosRequestConfig;
 }
 
 // ----------------- Types Indexer -----------------
