@@ -1,6 +1,5 @@
 // MMN Client
 // This client provides a complete interface for interacting with MMN blockchain
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import bs58 from 'bs58';
 import nacl from 'tweetnacl';
 import CryptoJS from 'crypto-js';
@@ -155,7 +154,6 @@ const DECIMALS = 6;
 
 export class MmnClient {
   private config: MmnClientConfig;
-  private axiosInstance: AxiosInstance;
   private requestId = 0;
 
   constructor(config: MmnClientConfig) {
@@ -163,16 +161,10 @@ export class MmnClient {
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
       ...config,
     };
-
-    this.axiosInstance = axios.create({
-      baseURL: this.config.baseUrl,
-      timeout: this.config.timeout || 30000,
-      headers: this.config.headers || {},
-      ...(this.config.axiosConfig || {}),
-    });
   }
 
   private async makeRequest<T>(method: string, params?: unknown): Promise<T> {
@@ -183,11 +175,32 @@ export class MmnClient {
       id: ++this.requestId,
     };
 
-    try {
-      const response: AxiosResponse<JsonRpcResponse<T>> =
-        await this.axiosInstance.post('', request);
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      this.config.timeout || 30000
+    );
 
-      const result = response.data;
+    try {
+      const requestOptions: RequestInit = {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
+        headers: this.config.headers || {},
+        body: JSON.stringify(request),
+      };
+
+      const response = await fetch(this.config.baseUrl, requestOptions);
+      console.log('🚀 ~ MmnClient ~ makeRequest ~ response:', response);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result: JsonRpcResponse<T> = await response.json();
 
       if (result.error) {
         throw new Error(
@@ -197,22 +210,14 @@ export class MmnClient {
 
       return result.result as T;
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          // Server responded with error status
-          throw new Error(
-            `HTTP ${error.response.status}: ${error.response.statusText}`
-          );
-        } else if (error.request) {
-          // Request was made but no response received
-          throw new Error('Network error: No response received');
-        } else {
-          // Something else happened
-          throw new Error(`Request error: ${error.message}`);
-        }
-      }
+      clearTimeout(timeoutId);
 
       if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error(
+            `Request timeout after ${this.config.timeout || 30000}ms`
+          );
+        }
         throw error;
       }
       throw new Error('Unknown error occurred');
