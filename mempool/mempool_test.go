@@ -161,6 +161,20 @@ func (ml *MockLedger) CreateAccountsFromGenesis(addresses []config.Address) erro
 	return nil
 }
 
+func (ml *MockLedger) GetAccountBatch(addresses []string) (map[string]*types.Account, error) {
+	ml.mu.RLock()
+	defer ml.mu.RUnlock()
+	accounts := make(map[string]*types.Account, len(addresses))
+	for _, addr := range addresses {
+		accounts[addr] = &types.Account{
+			Address: addr,
+			Balance: ml.balances[addr],
+			Nonce:   ml.nonces[addr],
+		}
+	}
+	return accounts, nil
+}
+
 // MockBroadcaster implements interfaces.Broadcaster for testing
 type MockBroadcaster struct {
 	broadcastedTxs []*transaction.Transaction
