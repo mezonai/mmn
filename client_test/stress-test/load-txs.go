@@ -183,8 +183,8 @@ func parseFlags() Config {
 	var config Config
 
 	flag.StringVar(&config.ServerAddress, "server", "127.0.0.1:9001", "gRPC server address")
-	flag.IntVar(&config.AccountCount, "accounts", 1000, "Number of accounts to create")
-	flag.IntVar(&config.TxPerSecond, "rate", 1000, "Transactions per second")
+	flag.IntVar(&config.AccountCount, "accounts", 100, "Number of accounts to create")
+	flag.IntVar(&config.TxPerSecond, "rate", 50, "Transactions per second")
 	flag.IntVar(&config.SwitchAfterTx, "switch", 10, "Switch account after N transactions")
 	flag.IntVar(&config.Workers, "workers", 100, "Number of concurrent send workers")
 	flag.Uint64Var(&config.FundAmount, "fund", 10000000000, "Amount to fund each account")
@@ -694,6 +694,10 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 	if err != nil {
 		lt.logger.LogError("Failed to send transaction for account %d: %v", accountIndex, err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		// Refresh nonce from node on any failure
+		if current, nerr := lt.refreshAccountBaseNonce(account.Address); nerr == nil {
+			account.Nonce = current + 1
+		}
 		return
 	}
 
@@ -704,9 +708,9 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 		account.Balance = currentBalance - lt.config.TransferAmount
 	} else {
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
-		// On nonce errors, refresh base nonce for this account
-		if contains(resp.Error, "nonce") {
-			_ = lt.refreshAccountBaseNonce(account.Address)
+		// On any failure, refresh base nonce for this account
+		if current, nerr := lt.refreshAccountBaseNonce(account.Address); nerr == nil {
+			account.Nonce = current + 1
 		}
 		lt.logger.LogError("Transaction failed for account %d: %s", accountIndex, resp.Error)
 	}
@@ -765,16 +769,16 @@ func stringIndex(haystack, needle string) int {
 	return -1
 }
 
-func (lt *LoadTester) refreshAccountBaseNonce(address string) error {
+func (lt *LoadTester) refreshAccountBaseNonce(address string) (uint64, error) {
 	current, err := lt.client.GetCurrentNonce(lt.ctx, address, "pending")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	lt.nonceMutex.Lock()
 	lt.perAccountBaseNonce[address] = current
 	lt.perAccountLocalCounts[address] = 0
 	lt.nonceMutex.Unlock()
-	return nil
+	return current, nil
 }
 
 func (lt *LoadTester) nextAccountNonce(address string) (uint64, error) {
@@ -784,7 +788,7 @@ func (lt *LoadTester) nextAccountNonce(address string) (uint64, error) {
 	lt.nonceMutex.Unlock()
 
 	if !ok {
-		if err := lt.refreshAccountBaseNonce(address); err != nil {
+		if _, err := lt.refreshAccountBaseNonce(address); err != nil {
 			return 0, err
 		}
 		lt.nonceMutex.Lock()
@@ -813,46 +817,8 @@ func (lt *LoadTester) getNextFaucetNonce() (uint64, error) {
 		lt.faucetNonceInit = true
 		return lt.faucetNonce, nil
 	}
-	// Refresh base to avoid drift if blocks advanced
-	current, err := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "pending")
-	if err == nil {
-		// If our local pointer lags behind, fast-forward
-		minAllowed := current + 1
-		if lt.faucetNonce < minAllowed {
-			lt.faucetNonce = minAllowed
-		}
-	}
-
-	// Throttle so that next nonce never exceeds current + window - 1
-	for {
-		// Re-fetch current pending to compute headroom
-		cur, err2 := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "pending")
-		if err2 != nil {
-			// Best-effort sleep and retry a bit; caller has retries too
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		// Also check backlog vs latest to avoid exceeding pending-per-sender limit
-		latestCur, err3 := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "latest")
-		if err3 == nil {
-			if cur >= latestCur {
-				backlog := cur - latestCur
-				if backlog >= FaucetMaxPendingPerSender {
-					// Too many pending, wait for chain to include some
-					time.Sleep(150 * time.Millisecond)
-					continue
-				}
-			}
-		}
-		maxAllowed := cur + FaucetMaxFutureNonceWindow
-		next := lt.faucetNonce + 1
-		if next <= maxAllowed {
-			lt.faucetNonce = next
-			return lt.faucetNonce, nil
-		}
-		// Too far in the future, wait for chain/mempool to catch up
-		time.Sleep(100 * time.Millisecond)
-	}
+	lt.faucetNonce++
+	return lt.faucetNonce, nil
 }
 
 func (lt *LoadTester) rollbackFaucetNonce(allocated uint64) {
