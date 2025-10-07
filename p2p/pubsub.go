@@ -342,9 +342,7 @@ func (ln *Libp2pNetwork) ensureWorldLatestSlotInitialized(ctx context.Context) b
 // isSyncWindowAligned checks if PoH slot and finalized slot are aligned sufficiently to start syncing
 func (ln *Libp2pNetwork) isSyncWindowAligned() bool {
 	return ln.worldLatestSlot > 0 &&
-		!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
 		ln.worldLatestPohSlot > 0 &&
-		!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
 		ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold
 }
 
