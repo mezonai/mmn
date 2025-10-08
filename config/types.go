@@ -15,6 +15,7 @@ type NodeConfig struct {
 	Libp2pAddr         string   `yaml:"libp2p_addr"`
 	GRPCAddr           string   `yaml:"grpc_addr"`
 	BootStrapAddresses []string `yaml:"bootstrap_addresses"`
+	Mode               string   `yaml:"mode"`
 }
 
 // LeaderSchedule represents a leader schedule entry

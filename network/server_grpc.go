@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
@@ -386,7 +387,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 			if !txExists || !metaExists {
 				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", txHash))
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 			}
 
 			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)

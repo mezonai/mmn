@@ -253,6 +253,12 @@ func initializeNode() {
 	// Initialize ledger
 	ld := ledger.NewLedger(ts, tms, as, nil, nil)
 
+	// Check if genesis block already exists then skip creation
+	if bs.HasCompleteBlock(0) {
+		logx.Info("INIT", "Genesis block already exists, skipping creation")
+		return
+	}
+
 	// Create genesis block using AssembleBlock
 	genesisBlock, err := initializeBlockchainWithGenesis(cfg, ld)
 	if err != nil {

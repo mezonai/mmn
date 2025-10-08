@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
@@ -14,6 +15,7 @@ type AccountStore interface {
 	Store(account *types.Account) error
 	StoreBatch(accounts []*types.Account) error
 	GetByAddr(addr string) (*types.Account, error)
+	GetBatch(addrs []string) (map[string]*types.Account, error)
 	ExistsByAddr(addr string) (bool, error)
 	MustClose()
 }
@@ -78,7 +80,8 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	data, err := as.dbProvider.Get(as.getDbKey(addr))
 	if err != nil {
-		return nil, fmt.Errorf("could not get account %s from db: %w", addr, err)
+		logx.Error("ACCOUNT_STORE", fmt.Sprintf("could not get account %s from db: %v", addr, err))
+		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
 	// Account doesn't exist
@@ -90,10 +93,50 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	var acc types.Account
 	err = jsonx.Unmarshal(data, &acc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal account %s: %w", addr, err)
+		logx.Error("ACCOUNT_STORE", fmt.Sprintf("failed to unmarshal account %s: %v", addr, err))
+		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
 	return &acc, nil
+}
+
+// GetBatch retrieves multiple accounts by their addresses using batch operation
+func (as *GenericAccountStore) GetBatch(addrs []string) (map[string]*types.Account, error) {
+	if len(addrs) == 0 {
+		return make(map[string]*types.Account), nil
+	}
+
+	// Prepare keys for batch operation
+	keys := make([][]byte, len(addrs))
+	keyToAddr := make(map[string]string, len(addrs))
+	for i, addr := range addrs {
+		key := as.getDbKey(addr)
+		keys[i] = key
+		keyToAddr[string(key)] = addr
+	}
+
+	// Use batch read - single CGO call!
+	dataMap, err := as.dbProvider.GetBatch(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get accounts: %w", err)
+	}
+
+	accounts := make(map[string]*types.Account, len(addrs))
+	for keyStr, data := range dataMap {
+		addr := keyToAddr[keyStr]
+
+		// Deserialize account
+		var acc types.Account
+		err = jsonx.Unmarshal(data, &acc)
+		if err != nil {
+			logx.Warn("ACCOUNT_STORE", fmt.Sprintf("Failed to unmarshal account %s: %s", addr, err.Error()))
+			continue
+		}
+
+		accounts[addr] = &acc
+	}
+
+	return accounts, nil
 }
 
 func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {

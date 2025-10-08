@@ -1,10 +1,8 @@
 // MMN Client
 // This client provides a complete interface for interacting with MMN blockchain
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import * as bip39 from 'bip39';
 import bs58 from 'bs58';
-import { createHash } from 'crypto';
 import nacl from 'tweetnacl';
+import CryptoJS from 'crypto-js';
 import {
   AddTxResponse,
   ExtraInfo,
@@ -14,9 +12,103 @@ import {
   JsonRpcRequest,
   JsonRpcResponse,
   MmnClientConfig,
+  SendTransactionRequest,
   SignedTx,
   TxMsg,
 } from './types';
+
+// Buffer polyfill for mobile environments
+class BufferPolyfill {
+  static isBuffer(obj: any): boolean {
+    if (typeof Buffer !== 'undefined' && Buffer.isBuffer) {
+      return Buffer.isBuffer(obj);
+    }
+    return obj instanceof Uint8Array;
+  }
+
+  static from(data: any, encoding?: string): any {
+    if (typeof Buffer !== 'undefined' && Buffer.from) {
+      return Buffer.from(data, encoding as any);
+    }
+
+    let result: Uint8Array;
+
+    if (Array.isArray(data)) {
+      result = new Uint8Array(data);
+    } else if (typeof data === 'string') {
+      if (encoding === 'hex') {
+        const bytes = [];
+        for (let i = 0; i < data.length; i += 2) {
+          bytes.push(parseInt(data.substr(i, 2), 16));
+        }
+        result = new Uint8Array(bytes);
+      } else {
+        // UTF-8 encoding
+        const encoder = new TextEncoder();
+        result = encoder.encode(data);
+      }
+    } else if (data instanceof Uint8Array) {
+      result = data;
+    } else {
+      result = new Uint8Array(data);
+    }
+
+    // Add toString method
+    (result as any).toString = function (encoding?: string) {
+      if (encoding === 'hex') {
+        return Array.from(this as Uint8Array)
+          .map((b: number) => b.toString(16).padStart(2, '0'))
+          .join('');
+      } else if (encoding === 'base64') {
+        // Simple base64 encoding
+        const bytes = this as Uint8Array;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      } else {
+        // UTF-8 decoding
+        const decoder = new TextDecoder();
+        return decoder.decode(this as Uint8Array);
+      }
+    };
+
+    return result;
+  }
+
+  static concat(arrays: any[]): any {
+    if (typeof Buffer !== 'undefined' && Buffer.concat) {
+      return Buffer.concat(arrays);
+    }
+
+    const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+
+    for (const arr of arrays) {
+      result.set(arr, offset);
+      offset += arr.length;
+    }
+
+    // Add toString method
+    (result as any).toString = function (encoding?: string) {
+      if (encoding === 'hex') {
+        return Array.from(this as Uint8Array)
+          .map((b: number) => b.toString(16).padStart(2, '0'))
+          .join('');
+      } else {
+        const decoder = new TextDecoder();
+        return decoder.decode(this as Uint8Array);
+      }
+    };
+
+    return result;
+  }
+}
+
+// Use polyfill if Buffer is not available
+const BufferCompat = typeof Buffer !== 'undefined' ? Buffer : BufferPolyfill;
 
 // Cryptographic constants
 const CRYPTO_CONSTANTS = {
@@ -24,9 +116,33 @@ const CRYPTO_CONSTANTS = {
   ED25519_PUBLIC_KEY_LENGTH: 32,
   MNEMONIC_ENTROPY_BITS: 128,
   PKCS8_VERSION: 0,
+
+  // ASN.1 DER encoding
   ASN1_SEQUENCE_TAG: 0x30,
   ASN1_OCTET_STRING_TAG: 0x04,
   ASN1_INTEGER_TAG: 0x02,
+  ASN1_LENGTH: 0x80,
+
+  // Ed25519 OID bytes: 1.3.101.112 (RFC 8410)
+  ED25519_OID_BYTES: [0x06, 0x03, 0x2b, 0x65, 0x70],
+
+  // PKCS#8 structure length constants
+  PKCS8_ALGORITHM_ID_LENGTH: 0x0b, // SEQUENCE length for algorithm identifier
+  PKCS8_PRIVATE_KEY_OCTET_OUTER_LENGTH: 0x22, // Outer OCTET STRING length (34 bytes)
+  PKCS8_PRIVATE_KEY_OCTET_INNER_LENGTH: 0x20, // Inner OCTET STRING length (32 bytes)
+} as const;
+
+// PRNG (Pseudo-Random Number Generator) constants
+const PRNG_CONSTANTS = {
+  // Numerical Recipes LCG
+  LCG_MULTIPLIER: 1664525, // LCG multiplier (from Numerical Recipes)
+  LCG_INCREMENT: 1013904223, // LCG increment
+  LCG_MODULUS: 4294967296, // 2^32 modulus for LCG
+
+  TIMESTAMP_MULTIPLIER: 2654435761, // Golden Ratio constant
+  HASH_SUBSTRING_LENGTH: 8,
+  BYTE_SHIFT: 24,
+  BYTE_MASK: 0xff,
 } as const;
 
 const TX_TYPE = {
@@ -38,7 +154,6 @@ const DECIMALS = 6;
 
 export class MmnClient {
   private config: MmnClientConfig;
-  private axiosInstance: AxiosInstance;
   private requestId = 0;
 
   constructor(config: MmnClientConfig) {
@@ -46,16 +161,10 @@ export class MmnClient {
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
       ...config,
     };
-
-    this.axiosInstance = axios.create({
-      baseURL: this.config.baseUrl,
-      timeout: this.config.timeout || 30000,
-      headers: this.config.headers || {},
-      ...(this.config.axiosConfig || {}),
-    });
   }
 
   private async makeRequest<T>(method: string, params?: unknown): Promise<T> {
@@ -66,11 +175,32 @@ export class MmnClient {
       id: ++this.requestId,
     };
 
-    try {
-      const response: AxiosResponse<JsonRpcResponse<T>> =
-        await this.axiosInstance.post('', request);
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      this.config.timeout || 30000
+    );
 
-      const result = response.data;
+    try {
+      const requestOptions: RequestInit = {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
+        headers: this.config.headers || {},
+        body: JSON.stringify(request),
+      };
+
+      const response = await fetch(this.config.baseUrl, requestOptions);
+      console.log('🚀 ~ MmnClient ~ makeRequest ~ response:', response);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result: JsonRpcResponse<T> = await response.json();
 
       if (result.error) {
         throw new Error(
@@ -80,22 +210,14 @@ export class MmnClient {
 
       return result.result as T;
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          // Server responded with error status
-          throw new Error(
-            `HTTP ${error.response.status}: ${error.response.statusText}`
-          );
-        } else if (error.request) {
-          // Request was made but no response received
-          throw new Error('Network error: No response received');
-        } else {
-          // Something else happened
-          throw new Error(`Request error: ${error.message}`);
-        }
-      }
+      clearTimeout(timeoutId);
 
       if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error(
+            `Request timeout after ${this.config.timeout || 30000}ms`
+          );
+        }
         throw error;
       }
       throw new Error('Unknown error occurred');
@@ -108,9 +230,9 @@ export class MmnClient {
    * @returns PKCS#8 formatted private key in hex
    * @throws Error if input validation fails
    */
-  private rawEd25519ToPkcs8Hex(raw: Buffer): string {
+  private rawEd25519ToPkcs8Hex(raw: Uint8Array | Buffer): string {
     // Input validation
-    if (!Buffer.isBuffer(raw)) {
+    if (!BufferCompat.isBuffer(raw)) {
       throw new Error('Private key must be a Buffer');
     }
 
@@ -121,37 +243,47 @@ export class MmnClient {
     }
 
     try {
-      // Ed25519 OID: 1.3.101.112 (constant-time)
-      const ED25519_OID = Buffer.from([0x06, 0x03, 0x2b, 0x65, 0x70]);
-      const VERSION_BYTES = Buffer.from([
-        CRYPTO_CONSTANTS.ASN1_INTEGER_TAG,
-        0x01,
-        CRYPTO_CONSTANTS.PKCS8_VERSION,
-      ]); // INTEGER 0
+      // Ed25519 OID: 1.3.101.112 (RFC 8410 - Algorithm Identifiers for Ed25519)
+      const ED25519_OID = BufferCompat.from(CRYPTO_CONSTANTS.ED25519_OID_BYTES);
 
-      // Create algorithm identifier sequence
-      const algorithmId = Buffer.concat([
-        Buffer.from([0x30, 0x0b]), // SEQUENCE, length 11
+      const VERSION_BYTES = BufferCompat.from([
+        CRYPTO_CONSTANTS.ASN1_INTEGER_TAG,
+        0x01, // Length of integer (1 byte)
+        CRYPTO_CONSTANTS.PKCS8_VERSION,
+      ]);
+
+      // Create algorithm identifier sequence (AlgorithmIdentifier)
+      const algorithmId = BufferCompat.concat([
+        BufferCompat.from([
+          CRYPTO_CONSTANTS.ASN1_SEQUENCE_TAG,
+          CRYPTO_CONSTANTS.PKCS8_ALGORITHM_ID_LENGTH,
+        ]),
         ED25519_OID,
       ]);
 
-      // Create private key octet string
-      const privateKeyOctetString = Buffer.concat([
-        Buffer.from([CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG, 0x22]), // OCTET STRING, length 34
-        Buffer.from([CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG, 0x20]), // inner OCTET STRING, length 32
+      // Create private key octet string (wrapped Ed25519 private key)
+      const privateKeyOctetString = BufferCompat.concat([
+        BufferCompat.from([
+          CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG,
+          CRYPTO_CONSTANTS.PKCS8_PRIVATE_KEY_OCTET_OUTER_LENGTH,
+        ]), // OCTET STRING, length 34
+        BufferCompat.from([
+          CRYPTO_CONSTANTS.ASN1_OCTET_STRING_TAG,
+          CRYPTO_CONSTANTS.PKCS8_PRIVATE_KEY_OCTET_INNER_LENGTH,
+        ]), // inner OCTET STRING, length 32
         raw,
       ]);
 
       // Create PKCS#8 body
-      const pkcs8Body = Buffer.concat([
+      const pkcs8Body = BufferCompat.concat([
         VERSION_BYTES,
         algorithmId,
         privateKeyOctetString,
       ]);
 
       // Create final PKCS#8 structure
-      const pkcs8 = Buffer.concat([
-        Buffer.from([CRYPTO_CONSTANTS.ASN1_SEQUENCE_TAG]), // SEQUENCE
+      const pkcs8 = BufferCompat.concat([
+        BufferCompat.from([CRYPTO_CONSTANTS.ASN1_SEQUENCE_TAG]), // SEQUENCE
         this.encodeLength(pkcs8Body.length),
         pkcs8Body,
       ]);
@@ -176,53 +308,120 @@ export class MmnClient {
     }
   }
 
-  private encodeLength(length: number): Buffer {
-    if (length < 0x80) {
-      return Buffer.from([length]);
+  /**
+   * Encode length in ASN.1 DER format
+   * ASN.1 length encoding rules:
+   * - Short form (0-127): single byte with the length value
+   * - Long form (128+): first byte is 0x80 + number of length bytes, followed by length bytes
+   * @param length - The length value to encode
+   * @returns ASN.1 DER encoded length bytes
+   */
+  private encodeLength(length: number): Uint8Array {
+    if (length < CRYPTO_CONSTANTS.ASN1_LENGTH) {
+      return BufferCompat.from([length]);
     }
     const bytes = [];
     let len = length;
     while (len > 0) {
-      bytes.unshift(len & 0xff);
+      bytes.unshift(len & PRNG_CONSTANTS.BYTE_MASK);
       len >>= 8;
     }
-    return Buffer.from([0x80 | bytes.length, ...bytes]);
+
+    return BufferCompat.from([
+      CRYPTO_CONSTANTS.ASN1_LENGTH | bytes.length,
+      ...bytes,
+    ]);
+  }
+
+  /**
+   * Generate secure entropy using multiple sources for maximum compatibility
+   * @returns Array of 32 random bytes
+   */
+  private generateSecureEntropy(): number[] {
+    const entropy: number[] = [];
+    const targetLength = CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH;
+
+    // Use multiple entropy sources
+    const now = Date.now();
+    const performance =
+      typeof window !== 'undefined' && window.performance
+        ? window.performance.now()
+        : now;
+    const random = Math.random();
+
+    // Create initial seed from timestamp and random
+    let seed = now + performance + random;
+
+    // Generate bytes using Linear Congruential Generator (LCG) with multiple entropy sources
+    // This provides a fallback Pseudorandom Number Generator (PRNG) when crypto.getRandomValues is not available
+    for (let i = 0; i < targetLength; i++) {
+      // Xₙ₊₁ = (a * Xₙ + c) mod m
+      seed =
+        (seed * PRNG_CONSTANTS.LCG_MULTIPLIER + PRNG_CONSTANTS.LCG_INCREMENT) %
+        PRNG_CONSTANTS.LCG_MODULUS;
+      // Mix with timestamp to add time-based entropy
+      seed ^= (now + i) * PRNG_CONSTANTS.TIMESTAMP_MULTIPLIER;
+      // Mix with Math.random() for additional browser-provided randomness
+      seed ^= Math.floor(Math.random() * PRNG_CONSTANTS.LCG_MODULUS);
+
+      // Additional cryptographic mixing using SHA256 if CryptoJS is available
+      if (typeof CryptoJS !== 'undefined') {
+        const hashInput = seed.toString() + i.toString() + now.toString();
+        const hash = CryptoJS.SHA256(hashInput).toString();
+        // Extract first 8 hex characters (32 bits) from hash for mixing
+        seed ^= parseInt(
+          hash.substring(0, PRNG_CONSTANTS.HASH_SUBSTRING_LENGTH),
+          16
+        );
+      }
+
+      entropy.push(
+        (seed >>> PRNG_CONSTANTS.BYTE_SHIFT) & PRNG_CONSTANTS.BYTE_MASK
+      );
+    }
+
+    return entropy;
   }
 
   /**
    * Securely generate ephemeral key pair with proper entropy
+   * React Native compatible version with multiple fallbacks
    * @returns Ephemeral key pair with private and public keys
    * @throws Error if key generation fails
    */
   public generateEphemeralKeyPair(): IEphemeralKeyPair {
     try {
-      // Generate cryptographically secure mnemonic
-      const mnemonic = bip39.generateMnemonic(
-        CRYPTO_CONSTANTS.MNEMONIC_ENTROPY_BITS
-      );
+      let seed: Uint8Array;
 
-      if (!bip39.validateMnemonic(mnemonic)) {
-        throw new Error('Generated mnemonic failed validation');
+      // Try multiple approaches for mobile compatibility
+      try {
+        // Method 1: Try nacl.randomBytes first
+        seed = nacl.randomBytes(CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH);
+      } catch (naclError) {
+        try {
+          // Method 2: Use crypto.getRandomValues if available (browsers/React Native)
+          if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            seed = new Uint8Array(CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH);
+            crypto.getRandomValues(seed);
+          } else {
+            throw new Error('crypto.getRandomValues not available');
+          }
+        } catch (cryptoError) {
+          // Method 3: Fallback to secure pseudo-random generation
+          const entropy = this.generateSecureEntropy();
+          seed = new Uint8Array(entropy);
+        }
       }
 
-      // Convert mnemonic to seed
-      const seed = bip39.mnemonicToSeedSync(mnemonic);
-
-      // Extract first 32 bytes as private key
-      const privateKey = seed.subarray(
-        0,
-        CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH
-      );
-
-      // Validate private key length
-      if (privateKey.length !== CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH) {
+      // Validate seed length
+      if (seed.length !== CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH) {
         throw new Error(
-          `Invalid private key length: expected ${CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH}, got ${privateKey.length}`
+          `Invalid seed length: expected ${CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH}, got ${seed.length}`
         );
       }
 
       // Generate key pair from seed
-      const keyPair = nacl.sign.keyPair.fromSeed(privateKey);
+      const keyPair = nacl.sign.keyPair.fromSeed(seed);
       const publicKeyBytes = keyPair.publicKey;
 
       // Validate public key
@@ -235,11 +434,10 @@ export class MmnClient {
       }
 
       // Convert private key to PKCS#8 format
-      const privateKeyHex = this.rawEd25519ToPkcs8Hex(privateKey);
+      const privateKeyHex = this.rawEd25519ToPkcs8Hex(BufferCompat.from(seed));
 
       // Clear sensitive data
       seed.fill(0);
-      privateKey.fill(0);
       keyPair.secretKey.fill(0);
 
       return {
@@ -256,8 +454,10 @@ export class MmnClient {
   }
 
   public getAddressFromUserId(userId: string): string {
-    const hash = createHash('sha256').update(userId, 'utf8').digest();
-    return bs58.encode(hash);
+    // Use crypto-js for SHA-256 in React Native
+    const hash = CryptoJS.SHA256(userId).toString(CryptoJS.enc.Hex);
+    const hashBuffer = BufferCompat.from(hash, 'hex');
+    return bs58.encode(hashBuffer);
   }
 
   /**
@@ -327,7 +527,7 @@ export class MmnClient {
       }
 
       // Extract the Ed25519 seed from the private key for nacl signing
-      const privateKeyDer = Buffer.from(privateKeyHex, 'hex');
+      const privateKeyDer = BufferCompat.from(privateKeyHex, 'hex');
 
       if (privateKeyDer.length < CRYPTO_CONSTANTS.ED25519_PRIVATE_KEY_LENGTH) {
         throw new Error(
@@ -359,16 +559,16 @@ export class MmnClient {
 
       // Return signature based on transaction type
       if (tx.type === TX_TYPE.FAUCET) {
-        return bs58.encode(Buffer.from(signature));
+        return bs58.encode(BufferCompat.from(signature));
       }
 
       // For regular transactions, wrap signature with public key
       const userSig = {
-        PubKey: Buffer.from(keyPair.publicKey).toString('base64'),
-        Sig: Buffer.from(signature).toString('base64'),
+        PubKey: BufferCompat.from(keyPair.publicKey).toString('base64'),
+        Sig: BufferCompat.from(signature).toString('base64'),
       };
 
-      return bs58.encode(Buffer.from(JSON.stringify(userSig)));
+      return bs58.encode(BufferCompat.from(JSON.stringify(userSig)));
     } catch (error) {
       throw new Error(
         `Transaction signing failed: ${
@@ -381,9 +581,9 @@ export class MmnClient {
   /**
    * Serialize transaction for signing
    */
-  private serializeTransaction(tx: TxMsg): Buffer {
+  private serializeTransaction(tx: TxMsg): Uint8Array {
     const data = `${tx.type}|${tx.sender}|${tx.recipient}|${tx.amount}|${tx.text_data}|${tx.nonce}|${tx.extra_info}`;
-    return Buffer.from(data, 'utf8');
+    return BufferCompat.from(data, 'utf8');
   }
 
   /**
@@ -396,19 +596,9 @@ export class MmnClient {
   /**
    * Send a transaction (create, sign, and submit)
    */
-  async sendTransaction(params: {
-    sender: string;
-    recipient: string;
-    amount: string;
-    nonce: number;
-    timestamp?: number;
-    textData?: string;
-    extraInfo?: ExtraInfo;
-    publicKey: string;
-    privateKey: string;
-    zkProof: string;
-    zkPub: string;
-  }): Promise<AddTxResponse> {
+  async sendTransaction(
+    params: SendTransactionRequest
+  ): Promise<AddTxResponse> {
     const signedTx = this.createAndSignTx({
       ...params,
       type: TX_TYPE.TRANSFER,

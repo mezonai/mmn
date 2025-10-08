@@ -55,7 +55,8 @@ func (mbs *MemBlockStore) GetBlock(slot uint64, blockHash [32]byte) *block.Broad
 	return nil
 }
 
-func (mbs *MemBlockStore) AddBlock(slot uint64, block *block.BroadcastedBlock) {
+func (mbs *MemBlockStore) AddBlock(block *block.BroadcastedBlock) {
+	slot := block.Slot
 	slotBlockData := mbs.getSlotBlockData(slot)
 	slotBlockData.AddBlock(block)
 	mbs.blockData[slot] = slotBlockData

@@ -48,6 +48,8 @@ const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
 	leveldbBlockDir = "blockstore/leveldb"
+	LISTEN_MODE     = "listen"
+	FULL_MODE       = "full"
 )
 
 var (
@@ -58,6 +60,7 @@ var (
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
+	mode               string
 	// legacy init command
 	// database backend
 	databaseBackend string
@@ -83,6 +86,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
+	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 
 }
 
@@ -203,6 +207,7 @@ func runNode() {
 		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
+		Mode:               mode,
 	}
 
 	txTracker := transaction.NewTransactionTracker()
@@ -240,7 +245,7 @@ func runNode() {
 	mbs := mem_blockstore.NewMemBlockStore(votorChannel, p, genesisBlock)
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, mbs, ts, privKey, &cfg.Poh)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, mbs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -268,8 +273,11 @@ func runNode() {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
-	libP2pClient.OnStartPoh = func() { pohService.Start() }
-	libP2pClient.OnStartValidator = func() { val.Run() }
+	// In listen mode, do not start PoH or Validator
+	if nodeConfig.Mode != LISTEN_MODE {
+		libP2pClient.OnStartPoh = func() { pohService.Start() }
+		libP2pClient.OnStartValidator = func() { val.Run() }
+	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
 	startServices(cfg, nodeConfig, libP2pClient, ld, val, bs, mp, eventRouter, txTracker)
@@ -347,7 +355,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blockstore.MemBlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blockstore.MemBlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -358,6 +366,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blo
 		mbs,
 		ts,
 		pohCfg,
+		mode == LISTEN_MODE,
 	)
 
 	return libp2pNetwork, err

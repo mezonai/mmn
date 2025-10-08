@@ -16,7 +16,6 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/exception"
-	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
@@ -40,13 +39,16 @@ type Validator struct {
 	leaderTimeoutLoopInterval time.Duration
 	BatchSize                 int
 
-	netClient  interfaces.Broadcaster
+	p2pClient  *p2p.Libp2pNetwork
 	blockStore store.BlockStore
 	// Slot & entry buffer
 	leaderStartAtSlot uint64
 	collectedEntries  []poh.Entry
 	pendingTxs        []*transaction.Transaction
 	stopCh            chan struct{}
+
+	// Additional dependencies for block processing
+	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock) error
 }
 
 // NewValidator constructs a Validator with dependencies, including blockStore.
@@ -77,7 +79,7 @@ func NewValidator(
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
-		netClient:                 p2pClient,
+		p2pClient:                 p2pClient,
 		blockStore:                blockStore,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
@@ -87,6 +89,7 @@ func NewValidator(
 	p2pClient.OnSyncPohFromLeader = v.handleResetPohFromLeader
 	p2pClient.OnForceResetPOH = v.ForceResetPoh
 	p2pClient.OnGetLatestPohSlot = v.Recorder.CurrentPassedSlot
+	v.onBroadcastBlock = p2pClient.BroadcastBlockWithProcessing
 	return v
 }
 
@@ -109,10 +112,10 @@ waitLoop:
 				seedHash = seedSlot.Hash
 				break waitLoop
 			} else {
-				logx.Info("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
+				logx.Debug("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
 			}
 		case <-deadline.C:
-			logx.Info("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
+			logx.Warn("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
 			lastSeenSlot := v.blockStore.GetLatestStoreSlot()
 
 			// Try POH recorder for latest slot too
@@ -133,7 +136,7 @@ waitLoop:
 		}
 	}
 
-	logx.Info("LEADER", fmt.Sprintf("Reset POH recorder with hash %x for slot %d", seedHash, prevSlot))
+	logx.Debug("LEADER", fmt.Sprintf("Reset POH recorder with hash %x for slot %d", seedHash, prevSlot))
 	v.Recorder.Reset(seedHash, prevSlot)
 	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
@@ -207,15 +210,17 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			// Reset buffer
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
-			if err := v.netClient.BroadcastBlock(context.Background(), blk); err != nil {
-				logx.Error("VALIDATOR", fmt.Sprintf("Failed to broadcast block: %v", err))
-			}
+			exception.SafeGo("onBroadcastBlock", func() {
+				if err := v.onBroadcastBlock(context.Background(), blk); err != nil {
+					logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
+				}
+			})
 		} else {
 			logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", lastSlot))
 		}
 	} else if v.IsLeader(currentSlot) && v.ReadyToStart(currentSlot) {
 		// Buffer entries only if leader of current slot and ready to start
-		logx.Info("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
+		logx.Debug("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
 		v.collectedEntries = append(v.collectedEntries, entries...)
 	}
 }
@@ -302,7 +307,7 @@ func (v *Validator) leaderBatchLoop() {
 			logx.Info("LEADER", fmt.Sprintf("Pulling batch for slot %d", slot))
 			batch := v.Mempool.PullBatch(v.BatchSize)
 			if len(batch) == 0 && len(v.pendingTxs) == 0 {
-				logx.Info("LEADER", fmt.Sprintf("No batch for slot %d", slot))
+				logx.Debug("LEADER", fmt.Sprintf("No batch for slot %d", slot))
 				continue
 			}
 
@@ -317,7 +322,7 @@ func (v *Validator) leaderBatchLoop() {
 
 			recordTxs := v.peekPendingTxs(v.BatchSize)
 			if recordTxs == nil {
-				logx.Info("LEADER", fmt.Sprintf("No valid transactions for slot %d", slot))
+				logx.Debug("LEADER", fmt.Sprintf("No valid transactions for slot %d", slot))
 				continue
 			}
 			logx.Info("LEADER", fmt.Sprintf("Recording batch for slot %d", slot))

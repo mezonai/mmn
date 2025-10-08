@@ -75,5 +75,6 @@ func (v *Vote) Validate() error {
 	if len(v.Signature) == 0 {
 		return fmt.Errorf("missing signature")
 	}
+	// TODO: add validate PubKey + signature
 	return nil
 }

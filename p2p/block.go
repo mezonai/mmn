@@ -34,6 +34,10 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 				continue
 			}
 
+			if msg.ReceivedFrom == ln.host.ID() {
+				continue
+			}
+
 			var blk *block.BroadcastedBlock
 			if err := jsonx.Unmarshal(msg.Data, &blk); err != nil {
 				logx.Warn("NETWORK:BLOCK", "Unmarshal error:", err)
@@ -408,6 +412,31 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 	}
 }
 
+func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock) error {
+	ln.memBlockStore.AddBlock(blk)
+
+	if ln.topicBlocks != nil {
+		meshPeers := ln.topicBlocks.ListPeers()
+		for i, peer := range meshPeers {
+			logx.Info("BLOCK", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
+		}
+	}
+
+	data, err := jsonx.Marshal(blk)
+	if err != nil {
+		logx.Error("BLOCK", "Failed to marshal block: ", err)
+		return err
+	}
+
+	if ln.topicBlocks != nil {
+		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
+			logx.Error("BLOCK", "Failed to publish block:", err)
+		}
+	}
+
+	return nil
+}
+
 func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
 	return ln.blockStore.GetLatestFinalizedSlot()
 }
@@ -464,7 +493,7 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 		meshPeers := ln.topicBlocks.ListPeers()
 		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
 		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+			logx.Info("BLOCK", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
 		}
 	} else {
 		logx.Error("BLOCK", "Block topic is nil")
