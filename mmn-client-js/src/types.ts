@@ -39,7 +39,7 @@ export enum ETransferType {
 }
 
 export interface ExtraInfo {
-  type: ETransferType;
+  type?: ETransferType;
   ItemId?: string;
   ItemType?: string;
   ClanId?: string;

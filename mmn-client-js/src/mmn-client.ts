@@ -193,7 +193,6 @@ export class MmnClient {
       };
 
       const response = await fetch(this.config.baseUrl, requestOptions);
-      console.log('🚀 ~ MmnClient ~ makeRequest ~ response:', response);
       clearTimeout(timeoutId);
 
       if (!response.ok) {
@@ -477,13 +476,17 @@ export class MmnClient {
     zkProof: string;
     zkPub: string;
   }): SignedTx {
-    const fromAddress = this.getAddressFromUserId(params.sender);
-    const toAddress = this.getAddressFromUserId(params.recipient);
+    if (!this.validateAddress(params.sender)) {
+      throw new Error('Invalid sender address');
+    }
+    if (!this.validateAddress(params.recipient)) {
+      throw new Error('Invalid recipient address');
+    }
 
     const txMsg: TxMsg = {
       type: params.type,
-      sender: fromAddress,
-      recipient: toAddress,
+      sender: params.sender,
+      recipient: params.recipient,
       amount: params.amount,
       timestamp: params.timestamp || Date.now(),
       text_data: params.textData || '',
@@ -599,10 +602,25 @@ export class MmnClient {
   async sendTransaction(
     params: SendTransactionRequest
   ): Promise<AddTxResponse> {
+    const fromAddress = this.getAddressFromUserId(params.sender);
+    const toAddress = this.getAddressFromUserId(params.recipient);
+    const signedTx = this.createAndSignTx({
+      ...params,
+      type: TX_TYPE.TRANSFER,
+      sender: fromAddress,
+      recipient: toAddress,
+    });
+    return this.addTx(signedTx);
+  }
+
+  async sendTransactionByAddress(
+    params: SendTransactionRequest
+  ): Promise<AddTxResponse> {
     const signedTx = this.createAndSignTx({
       ...params,
       type: TX_TYPE.TRANSFER,
     });
+
     return this.addTx(signedTx);
   }
 
@@ -638,6 +656,17 @@ export class MmnClient {
       scaledAmount = scaledAmount * BigInt(10);
     }
     return scaledAmount.toString();
+  }
+
+  validateAddress(addr: string): boolean {
+    const decoded = bs58.decode(addr);
+    if (
+      !decoded ||
+      decoded.length !== CRYPTO_CONSTANTS.ED25519_PUBLIC_KEY_LENGTH
+    ) {
+      return false;
+    }
+    return true;
   }
 }
 
