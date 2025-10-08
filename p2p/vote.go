@@ -30,14 +30,13 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 				continue
 			}
 
-			var voteMsg VoteMessage
-			if err := jsonx.Unmarshal(msg.Data, &voteMsg); err != nil {
+			var vote *consensus.Vote
+			if err := jsonx.Unmarshal(msg.Data, &vote); err != nil {
 				logx.Warn("NETWORK:VOTE", "Unmarshal error:", err)
 				continue
 			}
 
-			vote := ln.ConvertMessageToVote(voteMsg)
-			if vote != nil && ln.onVoteReceived != nil {
+			if ln.onVoteReceived != nil {
 				ln.onVoteReceived(vote)
 			}
 		}
@@ -45,15 +44,7 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 }
 
 func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote) error {
-	msg := VoteMessage{
-		Slot:      vote.Slot,
-		VoteType:  int(vote.VoteType),
-		BlockHash: vote.BlockHash,
-		PubKey:    vote.PubKey,
-		Signature: vote.Signature,
-	}
-
-	data, err := jsonx.Marshal(msg)
+	data, err := jsonx.Marshal(vote)
 	if err != nil {
 		return err
 	}

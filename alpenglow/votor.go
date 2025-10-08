@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/herumi/bls-eth-go-binary/bls"
+	"github.com/mezonai/mmn/alpenglow/pool"
 	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/logx"
@@ -15,8 +16,8 @@ import (
 )
 
 const (
-	DELTA_BLOCK   = 400 * time.Millisecond //400ms for each block
-	DELTA_TIMEOUT = 200 * time.Millisecond //200ms for timeout network propagation
+	DELTA_BLOCK   = 400 * time.Millisecond   //400ms for each block
+	DELTA_TIMEOUT = (25 * DELTA_BLOCK) / 100 //25% DELTA_BLOCK for timeout network propagation
 )
 
 type BroadcastedCert struct {
@@ -41,10 +42,11 @@ type Votor struct {
 	eventReceiver   <-chan votor.VotorEvent
 	eventSender     chan<- votor.VotorEvent
 	ln              *p2p.Libp2pNetwork
+	pool            *pool.Pool
 	quit            chan struct{}
 }
 
-func NewVotor(blsPubKey string, blsPrivKey bls.SecretKey, eventReceiver <-chan votor.VotorEvent, eventSender chan<- votor.VotorEvent, ln *p2p.Libp2pNetwork) *Votor {
+func NewVotor(blsPubKey string, blsPrivKey bls.SecretKey, eventReceiver <-chan votor.VotorEvent, eventSender chan<- votor.VotorEvent, ln *p2p.Libp2pNetwork, pool *pool.Pool) *Votor {
 	return &Votor{
 		voted:           make(map[uint64]struct{}),
 		votedNotar:      make(map[uint64][32]byte),
@@ -59,6 +61,7 @@ func NewVotor(blsPubKey string, blsPrivKey bls.SecretKey, eventReceiver <-chan v
 		eventReceiver:   eventReceiver,
 		eventSender:     eventSender,
 		ln:              ln,
+		pool:            pool,
 		quit:            make(chan struct{}),
 	}
 }
@@ -115,9 +118,11 @@ func (v *Votor) handleEvent(ev votor.VotorEvent) {
 		}
 
 	case votor.SAFE_TO_NOTAR:
+		logx.Info("VOTOR", fmt.Sprintf("Safe to notar for slot %d, block hash %s", ev.Slot, hex.EncodeToString(ev.BlockHash[:])))
 		v.handleSafeToNotar(ev)
 
 	case votor.SAFE_TO_SKIP:
+		logx.Info("VOTOR", fmt.Sprintf("Safe to skip for slot %d", ev.Slot))
 		v.handleSafeToSkip(ev)
 
 	case votor.CERT_CREATED:
@@ -161,12 +166,12 @@ func (v *Votor) tryNotar(blockInfo votor.BlockInfo) bool {
 		PubKey:    v.blsPubKey,
 	}
 	vote.Sign(v.blsPrivKey)
-	v.ln.BroadcastVote(context.Background(), vote)
-	logx.Info("VOTOR", fmt.Sprintf("Voted notar for block %s in slot %d", hex.EncodeToString(hash[:]), slot))
+	v.addVoteToPoolAndBroadcast(vote)
 	v.voted[slot] = struct{}{}
 	v.votedNotar[slot] = hash
 	delete(v.pendingBlocks, slot)
 	v.tryFinal(slot, hash)
+	logx.Info("VOTOR", fmt.Sprintf("Voted notar for block %s in slot %d", hex.EncodeToString(hash[:]), slot))
 	return true
 }
 
@@ -190,13 +195,14 @@ func (v *Votor) tryFinal(slot uint64, hash [32]byte) {
 			PubKey:    v.blsPubKey,
 		}
 		vote.Sign(v.blsPrivKey)
-		v.ln.BroadcastVote(context.Background(), vote)
+		v.addVoteToPoolAndBroadcast(vote)
 		v.retiredSlots[slot] = struct{}{}
 		logx.Info("VOTOR", fmt.Sprintf("Voted final for block %s in slot %d", hex.EncodeToString(hash[:]), slot))
 	}
 }
 
 func (v *Votor) trySkipWindow(currentSlot uint64) {
+	logx.Info("VOTOR", fmt.Sprintf("Trying skip window at slot %d", currentSlot))
 	for _, slot := range utils.SlotsInWindow(currentSlot) {
 		if _, voted := v.voted[slot]; !voted {
 			v.badWindow[slot] = struct{}{}
@@ -206,8 +212,7 @@ func (v *Votor) trySkipWindow(currentSlot uint64) {
 				PubKey:   v.blsPubKey,
 			}
 			vote.Sign(v.blsPrivKey)
-			v.ln.BroadcastVote(context.Background(), vote)
-			fmt.Printf("skipping slot %d, marked bad window\n", slot)
+			v.addVoteToPoolAndBroadcast(vote)
 		}
 	}
 }
@@ -327,7 +332,7 @@ func (v *Votor) handleSafeToNotar(ev votor.VotorEvent) {
 		PubKey:    v.blsPubKey,
 	}
 	vote.Sign(v.blsPrivKey)
-	v.ln.BroadcastVote(context.Background(), vote)
+	v.addVoteToPoolAndBroadcast(vote)
 	v.trySkipWindow(ev.Slot)
 	v.badWindow[ev.Slot] = struct{}{}
 }
@@ -339,7 +344,14 @@ func (v *Votor) handleSafeToSkip(ev votor.VotorEvent) {
 		PubKey:   v.blsPubKey,
 	}
 	vote.Sign(v.blsPrivKey)
-	v.ln.BroadcastVote(context.Background(), vote)
+	v.addVoteToPoolAndBroadcast(vote)
 	v.trySkipWindow(ev.Slot)
 	v.badWindow[ev.Slot] = struct{}{}
+}
+
+func (v *Votor) addVoteToPoolAndBroadcast(vote *consensus.Vote) {
+	// First save vote to pool
+	v.pool.AddVote(vote)
+	// Then broadcast to network
+	v.ln.BroadcastVote(context.Background(), vote)
 }

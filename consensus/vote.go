@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/herumi/bls-eth-go-binary/bls"
@@ -75,6 +76,18 @@ func (v *Vote) Validate() error {
 	if len(v.Signature) == 0 {
 		return fmt.Errorf("missing signature")
 	}
-	// TODO: add validate PubKey + signature
+
+	pubKey, err := hex.DecodeString(v.PubKey)
+	if err != nil {
+		return fmt.Errorf("invalid pubKey")
+	}
+
+	var blsPubkey bls.PublicKey
+	blsPubkey.Deserialize(pubKey)
+
+	if !v.VerifySignature(blsPubkey) {
+		return fmt.Errorf("invalid signature")
+	}
+
 	return nil
 }

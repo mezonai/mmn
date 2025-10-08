@@ -6,6 +6,7 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -25,14 +26,13 @@ func (ln *Libp2pNetwork) HandleCertTopic(ctx context.Context, sub *pubsub.Subscr
 				continue
 			}
 
-			var certMsg CertMessage
-			if err := json.Unmarshal(msg.Data, &certMsg); err != nil {
+			var cert *consensus.Cert
+			if err := json.Unmarshal(msg.Data, &cert); err != nil {
 				logx.Warn("NETWORK:CERT", "Unmarshal error:", err)
 				continue
 			}
 
-			cert := ln.ConvertMessageToCert(certMsg)
-			if cert != nil && ln.onCertReceived != nil {
+			if ln.onCertReceived != nil {
 				ln.onCertReceived(cert)
 			}
 		}
@@ -40,18 +40,7 @@ func (ln *Libp2pNetwork) HandleCertTopic(ctx context.Context, sub *pubsub.Subscr
 }
 
 func (ln *Libp2pNetwork) BroadcastCert(ctx context.Context, cert *consensus.Cert) error {
-	msg := CertMessage{
-		Slot:                 cert.Slot,
-		CertType:             int(cert.CertType),
-		BlockHash:            cert.BlockHash,
-		Stake:                cert.Stake,
-		AggregateSig:         cert.AggregateSig,
-		AggregateSigFallback: cert.AggregateSigFallback,
-		ListPubKeys:          cert.ListPubKeys,
-		ListPubKeysFallback:  cert.ListPubKeysFallback,
-	}
-
-	data, err := json.Marshal(msg)
+	data, err := jsonx.Marshal(cert)
 	if err != nil {
 		return err
 	}

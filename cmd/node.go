@@ -260,7 +260,7 @@ func runNode() {
 	}
 
 	// Initialize votor
-	initializeVotor(nodeConfig.BlsPubKey, blsPrivKey, votorChannel, libP2pClient)
+	initializeVotor(nodeConfig.BlsPubKey, blsPrivKey, votorChannel, libP2pClient, p)
 
 	// Initialize repair block worker
 	initializeRepairBlockWorker(repairChannel, mbs, libP2pClient)
@@ -417,8 +417,8 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 	return val, nil
 }
 
-func initializeVotor(blsPubKey string, blsPrivKey bls.SecretKey, votorChannel chan votor.VotorEvent, ln *p2p.Libp2pNetwork) {
-	votor := alpenglow.NewVotor(blsPubKey, blsPrivKey, votorChannel, votorChannel, ln)
+func initializeVotor(blsPubKey string, blsPrivKey bls.SecretKey, votorChannel chan votor.VotorEvent, ln *p2p.Libp2pNetwork, pool *pool.Pool) {
+	votor := alpenglow.NewVotor(blsPubKey, blsPrivKey, votorChannel, votorChannel, ln, pool)
 	go votor.Run()
 }
 

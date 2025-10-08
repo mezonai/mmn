@@ -110,35 +110,6 @@ type PeerInfo struct {
 	IsActive  bool      `json:"is_active"`
 }
 
-type BlockMessage struct {
-	Slot      uint64    `json:"slot"`
-	PrevHash  string    `json:"prev_hash"`
-	Entries   []string  `json:"entries"`
-	LeaderID  string    `json:"leader_id"`
-	Timestamp time.Time `json:"timestamp"`
-	Hash      string    `json:"hash"`
-	Signature []byte    ` json:"signature"`
-}
-
-type VoteMessage struct {
-	Slot      uint64   `json:"slot"`
-	VoteType  int      `json:"vote_type"`
-	BlockHash [32]byte `json:"block_hash"`
-	PubKey    string   `json:"voter_id"`
-	Signature []byte   `json:"signature"`
-}
-
-type CertMessage struct {
-	Slot                 uint64   `json:"slot"`
-	CertType             int      `json:"cert_type"`
-	BlockHash            [32]byte `json:"block_hash"`
-	Stake                uint64   `json:"stake"`
-	AggregateSig         []byte   `json:"aggregate_sig"`
-	AggregateSigFallback []byte   `json:"aggregate_sig_fallback"`
-	ListPubKeys          []string `json:"list_pub_keys"`
-	ListPubKeysFallback  []string `json:"list_pub_keys_fallback"`
-}
-
 type TxMessage struct {
 	Data []byte `json:"data"`
 }
