@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -31,12 +32,14 @@ type Libp2pNetwork struct {
 	// Track bootstrap peers so we can exclude them from certain requests
 	bootstrapPeerIDs map[peer.ID]struct{}
 
-	blockStore store.BlockStore
-	txStore    store.TxStore
+	blockStore    store.BlockStore
+	memBlockStore *mem_blockstore.MemBlockStore
+	txStore       store.TxStore
 
 	topicBlocks            *pubsub.Topic
 	topicEmptyBlocks       *pubsub.Topic
 	topicVotes             *pubsub.Topic
+	topicCerts             *pubsub.Topic
 	topicTxs               *pubsub.Topic
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
@@ -45,6 +48,7 @@ type Libp2pNetwork struct {
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
+	onCertReceived         func(*consensus.Cert) error
 	onTransactionReceived  func(*transaction.Transaction) error
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, uint64, string) error
@@ -121,6 +125,11 @@ type SyncResponse struct {
 	Blocks []*block.Block `json:"blocks"`
 }
 
+type RepairRequest struct {
+	Slot      uint64   `json:"slot"`
+	BlockHash [32]byte `json:"block_hash"`
+}
+
 type LatestSlotRequest struct {
 	RequesterID string                `json:"requester_id"`
 	Addrs       []multiaddr.Multiaddr `json:"addrs"`
@@ -165,6 +174,7 @@ type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
+	OnCertReceived         func(*consensus.Cert) error
 	OnTransactionReceived  func(*transaction.Transaction) error
 	OnLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncResponseReceived func(*block.BroadcastedBlock) error

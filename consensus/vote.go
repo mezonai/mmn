@@ -1,43 +1,74 @@
 package consensus
 
 import (
-	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 
+	"github.com/herumi/bls-eth-go-binary/bls"
 	"github.com/mezonai/mmn/jsonx"
-	"github.com/mr-tron/base58"
 )
+
+type VoteType int
+
+const (
+	NOTAR_VOTE VoteType = iota
+	NOTAR_FALLBACK_VOTE
+	SKIP_VOTE
+	SKIP_FALLBACK_VOTE
+	FINAL_VOTE
+)
+
+func (vt VoteType) String() string {
+	switch vt {
+	case NOTAR_VOTE:
+		return "NOTAR_VOTE"
+	case NOTAR_FALLBACK_VOTE:
+		return "NOTAR_FALLBACK_VOTE"
+	case SKIP_VOTE:
+		return "SKIP_VOTE"
+	case SKIP_FALLBACK_VOTE:
+		return "SKIP_FALLBACK_VOTE"
+	case FINAL_VOTE:
+		return "FINAL_VOTE"
+	}
+	return "UNKNOWN_VOTE"
+}
 
 // Vote is a vote for a block of a slot
 type Vote struct {
 	Slot      uint64 // slot number
+	VoteType  VoteType
 	BlockHash [32]byte
-	VoterID   string // leaderID or validatorID
+	PubKey    string // BLS public key of voter
 	Signature []byte
 }
 
-// serializeVote to sign and verify (without Signature)
+// serializeVote to sign and verify (without Signature + PubKey to keep the same message)
 func (v *Vote) serializeVote() []byte {
 	data, _ := jsonx.Marshal(struct {
 		Slot      uint64
+		VoteType  VoteType
 		BlockHash [32]byte
-		VoterID   string
 	}{
 		Slot:      v.Slot,
+		VoteType:  v.VoteType,
 		BlockHash: v.BlockHash,
-		VoterID:   v.VoterID,
 	})
 	return data
 }
 
 // Sign vote with private key of voter
-func (v *Vote) Sign(priv ed25519.PrivateKey) {
-	v.Signature = ed25519.Sign(priv, v.serializeVote())
+func (v *Vote) Sign(priv bls.SecretKey) {
+	v.Signature = priv.SignByte(v.serializeVote()).Serialize()
 }
 
 // VerifySignature check vote signature with public key
-func (v *Vote) verifySignature(pub ed25519.PublicKey) bool {
-	return ed25519.Verify(pub, v.serializeVote(), v.Signature)
+func (v *Vote) VerifySignature(pub bls.PublicKey) bool {
+	var sign bls.Sign
+	if err := sign.Deserialize(v.Signature); err != nil {
+		return false
+	}
+	return sign.VerifyByte(&pub, v.serializeVote())
 }
 
 // Validate basic checks (nonce, slot >= 0, etc)
@@ -45,12 +76,18 @@ func (v *Vote) Validate() error {
 	if len(v.Signature) == 0 {
 		return fmt.Errorf("missing signature")
 	}
-	pub, err := base58.Decode(v.VoterID)
+
+	pubKey, err := hex.DecodeString(v.PubKey)
 	if err != nil {
-		return fmt.Errorf("invalid voterID")
+		return fmt.Errorf("invalid pubKey")
 	}
-	if !v.verifySignature(pub) {
+
+	var blsPubkey bls.PublicKey
+	blsPubkey.Deserialize(pubKey)
+
+	if !v.VerifySignature(blsPubkey) {
 		return fmt.Errorf("invalid signature")
 	}
+
 	return nil
 }

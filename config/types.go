@@ -8,6 +8,8 @@ import (
 type NodeConfig struct {
 	PubKey             string   `yaml:"pubkey"`
 	PrivKeyPath        string   `yaml:"privkey_path"`
+	BlsPubKey          string   `yaml:"bls_pubkey"`
+	BlsPrivKeyPath     string   `yaml:"bls_privkey_path"`
 	ListenAddr         string   `yaml:"listen_addr"`
 	JSONRPCAddr        string   `yaml:"jsonrpc_addr"`
 	Libp2pAddr         string   `yaml:"libp2p_addr"`

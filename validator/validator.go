@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/store"
@@ -16,9 +15,7 @@ import (
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/exception"
-	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
@@ -42,7 +39,6 @@ type Validator struct {
 	leaderTimeoutLoopInterval time.Duration
 	BatchSize                 int
 
-	netClient  interfaces.Broadcaster
 	p2pClient  *p2p.Libp2pNetwork
 	blockStore store.BlockStore
 	// Slot & entry buffer
@@ -52,10 +48,7 @@ type Validator struct {
 	stopCh            chan struct{}
 
 	// Additional dependencies for block processing
-	ledger    *ledger.Ledger
-	collector *consensus.Collector
-
-	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error
+	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock) error
 }
 
 // NewValidator constructs a Validator with dependencies, including blockStore.
@@ -73,8 +66,6 @@ func NewValidator(
 	batchSize int,
 	p2pClient *p2p.Libp2pNetwork,
 	blockStore store.BlockStore,
-	ledger *ledger.Ledger,
-	collector *consensus.Collector,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -88,11 +79,8 @@ func NewValidator(
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
-		netClient:                 p2pClient,
 		p2pClient:                 p2pClient,
 		blockStore:                blockStore,
-		ledger:                    ledger,
-		collector:                 collector,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
@@ -223,7 +211,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
 			exception.SafeGo("onBroadcastBlock", func() {
-				if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector); err != nil {
+				if err := v.onBroadcastBlock(context.Background(), blk); err != nil {
 					logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
 				}
 			})

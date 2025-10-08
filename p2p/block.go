@@ -8,11 +8,8 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/jsonx"
-	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/transaction"
 
@@ -415,11 +412,8 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 	}
 }
 
-func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
-	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector); err != nil {
-		logx.Error("BLOCK", "Failed to process block before broadcast:", err)
-		return err
-	}
+func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock) error {
+	ln.memBlockStore.AddBlock(blk)
 
 	if ln.topicBlocks != nil {
 		meshPeers := ln.topicBlocks.ListPeers()
@@ -437,17 +431,6 @@ func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *
 	if ln.topicBlocks != nil {
 		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
 			logx.Error("BLOCK", "Failed to publish block:", err)
-		} else {
-			vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
-			vote.Sign(ln.selfPrivKey)
-
-			if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
-				return err
-			}
-
-			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -528,15 +511,5 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 			logx.Error("BLOCK", "Failed to publish block:", err)
 		}
 	}
-	return nil
-}
-
-func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
-
-	if err := ln.blockStore.AddBlockPending(blk); err != nil {
-		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
-		return err
-	}
-
 	return nil
 }
