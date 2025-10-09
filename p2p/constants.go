@@ -35,5 +35,5 @@ var (
 	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
 	InitRequestLatestSlotMaxRetries int           = 3
 
-	BlockOrderingPeriodicThreshold uint64 = 500
+	BlockOrderingPeriodicThreshold uint64 = 1500 // clean every 1500 blocks
 )
