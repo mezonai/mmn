@@ -79,6 +79,10 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 
 	if len(processedBlocks) > 0 {
 		logx.Info("BLOCK:ORDERING", "Processed", len(processedBlocks), "consecutive blocks, next expected slot:", ln.nextExpectedSlot)
+
+		// Trigger cleanup after processing blocks - use the latest processed slot
+		latestProcessedSlot := processedBlocks[len(processedBlocks)-1].Slot
+		ln.cleanupBlockOrderingQueue(latestProcessedSlot)
 	}
 
 	// Broadcast empty blocks if any were created
@@ -166,4 +170,45 @@ func (ln *Libp2pNetwork) getPrevHashForSlot(slot uint64, bs store.BlockStore, pr
 
 	logx.Warn("BLOCK:ORDERING", "No previous hash found for slot", prevSlot)
 	return [32]byte{}
+}
+
+func (ln *Libp2pNetwork) cleanupBlockOrderingQueue(latestProcessedSlot uint64) {
+	ln.blockOrderingMu.Lock()
+	defer ln.blockOrderingMu.Unlock()
+
+	if latestProcessedSlot == 0 {
+		return
+	}
+
+	blocksToRemove := make([]uint64, 0)
+	blocksRemoved := 0
+
+	for slot := range ln.blockOrderingQueue {
+		if slot <= latestProcessedSlot {
+			blocksToRemove = append(blocksToRemove, slot)
+		}
+	}
+
+	for _, slot := range blocksToRemove {
+		delete(ln.blockOrderingQueue, slot)
+		blocksRemoved++
+	}
+
+}
+
+func (ln *Libp2pNetwork) cleanupBlockOrderingQueuePeriodic(bs store.BlockStore) {
+	ln.blockOrderingMu.RLock()
+	queueSize := len(ln.blockOrderingQueue)
+	ln.blockOrderingMu.RUnlock()
+
+	if uint64(queueSize) < BlockOrderingPeriodicThreshold {
+		return
+	}
+
+	latestFinalizedSlot := bs.GetLatestFinalizedSlot()
+	if latestFinalizedSlot == 0 {
+		return
+	}
+
+	ln.cleanupBlockOrderingQueue(latestFinalizedSlot)
 }
