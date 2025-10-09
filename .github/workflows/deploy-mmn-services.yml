@@ -73,8 +73,19 @@ jobs:
           echo "--> Copying configs to MMN server..."
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo mkdir -p /etc/mezon/monitoring/prometheus/targets"
           
-          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/etc/mezon/monitoring/promtail-config.yml
-          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/prometheus/targets/nodes.example.yml ${{ secrets.HOST_ALIAS }}:/etc/mezon/monitoring/prometheus/targets/nodes.yml
+          echo "--> Copying configs to a temporary location on the MMN server..."
+          # scp files to a temporary, writable directory like /tmp
+          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
+          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/prometheus/targets/nodes.example.yml ${{ secrets.HOST_ALIAS }}:/tmp/nodes.yml
+
+          echo "--> Moving configs to final destination with sudo..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+            set -e
+            sudo mv /tmp/promtail-config.yml /etc/mezon/monitoring/promtail-config.yml
+            sudo mv /tmp/nodes.yml /etc/mezon/monitoring/prometheus/targets/nodes.yml
+
+            sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
+            sudo chown mmn:mmn /etc/mezon/monitoring/prometheus/targets/nodes.yml
 
       - name: Copy binary and config to target
         run: |
