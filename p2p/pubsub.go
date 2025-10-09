@@ -130,7 +130,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			return nil
 		},
 		OnSyncResponseReceived: func(blk *block.BroadcastedBlock) error {
-
 			// Add block to global ordering queue
 			if blk == nil {
 				return nil
