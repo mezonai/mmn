@@ -94,7 +94,8 @@ type Libp2pNetwork struct {
 	OnStartValidator func()
 
 	// PoH config
-	pohCfg *config.PohConfig
+	pohCfg     *config.PohConfig
+	isListener bool
 }
 
 type PeerInfo struct {
