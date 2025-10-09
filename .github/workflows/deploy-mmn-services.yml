@@ -76,31 +76,6 @@ jobs:
           scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
           scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/prometheus/targets/nodes.example.yml ${{ secrets.HOST_ALIAS }}:/tmp/nodes.yml
 
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo chown -R root:root /etc/mezon/monitoring"
-
-          echo "--> Copying shared configs to Monitoring server..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.MONITORING_HOST_ALIAS }} "sudo mkdir -p /etc/mezon/monitoring/grafana"
-          
-          rsync -az --delete -e "ssh -i /home/nccsoft/.ssh/mmn_deploy" \
-            ./monitoring/loki-config.yml \
-            ./monitoring/prometheus-config.yml \
-            ./monitoring/grafana \
-            ${{ secrets.MONITORING_HOST_ALIAS }}:/tmp/monitoring_shared_configs/
-
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.MONITORING_HOST_ALIAS }} "
-            echo "==> Generating config monitoring..."
-            sed \
-              -e "s|__TARGET_PROMETHEUS_PORT__|$TARGET_PROMETHEUS_PORT|g" \
-              /tmp/monitoring_shared_configs/prometheus-config.yml \
-              | sudo tee /etc/mezon/monitoring/prometheus.yml >/dev/null
-            sudo chown mmn:mmn /etc/mezon/monitoring/prometheus.yml
-
-            sudo mv /tmp/monitoring_shared_configs/loki-config.yml /etc/mezon/monitoring/
-            sudo rsync -az --delete /tmp/monitoring_shared_configs/grafana/ /etc/mezon/monitoring/grafana/
-            sudo chown -R root:root /etc/mezon/monitoring
-            rm -rf /tmp/monitoring_shared_configs
-          "
-
       - name: Copy binary and config to target
         run: |
           scp -i /home/nccsoft/.ssh/mmn_deploy build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
