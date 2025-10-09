@@ -12,7 +12,7 @@ scrape_configs:
   - job_name: prometheus
     scrape_interval: 1m
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets: ["__TARGET_PROMETHEUS_PORT__"]
 
   - job_name: mmn-node
     scrape_interval: 5s

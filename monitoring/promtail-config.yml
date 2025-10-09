@@ -31,3 +31,24 @@ scrape_configs:
           template: '{{ ToLower .Value }}'
       - labels:
           level:
+
+  - job_name: indexer
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: indexer
+          __path__: /opt/indexer/logs/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: time
+            level: level
+            message: message
+            component: component
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - labels:
+          level:
+          component:
