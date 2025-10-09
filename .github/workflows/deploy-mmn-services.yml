@@ -197,7 +197,6 @@ jobs:
           FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
-          URL_LOKI_API_PUSH: ${{ secrets.URL_LOKI_API_PUSH }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
