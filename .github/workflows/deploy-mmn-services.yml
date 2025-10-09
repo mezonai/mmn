@@ -86,6 +86,7 @@ jobs:
 
             sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
             sudo chown mmn:mmn /etc/mezon/monitoring/prometheus/targets/nodes.yml
+          "
 
       - name: Copy binary and config to target
         run: |
