@@ -264,7 +264,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncStream() error {
 }
 
 func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.ID) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stream, err := ln.host.NewStream(ctx, targetPeer, RequestBlockSyncStream)
