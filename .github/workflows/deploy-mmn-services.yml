@@ -32,16 +32,31 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libsnappy-dev \
-            zlib1g-dev \
-            libbz2-dev \
-            libgflags-dev \
-            liblz4-dev \
-            libzstd-dev \
-            liburing-dev
+          PACKAGES="
+          build-essential
+          libsnappy-dev
+          zlib1g-dev
+          libbz2-dev
+          libgflags-dev
+          liblz4-dev
+          libzstd-dev
+          liburing-dev
+          "
+          TO_INSTALL=""
+          echo "==> Checking for required packages..."
+          for PKG in $PACKAGES; do
+            if ! dpkg -s "$PKG" &> /dev/null; then
+              TO_INSTALL="$TO_INSTALL $PKG"
+            fi
+          done
+
+          if [ -n "$TO_INSTALL" ]; then
+            echo "==> Found missing packages, installing: $TO_INSTALL"
+            sudo apt-get update
+            sudo apt-get install -y $TO_INSTALL
+          else
+            echo "==> All build dependencies are already installed. Skipping."
+          fi
 
       - name: Build MMN binary
         id: build
@@ -63,6 +78,64 @@ jobs:
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
+      - name: Deploy Monitoring Configurations
+        env:
+          URL_LOKI_PUSH: ${{ vars.URL_LOKI_PUSH }}
+        run: |
+          set -e
+          echo "==> Deploying monitoring configs for MMN..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+            set -e
+            sudo mkdir -p /etc/mezon/monitoring
+            sudo chown mmn:mmn /etc/mezon/monitoring
+          "
+
+          echo "==> Copying configs to a temporary location on the MMN server..."
+          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
+
+          echo "==> Moving configs to final destination with sudo..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<EOF
+            set -e
+            sed \
+              -e "s|__URL_LOKI_PUSH__|${URL_LOKI_PUSH}|g" \
+              -e 's|__path__: /var/log/mmn/\*.log|__path__: /opt/mezon/mmn/logs/\*.log|g' \
+              /tmp/promtail-config.yml \
+              | sudo tee /etc/mezon/monitoring/promtail-config.yml >/dev/null
+            sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
+          EOF
+      
+      - name: Monitoring config server runner
+        if: inputs.env != 'dev'
+        env:
+          PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
+          NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
+          LISTENER_URL_PORT: ${{ vars.LISTENER_URL_PORT }}
+        run: |
+          echo "==> Move config file to folder run monitoring..."
+          sudo mkdir -p /etc/mezon/monitoring/
+          echo "==> Setting up Prometheus and Loki configs..."
+          sudo cp ./monitoring/prometheus-config.yml /etc/mezon/monitoring/prometheus-config.yml
+          sudo cp ./monitoring/loki-config.yml /etc/mezon/monitoring/loki-config.yml
+
+          sudo sed -i "s/__PORT_NODE_EXPORTER__/${PORT_NODE_EXPORTER}/g" /etc/mezon/monitoring/prometheus-config.yml
+          sudo chown mmn:mmn /etc/mezon/monitoring/prometheus-config.yml
+          sudo chown mmn:mmn /etc/mezon/monitoring/loki-config.yml
+
+          echo "==> Setting up Grafana configs..."
+          sudo mkdir -p /etc/grafana/
+          sudo cp -r ./monitoring/grafana/* /etc/grafana/
+          
+          sudo chown -R mmn:mmn /etc/grafana/provisioning
+          sudo chown -R mmn:mmn /etc/grafana/dashboards
+          sudo sed -i 's#url: http://loki:3100#url: http://localhost:3100#g' /etc/grafana/provisioning/datasources/loki.yml
+          sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
+          sudo sed -i 's#path: /var/lib/grafana/dashboards#path: /etc/grafana/dashboards#g' /etc/grafana/provisioning/dashboards/dashboard.yaml
+
+          sudo mkdir -p /etc/prometheus/targets
+          sudo cp ./monitoring/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
+          sudo sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" /etc/prometheus/targets/nodes.yml
+          sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
+
       - name: Copy binary and config to target
         run: |
           scp -i /home/nccsoft/.ssh/mmn_deploy build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
@@ -77,15 +150,29 @@ jobs:
           echo "==> Loading environment..."
           source /tmp/mezon_env.sh
 
-          echo "==> Installing runtime dependencies..."
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            libsnappy1v5 \
-            zlib1g \
-            libbz2-1.0 \
-            liblz4-1 \
-            libzstd1 \
-            liburing2
+          echo "==> Checking and installing runtime dependencies..."
+          RUNTIME_PACKAGES="
+          libsnappy1v5
+          zlib1g
+          libbz2-1.0
+          liblz4-1
+          libzstd1
+          liburing2
+          "
+          TO_INSTALL_REMOTE=""
+          for PKG in $RUNTIME_PACKAGES; do
+            if ! dpkg -s "$PKG" &> /dev/null; then
+              TO_INSTALL_REMOTE="$TO_INSTALL_REMOTE $PKG"
+            fi
+          done
+
+          if [ -n "$TO_INSTALL_REMOTE" ]; then
+            echo "==> Found missing runtime packages on target server, installing: $TO_INSTALL_REMOTE"
+            sudo apt-get update -y
+            sudo apt-get install -y $TO_INSTALL_REMOTE
+          else
+            echo "==> All runtime dependencies are already installed on target server. Skipping."
+          fi
 
           echo "==> Preparing directories..."
           sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
