@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Deploy Monitoring Configurations
         env:
-          URL_LOKI_PUSH: ${{ secrets.URL_LOKI_PUSH }}
+          URL_LOKI_PUSH: ${{ vars.URL_LOKI_PUSH }}
         run: |
           set -e
           echo "==> Deploying monitoring configs for MMN..."
@@ -91,9 +91,9 @@ jobs:
       
       - name: Monitoring config server runner 
         env:
-          PORT_NODE_EXPORTER: ${{ secrets.PORT_NODE_EXPORTER }}
-          NODE1_URL_PORT: ${{ secrets.NODE1_URL_PORT }}
-          LISTENER_URL_PORT: ${{ secrets.LISTENER_URL_PORT }}
+          PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
+          NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
+          LISTENER_URL_PORT: ${{ vars.LISTENER_URL_PORT }}
         run: |
           echo "==> Move config file to folder run monitoring..."
           sudo mkdir -p /etc/mezon/monitoring/
