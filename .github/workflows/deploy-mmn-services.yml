@@ -69,19 +69,25 @@ jobs:
         run: |
           set -e
           echo "==> Deploying monitoring configs for MMN..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+            set -e
+            sudo mkdir -p /etc/mezon/monitoring
+            sudo chown mmn:mmn /etc/mezon/monitoring
+          "
+
           echo "==> Copying configs to a temporary location on the MMN server..."
           scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
 
           echo "==> Moving configs to final destination with sudo..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<EOF
             set -e
             sed \
-              -e "s|__URL_LOKI_PUSH__|$URL_LOKI_PUSH|g" \
-              -e "s|__path__: /var/log/mmn/*.log|__path__: /opt/mezon/mmn/logs/*.log|g" \
+              -e "s|__URL_LOKI_PUSH__|${URL_LOKI_PUSH}|g" \
+              -e 's|__path__: /var/log/mmn/\*.log|__path__: /opt/mezon/mmn/logs/\*.log|g' \
               /tmp/promtail-config.yml \
               | sudo tee /etc/mezon/monitoring/promtail-config.yml >/dev/null
             sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
-          "
+          EOF
       
       - name: Monitoring config server runner 
         env:
@@ -111,7 +117,7 @@ jobs:
 
           sudo mkdir -p /etc/prometheus/targets
           sudo cp ./monitoring/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
-          sudo sed -i -e 's#__NODE1_URL_PORT__#NODE1_URL_PORT#g' -e 's#__LISTENER_URL_PORT__#LISTENER_URL_PORT#g' /etc/prometheus/targets/nodes.yml
+          sudo sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" /etc/prometheus/targets/nodes.yml
           sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
 
       - name: Copy binary and config to target
