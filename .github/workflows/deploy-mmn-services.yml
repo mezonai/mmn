@@ -65,28 +65,55 @@ jobs:
     steps:
       - name: Deploy Monitoring Configurations
         env:
-          TARGET_PROMETHEUS_PORT: ${{ secrets.TARGET_PROMETHEUS_PORT }}
+          URL_LOKI_PUSH: ${{ secrets.URL_LOKI_PUSH }}
         run: |
           set -e
           echo "==> Deploying monitoring configs for MMN..."
-
-          echo "--> Copying configs to MMN server..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo mkdir -p /etc/mezon/monitoring/prometheus/targets"
-          
-          echo "--> Copying configs to a temporary location on the MMN server..."
-          # scp files to a temporary, writable directory like /tmp
+          echo "==> Copying configs to a temporary location on the MMN server..."
           scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
-          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/prometheus/targets/nodes.example.yml ${{ secrets.HOST_ALIAS }}:/tmp/nodes.yml
 
-          echo "--> Moving configs to final destination with sudo..."
+          echo "==> Moving configs to final destination with sudo..."
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
             set -e
-            sudo mv /tmp/promtail-config.yml /etc/mezon/monitoring/promtail-config.yml
-            sudo mv /tmp/nodes.yml /etc/mezon/monitoring/prometheus/targets/nodes.yml
-
+            sed \
+              -e "s|__URL_LOKI_PUSH__|$URL_LOKI_PUSH|g" \
+              -e "s|__path__: /var/log/mmn/*.log|__path__: /opt/mezon/mmn/logs/*.log|g" \
+              /tmp/promtail-config.yml \
+              | sudo tee /etc/mezon/monitoring/promtail-config.yml >/dev/null
             sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
-            sudo chown mmn:mmn /etc/mezon/monitoring/prometheus/targets/nodes.yml
           "
+      
+      - name: Monitoring config server runner 
+        env:
+          PORT_NODE_EXPORTER: ${{ secrets.PORT_NODE_EXPORTER }}
+          NODE1_URL_PORT: ${{ secrets.NODE1_URL_PORT }}
+          LISTENER_URL_PORT: ${{ secrets.LISTENER_URL_PORT }}
+        run: |
+          echo "==> Move config file to folder run monitoring..."
+          sudo mkdir -p /etc/mezon/monitoring/
+          echo "==> Setting up Prometheus and Loki configs..."
+          sudo cp ./monitoring/prometheus-config.yml /etc/mezon/monitoring/prometheus-config.yml
+          sudo cp ./monitoring/loki-config.yml /etc/mezon/monitoring/loki-config.yml
+
+          sudo sed -i "s/__PORT_NODE_EXPORTER__/${PORT_NODE_EXPORTER}/g" /etc/mezon/monitoring/prometheus-config.yml
+          sudo chown mmn:mmn /etc/mezon/monitoring/prometheus-config.yml
+          sudo chown mmn:mmn /etc/mezon/monitoring/loki-config.yml
+
+          echo "==> Setting up Grafana configs..."
+          sudo cp -r ./monitoring/grafana/* /etc/grafana/
+          
+          sudo mkdir -p /etc/grafana/
+          sudo mv ./monitoring/grafana/* /etc/grafana/
+          sudo chown -R mmn:mmn /etc/grafana/provisioning
+          sudo chown -R mmn:mmn /etc/grafana/dashboards
+          sudo sed -i 's#url: http://loki:3100#url: http://localhost:3100#g' /etc/grafana/provisioning/datasources/loki.yml
+          sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
+          sudo sed -i 's#path: /var/lib/grafana/dashboards#path: /etc/grafana/dashboards#g' /etc/grafana/provisioning/dashboards/dashboard.yaml
+
+          sudo mkdir -p /etc/prometheus/targets
+          sudo cp ./monitoring/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
+          sudo sed -i -e 's#__NODE1_URL_PORT__#NODE1_URL_PORT#g' -e 's#__LISTENER_URL_PORT__#LISTENER_URL_PORT#g' /etc/prometheus/targets/nodes.yml
+          sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
 
       - name: Copy binary and config to target
         run: |

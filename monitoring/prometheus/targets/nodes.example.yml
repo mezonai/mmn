@@ -1,9 +1,9 @@
-- targets: ['node1:8001']
+- targets: ['__NODE1_URL_PORT__'] # targets: ['node1:8001']
   labels:
     job: mmn-node
     node: node1
 
-- targets: ['listener:8084']
+- targets: ['__LISTENER_URL_PORT__'] # targets: ['listener:8084']
   labels:
     job: mmn-node
     node: listener
