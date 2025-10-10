@@ -18,3 +18,10 @@ scrape_configs:
     scrape_interval: 5s
     file_sd_configs:
       - files: ["/etc/prometheus/targets/nodes.yml"]
+
+  - job_name: node_exporter
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["__PORT_NODE_EXPORTER__"]
+        labels:
+          node: node1
