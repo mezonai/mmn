@@ -104,7 +104,8 @@ jobs:
             sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
           EOF
       
-      - name: Monitoring config server runner 
+      - name: Monitoring config server runner
+        if: inputs.env != 'dev'
         env:
           PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
           NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
