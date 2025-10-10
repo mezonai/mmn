@@ -32,16 +32,31 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libsnappy-dev \
-            zlib1g-dev \
-            libbz2-dev \
-            libgflags-dev \
-            liblz4-dev \
-            libzstd-dev \
-            liburing-dev
+          PACKAGES="
+          build-essential
+          libsnappy-dev
+          zlib1g-dev
+          libbz2-dev
+          libgflags-dev
+          liblz4-dev
+          libzstd-dev
+          liburing-dev
+          "
+          TO_INSTALL=""
+          echo "==> Checking for required packages..."
+          for PKG in $PACKAGES; do
+            if ! dpkg -s "$PKG" &> /dev/null; then
+              TO_INSTALL="$TO_INSTALL $PKG"
+            fi
+          done
+
+          if [ -n "$TO_INSTALL" ]; then
+            echo "==> Found missing packages, installing: $TO_INSTALL"
+            sudo apt-get update
+            sudo apt-get install -y $TO_INSTALL
+          else
+            echo "==> All build dependencies are already installed. Skipping."
+          fi
 
       - name: Build MMN binary
         id: build
@@ -134,15 +149,29 @@ jobs:
           echo "==> Loading environment..."
           source /tmp/mezon_env.sh
 
-          echo "==> Installing runtime dependencies..."
-          sudo apt-get update -y
-          sudo apt-get install -y \
-            libsnappy1v5 \
-            zlib1g \
-            libbz2-1.0 \
-            liblz4-1 \
-            libzstd1 \
-            liburing2
+          echo "==> Checking and installing runtime dependencies..."
+          RUNTIME_PACKAGES="
+          libsnappy1v5
+          zlib1g
+          libbz2-1.0
+          liblz4-1
+          libzstd1
+          liburing2
+          "
+          TO_INSTALL_REMOTE=""
+          for PKG in $RUNTIME_PACKAGES; do
+            if ! dpkg -s "$PKG" &> /dev/null; then
+              TO_INSTALL_REMOTE="$TO_INSTALL_REMOTE $PKG"
+            fi
+          done
+
+          if [ -n "$TO_INSTALL_REMOTE" ]; then
+            echo "==> Found missing runtime packages on target server, installing: $TO_INSTALL_REMOTE"
+            sudo apt-get update -y
+            sudo apt-get install -y $TO_INSTALL_REMOTE
+          else
+            echo "==> All runtime dependencies are already installed on target server. Skipping."
+          fi
 
           echo "==> Preparing directories..."
           sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
