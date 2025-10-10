@@ -100,10 +100,9 @@ jobs:
           sudo chown mmn:mmn /etc/mezon/monitoring/loki-config.yml
 
           echo "==> Setting up Grafana configs..."
+          sudo mkdir -p /etc/grafana/
           sudo cp -r ./monitoring/grafana/* /etc/grafana/
           
-          sudo mkdir -p /etc/grafana/
-          sudo mv ./monitoring/grafana/* /etc/grafana/
           sudo chown -R mmn:mmn /etc/grafana/provisioning
           sudo chown -R mmn:mmn /etc/grafana/dashboards
           sudo sed -i 's#url: http://loki:3100#url: http://localhost:3100#g' /etc/grafana/provisioning/datasources/loki.yml
