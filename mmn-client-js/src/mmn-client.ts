@@ -193,7 +193,6 @@ export class MmnClient {
       };
 
       const response = await fetch(this.config.baseUrl, requestOptions);
-      console.log('🚀 ~ MmnClient ~ makeRequest ~ response:', response);
       clearTimeout(timeoutId);
 
       if (!response.ok) {
