@@ -72,6 +72,16 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		logx.Info("NETWORK:LATEST SLOT", "Connected peer:", peerID.String())
 	}
 
+	// Inspect pubsub mesh peers for LatestSlotTopic
+	meshPeers := ln.pubsub.ListPeers(LatestSlotTopic)
+	if len(meshPeers) == 0 {
+		logx.Warn("NETWORK:LATEST SLOT:PUBSUB", "No peers in pubsub mesh for LatestSlotTopic; publish may not reach anyone")
+	} else {
+		for _, pid := range meshPeers {
+			logx.Info("NETWORK:LATEST SLOT:PUBSUB", "Mesh peer for latest-slot topic:", pid.String())
+		}
+	}
+
 	req := LatestSlotRequest{
 		RequesterID: ln.host.ID().String(),
 		Addrs:       ln.host.Addrs(),
@@ -83,6 +93,8 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		return 0, err
 	}
 
+	logx.Info("NETWORK:LATEST SLOT:PUBLISH", "About to publish latest-slot request: requester=", req.RequesterID, ", addrs_count=", len(req.Addrs), ", bytes=", len(data))
+
 	if ln.topicLatestSlot == nil {
 		logx.Error("NETWORK:LATEST SLOT", "topicLatestSlot is nil, cannot publish request")
 		return 0, fmt.Errorf("topicLatestSlot is nil")
@@ -93,8 +105,7 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		logx.Error("NETWORK:LATEST SLOT", "Failed to publish request:", err)
 		return 0, err
 	}
-
-	logx.Info("NETWORK:LATEST SLOT", "Latest slot request published successfully")
+	logx.Info("NETWORK:LATEST SLOT:PUBLISH", "Latest slot request published successfully to topic:", LatestSlotTopic, ", mesh_peers=", len(meshPeers))
 	return 0, nil
 }
 
