@@ -79,10 +79,6 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 
 	if len(processedBlocks) > 0 {
 		logx.Info("BLOCK:ORDERING", "Processed", len(processedBlocks), "consecutive blocks, next expected slot:", ln.nextExpectedSlot)
-
-		// Trigger cleanup after processing blocks - use the latest processed slot
-		latestProcessedSlot := processedBlocks[len(processedBlocks)-1].Slot
-		ln.cleanupBlockOrderingQueue(latestProcessedSlot)
 	}
 
 	// Broadcast empty blocks if any were created
