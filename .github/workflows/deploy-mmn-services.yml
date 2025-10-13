@@ -21,9 +21,6 @@ jobs:
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
       git_sha: ${{ steps.get_sha.outputs.sha }}
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,28 +77,17 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
           GIT_SHA=$(git rev-parse --short=12 HEAD)
 
-      - name: Upload to GitHub Packages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
-          SHA: ${{ steps.get_sha.outputs.sha }}
-        run: |
-          echo "Uploading package version $SHA to github.com/$OWNER/$REPO"
-          curl --fail-with-body -X PUT \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -T "build/mmn" \
-            "https://uploads.pkg.github.com/v2/repos/$OWNER/$REPO/packages/generic/mmn-binary/$SHA/mmn"
+      - name: Cache MMN binary
+        uses: actions/cache@v4
+        with:
+          path: build/mmn
+          key: mmn-binary-${{ steps.get_sha.outputs.sha }}
 
   deploy:
     needs: build
     if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     environment: ${{ inputs.env }}
-    permissions:
-      contents: read
-      packages: read
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
@@ -119,29 +105,23 @@ jobs:
             echo "Error: Build failed or was skipped without providing an artifact_sha. Cannot proceed."
             exit 1
           fi
-          
-          # Luôn cắt chuỗi SHA về 12 ký tự để đảm bảo nhất quán
           SHORT_SHA=$(echo $FULL_SHA | cut -c1-12)
           echo "Using consistent short SHA for artifact lookup: $SHORT_SHA"
           echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-      - name: Download from GitHub Packages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          REPO: ${{ github.event.repository.name }}
-          SHA: ${{ steps.get_sha.outputs.sha }}
+      - name: Restore MMN binary from cache
+        uses: actions/cache/restore@v4
+        id: cache-restore
+        with:
+          path: build/mmn
+          key: mmn-binary-${{ steps.get_sha.outputs.sha }}
+
+      - name: Check if binary exists
         run: |
-          mkdir -p build
-          echo "Downloading package version $SHA from github.com/$OWNER/$REPO"
-          curl --fail-with-body -L \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            -o "build/mmn" \
-            "https://pkg.github.com/v2/repos/$OWNER/$REPO/packages/generic/mmn-binary/$SHA/mmn"
-      
-      - name: Make binary executable
-        run: chmod +x build/mmn
+          if [ ! -f "build/mmn" ]; then
+            echo "Error: Build artifact 'build/mmn' not found."
+            echo "This could be because the build failed, or the cached artifact for SHA ${{ steps.get_sha.outputs.sha }} does not exist or has expired."
+            exit 1
 
       - name: Deploy Monitoring Configurations
         env:
