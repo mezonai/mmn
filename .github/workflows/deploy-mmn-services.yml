@@ -21,6 +21,9 @@ jobs:
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
       git_sha: ${{ steps.get_sha.outputs.sha }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -77,18 +80,28 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
           GIT_SHA=$(git rev-parse --short=12 HEAD)
 
-      - name: Upload MMN binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mmn-binary-${{ steps.get_sha.outputs.sha }}
-          path: build/mmn
-          retention-days: 90
+      - name: Upload to GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          SHA: ${{ steps.get_sha.outputs.sha }}
+        run: |
+          echo "Uploading package version $SHA to github.com/$OWNER/$REPO"
+          curl --fail-with-body -X PUT \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -T "build/mmn" \
+            "https://uploads.pkg.github.com/v2/repos/$OWNER/$REPO/packages/generic/mmn-binary/$SHA/mmn?name=mmn"
 
   deploy:
     needs: build
     if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     environment: ${{ inputs.env }}
+    permissions:
+      contents: read
+      packages: read
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
@@ -112,22 +125,20 @@ jobs:
           echo "Using consistent short SHA for artifact lookup: $SHORT_SHA"
           echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-      - name: Download artifact from a PREVIOUS workflow run (re-deploy)
-        if: github.event.inputs.artifact_sha != ''
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: ${{ github.workflow }}
-          commit: ${{ steps.get_sha.outputs.sha }}
-          name: mmn-binary-${{ steps.get_sha.outputs.sha }}
-          path: build/
-
-      - name: Download artifact from the CURRENT workflow run (new build)
-        if: github.event.inputs.artifact_sha == ''
-        uses: actions/download-artifact@v4
-        with:
-          name: mmn-binary-${{ steps.get_sha.outputs.sha }}
-          path: build/
+      - name: Download from GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          SHA: ${{ steps.get_sha.outputs.sha }}
+        run: |
+          mkdir -p build
+          echo "Downloading package version $SHA from github.com/$OWNER/$REPO"
+          curl --fail-with-body -L \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -o "build/mmn" \
+            "https://pkg.github.com/v2/repos/$OWNER/$REPO/packages/generic/mmn-binary/$SHA/mmn"
       
       - name: Make binary executable
         run: chmod +x build/mmn
