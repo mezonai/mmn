@@ -28,9 +28,10 @@ const (
 var (
 	ConnCount                       int32         = 0
 	MaxPeers                        int32         = 50
-	SyncBlocksBatchSize             uint64        = 10 // ~ 1 leader window
+	SyncBlocksBatchSize             uint64        = 100
 	MaxcheckpointScanBlocksRange    uint64        = 100
 	ReadyGapThreshold               uint64        = 0
 	LatestSlotSyncGapThreshold      uint64        = 1
 	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
+	InitRequestLatestSlotMaxRetries int           = 3
 )

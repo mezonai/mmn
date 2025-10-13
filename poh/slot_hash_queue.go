@@ -32,7 +32,7 @@ func NewSlotHashQueue() *SlotHashQueue {
 
 // Put adds or updates a slot hash entry
 func (q *SlotHashQueue) Put(slot uint64, hash [32]byte) {
-	logx.Info("SlotHashQueue", fmt.Sprintf("Put %d %x", slot, hash))
+	logx.Debug("SlotHashQueue", fmt.Sprintf("Put %d %x", slot, hash))
 	// Check if slot already exists
 	if _, exists := q.slotMap[slot]; exists {
 		// Update existing entry
@@ -51,7 +51,7 @@ func (q *SlotHashQueue) Put(slot uint64, hash [32]byte) {
 		logx.Debug("SlotHashQueue", fmt.Sprintf("Remove oldest entry %d", slot-uint64(q.maxSize)))
 		delete(q.slotMap, slot-uint64(q.maxSize))
 	}
-	logx.Info("SlotHashQueue", fmt.Sprintf("Put done %d %x", slot, hash))
+	logx.Debug("SlotHashQueue", fmt.Sprintf("Put done %d %x", slot, hash))
 }
 
 // Get retrieves the hash for a given slot
