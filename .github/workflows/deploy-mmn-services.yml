@@ -64,7 +64,7 @@ jobs:
       )
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
-      tag_name: ${{ steps.create_release.outputs.tag_name }}
+      tag_name: ${{ steps.determine_release_tag.outputs.tag }}
     steps:
       - name: Decide whether to build
         id: decide
@@ -220,7 +220,6 @@ jobs:
             gh release download "${{ steps.determine_binary.outputs.tag_name }}" --pattern "${{ steps.determine_binary.outputs.binary_name }}" --output "${{ steps.determine_binary.outputs.binary_path }}"
           else
             echo "==> Getting binary from the build job's artifact."
-            # Bước download artifact sẽ xử lý việc này
           fi
 
       - name: Get binary from build job (if new build)
@@ -232,7 +231,6 @@ jobs:
 
       - name: Check if binary exists
         run: |
-          # Dùng tên file động
           if [ ! -f "${{ steps.determine_binary.outputs.binary_path }}" ]; then
             echo "Error: Binary '${{ steps.determine_binary.outputs.binary_path }}' not found."
             exit 1
