@@ -9,14 +9,14 @@ import (
 
 func DefaultAbuseConfig() *AbuseConfig {
 	return &AbuseConfig{
-		MaxTxPerMinute: 600,    // 10 tx per second
+		MaxTxPerMinute: 1,      // 10 tx per second
 		MaxTxPerHour:   36000,  // 10 tx per second for 1 hour
 		MaxTxPerDay:    864000, // 10 tx per second for 1 day
 
 		MaxFaucetPerHour: 10, // 10 faucet requests per hour per IP
 		MaxFaucetPerDay:  12, // 12 faucet requests per day per wallet
 
-		AutoBlacklistTxPerMinute:   1200, // 20 tx per second
+		AutoBlacklistTxPerMinute:   2, // 20 tx per second
 		AutoBlacklistFaucetPerHour: 50,
 	}
 }
