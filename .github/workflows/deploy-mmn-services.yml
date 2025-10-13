@@ -26,13 +26,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version: "1.24.5"
           cache: true
-
-      - name: Verify Go version
-        run: |
-          which go
-          go version
 
       - name: Install build dependencies
         run: |
