@@ -180,6 +180,9 @@ func (psm *PeerScoringManager) UpdatePeerScore(peerID peer.ID, eventType string,
 	case "invalid_tx":
 		score.Score += psm.config.InvalidTxPenalty
 		score.InvalidTxs++
+	case "invalid_message":
+		score.Score += psm.config.InvalidTxPenalty
+		score.InvalidTxs++
 	case "connection":
 		score.ConnectionCount++
 		score.Score += 1.0

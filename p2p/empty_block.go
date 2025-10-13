@@ -30,6 +30,7 @@ func (ln *Libp2pNetwork) HandleEmptyBlockTopic(ctx context.Context, sub *pubsub.
 			var blocks []*block.BroadcastedBlock
 			if err := json.Unmarshal(msg.Data, &blocks); err != nil {
 				logx.Warn("NETWORK:EMPTY_BLOCK", "Unmarshal error:", err)
+				ln.UpdatePeerScore(msg.ReceivedFrom, "invalid_message", nil)
 				continue
 			}
 

@@ -357,9 +357,12 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 		return
 	}
 
+	remotePeer := s.Conn().RemotePeer()
+
 	var msg map[string]interface{}
 	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
+		ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 		return
 	}
 
@@ -367,6 +370,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	newPeerID, err := peer.Decode(newPeerIDStr)
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Invalid peer ID: ", newPeerIDStr)
+		ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 		return
 	}
 
@@ -412,6 +416,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	err = ln.host.Connect(context.Background(), peerInfo)
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", peerInfo.Addrs, "Failed to connect to new peer:", err)
+		ln.UpdatePeerScore(newPeerID, "connection", nil)
 		return
 	}
 }
