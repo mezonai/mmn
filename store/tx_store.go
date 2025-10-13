@@ -16,6 +16,7 @@ type TxStore interface {
 	StoreBatch(txs []*transaction.Transaction) error
 	GetByHash(txHash string) (*transaction.Transaction, error)
 	GetBatch(txHashes []string) ([]*transaction.Transaction, error)
+	DeleteBatch(txHashes []string) error
 	MustClose()
 }
 
@@ -142,4 +143,27 @@ func (ts *GenericTxStore) MustClose() {
 
 func (ts *GenericTxStore) getDbKey(txHash string) []byte {
 	return []byte(PrefixTx + txHash)
+}
+
+// DeleteBatch deletes a batch of transactions from the database
+func (ts *GenericTxStore) DeleteBatch(txHashes []string) error {
+	if len(txHashes) == 0 {
+		logx.Info("TX_STORE", "DeleteBatch: no transactions to delete")
+		return nil
+	}
+	logx.Info("TX_STORE", fmt.Sprintf("DeleteBatch: deleting %d transactions", len(txHashes)))
+
+	batch := ts.dbProvider.Batch()
+	defer batch.Close()
+
+	for _, h := range txHashes {
+		batch.Delete(ts.getDbKey(h))
+	}
+
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to batch delete transactions: %w", err)
+	}
+
+	logx.Info("TX_STORE", fmt.Sprintf("DeleteBatch: deleted %d transactions", len(txHashes)))
+	return nil
 }
