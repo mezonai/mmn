@@ -95,16 +95,19 @@ jobs:
       - name: Determine Artifact SHA
         id: get_sha
         run: |
+          FULL_SHA=""
           if [ -n "${{ inputs.artifact_sha }}" ]; then
-            echo "Using provided SHA for re-deployment: ${{ inputs.artifact_sha }}"
-            echo "sha=${{ inputs.artifact_sha }}" >> $GITHUB_OUTPUT
+            echo "Input SHA received: ${{ inputs.artifact_sha }}"
+            FULL_SHA="${{ inputs.artifact_sha }}"
           elif [ "${{ needs.build.result }}" == "success" ]; then
-            echo "Using current build: ${{ needs.build.outputs.git_sha }}"
-            echo "sha=${{ needs.build.outputs.git_sha }}" >> $GITHUB_OUTPUT
+            echo "Using SHA from current build: ${{ needs.build.outputs.git_sha }}"
+            FULL_SHA="${{ needs.build.outputs.git_sha }}"
           else
             echo "Error: Build failed or was skipped without providing an artifact_sha. Cannot proceed."
             exit 1
           fi
+          
+          # Luôn cắt chuỗi SHA về 12 ký tự để đảm bảo nhất quán
           SHORT_SHA=$(echo $FULL_SHA | cut -c1-12)
           echo "Using consistent short SHA for artifact lookup: $SHORT_SHA"
           echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT
