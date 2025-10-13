@@ -30,6 +30,11 @@ jobs:
           cache: true
           check-latest: false
 
+      - name: Verify Go version
+        run: |
+          which go
+          go version
+
       - name: Install build dependencies
         run: |
           PACKAGES="
@@ -160,6 +165,7 @@ jobs:
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
             set -e
             sudo mkdir -p /tmp/monitoring_deploy
+            sudo chown mmn:mmn /tmp/monitoring_deploy
           "
           scp -i /home/nccsoft/.ssh/mmn_deploy -r ./monitoring_deploy_temp/* ${{ secrets.HOST_ALIAS }}:/tmp/monitoring_deploy
 
