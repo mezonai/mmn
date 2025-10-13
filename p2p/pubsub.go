@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -107,6 +108,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					continue
 				}
 			}
+
+			// Decrement active sync count when sync response is processed
+			ln.DecrementActiveSyncCount()
 
 			return nil
 		},
@@ -244,6 +248,24 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 	if ln.leaderSchedule.Len() == 1 && !ln.isListener {
 		ln.startImmediatelyFromLocalLatestSlot()
 		return
+	}
+
+	if t, err := ln.pubsub.Join(AccessControlTopic); err == nil {
+		ln.topicAccessControl = t
+		if sub, subErr := ln.topicAccessControl.Subscribe(); subErr == nil {
+			exception.SafeGoWithPanic("HandleAccessControlTopic", func() {
+				ln.HandleAccessControlTopic(ctx, sub)
+			})
+		}
+	}
+
+	if t, err := ln.pubsub.Join(AccessControlSyncTopic); err == nil {
+		ln.topicAccessControlSync = t
+		if sub, subErr := ln.topicAccessControlSync.Subscribe(); subErr == nil {
+			exception.SafeGoWithPanic("HandleAccessControlSyncTopic", func() {
+				ln.HandleAccessControlSyncTopic(ctx, sub)
+			})
+		}
 	}
 
 	exception.SafeGo("WaitPeersAndStart", func() {
@@ -388,6 +410,9 @@ func (ln *Libp2pNetwork) handlePohResetIfNeeded(localLatestSlot uint64) bool {
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
+	// register validators before subscribing
+	_ = ln.registerTopicValidators()
+
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
 			exception.SafeGoWithPanic("HandleBlockTopic", func() {
@@ -423,7 +448,6 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	ln.startRealtimeTopicMonitoring(ctx)
 }
 
 // HandleCheckpointRequestTopic listens for checkpoint hash requests and responds with local hash
@@ -466,7 +490,6 @@ func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *
 		}
 	}
 }
-
 func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte, bool) {
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false
@@ -564,95 +587,56 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	}
 }
 
-func (ln *Libp2pNetwork) logTopicStatus() {
-	logx.Info("NETWORK:PUBSUB:STATUS", "=== TOPIC STATUS REPORT ===")
-	logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Node ID: %s", ln.host.ID().String()))
-	logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Total connected peers: %d", ln.GetPeersConnected()))
+func (ln *Libp2pNetwork) HandleAccessControlTopic(ctx context.Context, sub *pubsub.Subscription) {
+	defer sub.Cancel()
 
-	if ln.topicBlocks != nil {
-		meshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Block Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-		for i, peer := range meshPeers {
-			logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Block Topic: NOT INITIALIZED")
-	}
-
-	if ln.topicVotes != nil {
-		meshPeers := ln.topicVotes.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Vote Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-		for i, peer := range meshPeers {
-			logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Vote mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Vote Topic: NOT INITIALIZED")
-	}
-
-	if ln.topicTxs != nil {
-		meshPeers := ln.topicTxs.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Transaction Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Transaction Topic: NOT INITIALIZED")
-	}
-
-	if ln.topicCheckpointRequest != nil {
-		meshPeers := ln.topicCheckpointRequest.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Checkpoint Request Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Checkpoint Request Topic: NOT INITIALIZED")
-	}
-
-	logx.Info("NETWORK:PUBSUB:STATUS", "=== END TOPIC STATUS REPORT ===")
-}
-
-func (ln *Libp2pNetwork) startRealtimeTopicMonitoring(ctx context.Context) {
-	logx.Info("NETWORK:PUBSUB:MONITOR", "Starting realtime topic monitoring...")
-
-	exception.SafeGoWithPanic("RealtimeTopicMonitoring", func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				ln.logTopicStatus()
-
-				ln.logMeshChanges()
-
-			case <-ctx.Done():
-				logx.Info("NETWORK:PUBSUB:MONITOR", "Stopping realtime topic monitoring")
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			if err == context.Canceled {
 				return
 			}
+			logx.Error("ACCESS CONTROL", "Error reading from access control topic:", err)
+			continue
 		}
-	})
+
+		if msg.ReceivedFrom == ln.host.ID() {
+			continue
+		}
+
+		var update AccessControlUpdate
+		if err := json.Unmarshal(msg.Data, &update); err != nil {
+			logx.Error("ACCESS CONTROL", "Failed to unmarshal access control update:", err)
+			continue
+		}
+
+		ln.HandleAccessControlUpdate(update)
+	}
 }
 
-func (ln *Libp2pNetwork) logMeshChanges() {
-	if ln.topicBlocks != nil {
-		currentMeshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Block topic mesh peers: %d", len(currentMeshPeers)))
+func (ln *Libp2pNetwork) HandleAccessControlSyncTopic(ctx context.Context, sub *pubsub.Subscription) {
+	defer sub.Cancel()
 
-		if len(currentMeshPeers) == 0 {
-			logx.Warn("NETWORK:PUBSUB:MESH", "Block topic mesh is EMPTY - this may cause block propagation issues!")
+	for {
+		msg, err := sub.Next(ctx)
+		if err != nil {
+			if err == context.Canceled {
+				return
+			}
+			logx.Error("ACCESS CONTROL", "Error reading from access control sync topic:", err)
+			continue
 		}
-	}
 
-	if ln.topicVotes != nil {
-		currentMeshPeers := ln.topicVotes.ListPeers()
-		logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Vote topic mesh peers: %d", len(currentMeshPeers)))
-
-		if len(currentMeshPeers) == 0 {
-			logx.Warn("NETWORK:PUBSUB:MESH", "Vote topic mesh is EMPTY - this may cause vote propagation issues!")
+		if msg.ReceivedFrom == ln.host.ID() {
+			continue
 		}
-	}
 
-	if ln.topicBlocks != nil && ln.topicVotes != nil {
-		blockMeshSize := len(ln.topicBlocks.ListPeers())
-		voteMeshSize := len(ln.topicVotes.ListPeers())
-
-		if blockMeshSize != voteMeshSize {
-			logx.Warn("NETWORK:PUBSUB:MESH", fmt.Sprintf("Mesh size mismatch: Block=%d, Vote=%d", blockMeshSize, voteMeshSize))
+		var sync AccessControlSync
+		if err := json.Unmarshal(msg.Data, &sync); err != nil {
+			logx.Error("ACCESS CONTROL", "Failed to unmarshal access control sync:", err)
+			continue
 		}
+
+		ln.HandleAccessControlSync(sync)
 	}
 }

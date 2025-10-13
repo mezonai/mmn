@@ -40,6 +40,8 @@ type Libp2pNetwork struct {
 	topicTxs               *pubsub.Topic
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
+	topicAccessControl     *pubsub.Topic
+	topicAccessControlSync *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
@@ -60,6 +62,27 @@ type Libp2pNetwork struct {
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
 
+	// Authentication tracking
+	authenticatedPeers map[peer.ID]*AuthenticatedPeer
+	authMu             sync.RWMutex
+	pendingChallenges  map[peer.ID][]byte // peer.ID -> challenge bytes
+	challengeMu        sync.RWMutex
+
+	// Access control - allowlist and blacklist
+	allowlist        map[peer.ID]bool
+	blacklist        map[peer.ID]bool
+	allowlistEnabled bool
+	blacklistEnabled bool
+	listMu           sync.RWMutex
+
+	// Peer scoring system
+	peerScoringManager *PeerScoringManager
+
+	// Sync completion tracking
+	syncCompleted        bool
+	syncCompletedMu      sync.RWMutex
+	activeSyncCount      int
+	activeSyncCountMu    sync.RWMutex
 	missingBlocksTracker map[uint64]*MissingBlockInfo
 	missingBlocksMu      sync.RWMutex
 
@@ -99,11 +122,13 @@ type Libp2pNetwork struct {
 }
 
 type PeerInfo struct {
-	ID        peer.ID   `json:"id"`
-	PublicKey string    ` json:"public_key"`
-	Version   string    `json:"version"`
-	LastSeen  time.Time `json:"last_seen"`
-	IsActive  bool      `json:"is_active"`
+	ID              peer.ID   `json:"id"`
+	PublicKey       string    `json:"public_key"`
+	Version         string    `json:"version"`
+	LastSeen        time.Time `json:"last_seen"`
+	IsActive        bool      `json:"is_active"`
+	IsAuthenticated bool      `json:"is_authenticated"`
+	AuthTimestamp   time.Time `json:"auth_timestamp"`
 }
 
 type TxMessage struct {
@@ -203,4 +228,60 @@ type SnapshotAnnounce struct {
 }
 
 type SnapshotRequest struct {
+}
+
+type AuthChallenge struct {
+	Version   string `json:"version"`
+	Challenge []byte `json:"challenge"`
+	PeerID    string `json:"peer_id"`
+	PublicKey string `json:"public_key"`
+	Timestamp int64  `json:"timestamp"`
+	Nonce     uint64 `json:"nonce,string"`
+	ChainID   string `json:"chain_id"`
+}
+
+type AuthResponse struct {
+	Version   string `json:"version"`
+	Challenge []byte `json:"challenge"`
+	Signature []byte `json:"signature"`
+	PeerID    string `json:"peer_id"`
+	PublicKey string `json:"public_key"`
+	Timestamp int64  `json:"timestamp"`
+	Nonce     uint64 `json:"nonce,string"`
+	ChainID   string `json:"chain_id"`
+}
+
+type AuthResult struct {
+	Success   bool   `json:"success"`
+	Message   string `json:"message,omitempty"`
+	Timestamp int64  `json:"timestamp"`
+	PeerID    string `json:"peer_id,omitempty"`
+}
+
+const (
+	AuthVersion    = "1.0.0"
+	DefaultChainID = "mmn"
+)
+
+type AuthenticatedPeer struct {
+	PeerID        peer.ID
+	PublicKey     ed25519.PublicKey
+	AuthTimestamp time.Time
+	IsValid       bool
+}
+
+type AccessControlUpdate struct {
+	Type      string `json:"type"`
+	Action    string `json:"action"`
+	PeerID    string `json:"peer_id"`
+	Timestamp int64  `json:"timestamp"`
+	NodeID    string `json:"node_id"`
+}
+
+type AccessControlSync struct {
+	Type       string   `json:"type"`
+	PeerIDs    []string `json:"peer_ids"`
+	Timestamp  int64    `json:"timestamp"`
+	NodeID     string   `json:"node_id"`
+	IsFullSync bool     `json:"is_full_sync"`
 }

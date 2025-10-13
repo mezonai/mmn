@@ -132,7 +132,19 @@ func NewNetWork(
 		nextExpectedSlot:       0,
 		pohCfg:                 pohCfg,
 		isListener:             isListener,
+		authenticatedPeers:     make(map[peer.ID]*AuthenticatedPeer),
+		pendingChallenges:      make(map[peer.ID][]byte),
+		allowlist:              make(map[peer.ID]bool),
+		blacklist:              make(map[peer.ID]bool),
+		allowlistEnabled:       false,
+		blacklistEnabled:       true,
+		syncCompleted:          false,
+		activeSyncCount:        0,
 	}
+
+	ln.peerScoringManager = NewPeerScoringManager(ln, DefaultPeerScoringConfig())
+
+	ln.InitializeAccessControl()
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
 		cancel()
@@ -153,11 +165,16 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
+	ln.host.SetStreamHandler(AuthProtocol, ln.handleAuthStream)
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
 	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
+	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.AuthMiddleware(ln.handleBlockSyncRequestStream))
+	ln.host.SetStreamHandler(LatestSlotProtocol, ln.AuthMiddleware(ln.handleLatestSlotStream))
 
+	ln.SetupPubSubTopics(ctx)
+	ln.setupConnectionAuthentication(ctx)
 	// Start latest slot request mechanism
 	ln.startLatestSlotRequestMechanism()
 
@@ -215,13 +232,114 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Libp2p network started with ID: %s", ln.host.ID().String()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
+
 	return nil
 }
 
-// this func will call if node shutdown for now just cancle when error
+func isProtocolNotSupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errorStr := err.Error()
+	return strings.Contains(errorStr, "protocols not supported") ||
+		strings.Contains(errorStr, "protocol not supported") ||
+		strings.Contains(errorStr, "negotiate protocol")
+}
+
+func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
+	ln.host.Network().Notify(&network.NotifyBundle{
+		ConnectedF: func(n network.Network, conn network.Conn) {
+			peerID := conn.RemotePeer()
+			logx.Info("AUTH:CONNECTION", "New connection from peer: ", peerID.String())
+
+			ln.listMu.RLock()
+			allowlistEmpty := ln.allowlistEnabled && len(ln.allowlist) == 0
+			ln.listMu.RUnlock()
+
+			if allowlistEmpty {
+				logx.Info("AUTH:CONNECTION", "Allowing bootnode connection when allowlist is empty:", peerID.String())
+			} else if !ln.IsAllowed(peerID) {
+				logx.Info("AUTH:CONNECTION", "Rejecting connection from peer not allowed by access control:", peerID.String())
+				conn.Close()
+				return
+			}
+
+			ln.UpdatePeerScore(peerID, "connection", nil)
+
+			exception.SafeGoWithPanic("Discovery", func() {
+				authCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+
+				if err := ln.InitiateAuthentication(authCtx, peerID); err != nil {
+					if isProtocolNotSupportedError(err) {
+						logx.Warn("AUTH:CONNECTION", "Peer doesn't support authentication protocol - this is normal for older peers")
+					} else {
+						ln.UpdatePeerScore(peerID, "auth_failure", nil)
+					}
+				} else {
+					ln.UpdatePeerScore(peerID, "auth_success", nil)
+					ln.AutoAddToAllowlistIfBootstrap(peerID)
+				}
+			})
+
+		},
+		DisconnectedF: func(n network.Network, conn network.Conn) {
+			peerID := conn.RemotePeer()
+			// Avoid penalizing disconnections for peers currently not allowed (e.g., blacklisted)
+			if ln.IsAllowed(peerID) {
+				ln.UpdatePeerScore(peerID, "disconnection", nil)
+			}
+
+			ln.authMu.Lock()
+			delete(ln.authenticatedPeers, peerID)
+			ln.authMu.Unlock()
+
+			ln.challengeMu.Lock()
+			delete(ln.pendingChallenges, peerID)
+			ln.challengeMu.Unlock()
+		},
+	})
+}
+
 func (ln *Libp2pNetwork) Close() {
+	if ln.peerScoringManager != nil {
+		ln.peerScoringManager.Stop()
+	}
+
 	ln.cancel()
 	ln.host.Close()
+}
+
+// IncrementActiveSyncCount increments the active sync count
+func (ln *Libp2pNetwork) IncrementActiveSyncCount() {
+	ln.activeSyncCountMu.Lock()
+	defer ln.activeSyncCountMu.Unlock()
+	ln.activeSyncCount++
+	logx.Info("NETWORK:SYNC", "Active sync count incremented to:", ln.activeSyncCount)
+}
+
+// DecrementActiveSyncCount decrements the active sync count and enables allowlist if all syncs are done
+func (ln *Libp2pNetwork) DecrementActiveSyncCount() {
+	ln.activeSyncCountMu.Lock()
+	defer ln.activeSyncCountMu.Unlock()
+
+	if ln.activeSyncCount > 0 {
+		ln.activeSyncCount--
+		logx.Info("NETWORK:SYNC", "Active sync count decremented to:", ln.activeSyncCount)
+
+		// If no more active syncs, enable allowlist
+		if ln.activeSyncCount == 0 && !ln.IsAllowlistEnabled() {
+			ln.EnableAllowlist(true)
+			logx.Info("NETWORK:SYNC", "All syncs completed - Allowlist enabled for enhanced security")
+		}
+	}
+}
+
+// GetActiveSyncCount returns the current active sync count
+func (ln *Libp2pNetwork) GetActiveSyncCount() int {
+	ln.activeSyncCountMu.RLock()
+	defer ln.activeSyncCountMu.RUnlock()
+	return ln.activeSyncCount
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {

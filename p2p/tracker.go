@@ -86,11 +86,11 @@ func (t *SyncRequestTracker) CloseAllPeers() {
 	t.AllPeers = make(map[peer.ID]network.Stream)
 }
 
-// when no peers connected the blocks will not sync must run after 30s if synced stop sync
+// when no peers connected the blocks will not sync must run after 8s if synced stop sync
 func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 	// wait network setup
-	time.Sleep(10 * time.Second)
-	ticker := time.NewTicker(30 * time.Second)
+	time.Sleep(3 * time.Second)
+	ticker := time.NewTicker(8 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -111,13 +111,15 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 }
 
 func (ln *Libp2pNetwork) startCleanupRoutine() {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(2 * time.Minute) // Reduced from 5 minutes for faster cleanup
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
+			ln.RefreshAuthenticationForConnectedPeers()
 			ln.CleanupExpiredRequests()
+			ln.CleanupExpiredAuthentications()
 			ln.cleanupOldMissingBlocksTracker()
 			ln.cleanupOldRecentlyRequestedSlots()
 		case <-ln.ctx.Done():
