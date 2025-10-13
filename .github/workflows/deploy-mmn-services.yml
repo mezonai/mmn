@@ -17,6 +17,7 @@ on:
 
 jobs:
   build:
+    if: github.event.inputs.artifact_sha == ''
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
       git_sha: ${{ steps.get_sha.outputs.sha }}
