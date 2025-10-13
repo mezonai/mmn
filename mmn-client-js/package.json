@@ -1,0 +1,75 @@
+{
+  "name": "mmn-client-js",
+  "version": "1.0.8",
+  "description": "A comprehensive TypeScript client for interacting with MMN blockchain via JSON-RPC",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rollup -c rollup.config.cjs",
+    "build:watch": "rollup -c -w",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "mmn",
+    "blockchain",
+    "json-rpc",
+    "typescript",
+    "cryptocurrency",
+    "ed25519",
+    "nacl",
+    "mezonai"
+  ],
+  "author": "MezonAI Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mezonai/mmn.git",
+    "directory": "mmn-client-js"
+  },
+  "bugs": {
+    "url": "https://github.com/mezonai/mmn/issues"
+  },
+  "homepage": "https://github.com/mezonai/mmn/tree/main/mmn-client-js#readme",
+  "dependencies": {
+    "bip39": "^3.1.0",
+    "bs58": "^5.0.0",
+    "crypto-js": "^4.2.0",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.0.1",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-typescript": "^11.1.5",
+    "@types/crypto-js": "^4.2.2",
+    "@types/node": "^20.9.0",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
+    "eslint": "^8.54.0",
+    "rollup": "^4.6.1",
+    "rollup-plugin-dts": "^6.1.0",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "sideEffects": false
+}

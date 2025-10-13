@@ -4,8 +4,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -25,27 +28,33 @@ type Libp2pNetwork struct {
 	selfPubKey  string
 	selfPrivKey ed25519.PrivateKey
 	peers       map[peer.ID]*PeerInfo
-	mu          sync.RWMutex
+	// Track bootstrap peers so we can exclude them from certain requests
+	bootstrapPeerIDs map[peer.ID]struct{}
 
 	blockStore store.BlockStore
+	txStore    store.TxStore
 
 	topicBlocks            *pubsub.Topic
+	topicEmptyBlocks       *pubsub.Topic
 	topicVotes             *pubsub.Topic
 	topicTxs               *pubsub.Topic
 	topicBlockSyncReq      *pubsub.Topic
 	topicLatestSlot        *pubsub.Topic
 	topicAccessControl     *pubsub.Topic
 	topicAccessControlSync *pubsub.Topic
+	topicCheckpointRequest *pubsub.Topic
 
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
+	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
 	onTransactionReceived  func(*transaction.Transaction) error
-	onSyncResponseReceived func([]*block.BroadcastedBlock) error
-	onLatestSlotReceived   func(uint64, string) error
+	onSyncResponseReceived func(*block.BroadcastedBlock) error
+	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
+	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
+	OnGetLatestPohSlot     func() uint64
 
-	syncStreams map[peer.ID]network.Stream
-	maxPeers    int
+	maxPeers int
 
 	activeSyncRequests map[string]*SyncRequestInfo
 	syncMu             sync.RWMutex
@@ -70,16 +79,46 @@ type Libp2pNetwork struct {
 	peerScoringManager *PeerScoringManager
 
 	// Sync completion tracking
-	syncCompleted     bool
-	syncCompletedMu   sync.RWMutex
-	activeSyncCount   int
-	activeSyncCountMu sync.RWMutex
+	syncCompleted        bool
+	syncCompletedMu      sync.RWMutex
+	activeSyncCount      int
+	activeSyncCountMu    sync.RWMutex
+	missingBlocksTracker map[uint64]*MissingBlockInfo
+	missingBlocksMu      sync.RWMutex
+
+	lastScannedSlot uint64
+	scanMu          sync.RWMutex
+
+	recentlyRequestedSlots map[uint64]time.Time
+	recentlyRequestedMu    sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	// Add mutex for applyDataToBlock thread safety
 	applyBlockMu sync.Mutex
+
+	// cached leader schedule for local leader checks
+	leaderSchedule *poh.LeaderSchedule
+
+	// readiness control
+	enableFullModeOnce sync.Once
+	ready              atomic.Bool
+
+	// New field for join behavior control
+	worldLatestSlot    uint64
+	worldLatestPohSlot uint64
+	// Global block ordering queue
+	blockOrderingQueue map[uint64]*block.BroadcastedBlock
+	nextExpectedSlot   uint64
+	blockOrderingMu    sync.RWMutex
+
+	OnStartPoh       func()
+	OnStartValidator func()
+
+	// PoH config
+	pohCfg     *config.PohConfig
+	isListener bool
 }
 
 type PeerInfo struct {
@@ -90,23 +129,6 @@ type PeerInfo struct {
 	IsActive        bool      `json:"is_active"`
 	IsAuthenticated bool      `json:"is_authenticated"`
 	AuthTimestamp   time.Time `json:"auth_timestamp"`
-}
-
-type BlockMessage struct {
-	Slot      uint64    `json:"slot"`
-	PrevHash  string    `json:"prev_hash"`
-	Entries   []string  `json:"entries"`
-	LeaderID  string    `json:"leader_id"`
-	Timestamp time.Time `json:"timestamp"`
-	Hash      string    `json:"hash"`
-	Signature []byte    ` json:"signature"`
-}
-
-type VoteMessage struct {
-	Slot      uint64 `json:"slot"`
-	BlockHash string `json:"block_hash"`
-	VoterID   string `json:"voter_id"`
-	Signature []byte `json:"signature"`
 }
 
 type TxMessage struct {
@@ -130,8 +152,15 @@ type LatestSlotRequest struct {
 }
 
 type LatestSlotResponse struct {
-	LatestSlot uint64 `json:"latest_slot"`
-	PeerID     string `json:"peer_id"`
+	LatestSlot    uint64 `json:"latest_slot"`
+	PeerID        string `json:"peer_id"`
+	LatestPohSlot uint64 `json:"latest_poh_slot"`
+}
+
+type SnapshotSyncRequest struct {
+	RequesterID string `json:"requester_id"`
+	RequestTime int64  `json:"request_time"`
+	Slot        uint64 `json:"slot"`
 }
 
 type SyncRequestInfo struct {
@@ -154,15 +183,51 @@ type SyncRequestTracker struct {
 	IsActive     bool
 	StartTime    time.Time
 	AllPeers     map[peer.ID]network.Stream
-	mu           sync.RWMutex
+	mutex        sync.RWMutex
 }
 
 type Callbacks struct {
 	OnBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
+	OnEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	OnVoteReceived         func(*consensus.Vote) error
 	OnTransactionReceived  func(*transaction.Transaction) error
-	OnLatestSlotReceived   func(uint64, string) error
-	OnSyncResponseReceived func([]*block.BroadcastedBlock) error
+	OnLatestSlotReceived   func(uint64, uint64, string) error
+	OnSyncResponseReceived func(*block.BroadcastedBlock) error
+}
+
+type CheckpointHashRequest struct {
+	RequesterID string                `json:"requester_id"`
+	Checkpoint  uint64                `json:"checkpoint"`
+	Addrs       []multiaddr.Multiaddr `json:"addrs"`
+}
+
+type CheckpointHashResponse struct {
+	Checkpoint uint64   `json:"checkpoint"`
+	Slot       uint64   `json:"slot"`
+	BlockHash  [32]byte `json:"block_hash"`
+	PeerID     string   `json:"peer_id"`
+}
+
+type MissingBlockInfo struct {
+	Slot       uint64    `json:"slot"`
+	FirstSeen  time.Time `json:"first_seen"`
+	LastRetry  time.Time `json:"last_retry"`
+	RetryCount int       `json:"retry_count"`
+	MaxRetries int       `json:"max_retries"`
+}
+
+// Snapshot gossip messages
+type SnapshotAnnounce struct {
+	Slot      uint64 `json:"slot"`
+	BankHash  string `json:"bank_hash"`
+	Size      int64  `json:"size"`
+	UDPAddr   string `json:"udp_addr"`
+	ChunkSize int    `json:"chunk_size"`
+	CreatedAt int64  `json:"created_at"`
+	PeerID    string `json:"peer_id"`
+}
+
+type SnapshotRequest struct {
 }
 
 type AuthChallenge struct {

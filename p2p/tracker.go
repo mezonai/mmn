@@ -23,8 +23,8 @@ func NewSyncRequestTracker(requestID string, fromSlot, toSlot uint64) *SyncReque
 }
 
 func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	t.AllPeers[peerID] = stream
 
 	if t.IsActive {
@@ -38,8 +38,8 @@ func (t *SyncRequestTracker) ActivatePeer(peerID peer.ID, stream network.Stream)
 }
 
 func (t *SyncRequestTracker) CloseRequest() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	if t.ActiveStream != nil {
 		t.ActiveStream.Close()
@@ -51,8 +51,8 @@ func (t *SyncRequestTracker) CloseRequest() {
 
 // CloseAllOtherPeers closes all peer streams except the active one
 func (t *SyncRequestTracker) CloseAllOtherPeers() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	for peerID, stream := range t.AllPeers {
 		if peerID != t.ActivePeer && stream != nil {
@@ -65,8 +65,8 @@ func (t *SyncRequestTracker) CloseAllOtherPeers() {
 
 // CloseAllPeers closes all peer streams including the active one
 func (t *SyncRequestTracker) CloseAllPeers() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	// Close active stream
 	if t.ActiveStream != nil {
@@ -97,6 +97,13 @@ func (ln *Libp2pNetwork) startPeriodicSyncCheck(bs store.BlockStore) {
 		select {
 		case <-ticker.C:
 			ln.cleanupOldSyncRequests()
+			// probe checkpoint every tick
+			latest := bs.GetLatestFinalizedSlot()
+			if latest >= MaxcheckpointScanBlocksRange {
+				checkpoint := (latest / MaxcheckpointScanBlocksRange) * MaxcheckpointScanBlocksRange
+				logx.Info("NETWORK:CHECKPOINT", "Probing checkpoint=", checkpoint, "latest=", latest)
+				_ = ln.RequestCheckpointHash(context.Background(), checkpoint)
+			}
 		case <-ln.ctx.Done():
 			return
 		}
@@ -113,25 +120,12 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 			ln.RefreshAuthenticationForConnectedPeers()
 			ln.CleanupExpiredRequests()
 			ln.CleanupExpiredAuthentications()
+			ln.cleanupOldMissingBlocksTracker()
+			ln.cleanupOldRecentlyRequestedSlots()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")
 			return
 		}
-	}
-}
-
-func (ln *Libp2pNetwork) startInitialSync() {
-	// wait network setup
-	time.Sleep(500 * time.Millisecond)
-
-	ctx := context.Background()
-
-	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
-	}
-	// sync from 0
-	if err := ln.RequestBlockSync(ctx, 0); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: ", err.Error())
 	}
 }
 
@@ -143,6 +137,18 @@ func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	for requestID, info := range ln.activeSyncRequests {
 		if !info.IsActive || now.Sub(info.StartTime) > 5*time.Minute {
 			delete(ln.activeSyncRequests, requestID)
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) cleanupOldRecentlyRequestedSlots() {
+	ln.recentlyRequestedMu.Lock()
+	defer ln.recentlyRequestedMu.Unlock()
+
+	cutoff := time.Now().Add(-5 * time.Minute)
+	for slot, requestTime := range ln.recentlyRequestedSlots {
+		if requestTime.Before(cutoff) {
+			delete(ln.recentlyRequestedSlots, slot)
 		}
 	}
 }

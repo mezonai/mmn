@@ -14,11 +14,7 @@ type MainnetClient interface {
 	SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxService_SubscribeTransactionStatusClient, error)
 	GetTxByHash(ctx context.Context, txHash string) (TxInfo, error)
 	CheckHealth(ctx context.Context) (*mmnpb.HealthCheckResponse, error)
+	GetCurrentNonce(ctx context.Context, addr string, tag string) (uint64, error)
 	Conn() *grpc.ClientConn
 	Close() error
-}
-
-type WalletManager interface {
-	LoadKey(userID uint64) (addr string, privKey []byte, err error)
-	CreateKey(userID uint64) (addr string, privKey []byte, err error)
 }

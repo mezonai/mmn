@@ -1,22 +1,22 @@
-import { GrpcTransport } from '@protobuf-ts/grpc-transport';
-import { ChannelCredentials } from '@grpc/grpc-js';
-import { TxServiceClient, ITxServiceClient } from './generated/tx.client';
-import { AccountServiceClient, IAccountServiceClient } from './generated/account.client';
+import {GrpcTransport} from '@protobuf-ts/grpc-transport';
+import {ChannelCredentials} from '@grpc/grpc-js';
+import {ITxServiceClient, TxServiceClient} from './generated/tx.client';
+import {AccountServiceClient, IAccountServiceClient} from './generated/account.client';
 import type {
-  TxMsg as GenTxMsg,
-  SignedTxMsg as GenSignedTxMsg,
   AddTxResponse as GenAddTxResponse,
-  TransactionStatusInfo as GenTxStatusInfo,
+  SignedTxMsg as GenSignedTxMsg,
   SubscribeTransactionStatusRequest as GenSubscribeTxStatusRequest,
+  TransactionStatusInfo as GenTxStatusInfo,
+  TxMsg as GenTxMsg,
 } from './generated/tx';
-import { TransactionStatus as GenTxStatusEnum } from './generated/tx';
+import {TransactionStatus as GenTxStatusEnum} from './generated/tx';
 import type {
   GetAccountRequest as GenGetAccountRequest,
   GetAccountResponse as GenGetAccountResponse,
-  GetTxHistoryRequest as GenGetTxHistoryRequest,
-  GetTxHistoryResponse as GenGetTxHistoryResponse,
   GetCurrentNonceRequest as GenGetCurrentNonceRequest,
   GetCurrentNonceResponse as GenGetCurrentNonceResponse,
+  GetTxHistoryRequest as GenGetTxHistoryRequest,
+  GetTxHistoryResponse as GenGetTxHistoryResponse,
 } from './generated/account';
 
 export class GrpcClient {
@@ -44,6 +44,9 @@ export class GrpcClient {
       timestamp: number;
       text_data: string;
       nonce: number;
+      extra_info: string;
+      zk_proof: string;
+      zk_pub: string;
     },
     signature: string
   ): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
@@ -55,10 +58,13 @@ export class GrpcClient {
       timestamp: BigInt(txMsg.timestamp),
       textData: txMsg.text_data,
       nonce: BigInt(txMsg.nonce),
+      extraInfo: txMsg.extra_info,
+      zkProof: txMsg.zk_proof,
+      zkPub: txMsg.zk_pub,
     };
     const req: GenSignedTxMsg = { txMsg: genTx, signature };
 
-    const call = this.txClient.addTx(req as any as GenSignedTxMsg);
+    const call = this.txClient.addTx(req);
     const res: GenAddTxResponse = await call.response;
     return { ok: res.ok, tx_hash: res.txHash, error: res.error };
   }
@@ -81,7 +87,7 @@ export class GrpcClient {
     filter: number
   ): Promise<{
     total: number;
-    txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string }[];
+    txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string, extraInfo?: string }[];
   }> {
     const req: GenGetTxHistoryRequest = { address, limit, offset, filter };
     const call = this.accountClient.getTxHistory(req);
@@ -95,6 +101,7 @@ export class GrpcClient {
         nonce: tx.nonce.toString(),
         timestamp: tx.timestamp.toString(),
         status: ['PENDING', 'CONFIRMED', 'FINALIZED', 'FAILED'][tx.status] || 'PENDING',
+        extraInfo: tx.extraInfo,
       })),
     };
   }

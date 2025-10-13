@@ -8,15 +8,20 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
+	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
@@ -40,12 +45,15 @@ type server struct {
 	validator     *validator.Validator
 	blockStore    store.BlockStore
 	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter // Event router for complex event logic
+	eventRouter   *events.EventRouter                    // Event router for complex event logic
+	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
+	txSvc         interfaces.TxService
+	acctSvc       interfaces.AccountService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -58,7 +66,12 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		validator:     validator,
 		mempool:       mempool,
 		eventRouter:   eventRouter,
+		txTracker:     txTracker,
 	}
+
+	// Initialize shared services
+	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
+	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
 
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
@@ -68,212 +81,38 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Printf("[gRPC] Failed to listen on %s: %v\n", addr, err)
+		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", addr, err))
 		return nil
 	}
 	exception.SafeGo("Grpc Server", func() {
 		grpcSrv.Serve(lis)
 	})
-	fmt.Printf("[gRPC] server listening on %s\n", addr)
+	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
-	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
-	tx, err := utils.FromProtoSignedTx(in)
-	if err != nil {
-		fmt.Printf("[gRPC] FromProtoSignedTx error: %v\n", err)
-		return &pb.AddTxResponse{Ok: false, Error: "invalid tx"}, nil
-	}
-
-	// Generate server-side timestamp for security
-	// Todo: remove from input and update client
-	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
-
-	txHash, err := s.mempool.AddTx(tx, true)
-	if err != nil {
-		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
-	}
-	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
+	return s.txSvc.AddTx(ctx, in)
 }
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
-	addr := in.Address
-	acc, err := s.ledger.GetAccount(addr)
-	if err != nil {
-		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
-	}
-	if acc == nil {
-		return &pb.GetAccountResponse{
-			Address:      addr,
-			Balance:      "0",
-			Nonce:        0,
-			Decimals:     uint32(config.GetDecimalsFactor()),
-		}, nil
-	}
-	balance := utils.Uint256ToString(acc.Balance)
-	
-	return &pb.GetAccountResponse{
-		Address:      addr,
-		Balance:      balance,
-		Nonce:        acc.Nonce,
-		Decimals:     uint32(config.GetDecimalsFactor()),
-	}, nil
+	return s.acctSvc.GetAccount(ctx, in)
 }
 
 func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
-	addr := in.Address
-	tag := in.Tag
-	logx.Info("GRPC", fmt.Sprintf("GetCurrentNonce request for address: %s, tag: %s", addr, tag))
-
-	// Validate tag parameter
-	if tag != "latest" && tag != "pending" {
-		return &pb.GetCurrentNonceResponse{
-			Error: "invalid tag: must be 'latest' or 'pending'",
-		}, nil
-	}
-
-	// Get account from ledger
-	// TODO: verify this segment
-	acc, err := s.ledger.GetAccount(addr)
-	if err != nil {
-		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-			Error:   err.Error(),
-		}, nil
-	}
-	if acc == nil {
-		logx.Warn("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-		}, nil
-	}
-
-	var currentNonce uint64
-
-	if tag == "latest" {
-		// For "latest", return the current nonce from the most recent mined block
-		currentNonce = acc.Nonce
-		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
-	} else { // tag == "pending"
-		// For "pending", return the largest nonce among pending transactions or current ledger nonce
-		largestPendingNonce := s.mempool.GetLargestPendingNonce(addr)
-		if largestPendingNonce == 0 {
-			// No pending transactions, use current ledger nonce
-			currentNonce = acc.Nonce
-		} else {
-			// Return the largest pending nonce as current
-			currentNonce = largestPendingNonce
-		}
-		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: largest pending: %d, current: %d", addr, largestPendingNonce, currentNonce))
-	}
-
-	return &pb.GetCurrentNonceResponse{
-		Address: addr,
-		Nonce:   currentNonce,
-		Tag:     tag,
-	}, nil
+	return s.acctSvc.GetCurrentNonce(ctx, in)
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, txMeta, err := s.ledger.GetTxByHash(in.TxHash)
-	if err != nil {
-		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
-	}
-	amount := utils.Uint256ToString(tx.Amount)
-	
-	txInfo := &pb.TxInfo{
-		Sender:    tx.Sender,
-		Recipient: tx.Recipient,
-		Amount:    amount,
-		Timestamp: tx.Timestamp,
-		TextData:  tx.TextData,
-		Nonce:     tx.Nonce,
-		Slot:      txMeta.Slot,
-		Blockhash: txMeta.BlockHash,
-		Status:    txMeta.Status,
-		ErrMsg:    txMeta.Error,
-	}
-	return &pb.GetTxByHashResponse{
-		Tx:          txInfo,
-		Decimals:    uint32(config.GetDecimalsFactor()),
-	}, nil
+	return s.txSvc.GetTxByHash(ctx, in)
 }
 
-func (s *server) GetTxHistory(ctx context.Context, in *pb.GetTxHistoryRequest) (*pb.GetTxHistoryResponse, error) {
-	addr := in.Address
-	total, txs := s.ledger.GetTxs(addr, in.Limit, in.Offset, in.Filter)
-	txMetas := make([]*pb.TxMeta, len(txs))
-	for i, tx := range txs {
-		amount := utils.Uint256ToString(tx.Amount)
-		
-		txMetas[i] = &pb.TxMeta{
-			Sender:    tx.Sender,
-			Recipient: tx.Recipient,
-			Amount:    amount,
-			Nonce:     tx.Nonce,
-			Timestamp: tx.Timestamp,
-			Status:    pb.TxMeta_CONFIRMED,
-		}
-	}
-	return &pb.GetTxHistoryResponse{
-		Total:        total,
-		Txs:          txMetas,
-		Decimals:     uint32(config.GetDecimalsFactor()),
-	}, nil
-}
-
-// GetTransactionStatus returns real-time status by checking mempool and blockstore.
 func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
-	txHash := in.TxHash
+	return s.txSvc.GetTransactionStatus(ctx, in)
+}
 
-	// 1) Check mempool
-	if s.mempool != nil {
-		data, ok := s.mempool.GetTransaction(txHash)
-		if ok {
-			// Parse tx to compute client-hash
-			tx, err := utils.ParseTx(data)
-			if err == nil {
-				if tx.Hash() == txHash {
-					return &pb.TransactionStatusInfo{
-						TxHash:        txHash,
-						Status:        pb.TransactionStatus_PENDING,
-						Confirmations: 0, // No confirmations for mempool transactions
-						Timestamp:     uint64(time.Now().Unix()),
-					}, nil
-				}
-			}
-		}
-	}
-
-	// 2) Search in stored blocks
-	if s.blockStore != nil {
-		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
-		if found {
-			confirmations := s.blockStore.GetConfirmations(slot)
-			status := pb.TransactionStatus_CONFIRMED
-			if confirmations > 1 {
-				status = pb.TransactionStatus_FINALIZED
-			}
-
-			return &pb.TransactionStatusInfo{
-				TxHash:        txHash,
-				Status:        status,
-				BlockSlot:     slot,
-				BlockHash:     blk.HashString(),
-				Confirmations: confirmations,
-				Timestamp:     uint64(time.Now().Unix()),
-			}, nil
-		}
-	}
-
-	// 3) Transaction not found anywhere -> return nil and error
-	return nil, fmt.Errorf("transaction not found: %s", txHash)
+func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
+	return s.txSvc.GetPendingTransactions(ctx, in)
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system
@@ -309,6 +148,9 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.Transaction().ExtraInfo,
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionIncludedInBlock:
@@ -322,6 +164,9 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionFinalized:
@@ -335,6 +180,9 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 
 	case *events.TransactionFailed:
@@ -344,6 +192,9 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ErrorMessage:  e.ErrorMessage(),
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     e.TxExtraInfo(),
+			Amount:        utils.Uint256ToString(e.Transaction().Amount),
+			TextData:      e.Transaction().TextData,
 		}
 	}
 
@@ -462,7 +313,7 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 	currentBlock := uint64(0)
 
 	if s.blockStore != nil {
-		currentBlock = s.blockStore.GetLatestSlot()
+		currentBlock = s.blockStore.GetLatestFinalizedSlot()
 	}
 
 	return &pb.GetBlockNumberResponse{
@@ -472,48 +323,77 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 
 // GetBlockByNumber retrieves a block by its number
 func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRequest) (*pb.GetBlockByNumberResponse, error) {
-	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieving blocks %d", len(in.BlockNumbers)))
 
-	for _, num := range in.BlockNumbers {
-		block := s.blockStore.Block(num)
-		if block == nil {
-			return nil, status.Errorf(codes.NotFound, "block %d not found", num)
+	if len(in.BlockNumbers) == 0 {
+		return &pb.GetBlockByNumberResponse{
+			Blocks:   []*pb.Block{},
+			Decimals: uint32(config.GetDecimalsFactor()),
+		}, nil
+	}
+
+	// Use batch operation to get all blocks - single CGO call!
+	blockMap, err := s.blockStore.GetBatch(in.BlockNumbers)
+	if err != nil {
+		logx.Error("GRPC SERVER", fmt.Sprintf("failed to batch get blocks: %v", err))
+		return nil, status.Errorf(codes.Internal, "failed to batch get blocks: %v", err)
+	}
+
+	// Collect ALL transaction hashes from ALL blocks first
+	var allTxHashes []string
+	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
+
+	for _, slot := range in.BlockNumbers {
+		block, exists := blockMap[slot]
+		if !exists {
+			logx.Error("GRPC SERVER", fmt.Sprintf("block %d not found", slot))
+			return nil, status.Errorf(codes.NotFound, "block %d not found", slot)
 		}
 
-		entries := make([]*pb.Entry, 0, len(block.Entries))
-		var allTxHashes []string
-
+		var blockTxHashes []string
 		for _, entry := range block.Entries {
-			entries = append(entries, &pb.Entry{
-				NumHashes: entry.NumHashes,
-				Hash:      entry.Hash[:],
-				TxHashes:  entry.TxHashes,
-			})
+			blockTxHashes = append(blockTxHashes, entry.TxHashes...)
 			allTxHashes = append(allTxHashes, entry.TxHashes...)
 		}
+		blockTxMap[slot] = blockTxHashes
+	}
 
-		blockTxs := make([]*pb.TransactionData, 0, len(allTxHashes))
-		for _, txHash := range allTxHashes {
-			tx, _, err := s.ledger.GetTxByHash(txHash)
+	// Batch get ALL transactions and metadata - only 2 CGO calls instead of 2*N!
+	var txs []*transaction.Transaction
+	var txMetaMap map[string]*types.TransactionMeta
+	if len(allTxHashes) > 0 {
+		var errTx error
+		txs, txMetaMap, errTx = s.ledger.GetTxBatch(allTxHashes)
+		if errTx != nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("failed to batch get transactions: %v", errTx))
+			return nil, status.Errorf(codes.Internal, "failed to batch get transactions: %v", errTx)
+		}
+	}
 
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
+	// Create a map for quick transaction lookup
+	txMap := make(map[string]*transaction.Transaction)
+	for _, tx := range txs {
+		txMap[tx.Hash()] = tx
+	}
+
+	// Build response blocks in the same order as requested
+	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
+	for _, slot := range in.BlockNumbers {
+		block := blockMap[slot]
+		blockTxHashes := blockTxMap[slot]
+
+		// Build transaction data for this block
+		blockTxs := make([]*pb.TransactionData, 0, len(blockTxHashes))
+		for _, txHash := range blockTxHashes {
+			tx, txExists := txMap[txHash]
+			txMeta, metaExists := txMetaMap[txHash]
+
+			if !txExists || !metaExists {
+				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", txHash))
+				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 			}
-			
-			senderAcc, err := s.ledger.GetAccount(tx.Sender)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Sender)
-			}
-			recipientAcc, err := s.ledger.GetAccount(tx.Recipient)
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "account %s not found", tx.Recipient)
-			}
-			info, err := s.GetTransactionStatus(ctx, &pb.GetTransactionStatusRequest{TxHash: txHash})
-			if err != nil {
-				return nil, status.Errorf(codes.NotFound, "tx %s not found", txHash)
-			}
-			
-			txStatus := info.Status
+
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
 				TxHash:    txHash,
 				Sender:    tx.Sender,
@@ -522,23 +402,15 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 				Nonce:     tx.Nonce,
 				Timestamp: tx.Timestamp,
 				Status:    txStatus,
-				SenderAccount: &pb.AccountData{
-					Address: senderAcc.Address,
-					Balance: utils.Uint256ToString(senderAcc.Balance),
-					Nonce:   senderAcc.Nonce,
-				},
-				RecipientAccount: &pb.AccountData{
-					Address: recipientAcc.Address,
-					Balance: utils.Uint256ToString(recipientAcc.Balance),
-					Nonce:   recipientAcc.Nonce,
-				},
+				TextData:  tx.TextData,
+				ExtraInfo: tx.ExtraInfo,
 			})
 		}
 
 		pbBlock := &pb.Block{
 			Slot:            block.Slot,
 			PrevHash:        block.PrevHash[:],
-			Entries:         entries,
+			Entries:         []*pb.Entry{}, // Empty as requested - indexer doesn't use this
 			LeaderId:        block.LeaderID,
 			Timestamp:       block.Timestamp,
 			Hash:            block.Hash[:],
@@ -549,8 +421,140 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		blocks = append(blocks, pbBlock)
 	}
 
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByNumber: retrieved %d blocks", len(blocks)))
 	return &pb.GetBlockByNumberResponse{
-		Blocks:       blocks,
-		Decimals:     uint32(config.GetDecimalsFactor()),
+		Blocks:   blocks,
+		Decimals: uint32(config.GetDecimalsFactor()),
 	}, nil
+}
+
+// GetBlockByRange retrieves blocks in a range with optimized response structure
+func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequest) (*pb.GetBlockByRangeResponse, error) {
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieving blocks from %d to %d", in.FromSlot, in.ToSlot))
+
+	// Validate input
+	if in.FromSlot > in.ToSlot {
+		logx.Error("GRPC SERVER", fmt.Sprintf("from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot))
+		return nil, status.Errorf(codes.InvalidArgument, "from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot)
+	}
+
+	// Calculate total blocks in range
+	totalBlocks := in.ToSlot - in.FromSlot + 1
+
+	// Reject if range is too large
+	const maxRange = 500
+	if totalBlocks > maxRange {
+		logx.Error("GRPC SERVER", fmt.Sprintf("range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange))
+		return nil, status.Errorf(codes.InvalidArgument, "range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange)
+	}
+
+	// Prepare slot range for batch operation
+	slots := make([]uint64, 0, totalBlocks)
+	for slot := in.FromSlot; slot <= in.ToSlot; slot++ {
+		slots = append(slots, slot)
+	}
+
+	// Use batch operation to get all blocks - single CGO call!
+	blockMap, err := s.blockStore.GetBatch(slots)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to batch get blocks: %v", err)
+	}
+
+	// Collect ALL transaction hashes from ALL blocks first
+	var allTxHashes []string
+	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
+	errors := make([]string, 0)
+
+	for _, slot := range slots {
+		block, exists := blockMap[slot]
+		if !exists {
+			logx.Error("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
+			errors = append(errors, fmt.Sprintf("Block %d not found, skipping", slot))
+			continue
+		}
+
+		var blockTxHashes []string
+		for _, entry := range block.Entries {
+			blockTxHashes = append(blockTxHashes, entry.TxHashes...)
+			allTxHashes = append(allTxHashes, entry.TxHashes...)
+		}
+		blockTxMap[slot] = blockTxHashes
+	}
+
+	// Single batch call for ALL transactions across ALL blocks!
+	txs, txMetas, err := s.ledger.GetTxBatch(allTxHashes)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to batch get all transactions: %v", err)
+	}
+
+	// Create tx lookup maps for fast access
+	txMap := make(map[string]*transaction.Transaction, len(txs))
+	for _, tx := range txs {
+		txMap[tx.Hash()] = tx
+	}
+
+	blocks := make([]*pb.BlockInfo, 0, len(blockMap))
+
+	// Process blocks in order
+	for _, slot := range slots {
+		block, exists := blockMap[slot]
+		if !exists {
+			continue // Already logged warning above
+		}
+
+		blockTxHashes := blockTxMap[slot]
+		blockTxs := make([]*pb.TransactionData, 0, len(blockTxHashes))
+
+		for _, txHash := range blockTxHashes {
+			tx, txExists := txMap[txHash]
+			txMeta, metaExists := txMetas[txHash]
+
+			if !txExists || !metaExists {
+				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				continue
+			}
+
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
+			blockTxs = append(blockTxs, &pb.TransactionData{
+				TxHash:    txHash,
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    utils.Uint256ToString(tx.Amount),
+				Nonce:     tx.Nonce,
+				Timestamp: tx.Timestamp,
+				Status:    txStatus,
+				TextData:  tx.TextData,
+				ExtraInfo: tx.ExtraInfo,
+			})
+		}
+
+		// Create optimized block (without entries duplication)
+		optimizedBlock := &pb.BlockInfo{
+			Slot:            block.Slot,
+			PrevHash:        block.PrevHash[:],
+			LeaderId:        block.LeaderID,
+			Timestamp:       block.Timestamp,
+			Hash:            block.Hash[:],
+			Signature:       block.Signature,
+			TransactionData: blockTxs,
+		}
+
+		blocks = append(blocks, optimizedBlock)
+	}
+
+	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieved %d blocks (requested range: %d)",
+		len(blocks), totalBlocks))
+
+	return &pb.GetBlockByRangeResponse{
+		Blocks:      blocks,
+		TotalBlocks: uint32(len(blocks)),
+		Decimals:    uint32(config.GetDecimalsFactor()),
+		Errors:      errors,
+	}, nil
+}
+
+// GetAccountByAddress is a convenience RPC under AccountService to fetch account info
+func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
+	return s.acctSvc.GetAccountByAddress(ctx, in)
 }

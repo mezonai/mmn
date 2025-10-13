@@ -12,6 +12,45 @@ import type { PartialMessage } from "@protobuf-ts/runtime";
 import { reflectionMergePartial } from "@protobuf-ts/runtime";
 import { MessageType } from "@protobuf-ts/runtime";
 /**
+ * Transaction data structure for transactions
+ *
+ * @generated from protobuf message mmn.TransactionData
+ */
+export interface TransactionData {
+    /**
+     * @generated from protobuf field: string tx_hash = 1
+     */
+    txHash: string;
+    /**
+     * @generated from protobuf field: string sender = 2
+     */
+    sender: string; // sender address
+    /**
+     * @generated from protobuf field: string recipient = 3
+     */
+    recipient: string; // recipient address
+    /**
+     * @generated from protobuf field: string amount = 4
+     */
+    amount: string; // amount
+    /**
+     * @generated from protobuf field: uint64 nonce = 5
+     */
+    nonce: bigint; // nonce
+    /**
+     * @generated from protobuf field: uint64 timestamp = 6
+     */
+    timestamp: bigint;
+    /**
+     * @generated from protobuf field: mmn.TransactionStatus status = 7
+     */
+    status: TransactionStatus;
+    /**
+     * @generated from protobuf field: string text_data = 8
+     */
+    textData: string;
+}
+/**
  * @generated from protobuf message mmn.TxMsg
  */
 export interface TxMsg {
@@ -43,6 +82,18 @@ export interface TxMsg {
      * @generated from protobuf field: uint64 nonce = 7
      */
     nonce: bigint;
+    /**
+     * @generated from protobuf field: string extra_info = 8
+     */
+    extraInfo: string;
+    /**
+     * @generated from protobuf field: string zk_proof = 9
+     */
+    zkProof: string;
+    /**
+     * @generated from protobuf field: string zk_pub = 10
+     */
+    zkPub: string;
 }
 /**
  * @generated from protobuf message mmn.SignedTxMsg
@@ -120,6 +171,30 @@ export interface TxInfo {
      * @generated from protobuf field: string text_data = 5
      */
     textData: string;
+    /**
+     * @generated from protobuf field: uint64 nonce = 6
+     */
+    nonce: bigint;
+    /**
+     * @generated from protobuf field: uint64 slot = 7
+     */
+    slot: bigint;
+    /**
+     * @generated from protobuf field: string blockhash = 8
+     */
+    blockhash: string;
+    /**
+     * @generated from protobuf field: int32 status = 9
+     */
+    status: number;
+    /**
+     * @generated from protobuf field: string err_msg = 10
+     */
+    errMsg: string;
+    /**
+     * @generated from protobuf field: string extra_info = 11
+     */
+    extraInfo: string;
 }
 /**
  * @generated from protobuf message mmn.GetTxByHashResponse
@@ -151,6 +226,7 @@ export interface GetTransactionStatusRequest {
 }
 /**
  * Unified transaction status message used for both unary and streaming responses
+ * TODO: consider to have single field as wrapper for all original transaction attributes (amount, text data, extra...) to avoid code duplication
  *
  * @generated from protobuf message mmn.TransactionStatusInfo
  */
@@ -183,6 +259,18 @@ export interface TransactionStatusInfo {
      * @generated from protobuf field: uint64 timestamp = 7
      */
     timestamp: bigint; // Timestamp when status was last updated
+    /**
+     * @generated from protobuf field: string extra_info = 8
+     */
+    extraInfo: string; // Extra info that was attached to transaction on creation
+    /**
+     * @generated from protobuf field: string amount = 9
+     */
+    amount: string; // Transaction amount
+    /**
+     * @generated from protobuf field: string text_data = 10
+     */
+    textData: string; // Transaction text data
 }
 /**
  * Request to subscribe to all transaction status updates
@@ -192,6 +280,32 @@ export interface TransactionStatusInfo {
  * @generated from protobuf message mmn.SubscribeTransactionStatusRequest
  */
 export interface SubscribeTransactionStatusRequest {
+}
+/**
+ * Request to get all pending transactions
+ *
+ * @generated from protobuf message mmn.GetPendingTransactionsRequest
+ */
+export interface GetPendingTransactionsRequest {
+}
+/**
+ * Response containing pending transactions information
+ *
+ * @generated from protobuf message mmn.GetPendingTransactionsResponse
+ */
+export interface GetPendingTransactionsResponse {
+    /**
+     * @generated from protobuf field: uint64 total_count = 1
+     */
+    totalCount: bigint;
+    /**
+     * @generated from protobuf field: repeated mmn.TransactionData pending_txs = 2
+     */
+    pendingTxs: TransactionData[];
+    /**
+     * @generated from protobuf field: string error = 3
+     */
+    error: string;
 }
 /**
  * Transaction status enum
@@ -225,6 +339,109 @@ export enum TransactionStatus {
     FAILED = 3
 }
 // @generated message type with reflection information, may provide speed optimized methods
+class TransactionData$Type extends MessageType<TransactionData> {
+    constructor() {
+        super("mmn.TransactionData", [
+            { no: 1, name: "tx_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "sender", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "recipient", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 6, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 7, name: "status", kind: "enum", T: () => ["mmn.TransactionStatus", TransactionStatus] },
+            { no: 8, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<TransactionData>): TransactionData {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.txHash = "";
+        message.sender = "";
+        message.recipient = "";
+        message.amount = "";
+        message.nonce = 0n;
+        message.timestamp = 0n;
+        message.status = 0;
+        message.textData = "";
+        if (value !== undefined)
+            reflectionMergePartial<TransactionData>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: TransactionData): TransactionData {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tx_hash */ 1:
+                    message.txHash = reader.string();
+                    break;
+                case /* string sender */ 2:
+                    message.sender = reader.string();
+                    break;
+                case /* string recipient */ 3:
+                    message.recipient = reader.string();
+                    break;
+                case /* string amount */ 4:
+                    message.amount = reader.string();
+                    break;
+                case /* uint64 nonce */ 5:
+                    message.nonce = reader.uint64().toBigInt();
+                    break;
+                case /* uint64 timestamp */ 6:
+                    message.timestamp = reader.uint64().toBigInt();
+                    break;
+                case /* mmn.TransactionStatus status */ 7:
+                    message.status = reader.int32();
+                    break;
+                case /* string text_data */ 8:
+                    message.textData = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: TransactionData, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tx_hash = 1; */
+        if (message.txHash !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.txHash);
+        /* string sender = 2; */
+        if (message.sender !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.sender);
+        /* string recipient = 3; */
+        if (message.recipient !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.recipient);
+        /* string amount = 4; */
+        if (message.amount !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.amount);
+        /* uint64 nonce = 5; */
+        if (message.nonce !== 0n)
+            writer.tag(5, WireType.Varint).uint64(message.nonce);
+        /* uint64 timestamp = 6; */
+        if (message.timestamp !== 0n)
+            writer.tag(6, WireType.Varint).uint64(message.timestamp);
+        /* mmn.TransactionStatus status = 7; */
+        if (message.status !== 0)
+            writer.tag(7, WireType.Varint).int32(message.status);
+        /* string text_data = 8; */
+        if (message.textData !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.textData);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.TransactionData
+ */
+export const TransactionData = new TransactionData$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class TxMsg$Type extends MessageType<TxMsg> {
     constructor() {
         super("mmn.TxMsg", [
@@ -234,7 +451,10 @@ class TxMsg$Type extends MessageType<TxMsg> {
             { no: 4, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 5, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 6, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 7, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+            { no: 7, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 8, name: "extra_info", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "zk_proof", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 10, name: "zk_pub", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<TxMsg>): TxMsg {
@@ -246,6 +466,9 @@ class TxMsg$Type extends MessageType<TxMsg> {
         message.timestamp = 0n;
         message.textData = "";
         message.nonce = 0n;
+        message.extraInfo = "";
+        message.zkProof = "";
+        message.zkPub = "";
         if (value !== undefined)
             reflectionMergePartial<TxMsg>(this, message, value);
         return message;
@@ -275,6 +498,15 @@ class TxMsg$Type extends MessageType<TxMsg> {
                     break;
                 case /* uint64 nonce */ 7:
                     message.nonce = reader.uint64().toBigInt();
+                    break;
+                case /* string extra_info */ 8:
+                    message.extraInfo = reader.string();
+                    break;
+                case /* string zk_proof */ 9:
+                    message.zkProof = reader.string();
+                    break;
+                case /* string zk_pub */ 10:
+                    message.zkPub = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -309,6 +541,15 @@ class TxMsg$Type extends MessageType<TxMsg> {
         /* uint64 nonce = 7; */
         if (message.nonce !== 0n)
             writer.tag(7, WireType.Varint).uint64(message.nonce);
+        /* string extra_info = 8; */
+        if (message.extraInfo !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.extraInfo);
+        /* string zk_proof = 9; */
+        if (message.zkProof !== "")
+            writer.tag(9, WireType.LengthDelimited).string(message.zkProof);
+        /* string zk_pub = 10; */
+        if (message.zkPub !== "")
+            writer.tag(10, WireType.LengthDelimited).string(message.zkPub);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -546,7 +787,13 @@ class TxInfo$Type extends MessageType<TxInfo> {
             { no: 2, name: "recipient", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 3, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 4, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
-            { no: 5, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+            { no: 5, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 6, name: "nonce", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 7, name: "slot", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 8, name: "blockhash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "status", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
+            { no: 10, name: "err_msg", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 11, name: "extra_info", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<TxInfo>): TxInfo {
@@ -556,6 +803,12 @@ class TxInfo$Type extends MessageType<TxInfo> {
         message.amount = "";
         message.timestamp = 0n;
         message.textData = "";
+        message.nonce = 0n;
+        message.slot = 0n;
+        message.blockhash = "";
+        message.status = 0;
+        message.errMsg = "";
+        message.extraInfo = "";
         if (value !== undefined)
             reflectionMergePartial<TxInfo>(this, message, value);
         return message;
@@ -579,6 +832,24 @@ class TxInfo$Type extends MessageType<TxInfo> {
                     break;
                 case /* string text_data */ 5:
                     message.textData = reader.string();
+                    break;
+                case /* uint64 nonce */ 6:
+                    message.nonce = reader.uint64().toBigInt();
+                    break;
+                case /* uint64 slot */ 7:
+                    message.slot = reader.uint64().toBigInt();
+                    break;
+                case /* string blockhash */ 8:
+                    message.blockhash = reader.string();
+                    break;
+                case /* int32 status */ 9:
+                    message.status = reader.int32();
+                    break;
+                case /* string err_msg */ 10:
+                    message.errMsg = reader.string();
+                    break;
+                case /* string extra_info */ 11:
+                    message.extraInfo = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -607,6 +878,24 @@ class TxInfo$Type extends MessageType<TxInfo> {
         /* string text_data = 5; */
         if (message.textData !== "")
             writer.tag(5, WireType.LengthDelimited).string(message.textData);
+        /* uint64 nonce = 6; */
+        if (message.nonce !== 0n)
+            writer.tag(6, WireType.Varint).uint64(message.nonce);
+        /* uint64 slot = 7; */
+        if (message.slot !== 0n)
+            writer.tag(7, WireType.Varint).uint64(message.slot);
+        /* string blockhash = 8; */
+        if (message.blockhash !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.blockhash);
+        /* int32 status = 9; */
+        if (message.status !== 0)
+            writer.tag(9, WireType.Varint).int32(message.status);
+        /* string err_msg = 10; */
+        if (message.errMsg !== "")
+            writer.tag(10, WireType.LengthDelimited).string(message.errMsg);
+        /* string extra_info = 11; */
+        if (message.extraInfo !== "")
+            writer.tag(11, WireType.LengthDelimited).string(message.extraInfo);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -736,7 +1025,10 @@ class TransactionStatusInfo$Type extends MessageType<TransactionStatusInfo> {
             { no: 4, name: "block_hash", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 5, name: "confirmations", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
             { no: 6, name: "error_message", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 7, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ }
+            { no: 7, name: "timestamp", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 8, name: "extra_info", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "amount", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 10, name: "text_data", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<TransactionStatusInfo>): TransactionStatusInfo {
@@ -748,6 +1040,9 @@ class TransactionStatusInfo$Type extends MessageType<TransactionStatusInfo> {
         message.confirmations = 0n;
         message.errorMessage = "";
         message.timestamp = 0n;
+        message.extraInfo = "";
+        message.amount = "";
+        message.textData = "";
         if (value !== undefined)
             reflectionMergePartial<TransactionStatusInfo>(this, message, value);
         return message;
@@ -777,6 +1072,15 @@ class TransactionStatusInfo$Type extends MessageType<TransactionStatusInfo> {
                     break;
                 case /* uint64 timestamp */ 7:
                     message.timestamp = reader.uint64().toBigInt();
+                    break;
+                case /* string extra_info */ 8:
+                    message.extraInfo = reader.string();
+                    break;
+                case /* string amount */ 9:
+                    message.amount = reader.string();
+                    break;
+                case /* string text_data */ 10:
+                    message.textData = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -811,6 +1115,15 @@ class TransactionStatusInfo$Type extends MessageType<TransactionStatusInfo> {
         /* uint64 timestamp = 7; */
         if (message.timestamp !== 0n)
             writer.tag(7, WireType.Varint).uint64(message.timestamp);
+        /* string extra_info = 8; */
+        if (message.extraInfo !== "")
+            writer.tag(8, WireType.LengthDelimited).string(message.extraInfo);
+        /* string amount = 9; */
+        if (message.amount !== "")
+            writer.tag(9, WireType.LengthDelimited).string(message.amount);
+        /* string text_data = 10; */
+        if (message.textData !== "")
+            writer.tag(10, WireType.LengthDelimited).string(message.textData);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -859,6 +1172,107 @@ class SubscribeTransactionStatusRequest$Type extends MessageType<SubscribeTransa
  * @generated MessageType for protobuf message mmn.SubscribeTransactionStatusRequest
  */
 export const SubscribeTransactionStatusRequest = new SubscribeTransactionStatusRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetPendingTransactionsRequest$Type extends MessageType<GetPendingTransactionsRequest> {
+    constructor() {
+        super("mmn.GetPendingTransactionsRequest", []);
+    }
+    create(value?: PartialMessage<GetPendingTransactionsRequest>): GetPendingTransactionsRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<GetPendingTransactionsRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetPendingTransactionsRequest): GetPendingTransactionsRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetPendingTransactionsRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetPendingTransactionsRequest
+ */
+export const GetPendingTransactionsRequest = new GetPendingTransactionsRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetPendingTransactionsResponse$Type extends MessageType<GetPendingTransactionsResponse> {
+    constructor() {
+        super("mmn.GetPendingTransactionsResponse", [
+            { no: 1, name: "total_count", kind: "scalar", T: 4 /*ScalarType.UINT64*/, L: 0 /*LongType.BIGINT*/ },
+            { no: 2, name: "pending_txs", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => TransactionData },
+            { no: 3, name: "error", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetPendingTransactionsResponse>): GetPendingTransactionsResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.totalCount = 0n;
+        message.pendingTxs = [];
+        message.error = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetPendingTransactionsResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetPendingTransactionsResponse): GetPendingTransactionsResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* uint64 total_count */ 1:
+                    message.totalCount = reader.uint64().toBigInt();
+                    break;
+                case /* repeated mmn.TransactionData pending_txs */ 2:
+                    message.pendingTxs.push(TransactionData.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* string error */ 3:
+                    message.error = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetPendingTransactionsResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* uint64 total_count = 1; */
+        if (message.totalCount !== 0n)
+            writer.tag(1, WireType.Varint).uint64(message.totalCount);
+        /* repeated mmn.TransactionData pending_txs = 2; */
+        for (let i = 0; i < message.pendingTxs.length; i++)
+            TransactionData.internalBinaryWrite(message.pendingTxs[i], writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        /* string error = 3; */
+        if (message.error !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.error);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message mmn.GetPendingTransactionsResponse
+ */
+export const GetPendingTransactionsResponse = new GetPendingTransactionsResponse$Type();
 /**
  * @generated ServiceType for protobuf service mmn.TxService
  */
@@ -867,5 +1281,6 @@ export const TxService = new ServiceType("mmn.TxService", [
     { name: "AddTx", options: {}, I: SignedTxMsg, O: AddTxResponse },
     { name: "GetTxByHash", options: {}, I: GetTxByHashRequest, O: GetTxByHashResponse },
     { name: "GetTransactionStatus", options: {}, I: GetTransactionStatusRequest, O: TransactionStatusInfo },
-    { name: "SubscribeTransactionStatus", serverStreaming: true, options: {}, I: SubscribeTransactionStatusRequest, O: TransactionStatusInfo }
+    { name: "SubscribeTransactionStatus", serverStreaming: true, options: {}, I: SubscribeTransactionStatusRequest, O: TransactionStatusInfo },
+    { name: "GetPendingTransactions", options: {}, I: GetPendingTransactionsRequest, O: GetPendingTransactionsResponse }
 ]);
