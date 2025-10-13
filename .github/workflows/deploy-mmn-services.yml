@@ -31,7 +31,10 @@ jobs:
           check-latest: false
       
       - name: Correct Workspace Permissions
-        run: sudo chown -R mmn:mmn $GITHUB_WORKSPACE
+        run: |
+          echo "==> Correcting permissions for the workspace...$(whoami)"
+          sudo chown -R $(whoami):$(whoami) $GITHUB_WORKSPACE
+
 
       - name: Install build dependencies
         run: |
