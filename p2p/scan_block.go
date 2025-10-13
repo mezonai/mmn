@@ -11,7 +11,7 @@ import (
 )
 
 func (ln *Libp2pNetwork) scanMissingBlocks(bs store.BlockStore) {
-	latest := bs.GetLatestSlot()
+	latest := bs.GetLatestFinalizedSlot()
 	if latest < 1 {
 		logx.Info("NETWORK:SCAN", "No blocks in store, skipping scan")
 		return
@@ -29,8 +29,8 @@ func (ln *Libp2pNetwork) scanMissingBlocks(bs store.BlockStore) {
 	}
 
 	scanEnd := latest
-	if scanEnd-scanStart > MaxScanRange {
-		scanEnd = scanStart + MaxScanRange
+	if scanEnd-scanStart > MaxcheckpointScanBlocksRange {
+		scanEnd = scanStart + MaxcheckpointScanBlocksRange
 	}
 
 	logx.Info("NETWORK:SCAN", "Scanning for missing blocks from slot ", scanStart, " to ", scanEnd, " (range: ", scanEnd-scanStart+1, " slots)")
@@ -90,7 +90,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 		return
 	}
 
-	missingBatchSize := int(BatchSize)
+	missingBatchSize := int(SyncBlocksBatchSize)
 
 	batchCount := 0
 	for i := 0; i < len(missingSlots); i += missingBatchSize {
@@ -139,7 +139,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 }
 
 func (ln *Libp2pNetwork) shouldCheckAroundSlot(bs store.BlockStore, slot uint64) bool {
-	latest := bs.GetLatestSlot()
+	latest := bs.GetLatestFinalizedSlot()
 	if latest < 1 {
 		return false
 	}
@@ -165,7 +165,7 @@ func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot u
 		return
 	}
 
-	latest := bs.GetLatestSlot()
+	latest := bs.GetLatestFinalizedSlot()
 
 	startSlot := uint64(0)
 	if slot > 0 {
@@ -205,7 +205,7 @@ func (ln *Libp2pNetwork) checkForMissingBlocksAround(bs store.BlockStore, slot u
 }
 
 func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
-	latest := bs.GetLatestSlot()
+	latest := bs.GetLatestFinalizedSlot()
 	if latest < 1 {
 		return false
 	}

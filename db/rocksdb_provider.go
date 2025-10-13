@@ -4,6 +4,7 @@
 package db
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 
@@ -22,6 +23,40 @@ type RocksDBProvider struct {
 func NewRocksDBProvider(directory string) (DatabaseProvider, error) {
 	opts := grocksdb.NewDefaultOptions()
 	opts.SetCreateIfMissing(true)
+
+	db, err := grocksdb.OpenDb(opts, directory)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open RocksDB: %w", err)
+	}
+
+	return &RocksDBProvider{
+		db: db,
+		ro: grocksdb.NewDefaultReadOptions(),
+		wo: grocksdb.NewDefaultWriteOptions(),
+	}, nil
+}
+
+func NewOptimizedRocksDBProvider(directory string) (DatabaseProvider, error) {
+	opts := grocksdb.NewDefaultOptions()
+	opts.SetCreateIfMissing(true)
+
+	// Performance tuning for blockchain workload
+	opts.SetMaxBackgroundCompactions(4)
+	opts.SetMaxBackgroundFlushes(2)
+	// Memory optimization
+	opts.SetWriteBufferSize(64 * 1024 * 1024) // 64MB write buffer
+
+	// Block-based table options for cache
+	bbto := grocksdb.NewDefaultBlockBasedTableOptions()
+	blockCache := grocksdb.NewLRUCache(128 * 1024 * 1024) // 128MB cache
+	bbto.SetBlockCache(blockCache)
+
+	opts.SetBlockBasedTableFactory(bbto)
+
+	// Compression
+	opts.SetCompression(grocksdb.SnappyCompression)
+	// Read optimization
+	opts.SetMaxOpenFiles(1000)
 
 	db, err := grocksdb.OpenDb(opts, directory)
 	if err != nil {
@@ -54,6 +89,37 @@ func (p *RocksDBProvider) Get(key []byte) ([]byte, error) {
 	return result, nil
 }
 
+// GetBatch retrieves multiple values by keys in a single operation
+func (p *RocksDBProvider) GetBatch(keys [][]byte) (map[string][]byte, error) {
+	if len(keys) == 0 {
+		return make(map[string][]byte), nil
+	}
+
+	// Use RocksDB MultiGet for efficient batch reads
+	values, err := p.db.MultiGet(p.ro, keys...)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]byte, len(keys))
+
+	for i, value := range values {
+		keyStr := string(keys[i])
+
+		if value.Data() != nil {
+			// Copy the data since we're freeing the slice
+			data := value.Data()
+			result[keyStr] = make([]byte, len(data))
+			copy(result[keyStr], data)
+		}
+		// If value.Data() is nil, the key doesn't exist - don't add to result
+
+		value.Free() // Free each value
+	}
+
+	return result, nil
+}
+
 // Put stores a key-value pair
 func (p *RocksDBProvider) Put(key, value []byte) error {
 	return p.db.Put(p.wo, key, value)
@@ -66,21 +132,15 @@ func (p *RocksDBProvider) Delete(key []byte) error {
 
 // Has checks if a key exists
 func (p *RocksDBProvider) Has(key []byte) (bool, error) {
+	// Only check key existence, not value
 	value, err := p.db.Get(p.ro, key)
 	if err != nil {
 		return false, err
 	}
-
-	if value == nil {
-		return false, nil
-	}
 	defer value.Free()
 
-	if !value.Exists() {
-		return false, nil
-	}
-
-	return true, nil
+	// Check if the key actually exists (not just a tombstone)
+	return value.Exists(), nil
 }
 
 // Close closes the database connection
@@ -100,6 +160,39 @@ func (p *RocksDBProvider) Batch() DatabaseBatch {
 		batch:    grocksdb.NewWriteBatch(),
 		provider: p,
 	}
+}
+
+// IteratePrefix iterates over all key-value pairs with the given prefix
+func (p *RocksDBProvider) IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error {
+	iter := p.db.NewIterator(p.ro)
+	defer iter.Close()
+
+	// Seek to the prefix
+	iter.Seek(prefix)
+
+	// Iterate through all keys with the prefix
+	for iter.Valid() {
+		keySlice := iter.Key()
+		valueSlice := iter.Value()
+
+		// Convert grocksdb.Slice to []byte
+		key := keySlice.Data()
+		value := valueSlice.Data()
+
+		// Check if key still starts with prefix
+		if len(key) < len(prefix) || !bytes.HasPrefix(key, prefix) {
+			break
+		}
+
+		// Call callback function
+		if !callback(key, value) {
+			break
+		}
+
+		iter.Next()
+	}
+
+	return iter.Err()
 }
 
 // RocksDBBatch implements DatabaseBatch for RocksDB

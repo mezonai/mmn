@@ -2,9 +2,9 @@ package p2p
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
 
@@ -33,7 +33,7 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 			}
 
 			var tx *transaction.Transaction
-			if err := json.Unmarshal(msg.Data, &tx); err != nil {
+			if err := jsonx.Unmarshal(msg.Data, &tx); err != nil {
 				logx.Warn("NETWORK:TX", "Unmarshal error:", err)
 				continue
 			}
@@ -46,14 +46,16 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 }
 
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *transaction.Transaction) error {
-	logx.Info("TX", "Broadcasting transaction to network")
-	txData, err := json.Marshal(tx)
+	logx.Debug("TX", "Broadcasting transaction to network")
+	txData, err := jsonx.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
-	if err := ln.topicTxs.Publish(ctx, txData); err != nil {
-		return fmt.Errorf("failed to publish transaction: %w", err)
+	if ln.topicTxs != nil {
+		if err := ln.topicTxs.Publish(ctx, txData); err != nil {
+			return fmt.Errorf("failed to publish transaction: %w", err)
+		}
 	}
 
 	return nil

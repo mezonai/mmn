@@ -8,8 +8,8 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
@@ -91,16 +91,11 @@ func (l *Ledger) CreateAccountsFromGenesis(addrs []config.Address) error {
 
 // AccountExists checks if an account exists (implements LedgerInterface)
 func (l *Ledger) AccountExists(addr string) (bool, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
 	return l.accountStore.ExistsByAddr(addr)
 }
 
 // Balance returns current balance for addr
 func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
 	acc, err := l.accountStore.GetByAddr(addr)
 	if err != nil {
 		return uint256.NewInt(0), err
@@ -113,6 +108,10 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
+	if b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
+		return nil
+	}
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -151,8 +150,13 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if err := applyTx(state, tx); err != nil {
 				// Publish specific transaction failure event
 				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(txHash, fmt.Sprintf("transaction application failed: %v", err), tx.ExtraInfo)
+					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
+					if errors.Is(err, ErrInvalidNonce) {
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxInvalidNonce)
+					} else {
+						monitoring.IncreaseFailedTpsCount(err.Error())
+					}
 				}
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				state[tx.Sender].Nonce++
@@ -163,25 +167,33 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				continue
 			}
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
-			addHistory(state[tx.Sender], tx)
-			if tx.Recipient != tx.Sender {
-				addHistory(state[tx.Recipient], tx)
+			// Remove successful transaction from tracker
+			if l.txTracker != nil {
+				l.txTracker.RemoveTransaction(txHash)
 			}
 
-			// commit the update
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err), tx.ExtraInfo)
+					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
 					l.eventRouter.PublishTransactionEvent(event)
+					switch {
+					case errors.Is(err, store.ErrFailedMarshalAccount):
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedMarshalAccount)
+					case errors.Is(err, store.ErrFaliedWriteAccount):
+						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedWriteAccount)
+					default:
+						monitoring.IncreaseFailedTpsCount(err.Error())
+					}
 				}
 				return err
 			}
+			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 		}
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
+			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
 		}
 	}
 
@@ -191,13 +203,22 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 
 // GetAccount returns account with addr (nil if not exist)
 func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
 	return l.accountStore.GetByAddr(addr)
+}
+
+// GetAccountBatch returns multiple accounts for the given addresses using batch operation
+func (l *Ledger) GetAccountBatch(addrs []string) (map[string]*types.Account, error) {
+	return l.accountStore.GetBatch(addrs)
 }
 
 // Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
 func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error {
+	if tx == nil {
+		return fmt.Errorf("transaction cannot be nil")
+	}
+	if tx.Amount == nil {
+		return fmt.Errorf("transaction amount cannot be nil")
+	}
 	sender, ok := state[tx.Sender]
 	if !ok {
 		state[tx.Sender] = &types.Account{Address: tx.Sender, Balance: uint256.NewInt(0), Nonce: 0}
@@ -214,7 +235,7 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	}
 	// Strict nonce validation to prevent duplicate transactions
 	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
+		return fmt.Errorf("%w: expected %d, got %d", ErrInvalidNonce, sender.Nonce+1, tx.Nonce)
 	}
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
@@ -222,170 +243,33 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	return nil
 }
 
-func addHistory(acc *types.Account, tx *transaction.Transaction) {
-	acc.History = append(acc.History, tx.Hash())
+func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error, error) {
+	tx, errTx := l.txStore.GetByHash(hash)
+	txMeta, errTxMeta := l.txMetaStore.GetByHash(hash)
+	if errTx != nil || errTxMeta != nil {
+		return nil, nil, errTx, errTxMeta
+	}
+	return tx, txMeta, nil, nil
 }
 
-func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.TransactionMeta, error) {
-	tx, err := l.txStore.GetByHash(hash)
-	if err != nil {
-		return nil, nil, err
+// GetTxBatch retrieves multiple transactions and their metadata using batch operations
+func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
+	if len(hashes) == 0 {
+		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil
 	}
-	txMeta, err := l.txMetaStore.GetByHash(hash)
-	if err != nil {
-		return nil, nil, err
+
+	// Use batch operations - only 2 CGO calls instead of 2*N!
+	txs, errTx := l.txStore.GetBatch(hashes)
+	txMetas, errTxMeta := l.txMetaStore.GetBatch(hashes)
+
+	if errTx != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transactions: %w", errTx)
 	}
-	return tx, txMeta, nil
+	if errTxMeta != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transaction metas: %w", errTxMeta)
+	}
+
+	return txs, txMetas, nil
 }
 
-func (l *Ledger) GetTxs(addr string, limit uint32, offset uint32, filter uint32) (uint32, []*transaction.Transaction) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	txs := make([]*transaction.Transaction, 0)
-	acc, err := l.accountStore.GetByAddr(addr)
-	if err != nil {
-		return 0, txs
-	}
-
-	// filter type: 0: all, 1: sender, 2: recipient
-	filteredHistory := make([]*transaction.Transaction, 0)
-	transactions, err := l.txStore.GetBatch(acc.History)
-	if err != nil {
-		return 0, txs
-	}
-	for _, tx := range transactions {
-		if filter == 0 {
-			filteredHistory = append(filteredHistory, tx)
-		} else if filter == 1 && tx.Sender == addr {
-			filteredHistory = append(filteredHistory, tx)
-		} else if filter == 2 && tx.Recipient == addr {
-			filteredHistory = append(filteredHistory, tx)
-		}
-	}
-
-	total := uint32(len(filteredHistory))
-	start := offset
-	end := min(start+limit, total)
-	txs = filteredHistory[start:end]
-
-	return total, txs
-}
-
-// LedgerView is a view of the ledger to verify block before applying it to the ledger.
-type LedgerView struct {
-	base    store.AccountStore
-	overlay map[string]*types.SnapshotAccount
-	mu      sync.RWMutex // Add mutex for overlay map protection
-}
-
-func (lv *LedgerView) loadForRead(addr string) (*types.SnapshotAccount, bool) {
-	lv.mu.RLock()
-	if acc, ok := lv.overlay[addr]; ok {
-		lv.mu.RUnlock()
-		return acc, true
-	}
-	lv.mu.RUnlock()
-	base, err := lv.base.GetByAddr(addr)
-	// TODO: re-verify this, will returning nil for error case be ok?
-	if err != nil || base == nil {
-		return nil, false
-	}
-
-	cp := types.SnapshotAccount{Balance: base.Balance, Nonce: base.Nonce}
-	lv.overlay[addr] = &cp
-	return &cp, true
-}
-
-func (lv *LedgerView) loadOrCreate(addr string) *types.SnapshotAccount {
-	if acc, ok := lv.loadForRead(addr); ok {
-		return acc
-	}
-	cp := types.SnapshotAccount{Balance: uint256.NewInt(0), Nonce: 0}
-	lv.mu.Lock()
-	lv.overlay[addr] = &cp
-	lv.mu.Unlock()
-	return &cp
-}
-
-func (lv *LedgerView) ApplyTx(tx *transaction.Transaction) error {
-	// Validate zero amount transfers
-	if tx.Amount.Cmp(uint256.NewInt(0)) == 0 {
-		return fmt.Errorf("zero amount transfers are not allowed")
-	}
-
-	// Validate sender account existence
-	if _, exists := lv.loadForRead(tx.Sender); !exists {
-		return fmt.Errorf("sender account does not exist: %s", tx.Sender)
-	}
-
-	sender := lv.loadOrCreate(tx.Sender)
-	recipient := lv.loadOrCreate(tx.Recipient)
-
-	if sender.Balance.Cmp(tx.Amount) < 0 {
-		return fmt.Errorf("insufficient balance")
-	}
-	// Strict nonce validation to prevent duplicate transactions (Ethereum standard)
-	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("invalid nonce: expected %d, got %d", sender.Nonce+1, tx.Nonce)
-	}
-
-	sender.Balance.Sub(sender.Balance, tx.Amount)
-	recipient.Balance.Add(recipient.Balance, tx.Amount)
-	sender.Nonce = tx.Nonce
-	return nil
-}
-
-type Session struct {
-	ledger *Ledger
-	view   *LedgerView
-}
-
-// Copy session with clone overlay
-func (s *Session) CopyWithOverlayClone() *Session {
-	s.view.mu.RLock()
-	overlayCopy := make(map[string]*types.SnapshotAccount, len(s.view.overlay))
-	for k, v := range s.view.overlay {
-		accCopy := *v
-		overlayCopy[k] = &accCopy
-	}
-	s.view.mu.RUnlock()
-
-	return &Session{
-		ledger: s.ledger,
-		view: &LedgerView{
-			base:    s.view.base,
-			overlay: overlayCopy,
-			mu:      sync.RWMutex{}, // Initialize mutex for new session
-		},
-	}
-}
-
-// Session API for filtering valid transactions
-func (s *Session) FilterValid(raws [][]byte) ([]*transaction.Transaction, []error) {
-	valid := make([]*transaction.Transaction, 0, len(raws))
-	errs := make([]error, 0)
-	for _, r := range raws {
-		tx, err := utils.ParseTx(r)
-		if err != nil || !tx.Verify() {
-			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
-			if s.ledger.eventRouter != nil {
-				event := events.NewTransactionFailed(tx.Hash(), fmt.Sprintf("sig/format: %v", err), tx.ExtraInfo)
-				s.ledger.eventRouter.PublishTransactionEvent(event)
-			}
-			errs = append(errs, fmt.Errorf("sig/format: %w", err))
-			continue
-		}
-		if err := s.view.ApplyTx(tx); err != nil {
-			fmt.Printf("Invalid tx: %v, %+v\n", err, tx)
-			if s.ledger.eventRouter != nil {
-				event := events.NewTransactionFailed(tx.Hash(), err.Error(), tx.ExtraInfo)
-				s.ledger.eventRouter.PublishTransactionEvent(event)
-			}
-			errs = append(errs, err)
-			continue
-		}
-		valid = append(valid, tx)
-	}
-	return valid, errs
-}
+var ErrInvalidNonce = errors.New("invalid nonce")

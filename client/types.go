@@ -1,17 +1,20 @@
 package client
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mr-tron/base58"
 )
 
 const NATIVE_DECIMAL = 6
 const addressDecodedExpectedLength = 32
-const TxTypeTransfer = 0
+const (
+	TxTypeTransfer = 0
+	TxTypeFaucet   = 1
+)
 
 var (
 	ErrInvalidAddress = errors.New("domain: invalid address format")
@@ -47,9 +50,12 @@ type Tx struct {
 	TextData  string       `json:"text_data"`
 	Nonce     uint64       `json:"nonce"`
 	ExtraInfo string       `json:"extra_info"`
+	ZkProof   string       `json:"zk_proof"`
+	ZkPub     string       `json:"zk_pub"`
 }
 
-func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string, extraInfo map[string]any) (*Tx, error) {
+func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, nonce uint64, ts uint64, textData string,
+	extraInfo map[string]string, zkProof string, zkPub string) (*Tx, error) {
 	if err := ValidateAddress(sender); err != nil {
 		return nil, fmt.Errorf("from: %w", err)
 	}
@@ -74,28 +80,30 @@ func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, 
 		Timestamp: ts,
 		TextData:  textData,
 		ExtraInfo: serializedTxExtra,
+		ZkProof:   zkProof,
+		ZkPub:     zkPub,
 	}, nil
 }
 
-func SerializeTxExtraInfo(data map[string]any) (string, error) {
+func SerializeTxExtraInfo(data map[string]string) (string, error) {
 	if data == nil {
 		return "", nil
 	}
 
-	extraBytes, err := json.Marshal(data)
+	extraBytes, err := jsonx.Marshal(data)
 	if err != nil {
 		return "", fmt.Errorf("unable to marshal tx extra info: %w", err)
 	}
 	return string(extraBytes), nil
 }
 
-func DeserializeTxExtraInfo(raw string) (map[string]any, error) {
+func DeserializeTxExtraInfo(raw string) (map[string]string, error) {
 	if raw == "" {
 		return nil, nil
 	}
 
-	var extraInfo map[string]any
-	if err := json.Unmarshal([]byte(raw), &extraInfo); err != nil {
+	var extraInfo map[string]string
+	if err := jsonx.Unmarshal([]byte(raw), &extraInfo); err != nil {
 		return nil, fmt.Errorf("unable to unmarshal extra info: %w", err)
 	}
 	return extraInfo, nil
@@ -104,6 +112,11 @@ func DeserializeTxExtraInfo(raw string) (map[string]any, error) {
 type SignedTx struct {
 	Tx  *Tx
 	Sig string
+}
+
+type UserSig struct {
+	PubKey []byte
+	Sig    []byte
 }
 
 type AddTxResponse struct {
@@ -143,9 +156,11 @@ type TxInfo struct {
 	Timestamp uint64       `json:"timestamp"`
 	TextData  string       `json:"text_data"`
 	Nonce     uint64       `json:"nonce,omitempty"`
+	Status    int32        `json:"status,omitempty"`
+	ErrMsg    string       `json:"err_msg,omitempty"`
 	ExtraInfo string       `json:"extra_info,omitempty"`
 }
 
-func (i *TxInfo) DeserializedExtraInfo() (map[string]any, error) {
+func (i *TxInfo) DeserializedExtraInfo() (map[string]string, error) {
 	return DeserializeTxExtraInfo(i.ExtraInfo)
 }

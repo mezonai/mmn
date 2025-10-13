@@ -56,7 +56,7 @@ Note: Faucet amount is now configured in the genesis configuration file (config/
 
 # Run with docker
 ## Build and run nodes
-
+- To override configs inside `docker-compose.yaml`, create `.env` file with variables declared in `.env.example`
   ```
   docker compose build
   docker compose up
@@ -84,6 +84,46 @@ go build -o bin/mmn ./cmd
 ### Generate random private key (default behavior)
 ./mmn bootnode --bootstrap-p2p-port 9000
 
+
+# Perform transfer with CLI command
+- Build executable mmn
+  ```
+  go build -o mmn .
+  ```
+- Then execute command to perform transfer to a wallet
+  ```
+  ./mmn transfer [-u <node-url>] [-t <recipient-addr>] [-a <amount>] [-p <sender-private-key>] [-f <sender-private-key-file>] [-v]
+  ```
+  For example:
+  ```
+  ./mmn transfer -v \
+      -u localhost:9001 \
+      -t EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx \
+      -a 1000 \
+      -p 302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee
+  
+  ./mmn transfer -v \
+      -u localhost:9001 \
+      -t EtgjD8gQLQhmSY1hpoVHdrEHyBEUBzkAU9PivA6NNSJx \
+      -a 1000 \
+      -f ./private.txt
+  ```
+- For more details about command, run `./mmn transfer --help`
+
+
 # uses cases
 Mezon -> (auto gen wallet) => user has a wallet
 Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify commit and broadcast to nodes.
+
+## Monitoring stack (Grafana + Loki + Promtail + Prometheus)
+
+- Create prometheus targets config file named `nodes.yaml` inside `./monitoring/prometheus/targets`, take a look at [example file](monitoring/prometheus/targets/nodes.example.yml)
+- Open grafana at http://localhost:3300 (admin / admin)
+- Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
+- Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs
+
+# Deploy
+## bootstrap address
+```
+  --bootstrap-addresses \"/ip4/BOOTNODE_EXTERNAL_IP/udp/9000/quic-v1/p2p/BOOTNODE_PEER_ID\"
+```

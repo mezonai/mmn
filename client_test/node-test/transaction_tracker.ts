@@ -178,6 +178,9 @@ export class TransactionTracker extends EventEmitter {
       confirmations: update.confirmations ? BigInt(update.confirmations) : 0n,
       errorMessage: update.error_message || '',
       timestamp: update.timestamp ? BigInt(update.timestamp) : BigInt(Date.now()),
+      extraInfo: '',
+      amount: '',
+      textData: '',
     };
 
     const oldStatus = this.trackedTransactions.get(txHash);
