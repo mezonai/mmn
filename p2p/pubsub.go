@@ -252,7 +252,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 	if t, err := ln.pubsub.Join(AccessControlTopic); err == nil {
 		ln.topicAccessControl = t
-		if sub, err := ln.topicAccessControl.Subscribe(); err == nil {
+		if sub, subErr := ln.topicAccessControl.Subscribe(); subErr == nil {
 			exception.SafeGoWithPanic("HandleAccessControlTopic", func() {
 				ln.HandleAccessControlTopic(ctx, sub)
 			})
@@ -261,7 +261,7 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 
 	if t, err := ln.pubsub.Join(AccessControlSyncTopic); err == nil {
 		ln.topicAccessControlSync = t
-		if sub, err := ln.topicAccessControlSync.Subscribe(); err == nil {
+		if sub, subErr := ln.topicAccessControlSync.Subscribe(); subErr == nil {
 			exception.SafeGoWithPanic("HandleAccessControlSyncTopic", func() {
 				ln.HandleAccessControlSyncTopic(ctx, sub)
 			})
