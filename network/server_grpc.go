@@ -75,8 +75,8 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		abuseDetector: abuseDetector,
 	}
 
-	// Initialize shared services
-	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
+	// Initialize shared services with protection
+	s.txSvc = service.NewTxServiceWithProtection(ld, mempool, blockStore, txTracker, rateLimiter, abuseDetector)
 	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
 
 	grpcSrv := grpc.NewServer()
