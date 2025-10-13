@@ -92,7 +92,7 @@ jobs:
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -T "build/mmn" \
-            "https://uploads.pkg.github.com/v2/repos/$OWNER/$REPO/packages/generic/mmn-binary/$SHA/mmn?name=mmn"
+            "https://uploads.pkg.github.com/v2/repos/$OWNER/$REPO/packages/generic/mmn-binary/$SHA/mmn"
 
   deploy:
     needs: build
