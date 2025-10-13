@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/monitoring"
 
 	"github.com/mezonai/mmn/config"
@@ -29,7 +30,7 @@ func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, t
 }
 
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
-	logx.Info("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
+	logx.Debug("GRPC", fmt.Sprintf("received tx %+v", in.TxMsg))
 	tx, err := utils.FromProtoSignedTx(in)
 	monitoring.IncreaseReceivedClientTxCount()
 	if err != nil {
@@ -51,8 +52,8 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
 	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
 	if errTx != nil || errTxMeta != nil {
-		err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
-		return &pb.GetTxByHashResponse{Error: err.Error()}, nil
+		logx.Error("GRPC GET TX", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
+		return &pb.GetTxByHashResponse{Error: errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound).Error()}, nil
 	}
 	amount := utils.Uint256ToString(tx.Amount)
 
@@ -107,8 +108,8 @@ func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTran
 			}
 			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
 			if errTx != nil || errTxMeta != nil {
-				err := fmt.Errorf("error while retrieving tx by hash: %v, %v", errTx, errTxMeta)
-				return nil, err
+				logx.Error("GRPC GET TX STATUS", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
+				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 			}
 			return &pb.TransactionStatusInfo{
 				TxHash:        txHash,
@@ -125,7 +126,7 @@ func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTran
 	}
 
 	// 3) Transaction not found anywhere -> return nil and error
-	return nil, fmt.Errorf("transaction not found: %s", txHash)
+	return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 }
 
 func (s *TxServiceImpl) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {

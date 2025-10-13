@@ -129,20 +129,6 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 	}
 }
 
-func (ln *Libp2pNetwork) startInitialSync() {
-	// wait network setup
-	time.Sleep(500 * time.Millisecond)
-
-	ctx := context.Background()
-
-	if _, err := ln.RequestLatestSlotFromPeers(ctx); err != nil {
-		logx.Warn("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
-	}
-	// sync from 0
-	if err := ln.RequestBlockSync(ctx, 0); err != nil {
-		logx.Error("NETWORK:SYNC BLOCK", "Failed to send initial sync request: ", err.Error())
-	}
-}
 func (ln *Libp2pNetwork) cleanupOldSyncRequests() {
 	ln.syncMu.Lock()
 	defer ln.syncMu.Unlock()

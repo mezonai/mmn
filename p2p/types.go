@@ -33,6 +33,7 @@ type Libp2pNetwork struct {
 	bootstrapPeerIDs map[peer.ID]struct{}
 
 	blockStore store.BlockStore
+	txStore    store.TxStore
 
 	topicBlocks            *pubsub.Topic
 	topicEmptyBlocks       *pubsub.Topic
@@ -78,12 +79,10 @@ type Libp2pNetwork struct {
 	// Peer scoring system
 	peerScoringManager *PeerScoringManager
 
-	// Sync completion tracking
-	syncCompleted     bool
-	syncCompletedMu   sync.RWMutex
-	activeSyncCount   int
-	activeSyncCountMu sync.RWMutex
-
+	syncCompleted        bool
+	syncCompletedMu      sync.RWMutex
+	activeSyncCount      int
+	activeSyncCountMu    sync.RWMutex
 	missingBlocksTracker map[uint64]*MissingBlockInfo
 	missingBlocksMu      sync.RWMutex
 
@@ -118,7 +117,8 @@ type Libp2pNetwork struct {
 	OnStartValidator func()
 
 	// PoH config
-	pohCfg *config.PohConfig
+	pohCfg     *config.PohConfig
+	isListener bool
 }
 
 type PeerInfo struct {
@@ -129,23 +129,6 @@ type PeerInfo struct {
 	IsActive        bool      `json:"is_active"`
 	IsAuthenticated bool      `json:"is_authenticated"`
 	AuthTimestamp   time.Time `json:"auth_timestamp"`
-}
-
-type BlockMessage struct {
-	Slot      uint64    `json:"slot"`
-	PrevHash  string    `json:"prev_hash"`
-	Entries   []string  `json:"entries"`
-	LeaderID  string    `json:"leader_id"`
-	Timestamp time.Time `json:"timestamp"`
-	Hash      string    `json:"hash"`
-	Signature []byte    ` json:"signature"`
-}
-
-type VoteMessage struct {
-	Slot      uint64 `json:"slot"`
-	BlockHash string `json:"block_hash"`
-	VoterID   string `json:"voter_id"`
-	Signature []byte `json:"signature"`
 }
 
 type TxMessage struct {

@@ -30,7 +30,8 @@ func (s *AccountServiceImpl) GetAccount(ctx context.Context, in *pb.GetAccountRe
 	addr := in.Address
 	acc, err := s.ledger.GetAccount(addr)
 	if err != nil {
-		return nil, fmt.Errorf("error while retriving account: %s", err.Error())
+		logx.Error("GRPC GET ACCOUNT", "Ledger error", err)
+		return nil, err
 	}
 	if acc == nil {
 		return &pb.GetAccountResponse{
