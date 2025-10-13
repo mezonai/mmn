@@ -251,7 +251,7 @@ func (ln *Libp2pNetwork) reserveViaPeer(ctx context.Context, info peer.AddrInfo)
 
 func (ln *Libp2pNetwork) startRelayReservationMaintainer() {
 	exception.SafeGo("RelayReservationMaintainer", func() {
-		ticker := time.NewTicker(9 * time.Minute)
+		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
