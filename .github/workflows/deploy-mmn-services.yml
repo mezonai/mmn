@@ -78,7 +78,6 @@ jobs:
           GIT_SHA=$(git rev-parse --short=12 HEAD)
 
       - name: Upload MMN binary artifact
-          echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
         uses: actions/upload-artifact@v4
         with:
           name: mmn-binary-${{ steps.get_sha.outputs.sha }}
@@ -106,6 +105,9 @@ jobs:
             echo "Error: Build failed or was skipped without providing an artifact_sha. Cannot proceed."
             exit 1
           fi
+          SHORT_SHA=$(echo $FULL_SHA | cut -c1-12)
+          echo "Using consistent short SHA for artifact lookup: $SHORT_SHA"
+          echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Download MMN binary artifact
         uses: actions/download-artifact@v4
