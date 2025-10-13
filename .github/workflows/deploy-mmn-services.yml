@@ -1,4 +1,6 @@
 ﻿name: Deploy MMN
+permissions:
+  contents: write
 
 on:
   workflow_dispatch:
@@ -11,27 +13,82 @@ on:
         description: "Git ref (branch, tag, or commit)"
         required: true
         default: "master"
-      artifact_sha:
-        description: "(Optional) Re-deploy commit SHA"
+      new_tag_to_build:
+        description: "(Optional) Provide a new tag to build and create a release (eg v1.0.0)"
+        required: false
+      existing_tag_to_deploy:
+        description: "(Optional) Provide an existing tag to redeploy"
         required: false
 
 jobs:
+  determine_tag:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.new_tag_to_build == '' && github.event.inputs.existing_tag_to_deploy == ''
+    outputs:
+      new_tag: ${{ steps.get_tag.outputs.new_tag }}
+      is_run: "true"
+    steps:
+      - name: Checkout for git history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Calculate new tag
+        id: get_tag
+        run: |
+          echo "==> No new or existing tag provided. Calculating the next tag..."
+
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_TAG="v0.1.0"
+            echo "==> No existing tags found. Starting with initial tag: $NEW_TAG"
+          else
+            echo "==> Latest tag is: $LATEST_TAG"
+            VERSION=$(echo $LATEST_TAG | sed 's/^v//')
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f2)
+            PATCH=$(echo $VERSION | cut -d. -f3)
+            NEXT_PATCH=$((PATCH + 1))
+            NEW_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+            echo "==> Calculated next tag: $NEW_TAG"
+          fi
+          
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
   build:
-    if: github.event.inputs.artifact_sha == ''
+    needs: determine_tag
+    if: |
+      always() && (
+        github.event.inputs.existing_tag_to_deploy != '' ||
+        github.event.inputs.new_tag_to_build != '' ||
+        needs.determine_tag.outputs.is_run == 'true'
+      )
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
-      git_sha: ${{ steps.get_sha.outputs.sha }}
+      tag_name: ${{ steps.create_release.outputs.tag_name }}
     steps:
+      - name: Decide whether to build
+        id: decide
+        run: |
+          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
+            echo "==> Skipping build because 'existing_tag_to_deploy' is set. Will deploy directly."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "==> Proceeding with new build."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
       - name: Checkout
+        if: steps.decide.outputs.skip == 'false'
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
       
       - name: Get Git Commit SHA
+        if: steps.decide.outputs.skip == 'false'
         id: get_sha
         run: echo "sha=$(git rev-parse --short=12 HEAD)" >> $GITHUB_OUTPUT
 
       - name: Setup Go
+        if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
         with:
           go-version: "1.22.5"
@@ -39,6 +96,7 @@ jobs:
           check-latest: false
 
       - name: Install build dependencies
+        if: steps.decide.outputs.skip == 'false'
         run: |
           PACKAGES="
           build-essential
@@ -66,7 +124,27 @@ jobs:
             echo "==> All build dependencies are already installed. Skipping."
           fi
 
+      - name: Determine and Standardize Tag for Release
+        id: determine_release_tag
+        run: |
+          if [ -n "${{ inputs.new_tag_to_build }}" ]; then
+            TAG_INPUT="${{ inputs.new_tag_to_build }}"
+          else
+            TAG_INPUT="${{ needs.determine_tag.outputs.new_tag }}"
+          fi
+
+          if [[ ! "$TAG_INPUT" == v* ]]; then
+            TAG_TO_USE="v$TAG_INPUT"
+            echo "==> Prefix 'v' was missing. Standardizing to: $TAG_TO_USE"
+          else
+            TAG_TO_USE="$TAG_INPUT"
+          fi
+
+          echo "==> Using tag for release: $TAG_TO_USE"
+          echo "tag=$TAG_TO_USE" >> $GITHUB_OUTPUT
+
       - name: Build MMN binary
+        if: steps.decide.outputs.skip == 'false'
         id: build
         env:
           CGO_ENABLED: 1
@@ -74,55 +152,92 @@ jobs:
           CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
         run: |
           mkdir -p build
-          GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
+          GOOS=linux GOARCH=amd64 go build -tags rocksdb -o "build/mmn-${{ steps.determine_release_tag.outputs.tag }}" .
           GIT_SHA=$(git rev-parse --short=12 HEAD)
 
-      - name: Cache MMN binary
-        uses: actions/cache@v4
+      - name: Create Release and Upload Binary
+        if: steps.decide.outputs.skip == 'false'
+        id: create_release
+        uses: softprops/action-gh-release@v2
         with:
-          path: build/mmn
-          key: mmn-binary-${{ steps.get_sha.outputs.sha }}
+          tag_name: ${{ steps.determine_release_tag.outputs.tag }}
+          name: "Release ${{ steps.determine_release_tag.outputs.tag }}"
+          fail_on_unmatched_files: true
+          files: |
+            build/mmn-${{ steps.determine_release_tag.outputs.tag }}
+      
+      - name: Upload binary for deployment job
+        if: steps.decide.outputs.skip == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmn-binary-${{ steps.determine_release_tag.outputs.tag }}
+          path: build/mmn-${{ steps.determine_release_tag.outputs.tag }}
 
   deploy:
-    needs: build
+    needs: [determine_tag, build]
     if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     environment: ${{ inputs.env }}
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
-      - name: Determine Artifact SHA
-        id: get_sha
+      - name: Determine Binary Path and Tag
+        id: determine_binary
         run: |
-          FULL_SHA=""
-          if [ -n "${{ inputs.artifact_sha }}" ]; then
-            echo "Input SHA received: ${{ inputs.artifact_sha }}"
-            FULL_SHA="${{ inputs.artifact_sha }}"
+          TAG_INPUT=""
+          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
+            TAG_INPUT="${{ inputs.existing_tag_to_deploy }}"
+            echo "==> Will deploy existing tag: $TAG_INPUT"
           elif [ "${{ needs.build.result }}" == "success" ]; then
-            echo "Using SHA from current build: ${{ needs.build.outputs.git_sha }}"
-            FULL_SHA="${{ needs.build.outputs.git_sha }}"
+            TAG_INPUT="${{ needs.build.outputs.tag_name }}"
+            echo "==> Will deploy newly built tag: $TAG_INPUT"
           else
-            echo "Error: Build failed or was skipped without providing an artifact_sha. Cannot proceed."
+            echo "::error::Cannot proceed. No existing tag was provided and the build job did not succeed."
             exit 1
           fi
-          SHORT_SHA=$(echo $FULL_SHA | cut -c1-12)
-          echo "Using consistent short SHA for artifact lookup: $SHORT_SHA"
-          echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-      - name: Restore MMN binary from cache
-        uses: actions/cache/restore@v4
-        id: cache-restore
+          if [[ ! "$TAG_INPUT" == v* ]]; then
+            TAG_TO_DEPLOY="v$TAG_INPUT"
+            echo "==> Prefix 'v' was missing. Standardizing to: $TAG_TO_DEPLOY"
+          else
+            TAG_TO_DEPLOY="$TAG_INPUT"
+          fi
+          
+          echo "tag_name=$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+          echo "binary_name=mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+          echo "binary_path=build/mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+      
+      - name: Checkout code for config files
+        uses: actions/checkout@v4
+
+      - name: Prepare binary for deployment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p build
+          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
+            echo "==> Downloading binary from release..."
+            gh release download "${{ steps.determine_binary.outputs.tag_name }}" --pattern "${{ steps.determine_binary.outputs.binary_name }}" --output "${{ steps.determine_binary.outputs.binary_path }}"
+          else
+            echo "==> Getting binary from the build job's artifact."
+            # Bước download artifact sẽ xử lý việc này
+          fi
+
+      - name: Get binary from build job (if new build)
+        if: inputs.existing_tag_to_deploy == ''
+        uses: actions/download-artifact@v4
         with:
-          path: build/mmn
-          key: mmn-binary-${{ steps.get_sha.outputs.sha }}
+          name: mmn-binary-${{ steps.determine_binary.outputs.tag_name }}
+          path: build/
 
       - name: Check if binary exists
         run: |
-          if [ ! -f "build/mmn" ]; then
-            echo "Error: Build artifact 'build/mmn' not found."
-            echo "This could be because the build failed, or the cached artifact for SHA ${{ steps.get_sha.outputs.sha }} does not exist or has expired."
+          # Dùng tên file động
+          if [ ! -f "${{ steps.determine_binary.outputs.binary_path }}" ]; then
+            echo "Error: Binary '${{ steps.determine_binary.outputs.binary_path }}' not found."
             exit 1
           fi
+          echo "==> Binary is ready for deployment."
 
       - name: Deploy Monitoring Configurations
         env:
