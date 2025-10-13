@@ -122,6 +122,7 @@ jobs:
             echo "Error: Build artifact 'build/mmn' not found."
             echo "This could be because the build failed, or the cached artifact for SHA ${{ steps.get_sha.outputs.sha }} does not exist or has expired."
             exit 1
+          fi
 
       - name: Deploy Monitoring Configurations
         env:
