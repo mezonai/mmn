@@ -13,6 +13,38 @@ on:
         default: "master"
 
 jobs:
+  prepare-runner:
+    name: Prepare and Check Runner Workspace
+    runs-on: [self-hosted, Linux, mezon-runner]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        continue-on-error: true
+
+      - name: Check and Fix Workspace Permissions
+        run: |
+          echo "Checking workspace permissions..."
+          # Thử tạo một file test. Nếu thất bại, có nghĩa là quyền đang bị sai.
+          if ! touch "$GITHUB_WORKSPACE/permission_test_file" ; then
+            echo "::warning::Permission error detected in workspace. Attempting to fix..."
+            
+            # Dùng lệnh find để tìm thư mục runner gốc một cách an toàn
+            RUNNER_DIR=$(sudo find / -type d -name "actions-runner" -print 2>/dev/null | head -n 1)
+            if [ -z "$RUNNER_DIR" ]; then
+              echo "::error::Could not find actions-runner directory."
+              exit 1
+            fi
+            
+            WORKSPACE_DIR="${RUNNER_DIR}/_work"
+            echo "Correcting permissions on ${WORKSPACE_DIR} for user $(whoami)..."
+            sudo chown -R $(whoami):$(whoami) "${WORKSPACE_DIR}"
+            echo "✅ Permissions have been corrected."
+          else
+            echo "✅ Workspace permissions are OK."
+            # Dọn dẹp file test nếu tạo thành công
+            rm "$GITHUB_WORKSPACE/permission_test_file"
+          fi
+
   build:
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
@@ -30,10 +62,10 @@ jobs:
           cache: true
           check-latest: false
       
-      - name: Correct Workspace Permissions
-        run: |
-          echo "==> Correcting permissions for the workspace...$(whoami)"
-          sudo chown -R $(whoami):$(whoami) $GITHUB_WORKSPACE
+      # - name: Correct Workspace Permissions
+      #   run: |
+      #     echo "==> Correcting permissions for the workspace...$(whoami)"
+      #     sudo chown -R $(whoami):$(whoami) $GITHUB_WORKSPACE
 
 
       - name: Install build dependencies
