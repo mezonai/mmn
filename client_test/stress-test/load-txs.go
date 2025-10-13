@@ -127,7 +127,7 @@ type ProveResponse struct {
 const (
 	FaucetPrivateKeyHex = "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 	JwtSecret           = "defaultencryptionkey"
-	ZkVerifyUrl         = "http://172.16.100.180:8282"
+	ZkVerifyUrl         = "http://localhost:8282"
 )
 
 // Local copies of node-side limits to throttle faucet
