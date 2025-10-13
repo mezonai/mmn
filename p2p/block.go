@@ -84,6 +84,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 			var req SyncRequest
 			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to unmarshal SyncRequest: ", err.Error())
+				ln.UpdatePeerScore(msg.ReceivedFrom, "invalid_message", nil)
 				continue
 			}
 
@@ -120,10 +121,17 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 	remotePeer := s.Conn().RemotePeer()
 
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(remotePeer, "stream", nil) {
+			return
+		}
+	}
+
 	var syncRequest SyncRequest
 	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&syncRequest); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to decode sync request from stream:", err)
+		ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 		s.Close()
 		return
 	}
@@ -156,7 +164,17 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 				break
 			}
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
+			ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 			break
+		}
+
+		// Bandwidth rate limit per received batch
+		if ln.peerScoringManager != nil {
+			if data, err := jsonx.Marshal(blocks); err == nil {
+				if len(data) > 0 && !ln.peerScoringManager.CheckRateLimit(remotePeer, "bandwidth", int64(len(data))) {
+					break
+				}
+			}
 		}
 
 		logx.Info("NETWORK:SYNC BLOCK", "Received batch of", len(blocks), "blocks, from slot", blocks[0].Slot, "to slot", blocks[len(blocks)-1].Slot)
@@ -171,6 +189,7 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 			if ln.onSyncResponseReceived != nil {
 				if err := ln.onSyncResponseReceived(blk); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to process sync response: ", err.Error())
+					ln.UpdatePeerScore(remotePeer, "invalid_block", nil)
 				}
 			}
 
@@ -273,12 +292,18 @@ func (ln *Libp2pNetwork) RequestBlockSyncStream() error {
 }
 
 func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.ID) {
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(targetPeer, "stream", nil) {
+			return
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stream, err := ln.host.NewStream(ctx, targetPeer, RequestBlockSyncStream)
 	if err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to create stream to peer:", targetPeer.String(), "error:", err.Error())
+		ln.UpdatePeerScore(targetPeer, "connection", nil)
 		return
 	}
 	defer stream.Close()
@@ -286,6 +311,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 	encoder := jsonx.NewEncoder(stream)
 	if err := encoder.Encode(req); err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to send request ID:", err)
+		ln.UpdatePeerScore(targetPeer, "connection", nil)
 		return
 	}
 
@@ -342,8 +368,17 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 			}
 
 			if len(batch) >= int(SyncBlocksBatchSize) {
+				// Bandwidth rate limit per outgoing batch
+				if ln.peerScoringManager != nil {
+					if data, err := jsonx.Marshal(batch); err == nil {
+						if !ln.peerScoringManager.CheckRateLimit(targetPeer, "bandwidth", int64(len(data))) {
+							return
+						}
+					}
+				}
 				if err := ln.sendBlockBatchStream(batch, stream); err != nil {
 					logx.Error("NETWORK:SYNC BLOCK", "Failed to send batch:", err)
+					ln.UpdatePeerScore(targetPeer, "connection", nil)
 					return
 				}
 				totalBlocksSent += len(batch)
@@ -354,8 +389,17 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		}
 
 		if len(batch) > 0 {
+			// Bandwidth rate limit for the tail batch
+			if ln.peerScoringManager != nil {
+				if data, err := jsonx.Marshal(batch); err == nil {
+					if !ln.peerScoringManager.CheckRateLimit(targetPeer, "bandwidth", int64(len(data))) {
+						return
+					}
+				}
+			}
 			if err := ln.sendBlockBatchStream(batch, stream); err != nil {
 				logx.Error("NETWORK:SYNC BLOCK", "Failed to send final batch:", err.Error())
+				ln.UpdatePeerScore(targetPeer, "connection", nil)
 				return
 			}
 			totalBlocksSent += len(batch)
@@ -371,6 +415,11 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 }
 
 func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(targetPeer, "stream", nil) {
+			return fmt.Errorf("rate limited: stream")
+		}
+	}
 	stream, err := ln.host.NewStream(context.Background(), targetPeer, RequestBlockSyncStream)
 	if err != nil {
 		return fmt.Errorf("failed to create stream: %w", err)
@@ -382,6 +431,11 @@ func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(targetPeer, "bandwidth", int64(len(data))) {
+			return fmt.Errorf("rate limited: bandwidth")
+		}
+	}
 	_, err = stream.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write request: %w", err)
@@ -468,9 +522,15 @@ func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
 }
 
 func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot uint64, latestPohSlot uint64) {
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(targetPeer, "stream", nil) {
+			return
+		}
+	}
 	stream, err := ln.host.NewStream(context.Background(), targetPeer, LatestSlotProtocol)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to open stream to peer:", err)
+		ln.UpdatePeerScore(targetPeer, "connection", nil)
 		return
 	}
 	defer stream.Close()
@@ -487,9 +547,15 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 		return
 	}
 
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(targetPeer, "bandwidth", int64(len(data))) {
+			return
+		}
+	}
 	_, err = stream.Write(data)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to write latest slot response:", err)
+		ln.UpdatePeerScore(targetPeer, "connection", nil)
 		return
 	}
 
@@ -498,10 +564,19 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 	defer s.Close()
 
+	remotePeer := s.Conn().RemotePeer()
+
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(remotePeer, "stream", nil) {
+			return
+		}
+	}
+
 	var response LatestSlotResponse
 	decoder := jsonx.NewDecoder(s)
 	if err := decoder.Decode(&response); err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to decode latest slot response:", err)
+		ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 		return
 	}
 

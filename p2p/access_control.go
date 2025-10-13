@@ -90,14 +90,13 @@ func (ln *Libp2pNetwork) AddToBlacklistWithExpiry(peerID peer.ID, duration time.
 	if duration <= 0 {
 		return
 	}
-	// schedule removal after duration
+
 	go func(id peer.ID, d time.Duration) {
 		timer := time.NewTimer(d)
 		<-timer.C
 		ln.listMu.Lock()
 		delete(ln.blacklist, id)
 		ln.listMu.Unlock()
-		logx.Info("ACCESS CONTROL", "Temporary blacklist expired for:", id.String())
 	}(peerID, duration)
 }
 

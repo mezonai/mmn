@@ -36,6 +36,7 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 			var vote consensus.Vote
 			if err := jsonx.Unmarshal(msg.Data, &vote); err != nil {
 				logx.Warn("NETWORK:VOTE", "Unmarshal error:", err)
+				ln.UpdatePeerScore(msg.ReceivedFrom, "invalid_message", nil)
 				continue
 			}
 

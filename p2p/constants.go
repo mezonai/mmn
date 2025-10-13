@@ -33,11 +33,11 @@ const (
 
 var (
 	P2pMaxPeerConnections           int32         = 50
-	SyncBlockBatchSize              uint64        = 10 // for test only, should be 1000
-	AuthLimitMessagePayload         int64         = 2048
-	ConnCount                       int32         = 0
 	MaxPeers                        int32         = 50
-	SyncBlocksBatchSize             uint64        = 100
+	SyncBlocksBatchSize             uint64        = 10 // ~ 1 leader window
+	AuthLimitMessagePayload         int64         = 2048
+	SyncBlockBatchSize              uint64        = 10 // for test only, should be 1000
+	ConnCount                       int32         = 0
 	MaxcheckpointScanBlocksRange    uint64        = 100
 	ReadyGapThreshold               uint64        = 0
 	LatestSlotSyncGapThreshold      uint64        = 1

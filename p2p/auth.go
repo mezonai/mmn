@@ -24,6 +24,13 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 	remotePeer := s.Conn().RemotePeer()
 	logx.Info("AUTH", "Handling authentication request from peer: ", remotePeer.String())
 
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(remotePeer, "auth", nil) {
+			ln.peerScoringManager.RecordRateLimitViolation(remotePeer, "auth", nil)
+			return
+		}
+	}
+
 	limited := &io.LimitedReader{R: s, N: AuthLimitMessagePayload}
 	data, err := io.ReadAll(limited)
 	if err != nil {
@@ -32,6 +39,9 @@ func (ln *Libp2pNetwork) handleAuthStream(s network.Stream) {
 	}
 
 	if limited.N <= 0 {
+		if ln.peerScoringManager != nil {
+			ln.peerScoringManager.RecordRateLimitViolation(remotePeer, "bandwidth", AuthLimitMessagePayload)
+		}
 		return
 	}
 
@@ -465,12 +475,24 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		return fmt.Errorf("failed to marshal challenge: %w", err)
 	}
 
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(peerID, "stream", nil) {
+			ln.peerScoringManager.RecordRateLimitViolation(peerID, "stream", nil)
+			return fmt.Errorf("rate limited: stream")
+		}
+	}
 	stream, err := ln.host.NewStream(ctx, peerID, AuthProtocol)
 	if err != nil {
 		return fmt.Errorf("failed to open auth stream: %w", err)
 	}
 	defer stream.Close()
 
+	if ln.peerScoringManager != nil {
+		if !ln.peerScoringManager.CheckRateLimit(peerID, "bandwidth", int64(len(challengeData))) {
+			ln.peerScoringManager.RecordRateLimitViolation(peerID, "bandwidth", int64(len(challengeData)))
+			return fmt.Errorf("rate limited: bandwidth")
+		}
+	}
 	if _, err := stream.Write(challengeData); err != nil {
 		return fmt.Errorf("failed to send challenge: %w", err)
 	}
@@ -631,6 +653,7 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 
 		if response.ChainID != DefaultChainID {
 			logx.Warn("AUTH", "Different chain ID from peer ", peerID.String(), ": expected ", DefaultChainID, ", got ", response.ChainID)
+			ln.UpdatePeerScore(peerID, "auth_failure", nil)
 		}
 
 		dataToVerify := append(response.Challenge, []byte(fmt.Sprintf("%d", response.Nonce))...)

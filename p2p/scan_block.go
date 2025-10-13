@@ -129,6 +129,7 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 				func(peer peer.ID) {
 					if err := ln.sendSyncRequestToPeer(req, peer); err != nil {
 						logx.Warn("NETWORK:SCAN", "Request scan fail to peer: ", peer.String(), " : ", err)
+						ln.UpdatePeerScore(peer, "block_sync", nil)
 					}
 				}(targetPeer)
 			})

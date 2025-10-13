@@ -28,6 +28,7 @@ type Libp2pNetwork struct {
 	selfPubKey  string
 	selfPrivKey ed25519.PrivateKey
 	peers       map[peer.ID]*PeerInfo
+	mu          sync.RWMutex
 	// Track bootstrap peers so we can exclude them from certain requests
 	bootstrapPeerIDs map[peer.ID]struct{}
 
@@ -78,7 +79,6 @@ type Libp2pNetwork struct {
 	// Peer scoring system
 	peerScoringManager *PeerScoringManager
 
-	// Sync completion tracking
 	syncCompleted        bool
 	syncCompletedMu      sync.RWMutex
 	activeSyncCount      int
