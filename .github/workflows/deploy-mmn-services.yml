@@ -14,10 +14,10 @@ on:
         required: true
         default: "master"
       new_tag_to_build:
-        description: "(Optional) Provide a new tag to build and create a release (eg v1.0.0)"
+        description: "(Optional) New tag"
         required: false
       existing_tag_to_deploy:
-        description: "(Optional) Provide an existing tag to redeploy"
+        description: "(Optional) Existing tag"
         required: false
 
 jobs:
@@ -52,8 +52,8 @@ jobs:
             NEW_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
             echo "==> Calculated next tag: $NEW_TAG"
           fi
-          
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
   build:
     needs: determine_tag
     if: |
@@ -356,7 +356,7 @@ jobs:
 
       - name: Copy binary and config to target
         run: |
-          scp -i /home/nccsoft/.ssh/mmn_deploy build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
+          scp -i /home/nccsoft/.ssh/mmn_deploy ${{ steps.determine_binary.outputs.binary_path }} ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
           scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
 
       - name: Generate remote setup and env files locally
