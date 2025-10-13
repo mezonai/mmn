@@ -112,7 +112,18 @@ jobs:
           echo "Using consistent short SHA for artifact lookup: $SHORT_SHA"
           echo "sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
-      - name: Download MMN binary artifact
+      - name: Download artifact from a PREVIOUS workflow run (re-deploy)
+        if: github.event.inputs.artifact_sha != ''
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: ${{ github.workflow }}
+          commit: ${{ steps.get_sha.outputs.sha }}
+          name: mmn-binary-${{ steps.get_sha.outputs.sha }}
+          path: build/
+
+      - name: Download artifact from the CURRENT workflow run (new build)
+        if: github.event.inputs.artifact_sha == ''
         uses: actions/download-artifact@v4
         with:
           name: mmn-binary-${{ steps.get_sha.outputs.sha }}
