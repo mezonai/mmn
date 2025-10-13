@@ -29,6 +29,9 @@ jobs:
           go-version: "1.22.5"
           cache: true
           check-latest: false
+      
+      - name: Correct Workspace Permissions
+        run: sudo chown -R mmn:mmn $GITHUB_WORKSPACE
 
       - name: Install build dependencies
         run: |
@@ -105,7 +108,7 @@ jobs:
           EOF
       
       - name: Monitoring config server runner
-        if: inputs.env != 'dev'
+        if: inputs.env == 'prod'
         env:
           PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
           NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
@@ -135,6 +138,55 @@ jobs:
           sudo cp ./monitoring/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
           sudo sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" /etc/prometheus/targets/nodes.yml
           sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
+
+      - name: Deploy Full Monitoring Stack to Dev Server
+        if: inputs.env == 'dev'
+        env:
+          PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
+          NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
+          LISTENER_URL_PORT: ${{ vars.LISTENER_URL_PORT }}
+        run: |
+          set -e
+          echo "==> 1. Preparing monitoring configs on the runner..."
+
+          cp -r ./monitoring ./monitoring_deploy_temp
+
+          sed -i "s/__PORT_NODE_EXPORTER__/${PORT_NODE_EXPORTER}/g" ./monitoring_deploy_temp/prometheus-config.yml
+          sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" ./monitoring_deploy_temp/prometheus/targets/nodes.example.yml
+
+          echo "==> 2. Copying prepared monitoring stack to the dev server..."
+          scp -i /home/nccsoft/.ssh/mmn_deploy -r ./monitoring_deploy_temp/* ${{ secrets.HOST_ALIAS }}:/tmp/monitoring_deploy
+
+          echo "==> 3. Running setup script on the dev server..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOF'
+            set -e
+            echo "--> Preparing directories on remote server..."
+            sudo mkdir -p /etc/mezon/monitoring/ /etc/grafana/ /etc/prometheus/targets
+
+            echo "--> Setting up Prometheus..."
+            sudo mv /tmp/monitoring_deploy/prometheus-config.yml /etc/mezon/monitoring/prometheus-config.yml
+            sudo mv /tmp/monitoring_deploy/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
+            sudo chown mmn:mmn /etc/mezon/monitoring/prometheus-config.yml
+            sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
+
+            echo "--> Setting up Loki..."
+            sudo mv /tmp/monitoring_deploy/loki-config.yml /etc/mezon/monitoring/loki-config.yml
+            sudo chown mmn:mmn /etc/mezon/monitoring/loki-config.yml
+
+            echo "--> Setting up Grafana..."
+            sudo cp -r /tmp/monitoring_deploy/grafana/* /etc/grafana/
+            
+            sudo chown -R grafana:grafana /etc/grafana/provisioning
+            sudo chown -R grafana:grafana /etc/grafana/dashboards
+
+            sudo sed -i 's#url: http://loki:3100#url: http://localhost:3100#g' /etc/grafana/provisioning/datasources/loki.yml
+            sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
+            sudo sed -i 's#path: /var/lib/grafana/dashboards#path: /etc/grafana/dashboards#g' /etc/grafana/provisioning/dashboards/dashboard.yaml
+            echo "--> Cleaning up temporary files..."
+            sudo rm -rf /tmp/monitoring_deploy
+
+            echo "Full monitoring stack deployed to dev server."
+          EOF
 
       - name: Copy binary and config to target
         run: |
