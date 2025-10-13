@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/holiman/uint256"
-	"github.com/mezonai/mmn/bankhash"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/store"
@@ -181,7 +180,6 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			accountDeltas[recipient.Address] = recipient
 
 			// commit the update
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -202,20 +200,6 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
 			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
-		}
-	}
-
-	if len(accountDeltas) > 0 {
-		var prevBankHash [32]byte
-		if b.Slot > 0 {
-			prevBankHash = [32]byte{}
-		}
-
-		deltaHash := bankhash.ComputeAccountsDeltaHash(accountDeltas)
-		expectedBankHash := bankhash.CombineBankHash(prevBankHash, deltaHash)
-
-		if b.BankHash != expectedBankHash {
-			return fmt.Errorf("bankhash verification failed for block %d", b.Slot)
 		}
 	}
 
@@ -281,6 +265,25 @@ func (l *Ledger) GetTransactionsByHashes(hashes []string) ([]*transaction.Transa
 // ApplyTransaction applies a transaction to account state without persisting to database
 func ApplyTransaction(state map[string]*types.Account, tx *transaction.Transaction) error {
 	return applyTx(state, tx)
+}
+
+func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
+	if len(hashes) == 0 {
+		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil
+	}
+
+	// Use batch operations - only 2 CGO calls instead of 2*N!
+	txs, errTx := l.txStore.GetBatch(hashes)
+	txMetas, errTxMeta := l.txMetaStore.GetBatch(hashes)
+
+	if errTx != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transactions: %w", errTx)
+	}
+	if errTxMeta != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transaction metas: %w", errTxMeta)
+	}
+
+	return txs, txMetas, nil
 }
 
 var ErrInvalidNonce = errors.New("invalid nonce")

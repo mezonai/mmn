@@ -5,13 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/bankhash"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
-	"github.com/mezonai/mmn/types"
 )
 
 type BlockStatus uint8
@@ -129,18 +126,6 @@ func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
 
 func (b *BroadcastedBlock) VerifyPoH() error {
 	return poh.VerifyEntries(b.PrevHash, b.Entries, b.Slot)
-}
-
-func (b *BroadcastedBlock) VerifyBankHash(prevBankHash [32]byte, accountDeltas map[string]*types.Account) error {
-	deltaHash := bankhash.ComputeAccountsDeltaHash(accountDeltas)
-
-	expectedBankHash := bankhash.CombineBankHash(prevBankHash, deltaHash)
-
-	if b.BankHash != expectedBankHash {
-		return fmt.Errorf("bankhash mismatch: expected=%x got=%x", expectedBankHash, b.BankHash)
-	}
-
-	return nil
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {
