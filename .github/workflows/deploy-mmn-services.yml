@@ -195,9 +195,6 @@ jobs:
           echo "tag_name=$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
           echo "binary_name=mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
           echo "binary_path=build/mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
-      
-      - name: Checkout code for config files
-        uses: actions/checkout@v4
 
       - name: Download release binary using curl
         if: inputs.existing_tag_to_deploy != ''
