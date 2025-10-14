@@ -219,10 +219,12 @@ jobs:
           else
             set -e
             echo "==> GitHub CLI not found. Installing now..."
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-key.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-key.gpg
-            sudo chmod go+r /usr/share/keyrings/githubcli-archive-key.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-key.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt-get update
+            (type -p wget >/dev/null || (sudo apt-get update && sudo apt-get install wget -y)) && \
+            sudo mkdir -p -m 755 /etc/apt/keyrings && \
+            wget -qO- https://cli.github.com/packages/githubcli-archive-key.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-key.gpg > /dev/null && \
+            sudo chmod go+r /etc/apt/keyrings/githubcli-archive-key.gpg && \
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-key.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+            sudo apt-get update && \
             sudo apt-get install gh -y
             echo "==> GitHub CLI installed successfully."
             gh --version
