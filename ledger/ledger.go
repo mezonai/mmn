@@ -113,7 +113,6 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		return nil
 	}
 
-	accountDeltas := make(map[string]*types.Account)
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -175,9 +174,6 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			if l.txTracker != nil {
 				l.txTracker.RemoveTransaction(txHash)
 			}
-
-			accountDeltas[sender.Address] = sender
-			accountDeltas[recipient.Address] = recipient
 
 			// commit the update
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
@@ -256,10 +252,6 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 		return nil, nil, errTx, errTxMeta
 	}
 	return tx, txMeta, nil, nil
-}
-
-func (l *Ledger) GetTransactionsByHashes(hashes []string) ([]*transaction.Transaction, error) {
-	return l.txStore.GetBatch(hashes)
 }
 
 // ApplyTransaction applies a transaction to account state without persisting to database

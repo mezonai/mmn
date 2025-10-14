@@ -6,7 +6,6 @@ import (
 
 	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/jsonx"
-	"github.com/mezonai/mmn/logx"
 	"github.com/pkg/errors"
 )
 
@@ -55,24 +54,16 @@ func getPublicKeyFromVoterID(voterID string) (ed25519.PublicKey, error) {
 	return ed25519.PublicKey(pubKeyBytes), nil
 }
 
-func (v *Vote) VerifySignature() bool {
+func (v *Vote) Validate() error {
 	pubKey, err := getPublicKeyFromVoterID(v.VoterID)
 	if err != nil {
-		logx.Error("Vote", fmt.Sprintf("Failed to get public key from VoterID: %v", err))
-		return false
+		return fmt.Errorf("failed to get public key from VoterID: %w", err)
 	}
 
 	if len(pubKey) != ed25519.PublicKeySize {
-		return false
-	}
-	if len(v.Signature) != ed25519.SignatureSize {
-		return false
+		return fmt.Errorf("invalid signature pubKey size: expected %d, got %d", ed25519.SignatureSize, len(pubKey))
 	}
 
-	return ed25519.Verify(pubKey, v.serializeVote(), v.Signature)
-}
-
-func (v *Vote) Validate() error {
 	if len(v.Signature) == 0 {
 		return fmt.Errorf("missing signature")
 	}

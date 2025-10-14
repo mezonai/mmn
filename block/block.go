@@ -121,9 +121,11 @@ func (b *BroadcastedBlock) VerifySignature() bool {
 	}
 
 	if len(pubKey) != ed25519.PublicKeySize {
+		logx.Warn("BLOCK", "verify block signature failure  different length of public key")
 		return false
 	}
 	if len(b.Signature) != ed25519.SignatureSize {
+		logx.Warn("BLOCK", "verify block signature failure different length of signature")
 		return false
 	}
 

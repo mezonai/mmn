@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/jsonx"
@@ -65,12 +64,6 @@ func (ln *Libp2pNetwork) ProcessVote(bs store.BlockStore, ld *ledger.Ledger, mp 
 		logx.Error("VOTE", "Failed to add vote: ", err)
 		return err
 	}
-
-	if !vote.VerifySignature() {
-		logx.Error("VOTE", fmt.Sprintf("Invalid signature at slot %d", vote.Slot))
-		return fmt.Errorf("invalid signature")
-	}
-
 	if existed := bs.HasCompleteBlock(vote.Slot); !existed {
 		logx.Warn("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
 		return nil
