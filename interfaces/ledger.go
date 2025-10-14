@@ -12,6 +12,8 @@ type Ledger interface {
 	AccountExists(addr string) (bool, error)
 	// GetAccount returns the account for the given address
 	GetAccount(addr string) (*types.Account, error)
+	// GetAccountBatch returns multiple accounts for the given addresses
+	GetAccountBatch(addrs []string) (map[string]*types.Account, error)
 	// Balance returns the balance for the given address
 	Balance(addr string) (*uint256.Int, error)
 	// CreateAccountsFromGenesis creates an account from genesis block

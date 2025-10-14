@@ -28,12 +28,13 @@ const (
 var (
 	ConnCount                       int32         = 0
 	MaxPeers                        int32         = 50
-	SyncBlocksBatchSize             uint64        = 10 // ~ 1 leader window
+	SyncBlocksBatchSize             uint64        = 100
 	MaxcheckpointScanBlocksRange    uint64        = 100
 	ReadyGapThreshold               uint64        = 0
 	LatestSlotSyncGapThreshold      uint64        = 1
 	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
 	SnapshotChunkSize               int           = 16384
 	SnapshotReadyGapThreshold       uint64        = 2
-	SnapshotRangeFor                uint64        = 20000 // should be 20k ~ 50k
+	SnapshotRangeFor                uint64        = 100 // should be 20k ~ 50k
+	InitRequestLatestSlotMaxRetries int           = 3
 )

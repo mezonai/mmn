@@ -131,3 +131,9 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 - Open grafana at http://localhost:3300 (admin / admin)
 - Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
 - Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs
+
+# Deploy
+## bootstrap address
+```
+  --bootstrap-addresses \"/ip4/BOOTNODE_EXTERNAL_IP/udp/9000/quic-v1/p2p/BOOTNODE_PEER_ID\"
+```

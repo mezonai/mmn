@@ -14,7 +14,6 @@ import (
 	"github.com/mezonai/mmn/types"
 )
 
-const accountPrefix = "account:"
 const folder = "./snapshots"
 const FileName = "snapshot-latest.json"
 
