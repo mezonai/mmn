@@ -11,9 +11,10 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/holiman/uint256 v1.3.2
 	github.com/json-iterator/go v1.1.12
-	github.com/libp2p/go-libp2p v0.42.0
-	github.com/libp2p/go-libp2p-kad-dht v0.32.0
-	github.com/libp2p/go-libp2p-pubsub v0.13.0
+	github.com/lib/pq v1.10.9
+	github.com/libp2p/go-libp2p v0.43.0
+	github.com/libp2p/go-libp2p-kad-dht v0.33.1
+	github.com/libp2p/go-libp2p-pubsub v0.14.2
 	github.com/linxGnu/grocksdb v1.10.2
 	github.com/multiformats/go-multiaddr v0.16.0
 	github.com/redis/go-redis/v9 v9.12.1
