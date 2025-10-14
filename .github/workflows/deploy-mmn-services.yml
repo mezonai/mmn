@@ -191,6 +191,7 @@ jobs:
           write_text_file "$BOOTNODE_PRIVKEY" /etc/mezon/bootnode_privkey.txt
           write_text_file "$NODE1_PRIVKEY" /etc/mezon/node1_privkey.txt
           write_text_file "$VERIFYING_KEY_B64" /opt/mezon/mmn/config/verifying_key.b64
+          write_text_file "$LISTENER_PRIVKEY" /etc/mezon/listener_privkey.txt
 
           echo "==> Generating genesis.yml..."
           sed \
@@ -206,6 +207,11 @@ jobs:
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
 
+          echo "==> Updating systemd for listener..."
+          sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
+              /opt/mezon/mmn/config/systemd/mezon-listener.service.tpl \
+              | sudo tee /etc/systemd/system/mezon-listener.service >/dev/null
+
           echo "==> Creating /etc/mezon/node1.env..."
           sudo tee /etc/mezon/node1.env >/dev/null <<EOL
           LOGFILE=node1.log
@@ -220,8 +226,22 @@ jobs:
           sudo chmod 644 /etc/mezon/node1.env
           sudo chown mmn:mmn /etc/mezon/node1.env
 
+          echo "==> Creating /etc/mezon/node-listener.env..."
+          sudo tee /etc/mezon/node-listener.env >/dev/null <<EOL
+          LOGFILE=node-listener.log
+          LOGLEVEL=info
+          LOGFILE_MAX_SIZE_MB=500
+          LOGFILE_MAX_AGE_DAYS=3
+          CORS_ALLOWED_ORIGINS=*
+          CORS_ALLOWED_METHODS=POST,OPTIONS
+          CORS_ALLOWED_HEADERS=Content-Type
+          EOL
+          sudo chmod 644 /etc/mezon/node-listener.env
+          sudo chown mmn:mmn /etc/mezon/node-listener.env
+
           sudo systemctl daemon-reload
           sudo systemctl enable mezon-node1
+          sudo systemctl enable mezon-listener
 
           echo "✅ Remote setup completed successfully."
           EOF
@@ -236,6 +256,7 @@ jobs:
           printf "export FAUCET_ADDRESS=%q\n" "$FAUCET_ADDRESS" >> mezon_env.sh
           printf "export BOOTNODE_IP=%q\n" "$BOOTNODE_IP" >> mezon_env.sh
           printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
+          printf "export LISTENER_PRIVKEY=%q\n" "$LISTENER_PRIVKEY" >> mezon_env.sh 
         env:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
@@ -244,6 +265,7 @@ jobs:
           FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          LISTENER_PRIVKEY:  ${{ secrets.LISTENER_PRIVKEY }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
@@ -255,6 +277,7 @@ jobs:
           FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          LISTENER_PRIVKEY:  ${{ secrets.LISTENER_PRIVKEY }}
         run: |
           set -e
 
@@ -277,6 +300,7 @@ jobs:
 
           sudo systemctl stop mezon-node1 || true
           sudo systemctl stop mezon-bootnode || true
+          sudo systemctl stop mezon-listener || true
 
           sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
@@ -292,12 +316,26 @@ jobs:
               --privkey-path "/etc/mezon/node1_privkey.txt"
           fi
 
+          if [ ! -d "/opt/mezon/node-data/node-listener" ]; then
+            set -a
+            source /etc/mezon/listener.env
+            set +a
+            /opt/mezon/mmn/bin/mmn init \
+              --data-dir "/opt/mezon/node-data/node-listener" \
+              --genesis "/etc/mezon/genesis.yml" \
+              --database rocksdb \
+              --privkey-path "/etc/mezon/listener_privkey.txt"
+          fi
+
           sudo systemctl start mezon-bootnode || true
           sleep 2
           sudo systemctl start mezon-node1 || true
+          sudo systemctl start mezon-listener || true
           EOF
 
       - name: Healthcheck
         run: |
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-listener | tail -n 50"
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8084/health || true"
