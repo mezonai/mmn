@@ -58,7 +58,7 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 }
 
 func (ln *Libp2pNetwork) TxBroadcast(ctx context.Context, tx *transaction.Transaction) error {
-	logx.Info("TX", "Broadcasting transaction to network")
+	logx.Debug("TX", "Broadcasting transaction to network")
 	txData, err := jsonx.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("failed to serialize transaction: %w", err)

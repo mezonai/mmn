@@ -86,17 +86,34 @@ func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, er
 	return &tx, nil
 }
 
-// GetBatch retrieves multiple transactions by their hashes
+// GetBatch retrieves multiple transactions by their hashes using true batch operation
 func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transaction, error) {
 	if len(txHashes) == 0 {
+		logx.Info("TX_STORE", "GetBatch: no transactions to retrieve")
 		return []*transaction.Transaction{}, nil
+	}
+	logx.Info("TX_STORE", fmt.Sprintf("GetBatch: retrieving %d transactions", len(txHashes)))
+
+	// Prepare keys for batch operation
+	keys := make([][]byte, len(txHashes))
+	for i, txHash := range txHashes {
+		keys[i] = ts.getDbKey(txHash)
+	}
+
+	// Use true batch read - single CGO call!
+	dataMap, err := ts.dbProvider.GetBatch(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get transactions: %w", err)
 	}
 
 	transactions := make([]*transaction.Transaction, 0, len(txHashes))
+
 	for _, txHash := range txHashes {
-		data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
-		if err != nil {
-			logx.Warn("TX_STORE", fmt.Sprintf("Could not get transaction %s from database: %s", txHash, err.Error()))
+		key := ts.getDbKey(txHash)
+		data, exists := dataMap[string(key)]
+
+		if !exists {
+			logx.Warn("TX_STORE", fmt.Sprintf("Transaction %s not found in batch result", txHash))
 			continue
 		}
 
@@ -111,6 +128,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 		transactions = append(transactions, &tx)
 	}
 
+	logx.Info("TX_STORE", fmt.Sprintf("GetBatch: retrieved %d/%d transactions", len(transactions), len(txHashes)))
 	return transactions, nil
 }
 

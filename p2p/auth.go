@@ -398,12 +398,12 @@ func (ln *Libp2pNetwork) handleAuthResponse(s network.Stream, remotePeer peer.ID
 	ln.challengeMu.Unlock()
 
 	// Update peer info
-	ln.mu.Lock()
+	ln.listMu.Lock()
 	if peerInfo, exists := ln.peers[remotePeer]; exists {
 		peerInfo.IsAuthenticated = true
 		peerInfo.AuthTimestamp = time.Now()
 	}
-	ln.mu.Unlock()
+	ln.listMu.Unlock()
 
 	ln.UpdatePeerScore(remotePeer, "auth_success", nil)
 
@@ -653,6 +653,7 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 
 		if response.ChainID != DefaultChainID {
 			logx.Warn("AUTH", "Different chain ID from peer ", peerID.String(), ": expected ", DefaultChainID, ", got ", response.ChainID)
+			ln.UpdatePeerScore(peerID, "auth_failure", nil)
 		}
 
 		dataToVerify := append(response.Challenge, []byte(fmt.Sprintf("%d", response.Nonce))...)
@@ -675,12 +676,12 @@ func (ln *Libp2pNetwork) InitiateAuthentication(ctx context.Context, peerID peer
 		delete(ln.pendingChallenges, peerID)
 		ln.challengeMu.Unlock()
 
-		ln.mu.Lock()
+		ln.listMu.Lock()
 		if peerInfo, exists := ln.peers[peerID]; exists {
 			peerInfo.IsAuthenticated = true
 			peerInfo.AuthTimestamp = time.Now()
 		}
-		ln.mu.Unlock()
+		ln.listMu.Unlock()
 
 		logx.Info("AUTH", "Authentication successful with ", peerID.String())
 		return nil

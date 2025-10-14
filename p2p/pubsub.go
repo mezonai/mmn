@@ -35,8 +35,18 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return nil
 			}
 
+			if !ln.leaderSchedule.IsLeaderAt(blk.Slot, blk.LeaderID) {
+				logx.Error("BLOCK", fmt.Sprintf("Not leader at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+				return fmt.Errorf("invalid leader")
+			}
+
+			// Verify signature
+			if !blk.VerifySignature() {
+				logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+				return fmt.Errorf("invalid signature")
+			}
+
 			// Verify PoH. If invalid, mark block and continue to process as a failed block
-			logx.Info("BLOCK", "VerifyPoH: verifying PoH for block=", blk.Hash)
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
@@ -45,7 +55,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 
 			// Reset poh to sync poh clock with leader
 			if blk.Slot > bs.GetLatestStoreSlot() {
-				logx.Info("BLOCK", fmt.Sprintf("Resetting poh clock with leader at slot %d", blk.Slot))
 				if err := ln.OnSyncPohFromLeader(blk.LastEntryHash(), blk.Slot); err != nil {
 					logx.Error("BLOCK", "Failed to sync poh from leader: ", err)
 				}
@@ -54,6 +63,10 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
+			}
+
+			if ln.isListener {
+				return nil
 			}
 
 			// Remove transactions in block from mempool and add tx tracker if node is follower
@@ -68,8 +81,14 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 			vote.Sign(privKey)
 
-			// verify passed broadcast vote
-			ln.BroadcastVote(context.Background(), vote)
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+				return err
+			}
+
+			if err := ln.BroadcastVote(ln.ctx, vote); err != nil {
+				return err
+			}
+
 			return nil
 		},
 		OnEmptyBlockReceived: func(blocks []*block.BroadcastedBlock) error {
@@ -90,34 +109,22 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				}
 			}
 
+			// Decrement active sync count when sync response is processed
+			ln.DecrementActiveSyncCount()
+
 			return nil
 		},
 		OnVoteReceived: func(vote *consensus.Vote) error {
 			logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-			committed, needApply, err := collector.AddVote(vote)
-			if err != nil {
-				logx.Error("VOTE", "Failed to add vote: ", err)
-				return err
-			}
 
-			// not leader => maybe vote come before block received => if dont have block just return
-			if bs.Block(vote.Slot) == nil {
-				logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
-				return nil
-			}
-			if committed && needApply {
-				logx.Info("VOTE", "Committed vote from OnVote Received: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-				err := ln.applyDataToBlock(vote, bs, ld, mp)
-				if err != nil {
-					logx.Error("VOTE", "Failed to apply data to block: ", err)
-					return err
-				}
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
+				return err
 			}
 
 			return nil
 		},
 		OnTransactionReceived: func(txData *transaction.Transaction) error {
-			logx.Info("TX", "Processing received transaction from P2P network")
+			logx.Debug("TX", "Processing received transaction from P2P network")
 
 			// Add transaction to mempool
 			_, err := mp.AddTx(txData, false)
@@ -155,9 +162,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				}
 			}
 
-			// Decrement active sync count when sync response is processed
-			ln.DecrementActiveSyncCount()
-
 			return nil
 		},
 		OnLatestSlotReceived: func(latestSlot uint64, latestPohSlot uint64, peerID string) error {
@@ -175,9 +179,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 	})
 
-	go ln.startInitialSync()
-
-	go ln.startPeriodicSyncCheck(bs)
 	// clean sync request expireds every 1 minute
 	go ln.startCleanupRoutine()
 }
@@ -244,88 +245,166 @@ func (ln *Libp2pNetwork) SetupPubSubSyncTopics(ctx context.Context) {
 		}
 	}
 
+	if ln.leaderSchedule.Len() == 1 && !ln.isListener {
+		ln.startImmediatelyFromLocalLatestSlot()
+		return
+	}
+
+	if t, err := ln.pubsub.Join(AccessControlTopic); err == nil {
+		ln.topicAccessControl = t
+		if sub, subErr := ln.topicAccessControl.Subscribe(); subErr == nil {
+			exception.SafeGoWithPanic("HandleAccessControlTopic", func() {
+				ln.HandleAccessControlTopic(ctx, sub)
+			})
+		}
+	}
+
+	if t, err := ln.pubsub.Join(AccessControlSyncTopic); err == nil {
+		ln.topicAccessControlSync = t
+		if sub, subErr := ln.topicAccessControlSync.Subscribe(); subErr == nil {
+			exception.SafeGoWithPanic("HandleAccessControlSyncTopic", func() {
+				ln.HandleAccessControlSyncTopic(ctx, sub)
+			})
+		}
+	}
+
 	exception.SafeGo("WaitPeersAndStart", func() {
-		// wait until network has more than 1 peer, max 3 seconds
-		startTime := time.Now()
-		maxWaitTime := 3 * time.Second
+		ln.startAfterSyncWithPeers(ctx)
+	})
+}
 
-		for {
-			peerCount := ln.GetPeersConnected()
-			if peerCount > 1 {
-				break
-			}
-			// Check if we've waited too long
-			if time.Since(startTime) > maxWaitTime {
-				break
-			}
+func (ln *Libp2pNetwork) startImmediatelyFromLocalLatestSlot() {
+	latest := ln.blockStore.GetLatestFinalizedSlot()
+	var seed [32]byte
+	if latest > 0 {
+		if blk := ln.blockStore.Block(latest); blk != nil {
+			seed = blk.LastEntryHash()
+		}
+	}
+	if ln.OnForceResetPOH != nil {
+		ln.OnForceResetPOH(seed, latest)
+	}
+	ln.startCoreServices(ln.ctx, true)
+}
 
+func (ln *Libp2pNetwork) startAfterSyncWithPeers(ctx context.Context) {
+	// wait until network has more than 1 peer, max 3 seconds
+	startTime := time.Now()
+	maxWaitTime := 3 * time.Second
+
+	for {
+		peerCount := ln.GetPeersConnected()
+		if peerCount > 1 {
+			break
+		}
+		// Check if we've waited too long
+		if time.Since(startTime) > maxWaitTime {
+			break
 		}
 
-		localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
+	}
 
-		if localLatestSlot == 0 {
-			ln.enableFullModeOnce.Do(func() {
-				// Start PoH/Validator immediately without sync
-				logx.Info("NETWORK", "Starting PoH/Validator immediately")
-				ln.startCoreServices(ln.ctx, true)
-			})
-		} else {
-			for {
-				// Handle restart all nodes, check poh slot first
-				if ln.worldLatestPohSlot > 0 {
-					if localLatestSlot >= ln.worldLatestPohSlot {
-						logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
-						var seed [32]byte
-						if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
-							seed = blk.LastEntryHash()
-						}
-						if ln.OnForceResetPOH != nil {
-							ln.OnForceResetPOH(seed, localLatestSlot)
-						}
-						ln.startCoreServices(ln.ctx, true)
-						return
-					}
-					break
-				}
-				time.Sleep(WaitWorldLatestSlotTimeInterval)
-			}
+	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 
-			// Handle node crash, should catchup to world latest slot
-			for {
-				// Only sync at the time when the poh clock is synchronized with the slot of the finalized block
-				if ln.worldLatestSlot > 0 &&
-					!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
-					ln.worldLatestPohSlot > 0 &&
-					!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
-					ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold {
-					break
-				}
-				ln.RequestLatestSlotFromPeers(ctx)
-				time.Sleep(WaitWorldLatestSlotTimeInterval)
-			}
-			if localLatestSlot < ln.worldLatestSlot {
-				logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
-				ln.RequestBlockSyncFromLatest(ln.ctx)
-			} else {
-				// No sync required; start services based on local latest state
-				logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
+	if localLatestSlot == 0 {
+		if ln.worldLatestSlot == 0 {
+			if !ln.ensureWorldLatestSlotInitialized(ctx) {
 				ln.enableFullModeOnce.Do(func() {
-					latest := ln.blockStore.GetLatestFinalizedSlot()
-					var seed [32]byte
-					if latest > 0 {
-						if blk := ln.blockStore.Block(latest); blk != nil {
-							seed = blk.LastEntryHash()
-						}
-					}
-					if ln.OnForceResetPOH != nil {
-						ln.OnForceResetPOH(seed, latest)
-					}
+					logx.Info("NETWORK", "No world latest slot discovered; starting PoH/Validator for genesis")
 					ln.startCoreServices(ln.ctx, true)
 				})
+				return
 			}
-		}
-	})
 
+			ln.waitUntilSyncWindowAligned(ctx)
+			ln.RequestBlockSyncFromLatest(ln.ctx)
+			return
+		}
+
+		ln.waitUntilSyncWindowAligned(ctx)
+		ln.RequestBlockSyncFromLatest(ln.ctx)
+		return
+	}
+
+	ln.waitForWorldPohSlot()
+	if ln.handlePohResetIfNeeded(localLatestSlot) {
+		return
+	}
+
+	// Handle node crash, should catchup to world latest slot
+	ln.waitUntilSyncWindowAligned(ctx)
+	if localLatestSlot < ln.worldLatestSlot {
+		logx.Info("NETWORK", "Local latest slot is less than world latest slot, requesting block sync from latest")
+		ln.RequestBlockSyncFromLatest(ln.ctx)
+	} else {
+		// No sync required; start services based on local latest state
+		logx.Info("NETWORK", "Local latest slot is greater than or equal to world latest slot, starting PoH/Validator")
+		ln.enableFullModeOnce.Do(func() {
+			ln.startImmediatelyFromLocalLatestSlot()
+		})
+	}
+}
+
+func (ln *Libp2pNetwork) ensureWorldLatestSlotInitialized(ctx context.Context) bool {
+	if ln.worldLatestSlot > 0 {
+		return true
+	}
+	retryCount := 0
+	for retryCount < InitRequestLatestSlotMaxRetries {
+		if ln.worldLatestSlot > 0 {
+			break
+		}
+		ln.RequestLatestSlotFromPeers(ctx)
+		time.Sleep(WaitWorldLatestSlotTimeInterval)
+		retryCount++
+	}
+	return ln.worldLatestSlot > 0
+}
+
+// isSyncWindowAligned checks if PoH slot and finalized slot are aligned sufficiently to start syncing
+func (ln *Libp2pNetwork) isSyncWindowAligned() bool {
+	return ln.worldLatestSlot > 0 &&
+		!ln.isLeaderOfSlot(ln.worldLatestSlot) &&
+		ln.worldLatestPohSlot > 0 &&
+		!ln.isLeaderOfSlot(ln.worldLatestPohSlot) &&
+		ln.worldLatestPohSlot-ln.worldLatestSlot <= LatestSlotSyncGapThreshold
+}
+
+func (ln *Libp2pNetwork) waitUntilSyncWindowAligned(ctx context.Context) {
+	for {
+		if ln.isSyncWindowAligned() {
+			break
+		}
+		ln.RequestLatestSlotFromPeers(ctx)
+		time.Sleep(WaitWorldLatestSlotTimeInterval)
+	}
+}
+
+func (ln *Libp2pNetwork) waitForWorldPohSlot() {
+	for {
+		if ln.worldLatestPohSlot > 0 {
+			break
+		}
+		time.Sleep(WaitWorldLatestSlotTimeInterval)
+	}
+}
+
+func (ln *Libp2pNetwork) handlePohResetIfNeeded(localLatestSlot uint64) bool {
+	if ln.worldLatestPohSlot > 0 {
+		if localLatestSlot >= ln.worldLatestPohSlot {
+			logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
+			var seed [32]byte
+			if blk := ln.blockStore.Block(localLatestSlot); blk != nil {
+				seed = blk.LastEntryHash()
+			}
+			if ln.OnForceResetPOH != nil {
+				ln.OnForceResetPOH(seed, localLatestSlot)
+			}
+			ln.startCoreServices(ln.ctx, true)
+			return true
+		}
+	}
+	return false
 }
 
 func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
@@ -350,11 +429,13 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
-		if sub, err := ln.topicTxs.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("HandleTransactionTopic", func() {
-				ln.HandleTransactionTopic(ctx, sub)
-			})
+	if !ln.isListener {
+		if ln.topicTxs, err = ln.pubsub.Join(TopicTxs); err == nil {
+			if sub, err := ln.topicTxs.Subscribe(); err == nil {
+				exception.SafeGoWithPanic("HandleTransactionTopic", func() {
+					ln.HandleTransactionTopic(ctx, sub)
+				})
+			}
 		}
 	}
 
@@ -367,21 +448,6 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if ln.topicAccessControl, err = ln.pubsub.Join(AccessControlTopic); err == nil {
-		if sub, err := ln.topicAccessControl.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("HandleAccessControlTopic", func() {
-				ln.HandleAccessControlTopic(ctx, sub)
-			})
-		}
-	}
-
-	if ln.topicAccessControlSync, err = ln.pubsub.Join(AccessControlSyncTopic); err == nil {
-		if sub, err := ln.topicAccessControlSync.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("HandleAccessControlSyncTopic", func() {
-				ln.HandleAccessControlSyncTopic(ctx, sub)
-			})
-		}
-	}
 }
 
 // HandleCheckpointRequestTopic listens for checkpoint hash requests and responds with local hash
@@ -424,7 +490,6 @@ func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *
 		}
 	}
 }
-
 func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte, bool) {
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false

@@ -167,15 +167,13 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				continue
 			}
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			// Remove successful transaction from tracker
 			if l.txTracker != nil {
 				l.txTracker.RemoveTransaction(txHash)
 			}
 
-			// commit the update
-			logx.Info("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -191,9 +189,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				}
 				return err
 			}
+			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 		}
 		if len(txMetas) > 0 {
 			l.txMetaStore.StoreBatch(txMetas)
+			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
 		}
 	}
 
@@ -204,6 +204,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 // GetAccount returns account with addr (nil if not exist)
 func (l *Ledger) GetAccount(addr string) (*types.Account, error) {
 	return l.accountStore.GetByAddr(addr)
+}
+
+// GetAccountBatch returns multiple accounts for the given addresses using batch operation
+func (l *Ledger) GetAccountBatch(addrs []string) (map[string]*types.Account, error) {
+	return l.accountStore.GetBatch(addrs)
 }
 
 // Apply transaction to ledger (after verifying signature). NOTE: this does not perform persisting operation into db
@@ -245,6 +250,26 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 		return nil, nil, errTx, errTxMeta
 	}
 	return tx, txMeta, nil, nil
+}
+
+// GetTxBatch retrieves multiple transactions and their metadata using batch operations
+func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
+	if len(hashes) == 0 {
+		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil
+	}
+
+	// Use batch operations - only 2 CGO calls instead of 2*N!
+	txs, errTx := l.txStore.GetBatch(hashes)
+	txMetas, errTxMeta := l.txMetaStore.GetBatch(hashes)
+
+	if errTx != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transactions: %w", errTx)
+	}
+	if errTxMeta != nil {
+		return nil, nil, fmt.Errorf("failed to batch get transaction metas: %w", errTxMeta)
+	}
+
+	return txs, txMetas, nil
 }
 
 var ErrInvalidNonce = errors.New("invalid nonce")

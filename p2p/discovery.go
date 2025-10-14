@@ -65,6 +65,7 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 				err := h.Connect(ctx, p)
 				if err != nil {
 					logx.Error("DISCOVERY", "Failed to connect to discovered peer:", err)
+					ln.UpdatePeerScore(p.ID, "connection", nil)
 				} else {
 					logx.Info("DISCOVERY", "Connected to discovered peer:", p.ID.String())
 

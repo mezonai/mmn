@@ -26,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	rclient "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
 )
 
 func NewNetWork(
@@ -34,7 +35,9 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
+	txStore store.TxStore,
 	pohCfg *config.PohConfig,
+	isListener bool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -46,11 +49,31 @@ func NewNetWork(
 
 	var ddht *dht.IpfsDHT
 
+	var relays []peer.AddrInfo
+	for _, bootstrapPeer := range bootstrapPeers {
+		if bootstrapPeer == "" {
+			continue
+		}
+		infos, err := discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
+		if err != nil {
+			logx.Error("NETWORK:SETUP", "Invalid bootstrap address for static relay:", bootstrapPeer, ", error:", err)
+			continue
+		}
+		if len(infos) > 0 {
+			relays = append(relays, infos[0])
+		}
+	}
+
+	quicAddr := strings.Replace(listenAddr, "/tcp/", "/udp/", 1) + "/quic-v1"
+
 	h, err := libp2p.New(
 		libp2p.Identity(privKey),
-		libp2p.ListenAddrStrings(listenAddr),
-		libp2p.NATPortMap(),
+		libp2p.ListenAddrStrings(listenAddr, quicAddr),
+		libp2p.EnableAutoRelayWithStaticRelays(relays),
+		libp2p.EnableRelay(),
+		libp2p.EnableHolePunching(),
 		libp2p.EnableNATService(),
+		libp2p.NATPortMap(),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
 			return ddht, err
@@ -75,7 +98,12 @@ func NewNetWork(
 
 	customDiscovery.Advertise(ctx, AdvertiseName)
 
-	ps, err := pubsub.NewGossipSub(ctx, h, pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()))
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()),
+		pubsub.WithMaxMessageSize(5*1024*1024),
+		pubsub.WithValidateQueueSize(128),
+		pubsub.WithPeerOutboundQueueSize(128),
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)
@@ -89,6 +117,7 @@ func NewNetWork(
 		peers:                  make(map[peer.ID]*PeerInfo),
 		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
 		blockStore:             blockStore,
+		txStore:                txStore,
 		maxPeers:               int(MaxPeers),
 		activeSyncRequests:     make(map[string]*SyncRequestInfo),
 		syncRequests:           make(map[string]*SyncRequestTracker),
@@ -108,6 +137,9 @@ func NewNetWork(
 		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
 		nextExpectedSlot:       0,
 		pohCfg:                 pohCfg,
+		isListener:             isListener,
+		syncCompleted:          false,
+		activeSyncCount:        0,
 	}
 
 	ln.peerScoringManager = NewPeerScoringManager(ln, DefaultPeerScoringConfig())
@@ -133,17 +165,18 @@ func NewNetWork(
 }
 
 func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []string) error {
-	ln.host.SetStreamHandler(NodeInfoProtocol, ln.AuthMiddleware(ln.handleNodeInfoStream))
-	ln.host.SetStreamHandler(AuthProtocol, ln.AuthMiddleware(ln.handleAuthStream))
+	ln.host.SetStreamHandler(AuthProtocol, ln.handleAuthStream)
+	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
+	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
+	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
+	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.AuthMiddleware(ln.handleBlockSyncRequestStream))
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.AuthMiddleware(ln.handleLatestSlotStream))
-	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
+	ln.SetupPubSubTopics(ctx)
+	ln.setupConnectionAuthentication(ctx)
 	// Start latest slot request mechanism
 	ln.startLatestSlotRequestMechanism()
-
-	ln.SetupPubSubSyncTopics(ctx)
-	ln.setupConnectionAuthentication(ctx)
 
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
@@ -173,7 +206,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		bootstrapConnected = true
 
 		ln.bootstrapPeerIDs[info.ID] = struct{}{}
-
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
 			ln.RequestNodeInfo(bootstrapPeer, &info)
 		})
@@ -380,9 +412,12 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 		return
 	}
 
+	remotePeer := s.Conn().RemotePeer()
+
 	var msg map[string]interface{}
 	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
+		ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 		return
 	}
 
@@ -390,6 +425,7 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	newPeerID, err := peer.Decode(newPeerIDStr)
 	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Invalid peer ID: ", newPeerIDStr)
+		ln.UpdatePeerScore(remotePeer, "invalid_message", nil)
 		return
 	}
 
@@ -407,9 +443,36 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 		Addrs: addrs,
 	}
 
+	for _, maddr := range addrs {
+		addrStr := maddr.String()
+		idx := strings.Index(addrStr, "/p2p-circuit/p2p/")
+		if idx <= 0 {
+			continue
+		}
+		hopStr := addrStr[:idx]
+		hopMaddr, err := ma.NewMultiaddr(hopStr)
+		if err != nil {
+			continue
+		}
+		relayInfo, err := peer.AddrInfoFromP2pAddr(hopMaddr)
+		if err != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if _, err := rclient.Reserve(ctx, ln.host, *relayInfo); err != nil {
+			logx.Warn("RELAYER", "Reserve via hop failed:", err)
+		} else {
+			logx.Info("RELAYER", "Reserved via hop relay:", relayInfo.ID.String())
+		}
+		cancel()
+		break
+	}
+
 	err = ln.host.Connect(context.Background(), peerInfo)
 	if err != nil {
-		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to connect to new peer: ", err)
+		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", peerInfo.Addrs, "Failed to connect to new peer:", err)
+		ln.UpdatePeerScore(newPeerID, "connection", nil)
+		return
 	}
 }
 
