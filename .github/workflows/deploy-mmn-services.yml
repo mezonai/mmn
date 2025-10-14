@@ -216,14 +216,6 @@ jobs:
           echo "==> Download complete: $BINARY_PATH"
           ls -lh "$BINARY_PATH"
 
-      - name: Check if binary exists
-        run: |
-          if [ ! -f "${{ steps.determine_binary.outputs.binary_path }}" ]; then
-            echo "Error: Binary '${{ steps.determine_binary.outputs.binary_path }}' not found."
-            exit 1
-          fi
-          echo "==> Binary is ready for deployment."
-
       - name: Deploy Monitoring Configurations
         if: inputs.env == 'dev'
         env:
