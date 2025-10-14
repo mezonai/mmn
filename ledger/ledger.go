@@ -254,11 +254,6 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 	return tx, txMeta, nil, nil
 }
 
-// ApplyTransaction applies a transaction to account state without persisting to database
-func ApplyTransaction(state map[string]*types.Account, tx *transaction.Transaction) error {
-	return applyTx(state, tx)
-}
-
 func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
 	if len(hashes) == 0 {
 		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil
