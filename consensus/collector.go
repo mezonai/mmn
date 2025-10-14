@@ -25,7 +25,7 @@ type Collector struct {
 
 func NewCollector(n int) *Collector {
 	f := n / 3
-	q := 2 * f
+	q := max(2*f, 1)
 	logx.Info("CONSENSUS", fmt.Sprintf("total=%d threshold=%d", n, q))
 	collector := &Collector{
 		votes:     make(map[uint64]map[string]*Vote),

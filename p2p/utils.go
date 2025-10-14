@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
-
 	"github.com/libp2p/go-libp2p/core/crypto"
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -36,24 +33,6 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 		return fmt.Sprintf("%s/p2p/%s", addrs[0].String(), ln.host.ID().String())
 	}
 	return ""
-}
-
-func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
-	return &consensus.Vote{
-		Slot:      msg.Slot,
-		VoterID:   msg.VoterID,
-		Signature: msg.Signature,
-	}
-}
-
-func (ln *Libp2pNetwork) ConvertMessageToBlock(msg BlockMessage) *block.Block {
-	return &block.Block{
-		BlockCore: block.BlockCore{
-			Slot:      msg.Slot,
-			LeaderID:  msg.LeaderID,
-			Timestamp: uint64(msg.Timestamp.Second()),
-		},
-	}
 }
 
 func AddrStrings(addrs []ma.Multiaddr) []string {

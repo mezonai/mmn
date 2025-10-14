@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/jsonx"
@@ -34,29 +33,21 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 				continue
 			}
 
-			var voteMsg VoteMessage
-			if err := jsonx.Unmarshal(msg.Data, &voteMsg); err != nil {
+			var vote consensus.Vote
+			if err := jsonx.Unmarshal(msg.Data, &vote); err != nil {
 				logx.Warn("NETWORK:VOTE", "Unmarshal error:", err)
 				continue
 			}
 
-			vote := ln.ConvertMessageToVote(voteMsg)
-			if vote != nil && ln.onVoteReceived != nil {
-				ln.onVoteReceived(vote)
+			if ln.onVoteReceived != nil {
+				ln.onVoteReceived(&vote)
 			}
 		}
 	}
 }
 
 func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote) error {
-	msg := VoteMessage{
-		Slot:      vote.Slot,
-		BlockHash: fmt.Sprintf("%x", vote.BlockHash),
-		VoterID:   vote.VoterID,
-		Signature: vote.Signature,
-	}
-
-	data, err := jsonx.Marshal(msg)
+	data, err := jsonx.Marshal(vote)
 	if err != nil {
 		return err
 	}
@@ -75,7 +66,7 @@ func (ln *Libp2pNetwork) ProcessVote(bs store.BlockStore, ld *ledger.Ledger, mp 
 	}
 
 	if existed := bs.HasCompleteBlock(vote.Slot); !existed {
-		logx.Info("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
+		logx.Warn("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
 		return nil
 	}
 

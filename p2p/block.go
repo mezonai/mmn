@@ -264,7 +264,7 @@ func (ln *Libp2pNetwork) RequestBlockSyncStream() error {
 }
 
 func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.ID) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stream, err := ln.host.NewStream(ctx, targetPeer, RequestBlockSyncStream)
@@ -403,7 +403,7 @@ func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *
 	if ln.topicBlocks != nil {
 		meshPeers := ln.topicBlocks.ListPeers()
 		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+			logx.Info("BLOCK", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
 		}
 	}
 
@@ -489,7 +489,7 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 		meshPeers := ln.topicBlocks.ListPeers()
 		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
 		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("  Block mesh peer %d: %s", i+1, peer.String()))
+			logx.Info("BLOCK", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
 		}
 	} else {
 		logx.Error("BLOCK", "Block topic is nil")

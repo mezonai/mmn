@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/mezonai/mmn/db"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
@@ -79,7 +80,8 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	data, err := as.dbProvider.Get(as.getDbKey(addr))
 	if err != nil {
-		return nil, fmt.Errorf("could not get account %s from db: %w", addr, err)
+		logx.Error("ACCOUNT_STORE", fmt.Sprintf("could not get account %s from db: %v", addr, err))
+		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
 	// Account doesn't exist
@@ -91,7 +93,8 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	var acc types.Account
 	err = jsonx.Unmarshal(data, &acc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal account %s: %w", addr, err)
+		logx.Error("ACCOUNT_STORE", fmt.Sprintf("failed to unmarshal account %s: %v", addr, err))
+		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
 	return &acc, nil
