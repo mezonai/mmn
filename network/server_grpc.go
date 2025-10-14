@@ -7,11 +7,11 @@ import (
 	"net"
 	"time"
 
-	"github.com/mezonai/mmn/abuse"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/ratelimit"
+	"github.com/mezonai/mmn/security/abuse"
+	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"

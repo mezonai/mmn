@@ -14,14 +14,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mezonai/mmn/abuse"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/abuse"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/ratelimit"
+	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
