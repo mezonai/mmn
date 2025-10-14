@@ -43,7 +43,6 @@ type Validator struct {
 	BatchSize                 int
 
 	netClient  interfaces.Broadcaster
-	p2pClient  *p2p.Libp2pNetwork
 	blockStore store.BlockStore
 	// Slot & entry buffer
 	leaderStartAtSlot uint64
@@ -55,7 +54,7 @@ type Validator struct {
 	ledger    *ledger.Ledger
 	collector *consensus.Collector
 
-	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error
+	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error
 }
 
 // NewValidator constructs a Validator with dependencies, including blockStore.
@@ -89,7 +88,6 @@ func NewValidator(
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
 		BatchSize:                 batchSize,
 		netClient:                 p2pClient,
-		p2pClient:                 p2pClient,
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		collector:                 collector,
@@ -223,7 +221,8 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
 			exception.SafeGo("onBroadcastBlock", func() {
-				if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector); err != nil {
+				latestSlot := v.Recorder.CurrentPassedSlot()
+				if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector, latestSlot); err != nil {
 					logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
 				}
 			})

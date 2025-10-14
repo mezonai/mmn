@@ -74,6 +74,21 @@ func (c *Collector) AddVote(v *Vote) (bool, bool, error) {
 	return false, false, nil
 }
 
+func (c *Collector) CheckVoteStatus(slot uint64) (bool, bool) {
+	slotVotes, ok := c.votes[slot]
+	if !ok {
+		return false, false
+	}
+
+	count := len(slotVotes)
+	logx.Debug("CONSENSUS", fmt.Sprintf("checking slot=%d current votes=%d/%d", slot, count, c.threshold))
+
+	if count >= c.threshold {
+		return true, true
+	}
+	return false, false
+}
+
 func (c *Collector) VotesForSlot(slot uint64) map[string]*Vote {
 	c.mu.Lock()
 	defer c.mu.Unlock()

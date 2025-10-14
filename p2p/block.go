@@ -360,27 +360,6 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed sync for peer:", targetPeer.String(), "total blocks sent:", totalBlocksSent)
 }
-
-func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {
-	stream, err := ln.host.NewStream(context.Background(), targetPeer, RequestBlockSyncStream)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-	defer stream.Close()
-
-	data, err := jsonx.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	_, err = stream.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to write request: %w", err)
-	}
-
-	return nil
-}
-
 func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.Subscription) {
 	logx.Info("NETWORK:LATEST SLOT", "Starting latest slot topic handler")
 
@@ -415,8 +394,8 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 	}
 }
 
-func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
-	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector); err != nil {
+func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
+	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector, latestSlot); err != nil {
 		logx.Error("BLOCK", "Failed to process block before broadcast:", err)
 		return err
 	}
@@ -531,12 +510,89 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 	return nil
 }
 
-func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
+func (ln *Libp2pNetwork) HandleMissingBlockRequestTopic(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				continue
+			}
+			if msg.ReceivedFrom == ln.host.ID() {
+				continue
+			}
+			var req MissingBlockRequest
+			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
+				logx.Error("NETWORK:MISSING", "Failed to unmarshal missing block request:", err)
+				continue
+			}
+			// fetch block
+			blk := ln.blockStore.Block(req.Slot)
+			if blk == nil {
+				continue
+			}
+
+			bcast := ln.convertBlockToBroadcastedBlock(blk)
+			resp := MissingBlockResponse{RequestID: req.RequestID, Slot: req.Slot, Block: bcast}
+			data, err := jsonx.Marshal(resp)
+			if err != nil {
+				logx.Error("NETWORK:MISSING", "marshal response error:", err)
+				continue
+			}
+			if ln.topicMissingBlockResp != nil {
+				if err := ln.topicMissingBlockResp.Publish(ctx, data); err != nil {
+					logx.Error("NETWORK:MISSING", "publish response error:", err)
+				}
+			}
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) HandleMissingBlockResponseTopic(ctx context.Context, sub *pubsub.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				continue
+			}
+			if msg.ReceivedFrom == ln.host.ID() {
+				continue
+			}
+			var resp MissingBlockResponse
+			if err := jsonx.Unmarshal(msg.Data, &resp); err != nil {
+				logx.Error("NETWORK:MISSING", "Failed to unmarshal missing block response:", err)
+				continue
+			}
+			if resp.Block == nil {
+				continue
+			}
+			if ln.onMissingBlockReceived != nil {
+				if err := ln.onMissingBlockReceived(resp.Block); err != nil {
+					logx.Error("NETWORK:MISSING", "onMissingBlockReceived error:", err)
+				}
+			}
+		}
+	}
+}
+
+func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, latestSlot uint64) error {
 
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
 		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
 		return err
 	}
 
-	return nil
+	err := ln.AddBlockToQueueOrdering(blk, ledger, collector, latestSlot)
+	return err
 }

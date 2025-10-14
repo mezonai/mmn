@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/block"
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/poh"
@@ -110,27 +112,29 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:                   h,
-		pubsub:                 ps,
-		selfPubKey:             selfPubKey,
-		selfPrivKey:            selfPrivKey,
-		peers:                  make(map[peer.ID]*PeerInfo),
-		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
-		blockStore:             blockStore,
-		txStore:                txStore,
-		maxPeers:               int(MaxPeers),
-		activeSyncRequests:     make(map[string]*SyncRequestInfo),
-		syncRequests:           make(map[string]*SyncRequestTracker),
-		missingBlocksTracker:   make(map[uint64]*MissingBlockInfo),
-		lastScannedSlot:        0,
-		recentlyRequestedSlots: make(map[uint64]time.Time),
-		ctx:                    ctx,
-		cancel:                 cancel,
-		worldLatestSlot:        0,
-		worldLatestPohSlot:     0,
-		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
-		nextExpectedSlot:       0,
-		pohCfg:                 pohCfg,
+		host:                     h,
+		pubsub:                   ps,
+		selfPubKey:               selfPubKey,
+		selfPrivKey:              selfPrivKey,
+		peers:                    make(map[peer.ID]*PeerInfo),
+		bootstrapPeerIDs:         make(map[peer.ID]struct{}),
+		blockStore:               blockStore,
+		txStore:                  txStore,
+		maxPeers:                 int(MaxPeers),
+		activeSyncRequests:       make(map[string]*SyncRequestInfo),
+		syncRequests:             make(map[string]*SyncRequestTracker),
+		missingBlocksTracker:     make(map[uint64]*MissingBlockInfo),
+		lastScannedSlot:          0,
+		recentlyRequestedSlots:   make(map[uint64]time.Time),
+		ctx:                      ctx,
+		cancel:                   cancel,
+		worldLatestSlot:          0,
+		worldLatestPohSlot:       0,
+		blockOrderingQueue:       make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlot:         0,
+		blockQueueOrdering:       make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlotForQueue: 0,
+		pohCfg:                   pohCfg,
 		isListener:             isListener,
 	}
 
@@ -227,6 +231,68 @@ func (ln *Libp2pNetwork) Close() {
 func (ln *Libp2pNetwork) GetPeersConnected() int {
 	// Minus by 1 to exclude self node in the peer list
 	return len(ln.host.Network().Peers()) - 1
+}
+
+func (ln *Libp2pNetwork) GetPeerInfo(peerID peer.ID) (*PeerInfo, bool) {
+	if peerInfo, exists := ln.peers[peerID]; exists {
+		return peerInfo, true
+	}
+	return nil, false
+}
+
+func (ln *Libp2pNetwork) GetLeaderForSlot(slot uint64) (peer.ID, bool) {
+	if ln.leaderSchedule == nil {
+		return "", false
+	}
+
+	leaderPubKey, exists := ln.leaderSchedule.LeaderAt(slot)
+	if !exists {
+		return "", false
+	}
+
+	leaderKeyBytes, err := common.DecodeBase58ToBytes(leaderPubKey)
+	if err != nil {
+		return "", false
+	}
+
+	for _, pid := range ln.host.Network().Peers() {
+		pk := ln.host.Peerstore().PubKey(pid)
+		if pk == nil {
+			continue
+		}
+		raw, err := pk.Raw()
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(raw, leaderKeyBytes) {
+			return pid, true
+		}
+	}
+
+	return "", false
+}
+
+// GetLeaderPublicKeyForSlot returns the public key of the leader for a given slot
+// Returns empty string and false if no leader is assigned for the slot
+func (ln *Libp2pNetwork) GetLeaderPublicKeyForSlot(slot uint64) (string, bool) {
+	if ln.leaderSchedule == nil {
+		return "", false
+	}
+
+	return ln.leaderSchedule.LeaderAt(slot)
+}
+
+// IsPeerConnected checks if a peer ID is currently connected
+// Returns true if the peer is connected, false otherwise
+func (ln *Libp2pNetwork) IsPeerConnected(peerID peer.ID) bool {
+	// Check if peer is in the connected peers list
+	connectedPeers := ln.host.Network().Peers()
+	for _, connectedPeerID := range connectedPeers {
+		if connectedPeerID == peerID {
+			return true
+		}
+	}
+	return false
 }
 
 func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
