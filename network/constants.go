@@ -16,9 +16,4 @@ const (
 	GRPCRateLimitRPS = 5000
 	// GRPCRateLimitBurst is the short-term burst capacity on top of RPS
 	GRPCRateLimitBurst = 10000
-
-	// GRPCAuthHeader is the metadata key for bearer/API token (monitor-only for now)
-	GRPCAuthHeader = "authorization"
-	// GRPCNodeIDHeader is the metadata key to identify calling node (monitor-only)
-	GRPCNodeIDHeader = "x-node-id"
 )

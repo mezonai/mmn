@@ -21,5 +21,6 @@ const (
 )
 
 const (
-	POH_DOMAIN_PREFIX = "POH:"
+	POH_DOMAIN_PREFIX         = "POH:"
+	TRANSACTION_DOMAIN_PREFIX = "TX:"
 )

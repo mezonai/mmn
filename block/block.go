@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
+	"github.com/pkg/errors"
 )
 
 type BlockStatus uint8
@@ -27,7 +30,6 @@ type BlockCore struct {
 	Signature  []byte
 	Status     BlockStatus
 	InvalidPoH bool
-	BankHash   [32]byte // hash of account state changes in this block
 }
 
 type Block struct {
@@ -110,7 +112,14 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 	return out
 }
 
-func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
+func (b *BroadcastedBlock) VerifySignature() bool {
+
+	pubKey, err := getPublicKeyFromLeaderID(b.LeaderID)
+	if err != nil {
+		logx.Error("BroadcastedBlock", fmt.Sprintf("Failed to get public key from LeaderID: %v", err))
+		return false
+	}
+
 	if len(pubKey) != ed25519.PublicKeySize {
 		return false
 	}
@@ -119,6 +128,23 @@ func (b *BroadcastedBlock) VerifySignature(pubKey ed25519.PublicKey) bool {
 	}
 
 	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
+}
+
+func getPublicKeyFromLeaderID(leaderID string) (ed25519.PublicKey, error) {
+	if leaderID == "" {
+		return nil, errors.New("leader ID cannot be empty")
+	}
+
+	pubKeyBytes, err := common.DecodeBase58ToBytes(leaderID)
+	if err != nil {
+		return nil, errors.Errorf("failed to decode leader ID: %w", err)
+	}
+
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		return nil, errors.Errorf("invalid leader ID length: expected %d, got %d", ed25519.PublicKeySize, len(pubKeyBytes))
+	}
+
+	return ed25519.PublicKey(pubKeyBytes), nil
 }
 
 func (b *BroadcastedBlock) VerifyPoH() error {

@@ -2,9 +2,9 @@ package poh
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
@@ -20,9 +20,6 @@ type PohRecorder struct {
 	entries       []Entry
 	slotHashQueue *SlotHashQueue
 	mu            sync.Mutex
-
-	// Atomic state management for race-free transitions
-	state int32 // 0=idle, 1=resetting, 2=fastforwarding, 3=recording
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
@@ -63,54 +60,6 @@ func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uin
 func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	// Resource bounds validation
-	if len(txs) > MAX_TRANSACTIONS_PER_ENTRY {
-		return nil, fmt.Errorf("too many transactions: %d > %d", len(txs), MAX_TRANSACTIONS_PER_ENTRY)
-	}
-
-	if len(r.entries) >= MAX_ENTRIES_PER_SLOT {
-		return nil, fmt.Errorf("slot full: %d entries >= %d", len(r.entries), MAX_ENTRIES_PER_SLOT)
-	}
-
-	if len(r.entries) >= MAX_ENTRIES_MEMORY {
-		return nil, fmt.Errorf("memory limit exceeded: %d entries >= %d", len(r.entries), MAX_ENTRIES_MEMORY)
-	}
-
-	mixin := HashTransactions(txs)
-	pohEntry := r.poh.Record(mixin)
-	if pohEntry == nil {
-		return nil, fmt.Errorf("PoH refused to record, tick required")
-	}
-
-	// Validate NumHashes bounds
-	if pohEntry.NumHashes > MAX_NUM_HASHES {
-		return nil, fmt.Errorf("NumHashes too large: %d > %d", pohEntry.NumHashes, MAX_NUM_HASHES)
-	}
-
-	entry := NewTxEntry(pohEntry.NumHashes, pohEntry.Hash, txs)
-
-	// Validate entry size
-	if entrySize := estimateEntrySize(entry); entrySize > MAX_ENTRY_SIZE {
-		return nil, fmt.Errorf("entry too large: %d bytes > %d", entrySize, MAX_ENTRY_SIZE)
-	}
-
-	r.entries = append(r.entries, entry)
-	return &entry, nil
-}
-
-// RecordTxsAtomic performs an atomic transaction recording operation
-func (r *PohRecorder) RecordTxsAtomic(txs []*transaction.Transaction) (*Entry, error) {
-	// Try to acquire recording state atomically
-	if !atomic.CompareAndSwapInt32(&r.state, 0, 3) {
-		return nil, fmt.Errorf("recorder busy, cannot record (state=%d)", atomic.LoadInt32(&r.state))
-	}
-	defer atomic.StoreInt32(&r.state, 0)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	logx.Info("PohRecorder", fmt.Sprintf("Atomic record: %d transactions", len(txs)))
 
 	// Resource bounds validation
 	if len(txs) > MAX_TRANSACTIONS_PER_ENTRY {
@@ -209,11 +158,21 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 }
 
 func HashTransactions(txs []*transaction.Transaction) [32]byte {
+	if len(txs) == 0 {
+		domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), []byte("EMPTY")...)
+		return sha256.Sum256(domainHash)
+	}
 	var all []byte
 	for _, tx := range txs {
-		all = append(all, tx.Bytes()...)
+		txBytes := tx.Bytes()
+		lengthBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(lengthBytes, uint32(len(txBytes)))
+		all = append(all, lengthBytes...)
+		all = append(all, txBytes...)
 	}
-	return sha256.Sum256(all)
+	// Apply domain separation for transaction hashes
+	domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), all...)
+	return sha256.Sum256(domainHash)
 }
 
 func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {

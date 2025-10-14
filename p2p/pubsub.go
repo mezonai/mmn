@@ -38,12 +38,8 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				logx.Error("BLOCK", fmt.Sprintf("Not leader at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
 				return fmt.Errorf("invalid leader")
 			}
-			leaderPubKey, err := GetLeaderPublicKey(blk.LeaderID)
-			if err != nil {
-				return fmt.Errorf("invalid leader public key")
-			}
 			// Verify signature
-			if !blk.VerifySignature(leaderPubKey) {
+			if !blk.VerifySignature() {
 				logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
 				return fmt.Errorf("invalid signature")
 			}
