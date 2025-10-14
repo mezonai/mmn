@@ -167,3 +167,44 @@ func (ln *Libp2pNetwork) getPrevHashForSlot(slot uint64, bs store.BlockStore, pr
 	logx.Warn("BLOCK:ORDERING", "No previous hash found for slot", prevSlot)
 	return [32]byte{}
 }
+
+func (ln *Libp2pNetwork) cleanupBlockOrderingQueue(latestProcessedSlot uint64) {
+	ln.blockOrderingMu.Lock()
+	defer ln.blockOrderingMu.Unlock()
+
+	if latestProcessedSlot == 0 {
+		return
+	}
+
+	blocksToRemove := make([]uint64, 0)
+	blocksRemoved := 0
+
+	for slot := range ln.blockOrderingQueue {
+		if slot <= latestProcessedSlot {
+			blocksToRemove = append(blocksToRemove, slot)
+		}
+	}
+
+	for _, slot := range blocksToRemove {
+		delete(ln.blockOrderingQueue, slot)
+		blocksRemoved++
+	}
+
+}
+
+func (ln *Libp2pNetwork) cleanupBlockOrderingQueuePeriodic(bs store.BlockStore) {
+	ln.blockOrderingMu.RLock()
+	queueSize := len(ln.blockOrderingQueue)
+	ln.blockOrderingMu.RUnlock()
+
+	if uint64(queueSize) < BlockOrderingPeriodicThreshold {
+		return
+	}
+
+	latestFinalizedSlot := bs.GetLatestFinalizedSlot()
+	if latestFinalizedSlot == 0 {
+		return
+	}
+
+	ln.cleanupBlockOrderingQueue(latestFinalizedSlot)
+}
