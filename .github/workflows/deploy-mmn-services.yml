@@ -56,12 +56,7 @@ jobs:
 
   build:
     needs: determine_tag
-    if: |
-      always() && (
-        github.event.inputs.existing_tag_to_deploy != '' ||
-        github.event.inputs.new_tag_to_build != '' ||
-        needs.determine_tag.outputs.is_run == 'true'
-      )
+    if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
       tag_name: ${{ steps.determine_release_tag.outputs.tag }}
@@ -166,13 +161,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             build/mmn-${{ steps.determine_release_tag.outputs.tag }}
-      
-      - name: Upload binary for deployment job
-        if: steps.decide.outputs.skip == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mmn-binary-${{ steps.determine_release_tag.outputs.tag }}
-          path: build/mmn-${{ steps.determine_release_tag.outputs.tag }}
 
   deploy:
     needs: [determine_tag, build]
@@ -227,13 +215,6 @@ jobs:
           curl -sSL --fail -o "$BINARY_PATH" "$DOWNLOAD_URL"
           echo "==> Download complete: $BINARY_PATH"
           ls -lh "$BINARY_PATH"
-
-      - name: Get binary from build job (if new build)
-        if: inputs.existing_tag_to_deploy == ''
-        uses: actions/download-artifact@v4
-        with:
-          name: mmn-binary-${{ steps.determine_binary.outputs.tag_name }}
-          path: build/
 
       - name: Check if binary exists
         run: |
