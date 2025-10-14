@@ -60,18 +60,17 @@ func (v *Vote) Validate() error {
 		return fmt.Errorf("failed to get public key from VoterID: %w", err)
 	}
 
-	if len(pubKey) != ed25519.PublicKeySize {
-		return fmt.Errorf("invalid signature pubKey size: expected %d, got %d", ed25519.SignatureSize, len(pubKey))
-	}
-
 	if len(v.Signature) == 0 {
 		return fmt.Errorf("missing signature")
 	}
+
 	if len(v.Signature) != ed25519.SignatureSize {
 		return fmt.Errorf("invalid signature size: expected %d, got %d", ed25519.SignatureSize, len(v.Signature))
 	}
-	if v.VoterID == "" {
-		return fmt.Errorf("voter ID cannot be empty")
+
+	if !ed25519.Verify(pubKey, v.serializeVote(), v.Signature) {
+		return fmt.Errorf("invalid signature: %w", err)
 	}
+
 	return nil
 }
