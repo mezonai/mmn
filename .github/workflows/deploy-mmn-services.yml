@@ -79,6 +79,7 @@ jobs:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
       - name: Deploy Monitoring Configurations
+        if: inputs.env == 'dev'
         env:
           URL_LOKI_PUSH: ${{ vars.URL_LOKI_PUSH }}
         run: |
@@ -115,11 +116,9 @@ jobs:
           sudo mkdir -p /etc/mezon/monitoring/
           echo "==> Setting up Prometheus and Loki configs..."
           sudo cp ./monitoring/prometheus-config.yml /etc/mezon/monitoring/prometheus-config.yml
-          sudo cp ./monitoring/loki-config.yml /etc/mezon/monitoring/loki-config.yml
 
           sudo sed -i "s/__PORT_NODE_EXPORTER__/${PORT_NODE_EXPORTER}/g" /etc/mezon/monitoring/prometheus-config.yml
           sudo chown mmn:mmn /etc/mezon/monitoring/prometheus-config.yml
-          sudo chown mmn:mmn /etc/mezon/monitoring/loki-config.yml
 
           echo "==> Setting up Grafana configs..."
           sudo mkdir -p /etc/grafana/
@@ -127,7 +126,6 @@ jobs:
           
           sudo chown -R mmn:mmn /etc/grafana/provisioning
           sudo chown -R mmn:mmn /etc/grafana/dashboards
-          sudo sed -i 's#url: http://loki:3100#url: http://localhost:3100#g' /etc/grafana/provisioning/datasources/loki.yml
           sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
           sudo sed -i 's#path: /var/lib/grafana/dashboards#path: /etc/grafana/dashboards#g' /etc/grafana/provisioning/dashboards/dashboard.yaml
 
