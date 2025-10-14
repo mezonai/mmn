@@ -55,11 +55,11 @@ groups:
           alert_type: log_growth
         annotations:
           summary: "Sudden spike in log size on {{ $labels.node }}"
-          description: "Log size growth rate is {{ $value | humanizeBytes }}/sec, which is significantly higher than normal on {{ $labels.node }}"
+          description: "Log size growth rate is {{ $value }}/sec, which is significantly higher than normal on {{ $labels.node }}"
           message: |
             @here [WARNING]
             Log size increased abnormally more than 10 times compared to 1 hour ago
-            Current Rate: {{ $value | humanizeBytes }}/sec
+            Current Rate: {{ $value }}/sec
 
       - alert: LogSizeSpikeCritical
         expr: |
@@ -75,11 +75,11 @@ groups:
           alert_type: log_growth
         annotations:
           summary: "Critical spike in log size on {{ $labels.node }}"
-          description: "Log size growth rate is {{ $value | humanizeBytes }}/sec, which is critically higher than normal on {{ $labels.node }}"
+          description: "Log size growth rate is {{ $value }}/sec, which is critically higher than normal on {{ $labels.node }}"
           message: |
             @here [CRITICAL]
             Log size increased abnormally more than 50 times compared to 1 hour ago
-            Current Rate: {{ $value | humanizeBytes }}/sec
+            Current Rate: {{ $value  }}/sec
 
       - alert: HighErrorLogRate
         # 0.42 errors/sec = 25 errors/minute/node
