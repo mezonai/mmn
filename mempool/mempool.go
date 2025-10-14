@@ -2,7 +2,6 @@ package mempool
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -260,11 +259,6 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
-	// 2.1. Check memo length (max 64 characters)
-	if len(tx.TextData) > 64 {
-		return fmt.Errorf("memo too long: max 64 chars, got %d", len(tx.TextData))
-	}
-
 	// 3. Check sender account exists and get current state
 	if mp.ledger == nil {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
@@ -291,40 +285,27 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeNonceTooLow, errors.ErrMsgNonceTooLow)
 	}
 
-	// Prevent spam with reasonable future nonce limit
+	// 5. Prevent spam with reasonable future nonce limit
 	if tx.Nonce > currentNonce+MaxFutureNonce {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return errors.NewError(errors.ErrCodeNonceTooHigh, errors.ErrMsgNonceTooHigh)
 	}
 
-	// 6. Check for duplicate nonce in ALL existing transactions first
-	// This is the most important check - prevent any duplicate nonce regardless of state
-	for _, existingTxBytes := range mp.txsBuf {
-		var existingTx transaction.Transaction
-		if err := json.Unmarshal(existingTxBytes, &existingTx); err != nil {
-			continue // Skip invalid transactions
-		}
-		if existingTx.Sender == tx.Sender && existingTx.Nonce == tx.Nonce {
-			return fmt.Errorf("duplicate nonce %d for sender %s already exists in mempool",
-				tx.Nonce, tx.Sender[:8])
-		}
-	}
-
-	// 7. Check pending transaction limits per sender
+	// 6. Check pending transaction limits per sender
 	if pendingNonces, exists := mp.pendingTxs[tx.Sender]; exists {
 		if len(pendingNonces) >= MaxPendingPerSender {
 			monitoring.RecordRejectedTx(monitoring.TxTooManyPending)
 			return errors.NewError(errors.ErrCodeRateLimited, errors.ErrMsgRateLimited)
 		}
 
-		// 8. Check for duplicate nonce in pending transactions (redundant but safe)
+		// 6.1. Check for duplicate nonce in pending transactions (redundant but safe)
 		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 		}
 	}
 
-	// 8. Check for duplicate nonce in ready queue - O(1) with index
+	// 7. Check for duplicate nonce in ready queue - O(1) with index
 	if senderNonces, exists := mp.readyQueueIndex[tx.Sender]; exists {
 		if senderNonces[tx.Nonce] {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
@@ -332,7 +313,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		}
 	}
 
-	// 9. Validate balance accounting for existing pending/ready transactions
+	// 8. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
