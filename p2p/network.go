@@ -264,6 +264,8 @@ func (ln *Libp2pNetwork) setupConnectionAuthentication(ctx context.Context) {
 				return
 			}
 
+			ln.dedupePeerConnections(n, peerID)
+
 			ln.UpdatePeerScore(peerID, "connection", nil)
 
 			exception.SafeGoWithPanic("Discovery", func() {
@@ -308,6 +310,59 @@ func (ln *Libp2pNetwork) Close() {
 
 	ln.cancel()
 	ln.host.Close()
+}
+func (ln *Libp2pNetwork) dedupePeerConnections(n network.Network, peerID peer.ID) {
+	conns := n.ConnsToPeer(peerID)
+	if len(conns) <= 1 {
+		return
+	}
+
+	preferred := ln.pickPreferredConnection(conns, peerID)
+	closed := 0
+	for _, c := range conns {
+		if c == preferred {
+			continue
+		}
+		_ = c.Close()
+		closed++
+	}
+	if closed > 0 {
+		logx.Info("AUTH:CONNECTION", fmt.Sprintf("Closed %d duplicate connection(s) to %s", closed, peerID.String()))
+	}
+}
+
+// outbound > inbound
+// If same direction, prefer the most recently opened connection
+func (ln *Libp2pNetwork) pickPreferredConnection(conns []network.Conn, remote peer.ID) network.Conn {
+	var preferred network.Conn
+	preferOutbound := ln.host.ID() < remote
+
+	for _, c := range conns {
+		if preferred == nil {
+			preferred = c
+			continue
+		}
+
+		curDir := c.Stat().Direction
+		prefDir := preferred.Stat().Direction
+
+		if preferOutbound {
+			if curDir == network.DirOutbound && prefDir != network.DirOutbound {
+				preferred = c
+				continue
+			}
+		} else {
+			if curDir == network.DirInbound && prefDir != network.DirInbound {
+				preferred = c
+				continue
+			}
+		}
+
+		if c.Stat().Opened.After(preferred.Stat().Opened) {
+			preferred = c
+		}
+	}
+	return preferred
 }
 
 // IncrementActiveSyncCount increments the active sync count
