@@ -331,11 +331,6 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		mode == LISTEN_MODE,
 	)
 
-	if err == nil {
-		// Set join behavior based on configuration
-		libp2pNetwork.SetJoinBehavior(mode == LIGHT_MODE)
-	}
-
 	return libp2pNetwork, err
 }
 

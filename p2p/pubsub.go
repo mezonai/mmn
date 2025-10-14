@@ -241,7 +241,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				maxRetries := 3
 				backoff := 2 * time.Second
 				for attempt := 1; attempt <= maxRetries; attempt++ {
-					task, err := down.DownloadSnapshotFromPeer(ln.ctx, ann.UDPAddr, ann.PeerID, ann.Slot, ann.ChunkSize)
+					task, err := down.DownloadSnapshotFromPeer(ann.UDPAddr, ann.PeerID, ann.Slot, ann.ChunkSize)
 					if err != nil {
 						logx.Error("SNAPSHOT:DOWNLOAD", "start failed:", err, " attempt:", attempt, "/", maxRetries)
 						if attempt == maxRetries {

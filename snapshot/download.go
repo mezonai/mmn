@@ -1,7 +1,6 @@
 package snapshot
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -95,7 +94,7 @@ func NewSnapshotDownloader(accountStore AccountStoreInterface, snapshotDir strin
 }
 
 // DownloadSnapshotFromPeer downloads a snapshot from a specific peer
-func (sd *SnapshotDownloader) DownloadSnapshotFromPeer(ctx context.Context, peerAddr, peerID string, slot uint64, chunkSize int) (*DownloadTask, error) {
+func (sd *SnapshotDownloader) DownloadSnapshotFromPeer(peerAddr, peerID string, slot uint64, chunkSize int) (*DownloadTask, error) {
 	// Create download task
 	task := &DownloadTask{
 		ID:         generateDownloadTaskID(peerID, slot),
@@ -116,13 +115,13 @@ func (sd *SnapshotDownloader) DownloadSnapshotFromPeer(ctx context.Context, peer
 	sd.mu.Unlock()
 
 	// Start UDP download only
-	go sd.downloadViaUDP(ctx, task)
+	go sd.downloadViaUDP(task)
 
 	return task, nil
 }
 
 // downloadViaUDP downloads snapshot using UDP protocol
-func (sd *SnapshotDownloader) downloadViaUDP(ctx context.Context, task *DownloadTask) {
+func (sd *SnapshotDownloader) downloadViaUDP(task *DownloadTask) {
 	logx.Info("SNAPSHOT DOWNLOAD", "Starting UDP download from peer:", task.PeerID)
 
 	// Step 1: Setup UDP connection
