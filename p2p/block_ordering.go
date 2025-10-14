@@ -97,6 +97,14 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 }
 
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
+	leaderPubKey, err := GetLeaderPublicKey(blk.LeaderID)
+	if err != nil {
+		return fmt.Errorf("invalid leader public key")
+	}
+	if !blk.VerifySignature(leaderPubKey) {
+		logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
+		return fmt.Errorf("invalid signature")
+	}
 	// Verify PoH
 	if err := blk.VerifyPoH(); err != nil {
 		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)

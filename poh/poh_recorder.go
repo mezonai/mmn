@@ -47,26 +47,6 @@ func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.slotHashQueue.Put(slot, lastHash)
 }
 
-// ResetAtomic performs an atomic reset operation
-func (r *PohRecorder) ResetAtomic(lastHash [32]byte, slot uint64) error {
-	// Try to acquire reset state atomically
-	if !atomic.CompareAndSwapInt32(&r.state, 0, 1) {
-		return fmt.Errorf("recorder busy, cannot reset (state=%d)", atomic.LoadInt32(&r.state))
-	}
-	defer atomic.StoreInt32(&r.state, 0)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	logx.Info("PohRecorder", fmt.Sprintf("Atomic reset: slot=%d hash=%x", slot, lastHash))
-	r.tickHeight = slot * r.ticksPerSlot
-	r.poh.Reset(lastHash)
-	r.entries = make([]Entry, 0)
-	r.slotHashQueue.Put(slot, lastHash)
-
-	return nil
-}
-
 // Assume fromSlot is the last seen slot, toSlot is the target slot
 // Simulate the poh clock from fromSlot to toSlot
 func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uint64) [32]byte {
@@ -78,25 +58,6 @@ func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uin
 	r.poh.TickFastForward(seenHash, fromTick, toTick)
 
 	return r.poh.Hash
-}
-
-// FastForwardAtomic performs an atomic fast-forward operation
-func (r *PohRecorder) FastForwardAtomic(seenHash [32]byte, fromSlot uint64, toSlot uint64) ([32]byte, error) {
-	// Try to acquire fast-forward state atomically
-	if !atomic.CompareAndSwapInt32(&r.state, 0, 2) {
-		return [32]byte{}, fmt.Errorf("recorder busy, cannot fast-forward (state=%d)", atomic.LoadInt32(&r.state))
-	}
-	defer atomic.StoreInt32(&r.state, 0)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	logx.Info("PohRecorder", fmt.Sprintf("Atomic fast-forward: from=%d to=%d hash=%x", fromSlot, toSlot, seenHash))
-	fromTick := fromSlot * r.ticksPerSlot
-	toTick := toSlot * r.ticksPerSlot
-	result := r.poh.TickFastForward(seenHash, fromTick, toTick)
-
-	return result, nil
 }
 
 func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
@@ -252,9 +213,7 @@ func HashTransactions(txs []*transaction.Transaction) [32]byte {
 	for _, tx := range txs {
 		all = append(all, tx.Bytes()...)
 	}
-	// Apply domain separation for transaction hashes
-	domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), all...)
-	return sha256.Sum256(domainHash)
+	return sha256.Sum256(all)
 }
 
 func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {

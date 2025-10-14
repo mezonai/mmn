@@ -28,7 +28,6 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -78,12 +77,10 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	rLimiter := rate.NewLimiter(rate.Limit(GRPCRateLimitRPS), GRPCRateLimitBurst)
 
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
-		monitorOnlyAuthUnaryInterceptor(),
 		rateLimitUnaryInterceptor(rLimiter),
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{
-		monitorOnlyAuthStreamInterceptor(),
 		rateLimitStreamInterceptor(rLimiter),
 		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
 	}
@@ -109,32 +106,6 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	})
 	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
-}
-
-func monitorOnlyAuthUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if md, ok := metadata.FromIncomingContext(ctx); ok {
-			auth := md.Get(GRPCAuthHeader)
-			node := md.Get(GRPCNodeIDHeader)
-			if len(auth) == 0 {
-				logx.Debug("GRPC AUTH", "missing authorization header for ", info.FullMethod, ", node:", node)
-			}
-		}
-		return handler(ctx, req)
-	}
-}
-
-func monitorOnlyAuthStreamInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if md, ok := metadata.FromIncomingContext(ss.Context()); ok {
-			auth := md.Get(GRPCAuthHeader)
-			node := md.Get(GRPCNodeIDHeader)
-			if len(auth) == 0 {
-				logx.Debug("GRPC AUTH", "missing authorization header for stream ", info.FullMethod, ", node:", node)
-			}
-		}
-		return handler(srv, ss)
-	}
 }
 
 func rateLimitUnaryInterceptor(lim *rate.Limiter) grpc.UnaryServerInterceptor {
