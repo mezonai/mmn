@@ -250,17 +250,17 @@ jobs:
         run: |
           set -e
           echo "==> Deploying monitoring configs for MMN..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
             set -e
             sudo mkdir -p /etc/mezon/monitoring
             sudo chown mmn:mmn /etc/mezon/monitoring
           "
 
           echo "==> Copying configs to a temporary location on the MMN server..."
-          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
+          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ vars.HOST_ALIAS }}:/tmp/promtail-config.yml
 
           echo "==> Moving configs to final destination with sudo..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<EOF
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<EOF
             set -e
             sed \
               -e "s|__URL_LOKI_PUSH__|${URL_LOKI_PUSH}|g" \
@@ -315,20 +315,20 @@ jobs:
           sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" ./monitoring_deploy_temp/prometheus/targets/nodes.example.yml
 
           echo "==> 2. Copying prepared monitoring stack to the dev server..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
             set -e
             sudo mkdir -p /etc/mezon/monitoring
             sudo chown mmn:mmn /etc/mezon/monitoring
           "
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
             set -e
             sudo mkdir -p /tmp/monitoring_deploy
             sudo chown mmn:mmn /tmp/monitoring_deploy
           "
-          scp -i /home/nccsoft/.ssh/mmn_deploy -r ./monitoring_deploy_temp/* ${{ secrets.HOST_ALIAS }}:/tmp/monitoring_deploy
+          scp -i /home/nccsoft/.ssh/mmn_deploy -r ./monitoring_deploy_temp/* ${{ vars.HOST_ALIAS }}:/tmp/monitoring_deploy
 
           echo "==> 3. Running setup script on the dev server..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOF'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<'EOF'
             set -e
             echo "--> Preparing directories on remote server..."
             sudo mkdir -p /etc/mezon/monitoring/ /etc/grafana/ /etc/prometheus/targets
@@ -360,8 +360,8 @@ jobs:
 
       - name: Copy binary and config to target
         run: |
-          scp -i /home/nccsoft/.ssh/mmn_deploy ${{ steps.determine_binary.outputs.binary_path }} ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
-          scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
+          scp -i /home/nccsoft/.ssh/mmn_deploy ${{ steps.determine_binary.outputs.binary_path }} ${{ vars.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
+          scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ vars.HOST_ALIAS }}:/opt/mezon/mmn/config/
 
       - name: Generate remote setup and env files locally
         run: |
@@ -464,10 +464,10 @@ jobs:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
-          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
-          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          NODE1_ADDRESS:     ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
@@ -475,18 +475,18 @@ jobs:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
-          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
-          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          NODE1_ADDRESS:     ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
         run: |
           set -e
 
           echo "==> Copying remote_setup.sh and mezon_env.sh..."
-          scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ secrets.HOST_ALIAS }}:/tmp/
+          scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ vars.HOST_ALIAS }}:/tmp/
 
           echo "==> Running remote setup..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
             set -e
             chmod +x /tmp/remote_setup.sh
             bash -c 'set -e; source /tmp/mezon_env.sh; bash /tmp/remote_setup.sh'
@@ -495,7 +495,7 @@ jobs:
 
       - name: Atomic swap + restart services
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOF'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<'EOF'
           set -e
           SHA=$(date +%s)
 
@@ -523,5 +523,5 @@ jobs:
 
       - name: Healthcheck
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
