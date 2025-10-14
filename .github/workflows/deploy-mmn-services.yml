@@ -211,43 +211,22 @@ jobs:
       - name: Checkout code for config files
         uses: actions/checkout@v4
 
-      - name: Install GitHub CLI (if not present)
+      - name: Download release binary using curl
+        if: inputs.existing_tag_to_deploy != ''
         run: |
-          if command -v gh &> /dev/null; then
-            echo "==> GitHub CLI is already installed. Skipping."
-            gh --version
-          else
-            set -e
-            echo "==> GitHub CLI not found. Starting robust installation..."
+          set -e
+          OWNER=$(echo "$GITHUB_REPOSITORY" | cut -d/ -f1)
+          REPO=$(echo "$GITHUB_REPOSITORY" | cut -d/ -f2)
+          TAG_NAME="${{ steps.determine_binary.outputs.tag_name }}"
+          BINARY_NAME="${{ steps.determine_binary.outputs.binary_name }}"
+          BINARY_PATH="${{ steps.determine_binary.outputs.binary_path }}"
+          DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/$TAG_NAME/$BINARY_NAME"
 
-            echo "==>Cleaning up any old GitHub CLI configurations to ensure a fresh install."
-            sudo rm -f /etc/apt/sources.list.d/github-cli.list
-            sudo rm -f /usr/share/keyrings/githubcli-archive-key.gpg
-            sudo rm -f /etc/apt/keyrings/githubcli-archive-key.gpg
-
-            echo "==> Adding the official GPG key and repository."
-            (type -p wget >/dev/null || (sudo apt-get update && sudo apt-get install wget -y)) && \
-            sudo mkdir -p -m 755 /etc/apt/keyrings && \
-            wget -qO- https://cli.github.com/packages/githubcli-archive-key.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-key.gpg > /dev/null && \
-            sudo chmod go+r /etc/apt/keyrings/githubcli-archive-key.gpg && \
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-key.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-            sudo apt-get update && \
-            sudo apt-get install gh -y
-            echo "==> GitHub CLI installed successfully."
-            gh --version
-          fi
-
-      - name: Prepare binary for deployment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
+          echo "==> Downloading from URL: $DOWNLOAD_URL"
           mkdir -p build
-          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
-            echo "==> Downloading binary from release..."
-            gh release download "${{ steps.determine_binary.outputs.tag_name }}" --pattern "${{ steps.determine_binary.outputs.binary_name }}" --output "${{ steps.determine_binary.outputs.binary_path }}"
-          else
-            echo "==> Getting binary from the build job's artifact."
-          fi
+          curl -sSL --fail -o "$BINARY_PATH" "$DOWNLOAD_URL"
+          echo "==> Download complete: $BINARY_PATH"
+          ls -lh "$BINARY_PATH"
 
       - name: Get binary from build job (if new build)
         if: inputs.existing_tag_to_deploy == ''
