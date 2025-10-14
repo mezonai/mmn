@@ -218,7 +218,14 @@ jobs:
             gh --version
           else
             set -e
-            echo "==> GitHub CLI not found. Installing now..."
+            echo "==> GitHub CLI not found. Starting robust installation..."
+
+            echo "==>Cleaning up any old GitHub CLI configurations to ensure a fresh install."
+            sudo rm -f /etc/apt/sources.list.d/github-cli.list
+            sudo rm -f /usr/share/keyrings/githubcli-archive-key.gpg
+            sudo rm -f /etc/apt/keyrings/githubcli-archive-key.gpg
+
+            echo "==> Adding the official GPG key and repository."
             (type -p wget >/dev/null || (sudo apt-get update && sudo apt-get install wget -y)) && \
             sudo mkdir -p -m 755 /etc/apt/keyrings && \
             wget -qO- https://cli.github.com/packages/githubcli-archive-key.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-key.gpg > /dev/null && \
