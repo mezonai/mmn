@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mr-tron/base58"
 )
 
@@ -54,20 +55,24 @@ func Verify(tx *Tx, sig string) bool {
 	if tx.Type == TxTypeFaucet {
 		decoded, err := base58.Decode(tx.Sender)
 		if err != nil {
+			logx.Error("Verify", fmt.Sprintf("failed to decode sender: %w", err))
 			return false
 		}
 
 		if len(decoded) != ed25519.PublicKeySize {
+			logx.Error("Verify", fmt.Sprintf("invalid signature pubKey size: expected %d, got %d", ed25519.PublicKeySize, len(decoded)))
 			return false
 		}
 
 		pubKey := ed25519.PublicKey(decoded)
 		signature, err := base58.Decode(sig)
 		if err != nil {
+			logx.Error("Verify", fmt.Sprintf("failed to decode sender: %w", err))
 			return false
 		}
 
 		if len(signature) != ed25519.SignatureSize {
+			logx.Error("Verify", fmt.Sprintf("invalid signature sig size: expected %d, got %d", ed25519.SignatureSize, len(signature)))
 			return false
 		}
 
