@@ -58,6 +58,9 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+	tsl             bool
+	mtsl            bool
+	tlsDir          string
 )
 
 var runCmd = &cobra.Command{
@@ -81,6 +84,10 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	// TLS flags
+	runCmd.Flags().BoolVar(&tsl, "tsl", false, "Enable gRPC TLS (use certs from --tls-dir)")
+	runCmd.Flags().BoolVar(&mtsl, "mtsl", false, "Enable gRPC mutual TLS (requires client certs); effective only when --tsl is true")
+	runCmd.Flags().StringVar(&tlsDir, "tls-dir", "./tls", "Directory containing TLS materials (server.crt, server.key, optional ca.crt, client.crt, client.key)")
 
 }
 
@@ -238,7 +245,18 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	// Apply TLS env if requested via flags
+	if tsl {
+		os.Setenv("GRPC_TLS_ENABLED", "true")
+		if tlsDir != "" {
+			os.Setenv("GRPC_TLS_DIR", tlsDir)
+		}
+		if mtsl {
+			os.Setenv("GRPC_TLS_REQUIRE_CLIENT_CERT", "true")
+		}
+	}
+
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, tsl, mtsl)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -377,7 +395,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -399,6 +417,8 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		mp,
 		eventRouter,
 		txTracker,
+		tsl,
+		mtsl,
 	)
 	_ = grpcSrv // Keep server running
 

@@ -3,8 +3,12 @@ package network
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/mezonai/mmn/config"
@@ -27,6 +31,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
 
@@ -53,7 +58,7 @@ type server struct {
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -73,7 +78,40 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
 	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
 
-	grpcSrv := grpc.NewServer()
+	var serverOpts []grpc.ServerOption
+
+	if tsl {
+		certFile := filepath.Join(GRPC_TLS_DIR, GRPC_TLS_CERT_FILE)
+		keyFile := filepath.Join(GRPC_TLS_DIR, GRPC_TLS_KEY_FILE)
+
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("failed to load server key pair: %v", err))
+			return nil
+		}
+		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}}
+		
+		if mtsl {
+			caFile := filepath.Join(GRPC_TLS_DIR, GRPC_TLS_CLIENT_CA_FILE)
+			caPem, err := os.ReadFile(caFile)
+			if err != nil {
+				logx.Error("GRPC SERVER", fmt.Sprintf("failed to read client CA file: %v", err))
+				return nil
+			}
+			pool := x509.NewCertPool()
+			if ok := pool.AppendCertsFromPEM(caPem); !ok {
+				logx.Error("GRPC SERVER", "failed to append client CA certs")
+				return nil
+			}
+			tlsCfg.ClientCAs = pool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+
+		}
+		creds := credentials.NewTLS(tlsCfg)
+		serverOpts = append(serverOpts, grpc.Creds(creds))
+	}
+
+	grpcSrv := grpc.NewServer(serverOpts...)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)

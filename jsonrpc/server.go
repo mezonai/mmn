@@ -2,10 +2,13 @@ package jsonrpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -204,6 +207,41 @@ func (s *Server) Start() {
 	})
 
 	http.Handle("/", h)
+	// Optional TLS/mTLS based on env; prefer single-folder JSONRPC_TLS_DIR with server.crt/server.key/ca.crt
+	if os.Getenv("JSONRPC_TLS_ENABLED") == "true" {
+		certFile := os.Getenv("JSONRPC_TLS_CERT_FILE")
+		keyFile := os.Getenv("JSONRPC_TLS_KEY_FILE")
+		caFile := os.Getenv("JSONRPC_TLS_CLIENT_CA_FILE")
+		if dir := os.Getenv("JSONRPC_TLS_DIR"); dir != "" {
+			if certFile == "" {
+				certFile = filepath.Join(dir, "server.crt")
+			}
+			if keyFile == "" {
+				keyFile = filepath.Join(dir, "server.key")
+			}
+			if caFile == "" {
+				cand := filepath.Join(dir, "ca.crt")
+				if _, err := os.Stat(cand); err == nil {
+					caFile = cand
+				}
+			}
+		}
+		if certFile != "" && keyFile != "" {
+			tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+			if caFile != "" {
+				if caPem, err := os.ReadFile(caFile); err == nil {
+					pool := x509.NewCertPool()
+					if pool.AppendCertsFromPEM(caPem) {
+						tlsCfg.ClientCAs = pool
+						tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+					}
+				}
+			}
+			srv := &http.Server{Addr: s.addr, TLSConfig: tlsCfg}
+			go srv.ListenAndServeTLS(certFile, keyFile)
+			return
+		}
+	}
 	go http.ListenAndServe(s.addr, nil)
 }
 
