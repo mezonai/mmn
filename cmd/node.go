@@ -42,6 +42,8 @@ const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
 	leveldbBlockDir = "blockstore/leveldb"
+	LISTEN_MODE     = "listen"
+	FULL_MODE       = "full"
 )
 
 var (
@@ -52,6 +54,7 @@ var (
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
+	mode               string
 	// legacy init command
 	// database backend
 	databaseBackend string
@@ -77,6 +80,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
+	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 
 }
 
@@ -184,6 +188,7 @@ func runNode() {
 		JSONRPCAddr:        jsonrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
+		Mode:               mode,
 	}
 
 	txTracker := transaction.NewTransactionTracker()
@@ -204,7 +209,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -218,18 +223,21 @@ func runNode() {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
 
-	collector := consensus.NewCollector(3) // TODO: every epoch need have a fixed number
+	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
 	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
 
-	libP2pClient.OnStartPoh = func() { pohService.Start() }
-	libP2pClient.OnStartValidator = func() { val.Run() }
+	// In listen mode, do not start PoH or Validator
+	if nodeConfig.Mode != LISTEN_MODE {
+		libP2pClient.OnStartPoh = func() { pohService.Start() }
+		libP2pClient.OnStartValidator = func() { val.Run() }
+	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
@@ -307,7 +315,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -317,6 +325,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		bs,
 		ts,
 		pohCfg,
+		mode == LISTEN_MODE,
 	)
 
 	return libp2pNetwork, err
@@ -336,7 +345,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, ld *ledger.Ledger, collector *consensus.Collector) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -359,6 +368,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs,
+		ld, collector,
 	)
 
 	// Cache leader schedule inside p2p for local leader checks

@@ -1,0 +1,303 @@
+﻿name: Deploy MMN
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment (dev|prod)"
+        required: true
+        default: "dev"
+      ref:
+        description: "Git ref (branch, tag, or commit)"
+        required: true
+        default: "master"
+
+jobs:
+  build:
+    runs-on: [self-hosted, Linux, mezon-runner]
+    outputs:
+      git_sha: ${{ steps.build.outputs.git_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.5"
+          cache: true
+          check-latest: false
+
+      - name: Install build dependencies
+        run: |
+          PACKAGES="
+          build-essential
+          libsnappy-dev
+          zlib1g-dev
+          libbz2-dev
+          libgflags-dev
+          liblz4-dev
+          libzstd-dev
+          liburing-dev
+          "
+          TO_INSTALL=""
+          echo "==> Checking for required packages..."
+          for PKG in $PACKAGES; do
+            if ! dpkg -s "$PKG" &> /dev/null; then
+              TO_INSTALL="$TO_INSTALL $PKG"
+            fi
+          done
+
+          if [ -n "$TO_INSTALL" ]; then
+            echo "==> Found missing packages, installing: $TO_INSTALL"
+            sudo apt-get update
+            sudo apt-get install -y $TO_INSTALL
+          else
+            echo "==> All build dependencies are already installed. Skipping."
+          fi
+
+      - name: Build MMN binary
+        id: build
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-I$(pwd)/libs/rocksdb"
+          CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
+        run: |
+          mkdir -p build
+          GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
+          GIT_SHA=$(git rev-parse --short=12 HEAD)
+          echo "git_sha=$GIT_SHA" >> $GITHUB_OUTPUT
+          echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, Linux, mezon-runner]
+    environment: ${{ inputs.env }}
+    env:
+      TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
+    steps:
+      - name: Deploy Monitoring Configurations
+        if: inputs.env == 'dev'
+        env:
+          URL_LOKI_PUSH: ${{ vars.URL_LOKI_PUSH }}
+        run: |
+          set -e
+          echo "==> Deploying monitoring configs for MMN..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+            set -e
+            sudo mkdir -p /etc/mezon/monitoring
+            sudo chown mmn:mmn /etc/mezon/monitoring
+          "
+
+          echo "==> Copying configs to a temporary location on the MMN server..."
+          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
+
+          echo "==> Moving configs to final destination with sudo..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<EOF
+            set -e
+            sed \
+              -e "s|__URL_LOKI_PUSH__|${URL_LOKI_PUSH}|g" \
+              -e 's|__path__: /var/log/mmn/\*.log|__path__: /opt/mezon/mmn/logs/\*.log|g' \
+              /tmp/promtail-config.yml \
+              | sudo tee /etc/mezon/monitoring/promtail-config.yml >/dev/null
+            sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
+          EOF
+      
+      - name: Monitoring config server runner
+        if: inputs.env != 'dev'
+        env:
+          PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
+          NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
+          LISTENER_URL_PORT: ${{ vars.LISTENER_URL_PORT }}
+        run: |
+          echo "==> Move config file to folder run monitoring..."
+          sudo mkdir -p /etc/mezon/monitoring/
+          echo "==> Setting up Prometheus and Loki configs..."
+          sudo cp ./monitoring/prometheus-config.yml /etc/mezon/monitoring/prometheus-config.yml
+
+          sudo sed -i "s/__PORT_NODE_EXPORTER__/${PORT_NODE_EXPORTER}/g" /etc/mezon/monitoring/prometheus-config.yml
+          sudo chown mmn:mmn /etc/mezon/monitoring/prometheus-config.yml
+
+          echo "==> Setting up Grafana configs..."
+          sudo mkdir -p /etc/grafana/
+          sudo cp -r ./monitoring/grafana/* /etc/grafana/
+          
+          sudo chown -R mmn:mmn /etc/grafana/provisioning
+          sudo chown -R mmn:mmn /etc/grafana/dashboards
+          sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
+          sudo sed -i 's#path: /var/lib/grafana/dashboards#path: /etc/grafana/dashboards#g' /etc/grafana/provisioning/dashboards/dashboard.yaml
+
+          sudo mkdir -p /etc/prometheus/targets
+          sudo cp ./monitoring/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
+          sudo sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" /etc/prometheus/targets/nodes.yml
+          sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
+
+      - name: Copy binary and config to target
+        run: |
+          scp -i /home/nccsoft/.ssh/mmn_deploy build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
+          scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
+
+      - name: Generate remote setup and env files locally
+        run: |
+          cat > remote_setup.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "==> Loading environment..."
+          source /tmp/mezon_env.sh
+
+          echo "==> Checking and installing runtime dependencies..."
+          RUNTIME_PACKAGES="
+          libsnappy1v5
+          zlib1g
+          libbz2-1.0
+          liblz4-1
+          libzstd1
+          liburing2
+          "
+          TO_INSTALL_REMOTE=""
+          for PKG in $RUNTIME_PACKAGES; do
+            if ! dpkg -s "$PKG" &> /dev/null; then
+              TO_INSTALL_REMOTE="$TO_INSTALL_REMOTE $PKG"
+            fi
+          done
+
+          if [ -n "$TO_INSTALL_REMOTE" ]; then
+            echo "==> Found missing runtime packages on target server, installing: $TO_INSTALL_REMOTE"
+            sudo apt-get update -y
+            sudo apt-get install -y $TO_INSTALL_REMOTE
+          else
+            echo "==> All runtime dependencies are already installed on target server. Skipping."
+          fi
+
+          echo "==> Preparing directories..."
+          sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
+
+          write_text_file() {
+            local var_value="$1"
+            local dest="$2"
+            if [ -z "$var_value" ]; then
+              echo "❌ ERROR: Missing value for $dest"
+              exit 1
+            fi
+            printf '%s' "$var_value" | sudo tee "$dest" >/dev/null
+            sudo chmod 600 "$dest"
+            sudo chown mmn:mmn "$dest"
+          }
+
+          echo "==> Writing keys..."
+          write_text_file "$BOOTNODE_PRIVKEY" /etc/mezon/bootnode_privkey.txt
+          write_text_file "$NODE1_PRIVKEY" /etc/mezon/node1_privkey.txt
+          write_text_file "$VERIFYING_KEY_B64" /opt/mezon/mmn/config/verifying_key.b64
+
+          echo "==> Generating genesis.yml..."
+          sed \
+            -e "s|__LEADER_ADDRESS__|$NODE1_ADDRESS|g" \
+            -e "s|__FAUCET_ADDRESS__|$FAUCET_ADDRESS|g" \
+            /opt/mezon/mmn/config/genesis.template.yml \
+            | sudo tee /etc/mezon/genesis.yml >/dev/null
+          sudo chown mmn:mmn /etc/mezon/genesis.yml
+
+          echo "==> Updating systemd for node1..."
+          BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP/tcp/9000/p2p/$BOOTNODE_ID"
+          sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
+              /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
+              | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
+
+          echo "==> Creating /etc/mezon/node1.env..."
+          sudo tee /etc/mezon/node1.env >/dev/null <<EOL
+          LOGFILE=node1.log
+          LOGLEVEL=info
+          LOGFILE_MAX_SIZE_MB=500
+          LOGFILE_MAX_AGE_DAYS=30
+          CORS_ALLOWED_ORIGINS=*
+          CORS_ALLOWED_METHODS=POST,OPTIONS
+          CORS_ALLOWED_HEADERS=Content-Type
+          EOL
+
+          sudo chmod 644 /etc/mezon/node1.env
+          sudo chown mmn:mmn /etc/mezon/node1.env
+
+          sudo systemctl daemon-reload
+          sudo systemctl enable mezon-node1
+
+          echo "✅ Remote setup completed successfully."
+          EOF
+
+          chmod +x remote_setup.sh
+
+          echo "# Mezon env generated at $(date)" > mezon_env.sh
+          printf "export BOOTNODE_PRIVKEY=%q\n" "$BOOTNODE_PRIVKEY" >> mezon_env.sh
+          printf "export NODE1_PRIVKEY=%q\n" "$NODE1_PRIVKEY" >> mezon_env.sh
+          printf "export VERIFYING_KEY_B64=%q\n" "$VERIFYING_KEY_B64" >> mezon_env.sh
+          printf "export NODE1_ADDRESS=%q\n" "$NODE1_ADDRESS" >> mezon_env.sh
+          printf "export FAUCET_ADDRESS=%q\n" "$FAUCET_ADDRESS" >> mezon_env.sh
+          printf "export BOOTNODE_IP=%q\n" "$BOOTNODE_IP" >> mezon_env.sh
+          printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
+        env:
+          BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
+          VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
+          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+
+      - name: Execute remote setup correctly with sourced env
+        shell: bash
+        env:
+          BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
+          VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
+          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+        run: |
+          set -e
+
+          echo "==> Copying remote_setup.sh and mezon_env.sh..."
+          scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ secrets.HOST_ALIAS }}:/tmp/
+
+          echo "==> Running remote setup..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+            set -e
+            chmod +x /tmp/remote_setup.sh
+            bash -c 'set -e; source /tmp/mezon_env.sh; bash /tmp/remote_setup.sh'
+            rm -f /tmp/mezon_env.sh /tmp/remote_setup.sh
+          "
+
+      - name: Atomic swap + restart services
+        run: |
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOF'
+          set -e
+          SHA=$(date +%s)
+
+          sudo systemctl stop mezon-node1 || true
+          sudo systemctl stop mezon-bootnode || true
+
+          sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
+          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+
+          if [ ! -d "/opt/mezon/node-data/node1" ]; then
+            set -a
+            source /etc/mezon/node1.env
+            set +a
+            /opt/mezon/mmn/bin/mmn init \
+              --data-dir "/opt/mezon/node-data/node1" \
+              --genesis "/etc/mezon/genesis.yml" \
+              --database rocksdb \
+              --privkey-path "/etc/mezon/node1_privkey.txt"
+          fi
+
+          sudo systemctl start mezon-bootnode || true
+          sleep 2
+          sudo systemctl start mezon-node1 || true
+          EOF
+
+      - name: Healthcheck
+        run: |
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"

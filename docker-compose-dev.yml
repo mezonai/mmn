@@ -17,7 +17,6 @@ services:
       - LOGFILE=mmn-bootnode.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
     networks:
       - mezon
     restart: unless-stopped
@@ -27,7 +26,7 @@ services:
     container_name: node1
     command: >
       sh -c '
-        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
+        ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
         ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
@@ -43,7 +42,6 @@ services:
       - LOGFILE=mmn-node1.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
       - CORS_ALLOWED_ORIGINS=*
       - CORS_ALLOWED_METHODS=POST,OPTIONS
       - CORS_ALLOWED_HEADERS=Content-Type
@@ -51,29 +49,54 @@ services:
       - mezon
     restart: unless-stopped
       
-  listener:
+  node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
-    container_name: listener
+    container_name: node2
     command: >
       sh -c '
-        ./mmn init --data-dir "./node-data/listener" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/listener.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/listener" --listen-addr ":8004" --jsonrpc-addr ":8084" --grpc-addr ":9004" --mode listen --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
-      - node1
     ports:
-      - "8004:8004"
-      - "8084:8084"
-      - "9004:9004"
+      - "8002:8002"
+      - "8082:8082"
+      - "9002:9002"
     volumes:
       - node_data:/app/node-data
       - logs_data:/app/logs
     environment:
-      - LOGFILE=mmn-listener.log
+      - LOGFILE=mmn-node2.log
       - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
       - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CORS_ALLOWED_ORIGINS=*
+      - CORS_ALLOWED_METHODS=POST,OPTIONS
+      - CORS_ALLOWED_HEADERS=Content-Type
+    networks:
+      - mezon
+    restart: unless-stopped
+  node3:
+    image: mmn-node:${DB_VENDOR:-rocksdb}
+    container_name: node3
+    command: >
+      sh -c '
+        ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+      '
+    depends_on:
+      - bootnode
+    ports:
+      - "8003:8003"
+      - "8083:8083"
+      - "9003:9003"
+    volumes:
+      - node_data:/app/node-data
+      - logs_data:/app/logs
+    environment:
+      - LOGFILE=mmn-node3.log
+      - LOGFILE_MAX_SIZE_MB=${LOGFILE_MAX_SIZE_MB:-500}
+      - LOGFILE_MAX_AGE_DAYS=${LOGFILE_MAX_AGE_DAYS:-7}
       - CORS_ALLOWED_ORIGINS=*
       - CORS_ALLOWED_METHODS=POST,OPTIONS
       - CORS_ALLOWED_HEADERS=Content-Type
@@ -133,34 +156,7 @@ services:
     volumes:
       - ./monitoring/prometheus-config.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/targets:/etc/prometheus/targets:ro
-      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
       - prom_data:/prometheus
-    networks:
-      - mezon
-    restart: unless-stopped
-
-  alertmanager:
-    image: prom/alertmanager:v0.28.0
-    container_name: alertmanager
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./monitoring/alertmanager-config.yml:/etc/alertmanager/alertmanager.yml:ro
-      - ./monitoring/webhook-templates:/etc/alertmanager/templates:ro
-      - alertmanager_data:/alertmanager
-    networks:
-      - mezon
-    restart: unless-stopped
-
-  webhook-receiver:
-    image: golang:1.24-bookworm
-    container_name: webhook-receiver
-    working_dir: /app
-    command: sh -c 'go run main.go'
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./webhook-receiver:/app
     networks:
       - mezon
     restart: unless-stopped
@@ -192,4 +188,3 @@ volumes:
   loki_data:
   grafana_data:
   prom_data:
-  alertmanager_data:

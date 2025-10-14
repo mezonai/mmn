@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/consensus"
-
 	"github.com/libp2p/go-libp2p/core/crypto"
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -38,24 +35,6 @@ func (ln *Libp2pNetwork) GetOwnAddress() string {
 	return ""
 }
 
-func (ln *Libp2pNetwork) ConvertMessageToVote(msg VoteMessage) *consensus.Vote {
-	return &consensus.Vote{
-		Slot:      msg.Slot,
-		VoterID:   msg.VoterID,
-		Signature: msg.Signature,
-	}
-}
-
-func (ln *Libp2pNetwork) ConvertMessageToBlock(msg BlockMessage) *block.Block {
-	return &block.Block{
-		BlockCore: block.BlockCore{
-			Slot:      msg.Slot,
-			LeaderID:  msg.LeaderID,
-			Timestamp: uint64(msg.Timestamp.Second()),
-		},
-	}
-}
-
 func AddrStrings(addrs []ma.Multiaddr) []string {
 	var strAddrs []string
 	for _, addr := range addrs {
@@ -80,11 +59,21 @@ func (ln *Libp2pNetwork) CleanupExpiredRequests() {
 	ln.syncTrackerMu.Lock()
 	defer ln.syncTrackerMu.Unlock()
 
-	cutoff := time.Now().Add(-5 * time.Minute)
+	cutoff := time.Now().Add(-30 * time.Minute)
 
 	for requestID, tracker := range ln.syncRequests {
 		if tracker.StartTime.Before(cutoff) {
-			tracker.CloseRequest()
+			// If the tracker is still active, only close unused (non-active) streams
+			if tracker.IsActive {
+				// Close all other peer streams but keep the active one
+				tracker.CloseAllOtherPeers()
+				// Bump StartTime to avoid immediate re-cleanup while the active stream continues
+				tracker.StartTime = time.Now()
+				continue
+			}
+
+			// If not active, close all streams and remove the tracker
+			tracker.CloseAllPeers()
 			delete(ln.syncRequests, requestID)
 		}
 	}
