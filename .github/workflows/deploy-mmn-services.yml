@@ -38,7 +38,7 @@ jobs:
         run: |
           echo "==> No new or existing tag provided. Calculating the next tag..."
 
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          LATEST_TAG=$(git tag -l --sort=-v:refname | head -n 1)
           if [ -z "$LATEST_TAG" ]; then
             NEW_TAG="v0.1.0"
             echo "==> No existing tags found. Starting with initial tag: $NEW_TAG"
@@ -125,6 +125,7 @@ jobs:
           fi
 
       - name: Determine and Standardize Tag for Release
+        if: steps.decide.outputs.skip == 'false'
         id: determine_release_tag
         run: |
           if [ -n "${{ inputs.new_tag_to_build }}" ]; then
@@ -209,6 +210,23 @@ jobs:
       
       - name: Checkout code for config files
         uses: actions/checkout@v4
+
+      - name: Install GitHub CLI (if not present)
+        run: |
+          if command -v gh &> /dev/null; then
+            echo "==> GitHub CLI is already installed. Skipping."
+            gh --version
+          else
+            set -e
+            echo "==> GitHub CLI not found. Installing now..."
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-key.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-key.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-key.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-key.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install gh -y
+            echo "==> GitHub CLI installed successfully."
+            gh --version
+          fi
 
       - name: Prepare binary for deployment
         env:
