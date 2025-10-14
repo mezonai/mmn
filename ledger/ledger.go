@@ -252,6 +252,10 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 	return tx, txMeta, nil, nil
 }
 
+func (l *Ledger) GetAccountStore() store.AccountStore {
+	return l.accountStore
+}
+
 // GetTxBatch retrieves multiple transactions and their metadata using batch operations
 func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
 	if len(hashes) == 0 {

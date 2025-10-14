@@ -33,5 +33,8 @@ var (
 	ReadyGapThreshold               uint64        = 0
 	LatestSlotSyncGapThreshold      uint64        = 1
 	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
+	SnapshotChunkSize               int           = 16384
+	SnapshotReadyGapThreshold       uint64        = 2
+	SnapshotRangeFor                uint64        = 100 // should be 20k ~ 50k
 	InitRequestLatestSlotMaxRetries int           = 3
 )

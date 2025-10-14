@@ -33,12 +33,22 @@ MSYS_NO_PATHCONV=1 go run main.go node \
   --grpc-addr ":<port>" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/<port>/p2p/<peerID>"
 
+Sync modes:
+- Add flag `--sync` to join the network after syncing from a snapshot (fast catch-up). If you omit `--sync`, the node will do a full sync from genesis/block-by-block.
+
 example:
 MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node1" \
   --grpc-addr ":9001" \
   --listen-addr ":8001" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+
+MSYS_NO_PATHCONV=1 go run main.go node \
+  --data-dir "./node-data/node1" \
+  --grpc-addr ":9001" \
+  --listen-addr ":8001" \
+  --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2" \
+  --sync
 
 MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node2" \

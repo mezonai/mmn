@@ -44,6 +44,7 @@ const (
 	leveldbBlockDir = "blockstore/leveldb"
 	LISTEN_MODE     = "listen"
 	FULL_MODE       = "full"
+	LIGHT_MODE      = "light"
 )
 
 var (
@@ -58,6 +59,7 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+	snapshotUDPPort string
 )
 
 var runCmd = &cobra.Command{
@@ -80,6 +82,7 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
+	runCmd.Flags().StringVar(&snapshotUDPPort, "udp-port", ":9100", "UDP port for snapshot streaming :<port>")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 
 }
@@ -103,6 +106,7 @@ func runNode() {
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -223,7 +227,7 @@ func runNode() {
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, snapshotUDPPort)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
@@ -321,6 +325,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
+		mode == LIGHT_MODE,
 		ts,
 		pohCfg,
 		mode == LISTEN_MODE,
