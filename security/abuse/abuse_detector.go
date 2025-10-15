@@ -9,11 +9,11 @@ import (
 
 func DefaultAbuseConfig() *AbuseConfig {
 	return &AbuseConfig{
-		MaxTxPerMinute: 10,      // 10 tx per second
-		MaxTxPerHour:   36000,  // 10 tx per second for 1 hour
-		MaxTxPerDay:    864000, // 10 tx per second for 1 day
+		MaxTxPerMinute: 100,     // 100 tx per second
+		MaxTxPerHour:   360000,  // 100 tx per second for 1 hour
+		MaxTxPerDay:    8640000, // 100 tx per second for 1 day
 
-		AutoBlacklistTxPerMinute: 20, // 20 tx per second
+		AutoBlacklistTxPerMinute: 200, // 200 tx per second
 	}
 }
 
@@ -140,18 +140,6 @@ func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 		logx.Warn("ABUSE", fmt.Sprintf("Flagged wallet %s: %s (count: %d)", entity, reason, ad.flaggedWallets[entity].Count))
 	}
 }
-
-// GetFlaggedIPs returns all flagged IPs
-// GetFlaggedIPs removed from production surface
-
-// GetFlaggedWallets returns all flagged wallets
-// GetFlaggedWallets removed from production surface
-
-// GetMetrics returns current metrics
-// GetMetrics removed from production surface
-
-// GetRateStats returns current rate statistics
-// GetRateStats removed from production surface
 
 func (ad *AbuseDetector) IsIPBlacklisted(ip string) bool {
 	ad.mu.RLock()

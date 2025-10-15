@@ -29,7 +29,6 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -134,17 +133,23 @@ func rateLimitStreamInterceptor(lim *rate.Limiter) grpc.StreamServerInterceptor 
 
 func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if !isApplyInterceptorRateLimitAndAbuse(info.FullMethod) {
-			return handler(ctx, req)
+		clientIP := ExtractClientIP(ctx)
+		walletAddr := "unknown"
+		isAddTx := isApplyInterceptorRateLimitAndAbuse(info.FullMethod)
+		if isAddTx {
+			walletAddr = ExtractWalletFromRequest(req)
 		}
 
-		clientIP := extractClientIP(ctx)
-		walletAddr := extractWalletFromRequest(req)
-
 		if rateLimiter != nil {
-			if !rateLimiter.AllowAllWithContext(ctx, clientIP, walletAddr) {
-				logx.Warn("SECURITY", "Request blocked for IP:", clientIP, "Wallet:", walletAddr)
-				return nil, status.Errorf(codes.ResourceExhausted, "request blocked")
+			if !rateLimiter.AllowIPWithContext(ctx, clientIP) {
+				logx.Warn("SECURITY", "IP limited:", clientIP, "Method:", info.FullMethod)
+				return nil, status.Errorf(codes.ResourceExhausted, "ip rate limit")
+			}
+			if isAddTx {
+				if !rateLimiter.AllowWalletWithContext(ctx, walletAddr) {
+					logx.Warn("SECURITY", "Wallet limited:", walletAddr, "IP:", clientIP)
+					return nil, status.Errorf(codes.ResourceExhausted, "wallet rate limit")
+				}
 			}
 		}
 
@@ -154,20 +159,13 @@ func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.Una
 
 func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if !isApplyInterceptorRateLimitAndAbuse(info.FullMethod) {
-			return handler(srv, ss)
-		}
-
-		clientIP := extractClientIP(ss.Context())
-		walletAddr := "unknown"
-
+		clientIP := ExtractClientIP(ss.Context())
 		if rateLimiter != nil {
-			if !rateLimiter.AllowAllWithContext(ss.Context(), clientIP, walletAddr) {
-				logx.Warn("SECURITY", "Request blocked for stream IP:", clientIP)
-				return status.Errorf(codes.ResourceExhausted, "request blocked")
+			if !rateLimiter.AllowIPWithContext(ss.Context(), clientIP) {
+				logx.Warn("SECURITY", "IP limited (stream):", clientIP, "Method:", info.FullMethod)
+				return status.Errorf(codes.ResourceExhausted, "ip rate limit")
 			}
 		}
-
 		return handler(srv, ss)
 	}
 }
@@ -184,42 +182,6 @@ func isApplyInterceptorRateLimitAndAbuse(method string) bool {
 		}
 	}
 	return false
-}
-
-func extractClientIP(ctx context.Context) string {
-	p, ok := peer.FromContext(ctx)
-	if !ok {
-		return "unknown"
-	}
-
-	addr := p.Addr.String()
-	if addr == "" {
-		return "unknown"
-	}
-
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		if net.ParseIP(addr) != nil {
-			return addr
-		}
-		return "unknown"
-	}
-
-	if len(host) > 0 && host[0] == '[' && host[len(host)-1] == ']' {
-		host = host[1 : len(host)-1]
-	}
-
-	return host
-}
-
-func extractWalletFromRequest(req interface{}) string {
-	switch r := req.(type) {
-	case *pb.SignedTxMsg:
-		if r.TxMsg != nil {
-			return r.TxMsg.Sender
-		}
-	}
-	return "unknown"
 }
 
 func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnaryServerInterceptor {

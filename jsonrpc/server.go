@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -222,11 +221,16 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 			method, wallet := parseJSONRPCMethodAndWallet(bodyBytes)
+			clientIP := extractClientIPFromRequest(r)
+			if !s.rateLimiter.AllowIPWithContext(r.Context(), clientIP) {
+				logx.Warn("SECURITY", "JSON-RPC IP limited", "IP:", clientIP, "Method:", method)
+				http.Error(w, "ip rate limit", http.StatusTooManyRequests)
+				return
+			}
 			if isTxJSONRPCMethod(method) {
-				clientIP := extractClientIPFromRequest(r)
-				if !s.rateLimiter.AllowAllWithContext(r.Context(), clientIP, wallet) {
-					logx.Warn("SECURITY", "JSON-RPC request blocked", "IP:", clientIP, "Wallet:", wallet, "Method:", method)
-					http.Error(w, "rate limit exceeded or blacklisted", http.StatusTooManyRequests)
+				if !s.rateLimiter.AllowWalletWithContext(r.Context(), wallet) {
+					logx.Warn("SECURITY", "JSON-RPC wallet limited", "Wallet:", wallet, "IP:", clientIP, "Method:", method)
+					http.Error(w, "wallet rate limit", http.StatusTooManyRequests)
 					return
 				}
 			}
@@ -547,50 +551,4 @@ func splitAndTrim(s string) []string {
 		}
 	}
 	return out
-}
-
-func parseJSONRPCMethodAndWallet(body []byte) (string, string) {
-	var req jsonRPCRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return "", "unknown"
-	}
-
-	if !isTxJSONRPCMethod(req.Method) {
-		return req.Method, "unknown"
-	}
-
-	var p signedTxParams
-	if len(req.Params) > 0 {
-		_ = json.Unmarshal(req.Params, &p)
-		if p.TxMsg.Sender != "" {
-			return req.Method, p.TxMsg.Sender
-		}
-	}
-	return req.Method, "unknown"
-}
-
-func isTxJSONRPCMethod(method string) bool {
-	switch strings.ToLower(method) {
-	case "tx.addtx":
-		return true
-	default:
-		return false
-	}
-}
-
-func extractClientIPFromRequest(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if net.ParseIP(ip) != nil {
-				return ip
-			}
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && net.ParseIP(host) != nil {
-		return host
-	}
-	return "unknown"
 }
