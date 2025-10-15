@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"time"
 
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/poh"
-	"github.com/mr-tron/base58"
+	"github.com/pkg/errors"
 )
 
 type BlockStatus uint8
@@ -88,6 +90,7 @@ func (b *BroadcastedBlock) Sign(privKey ed25519.PrivateKey) {
 
 func (b *BroadcastedBlock) computeHash() [32]byte {
 	h := sha256.New()
+
 	// Slot
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, b.Slot)
@@ -110,11 +113,36 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 }
 
 func (b *BroadcastedBlock) VerifySignature() bool {
-	pubKey, err := base58.Decode(b.LeaderID)
+
+	pubKey, err := getPublicKeyFromLeaderID(b.LeaderID)
 	if err != nil {
+		logx.Error("BroadcastedBlock", fmt.Sprintf("Failed to get public key from LeaderID: %v", err))
 		return false
 	}
+
+	if len(b.Signature) != ed25519.SignatureSize {
+		logx.Warn("BLOCK", "verify block signature failure different length of signature")
+		return false
+	}
+
 	return ed25519.Verify(pubKey, b.Hash[:], b.Signature)
+}
+
+func getPublicKeyFromLeaderID(leaderID string) (ed25519.PublicKey, error) {
+	if leaderID == "" {
+		return nil, errors.New("leader ID cannot be empty")
+	}
+
+	pubKeyBytes, err := common.DecodeBase58ToBytes(leaderID)
+	if err != nil {
+		return nil, errors.Errorf("failed to decode leader ID: %w", err)
+	}
+
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		return nil, errors.Errorf("invalid leader ID length: expected %d, got %d", ed25519.PublicKeySize, len(pubKeyBytes))
+	}
+
+	return ed25519.PublicKey(pubKeyBytes), nil
 }
 
 func (b *BroadcastedBlock) VerifyPoH() error {

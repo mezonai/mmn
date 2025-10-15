@@ -27,6 +27,7 @@ import (
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -79,7 +80,23 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	s.txSvc = service.NewTxServiceWithProtection(ld, mempool, blockStore, txTracker, rateLimiter, abuseDetector)
 	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
 
-	grpcSrv := grpc.NewServer()
+	rLimiter := rate.NewLimiter(rate.Limit(GRPCRateLimitRPS), GRPCRateLimitBurst)
+
+	unaryInterceptors := []grpc.UnaryServerInterceptor{
+		rateLimitUnaryInterceptor(rLimiter),
+		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
+	}
+	streamInterceptors := []grpc.StreamServerInterceptor{
+		rateLimitStreamInterceptor(rLimiter),
+		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
+	}
+
+	grpcSrv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
+		grpc.MaxRecvMsgSize(GRPCMaxRecvMsgSize),
+		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
+	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
@@ -96,6 +113,54 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
 }
+
+func rateLimitUnaryInterceptor(lim *rate.Limiter) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if !lim.Allow() {
+			logx.Warn("GRPC RL", "rate limiter exceeded for ", info.FullMethod)
+		}
+		return handler(ctx, req)
+	}
+}
+
+func rateLimitStreamInterceptor(lim *rate.Limiter) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if !lim.Allow() {
+			logx.Warn("GRPC RL", "rate limiter exceeded for stream ", info.FullMethod)
+		}
+		return handler(srv, ss)
+	}
+}
+
+func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) <= 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, defaultTimeout)
+			defer cancel()
+		}
+		return handler(ctx, req)
+	}
+}
+
+func defaultDeadlineStreamInterceptor(defaultTimeout time.Duration) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if deadline, ok := ss.Context().Deadline(); !ok || time.Until(deadline) <= 0 {
+			ctx, cancel := context.WithTimeout(ss.Context(), defaultTimeout)
+			defer cancel()
+			wrapped := &serverStreamWithContext{ServerStream: ss, ctx: ctx}
+			return handler(srv, wrapped)
+		}
+		return handler(srv, ss)
+	}
+}
+
+type serverStreamWithContext struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *serverStreamWithContext) Context() context.Context { return w.ctx }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	return s.txSvc.AddTx(ctx, in)

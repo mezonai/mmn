@@ -6,14 +6,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mr-tron/base58"
 )
 
 var ErrUnsupportedKey = errors.New("crypto: unsupported private key length")
 
 func Serialize(tx *Tx) []byte {
-	metadata := fmt.Sprintf("%d|%s|%s|%d|%s|%d|%s", tx.Type, tx.Sender, tx.Recipient, tx.Amount, tx.TextData, tx.Nonce, tx.ExtraInfo)
-	fmt.Println("Serialize metadata:", metadata)
+	amountStr := tx.Amount.String()
+	metadata := fmt.Sprintf("%d|%s|%s|%s|%s|%d|%s", tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce, tx.ExtraInfo)
 	return []byte(metadata)
 }
 
@@ -54,11 +55,24 @@ func Verify(tx *Tx, sig string) bool {
 	if tx.Type == TxTypeFaucet {
 		decoded, err := base58.Decode(tx.Sender)
 		if err != nil {
+			logx.Error("Verify", fmt.Sprintf("failed to decode sender: %w", err))
 			return false
 		}
+
+		if len(decoded) != ed25519.PublicKeySize {
+			logx.Error("Verify", fmt.Sprintf("invalid signature pubKey size: expected %d, got %d", ed25519.PublicKeySize, len(decoded)))
+			return false
+		}
+
 		pubKey := ed25519.PublicKey(decoded)
 		signature, err := base58.Decode(sig)
 		if err != nil {
+			logx.Error("Verify", fmt.Sprintf("failed to decode sender: %w", err))
+			return false
+		}
+
+		if len(signature) != ed25519.SignatureSize {
+			logx.Error("Verify", fmt.Sprintf("invalid signature sig size: expected %d, got %d", ed25519.SignatureSize, len(signature)))
 			return false
 		}
 
@@ -72,6 +86,10 @@ func Verify(tx *Tx, sig string) bool {
 
 	var userSig UserSig
 	if err := json.Unmarshal(sigBytes, &userSig); err != nil {
+		return false
+	}
+
+	if len(userSig.PubKey) != ed25519.PublicKeySize || len(userSig.Sig) != ed25519.SignatureSize {
 		return false
 	}
 

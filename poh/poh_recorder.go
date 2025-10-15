@@ -2,6 +2,7 @@ package poh
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -60,13 +61,37 @@ func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Resource bounds validation
+	if len(txs) > MAX_TRANSACTIONS_PER_ENTRY {
+		return nil, fmt.Errorf("too many transactions: %d > %d", len(txs), MAX_TRANSACTIONS_PER_ENTRY)
+	}
+
+	if len(r.entries) >= MAX_ENTRIES_PER_SLOT {
+		return nil, fmt.Errorf("slot full: %d entries >= %d", len(r.entries), MAX_ENTRIES_PER_SLOT)
+	}
+
+	if len(r.entries) >= MAX_ENTRIES_MEMORY {
+		return nil, fmt.Errorf("memory limit exceeded: %d entries >= %d", len(r.entries), MAX_ENTRIES_MEMORY)
+	}
+
 	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	if pohEntry == nil {
 		return nil, fmt.Errorf("PoH refused to record, tick required")
 	}
 
+	// Validate NumHashes bounds
+	if pohEntry.NumHashes > MAX_NUM_HASHES {
+		return nil, fmt.Errorf("NumHashes too large: %d > %d", pohEntry.NumHashes, MAX_NUM_HASHES)
+	}
+
 	entry := NewTxEntry(pohEntry.NumHashes, pohEntry.Hash, txs)
+
+	// Validate entry size
+	if entrySize := estimateEntrySize(entry); entrySize > MAX_ENTRY_SIZE {
+		return nil, fmt.Errorf("entry too large: %d bytes > %d", entrySize, MAX_ENTRY_SIZE)
+	}
+
 	r.entries = append(r.entries, entry)
 	return &entry, nil
 }
@@ -77,6 +102,12 @@ func (r *PohRecorder) Tick() *Entry {
 
 	pohEntry := r.poh.Tick()
 	if pohEntry == nil {
+		return nil
+	}
+
+	// Validate NumHashes bounds for tick entries
+	if pohEntry.NumHashes > MAX_NUM_HASHES {
+		logx.Error("PohRecorder", fmt.Sprintf("NumHashes too large in tick: %d > %d", pohEntry.NumHashes, MAX_NUM_HASHES))
 		return nil
 	}
 
@@ -104,6 +135,12 @@ func (r *PohRecorder) DrainEntries() []Entry {
 	return entries
 }
 
+func estimateEntrySize(entry Entry) int {
+	size := 8 + 32 + 1                   // NumHashes + Hash + Tick
+	size += len(entry.Transactions) * 32 // Approximate transaction size
+	return size
+}
+
 func (r *PohRecorder) CurrentPassedSlot() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -121,11 +158,21 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 }
 
 func HashTransactions(txs []*transaction.Transaction) [32]byte {
+	if len(txs) == 0 {
+		domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), []byte("EMPTY")...)
+		return sha256.Sum256(domainHash)
+	}
 	var all []byte
 	for _, tx := range txs {
-		all = append(all, tx.Bytes()...)
+		txBytes := tx.Bytes()
+		lengthBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(lengthBytes, uint32(len(txBytes)))
+		all = append(all, lengthBytes...)
+		all = append(all, txBytes...)
 	}
-	return sha256.Sum256(all)
+	// Apply domain separation for transaction hashes
+	domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), all...)
+	return sha256.Sum256(domainHash)
 }
 
 func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {
