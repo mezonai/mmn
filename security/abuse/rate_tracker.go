@@ -33,23 +33,11 @@ func (rt *RateTracker) TrackTransaction(ip, wallet string) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 
-	// Track IP rate
 	rt.trackRequest(rt.ipRates, ip)
 
-	// Track wallet rate
 	rt.trackRequest(rt.walletRates, wallet)
 }
 
-func (rt *RateTracker) TrackFaucet(ip, wallet string) {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-
-	// Track IP rate
-	rt.trackRequest(rt.ipRates, ip)
-
-	// Track wallet rate
-	rt.trackRequest(rt.walletRates, wallet)
-}
 
 func (rt *RateTracker) trackRequest(rates map[string]*RateData, key string) {
 	data, exists := rates[key]
@@ -78,7 +66,6 @@ func (rt *RateTracker) GetIPRate(ip string, window time.Duration) int {
 	return rt.getRate(data, window)
 }
 
-// GetWalletRate returns current rate for a wallet
 func (rt *RateTracker) GetWalletRate(wallet string, window time.Duration) int {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -152,16 +139,14 @@ func (rt *RateTracker) cleanup() {
 	defer rt.mu.Unlock()
 
 	now := time.Now()
-	cutoff := now.Add(-rt.config.DayWindow) // Keep data for 1 day
+	cutoff := now.Add(-rt.config.DayWindow)
 
-	// Cleanup IP rates
 	for ip, data := range rt.ipRates {
 		if rt.cleanupData(data, cutoff) {
 			delete(rt.ipRates, ip)
 		}
 	}
 
-	// Cleanup wallet rates
 	for wallet, data := range rt.walletRates {
 		if rt.cleanupData(data, cutoff) {
 			delete(rt.walletRates, wallet)

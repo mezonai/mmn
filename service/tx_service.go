@@ -3,14 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
-	"net"
-	"strings"
 	"time"
 
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/monitoring"
-	"github.com/mezonai/mmn/security/abuse"
-	"github.com/mezonai/mmn/security/ratelimit"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/interfaces"
@@ -19,70 +15,18 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/peer"
-	"google.golang.org/grpc/status"
 )
 
 type TxServiceImpl struct {
-	ledger        *ledger.Ledger
-	mempool       *mempool.Mempool
-	blockStore    store.BlockStore
-	tracker       interfaces.TransactionTrackerInterface
-	rateLimiter   *ratelimit.GlobalRateLimiter
-	abuseDetector *abuse.AbuseDetector
+	ledger      *ledger.Ledger
+	mempool     *mempool.Mempool
+	blockStore  store.BlockStore
+	tracker     interfaces.TransactionTrackerInterface
 }
 
 func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, tracker interfaces.TransactionTrackerInterface) *TxServiceImpl {
 	return &TxServiceImpl{ledger: ld, mempool: mp, blockStore: bs, tracker: tracker}
-}
-
-func NewTxServiceWithProtection(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, tracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, abuseDetector *abuse.AbuseDetector) *TxServiceImpl {
-	return &TxServiceImpl{
-		ledger:        ld,
-		mempool:       mp,
-		blockStore:    bs,
-		tracker:       tracker,
-		rateLimiter:   rateLimiter,
-		abuseDetector: abuseDetector,
-	}
-}
-
-func extractClientIP(ctx context.Context) string {
-	p, ok := peer.FromContext(ctx)
-	if !ok {
-		return "unknown"
-	}
-
-	addr := p.Addr.String()
-	if addr == "" {
-		return "unknown"
-	}
-
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		if net.ParseIP(addr) != nil {
-			return addr
-		}
-		return "unknown"
-	}
-
-	// Handle IPv6 addresses that might be wrapped in brackets
-	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
-		host = host[1 : len(host)-1]
-	}
-
-	return host
-}
-
-func extractWalletFromTx(tx *transaction.Transaction) string {
-	if tx == nil || tx.Sender == "" {
-		return "unknown"
-	}
-	return tx.Sender
 }
 
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
@@ -98,64 +42,12 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 	// Todo: remove from input and update client
 	tx.Timestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 
-	clientIP := extractClientIP(ctx)
-	walletAddr := extractWalletFromTx(tx)
-
-	if s.rateLimiter != nil {
-		if !s.rateLimiter.AllowAllWithContext(ctx, clientIP, walletAddr) {
-			logx.Warn("RATE_LIMIT", "Rate limit exceeded for IP:", clientIP, "Wallet:", walletAddr)
-			return &pb.AddTxResponse{
-				Ok:    false,
-				Error: "Rate limit exceeded. Please try again later.",
-			}, status.Errorf(codes.ResourceExhausted, "rate limit exceeded")
-		}
-	}
-
-	if s.abuseDetector != nil {
-		if err := s.abuseDetector.CheckTransactionRate(clientIP, walletAddr); err != nil {
-			logx.Warn("ABUSE_DETECTION", "Abuse detected for IP:", clientIP, "Wallet:", walletAddr, "Error:", err.Error())
-			return &pb.AddTxResponse{
-				Ok:    false,
-				Error: "Transaction rejected due to abuse detection. Please contact support if this is an error.",
-			}, status.Errorf(codes.PermissionDenied, "abuse detected: %v", err)
-		}
-	}
-
 	txHash, err := s.mempool.AddTx(tx, true)
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 	}
 	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
 }
-
-func (s *TxServiceImpl) GetAbuseMetrics() *abuse.AbuseMetrics {
-	if s.abuseDetector == nil {
-		return &abuse.AbuseMetrics{}
-	}
-	return s.abuseDetector.GetMetrics()
-}
-
-func (s *TxServiceImpl) GetAbuseStats() *abuse.RateStats {
-	if s.abuseDetector == nil {
-		return &abuse.RateStats{}
-	}
-	return s.abuseDetector.GetRateStats()
-}
-
-func (s *TxServiceImpl) GetFlaggedIPs() map[string]*abuse.AbuseFlag {
-	if s.abuseDetector == nil {
-		return make(map[string]*abuse.AbuseFlag)
-	}
-	return s.abuseDetector.GetFlaggedIPs()
-}
-
-func (s *TxServiceImpl) GetFlaggedWallets() map[string]*abuse.AbuseFlag {
-	if s.abuseDetector == nil {
-		return make(map[string]*abuse.AbuseFlag)
-	}
-	return s.abuseDetector.GetFlaggedWallets()
-}
-
 func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
 	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
 	if errTx != nil || errTxMeta != nil {

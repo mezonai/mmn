@@ -9,15 +9,11 @@ import (
 
 func DefaultAbuseConfig() *AbuseConfig {
 	return &AbuseConfig{
-		MaxTxPerMinute: 1,      // 10 tx per second
+		MaxTxPerMinute: 1,     // 10 tx per second
 		MaxTxPerHour:   36000,  // 10 tx per second for 1 hour
 		MaxTxPerDay:    864000, // 10 tx per second for 1 day
 
-		MaxFaucetPerHour: 10, // 10 faucet requests per hour per IP
-		MaxFaucetPerDay:  12, // 12 faucet requests per day per wallet
-
-		AutoBlacklistTxPerMinute:   2, // 20 tx per second
-		AutoBlacklistFaucetPerHour: 50,
+		AutoBlacklistTxPerMinute: 2, // 20 tx per second
 	}
 }
 
@@ -34,6 +30,8 @@ func NewAbuseDetector(config *AbuseConfig) *AbuseDetector {
 		metrics:        &AbuseMetrics{},
 	}
 
+	go ad.startBackgroundMonitoring()
+
 	return ad
 }
 
@@ -48,23 +46,6 @@ func (ad *AbuseDetector) CheckTransactionRate(ip, wallet string) error {
 	}
 
 	if err := ad.checkWalletTransactionRate(wallet); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (ad *AbuseDetector) CheckFaucetRate(ip, wallet string) error {
-	ad.mu.Lock()
-	defer ad.mu.Unlock()
-
-	ad.rateTracker.TrackFaucet(ip, wallet)
-
-	if err := ad.checkIPFaucetRate(ip); err != nil {
-		return err
-	}
-
-	if err := ad.checkWalletFaucetRate(wallet); err != nil {
 		return err
 	}
 
@@ -108,43 +89,12 @@ func (ad *AbuseDetector) checkWalletTransactionRate(wallet string) error {
 	return nil
 }
 
-func (ad *AbuseDetector) checkIPFaucetRate(ip string) error {
-	hourRate := ad.rateTracker.GetIPRate(ip, time.Hour)
-
-	// Check for auto-blacklist
-	if hourRate >= ad.config.AutoBlacklistFaucetPerHour {
-		ad.flagAbuse(ip, "ip", fmt.Sprintf("Auto-blacklist: %d faucet/hour (limit: %d)", hourRate, ad.config.AutoBlacklistFaucetPerHour))
-		ad.flaggedIPs[ip].IsBlacklisted = true
-		ad.metrics.AutoBlacklists++
-		return fmt.Errorf("IP %s auto-blacklisted: %d faucet/hour", ip, hourRate)
-	}
-
-	if hourRate > ad.config.MaxFaucetPerHour {
-		reason := fmt.Sprintf("High faucet rate: %d/hour (limit: %d)", hourRate, ad.config.MaxFaucetPerHour)
-		ad.flagAbuse(ip, "ip", reason)
-	}
-
-	return nil
-}
-
-// checkWalletFaucetRate checks wallet faucet rate
-func (ad *AbuseDetector) checkWalletFaucetRate(wallet string) error {
-	dayRate := ad.rateTracker.GetWalletRate(wallet, 24*time.Hour)
-
-	// Check for flagging
-	if dayRate > ad.config.MaxFaucetPerDay {
-		reason := fmt.Sprintf("High faucet rate: %d/day (limit: %d)", dayRate, ad.config.MaxFaucetPerDay)
-		ad.flagAbuse(wallet, "wallet", reason)
-	}
-
-	return nil
-}
-
 // flagAbuse flags an entity for abusive behavior
 func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 	now := time.Now()
 
-	if entityType == "ip" {
+	switch entityType {
+case IP:
 		flag, exists := ad.flaggedIPs[entity]
 		if exists {
 			// Update existing flag
@@ -166,7 +116,7 @@ func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 		}
 
 		logx.Warn("ABUSE", fmt.Sprintf("Flagged IP %s: %s (count: %d)", entity, reason, ad.flaggedIPs[entity].Count))
-	} else if entityType == "wallet" {
+	case WALLET:
 		flag, exists := ad.flaggedWallets[entity]
 		if exists {
 			// Update existing flag
@@ -240,4 +190,139 @@ func (ad *AbuseDetector) GetMetrics() *AbuseMetrics {
 // GetRateStats returns current rate statistics
 func (ad *AbuseDetector) GetRateStats() *RateStats {
 	return ad.rateTracker.GetStats()
+}
+
+func (ad *AbuseDetector) IsIPBlacklisted(ip string) bool {
+	ad.mu.RLock()
+	defer ad.mu.RUnlock()
+
+	flag, exists := ad.flaggedIPs[ip]
+	return exists && flag.IsBlacklisted
+}
+
+func (ad *AbuseDetector) IsWalletBlacklisted(wallet string) bool {
+	ad.mu.RLock()
+	defer ad.mu.RUnlock()
+
+	flag, exists := ad.flaggedWallets[wallet]
+	return exists && flag.IsBlacklisted
+}
+
+func (ad *AbuseDetector) TrackTransaction(ip, wallet string) {
+	ad.rateTracker.TrackTransaction(ip, wallet)
+}
+
+func (ad *AbuseDetector) startBackgroundMonitoring() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		ad.performBackgroundChecks()
+	}
+}
+
+func (ad *AbuseDetector) performBackgroundChecks() {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
+
+	now := time.Now()
+
+	for ip, flag := range ad.flaggedIPs {
+		if flag.IsBlacklisted {
+			continue
+		}
+
+		minuteRate := ad.rateTracker.GetIPRate(ip, time.Minute)
+		hourRate := ad.rateTracker.GetIPRate(ip, time.Hour)
+		dayRate := ad.rateTracker.GetIPRate(ip, 24*time.Hour)
+
+		if minuteRate >= ad.config.AutoBlacklistTxPerMinute {
+			ad.autoBlacklistIP(ip, fmt.Sprintf("Auto-blacklist: %d tx/min (limit: %d)", minuteRate, ad.config.AutoBlacklistTxPerMinute))
+		} else if hourRate >= ad.config.MaxTxPerHour || dayRate >= ad.config.MaxTxPerDay {
+			reason := fmt.Sprintf("High long-term rate: %d/min, %d/hour, %d/day", minuteRate, hourRate, dayRate)
+			ad.flagAbuse(ip, "ip", reason)
+		}
+	}
+
+	for wallet, flag := range ad.flaggedWallets {
+		if flag.IsBlacklisted {
+			continue
+		}
+
+		minuteRate := ad.rateTracker.GetWalletRate(wallet, time.Minute)
+		hourRate := ad.rateTracker.GetWalletRate(wallet, time.Hour)
+		dayRate := ad.rateTracker.GetWalletRate(wallet, 24*time.Hour)
+
+		if minuteRate >= ad.config.AutoBlacklistTxPerMinute {
+			ad.autoBlacklistWallet(wallet, fmt.Sprintf("Auto-blacklist: %d tx/min (limit: %d)", minuteRate, ad.config.AutoBlacklistTxPerMinute))
+		} else if hourRate >= ad.config.MaxTxPerHour || dayRate >= ad.config.MaxTxPerDay {
+			reason := fmt.Sprintf("High long-term rate: %d/min, %d/hour, %d/day", minuteRate, hourRate, dayRate)
+			ad.flagAbuse(wallet, "wallet", reason)
+		}
+	}
+
+	cutoff := now.Add(-24 * time.Hour)
+	ad.cleanupOldFlags(cutoff)
+}
+
+func (ad *AbuseDetector) autoBlacklistIP(ip, reason string) {
+	flag, exists := ad.flaggedIPs[ip]
+	if !exists {
+		flag = &AbuseFlag{
+			Entity:        ip,
+			EntityType:    "ip",
+			Reason:        reason,
+			FirstSeen:     time.Now(),
+			LastSeen:      time.Now(),
+			Count:         1,
+			IsBlacklisted: true,
+		}
+		ad.flaggedIPs[ip] = flag
+		ad.metrics.TotalFlags++
+	} else {
+		flag.IsBlacklisted = true
+		flag.Reason = reason
+		flag.LastSeen = time.Now()
+	}
+
+	ad.metrics.AutoBlacklists++
+	logx.Warn("ABUSE", fmt.Sprintf("Auto-blacklisted IP %s: %s", ip, reason))
+}
+
+func (ad *AbuseDetector) autoBlacklistWallet(wallet, reason string) {
+	flag, exists := ad.flaggedWallets[wallet]
+	if !exists {
+		flag = &AbuseFlag{
+			Entity:        wallet,
+			EntityType:    "wallet",
+			Reason:        reason,
+			FirstSeen:     time.Now(),
+			LastSeen:      time.Now(),
+			Count:         1,
+			IsBlacklisted: true,
+		}
+		ad.flaggedWallets[wallet] = flag
+		ad.metrics.TotalFlags++
+	} else {
+		flag.IsBlacklisted = true
+		flag.Reason = reason
+		flag.LastSeen = time.Now()
+	}
+
+	ad.metrics.AutoBlacklists++
+	logx.Warn("ABUSE", fmt.Sprintf("Auto-blacklisted wallet %s: %s", wallet, reason))
+}
+
+func (ad *AbuseDetector) cleanupOldFlags(cutoff time.Time) {
+	for ip, flag := range ad.flaggedIPs {
+		if flag.LastSeen.Before(cutoff) && !flag.IsBlacklisted {
+			delete(ad.flaggedIPs, ip)
+		}
+	}
+
+	for wallet, flag := range ad.flaggedWallets {
+		if flag.LastSeen.Before(cutoff) && !flag.IsBlacklisted {
+			delete(ad.flaggedWallets, wallet)
+		}
+	}
 }

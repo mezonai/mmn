@@ -260,7 +260,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	}
 
 	// 2.1. Check memo length (max 64 characters)
-	if len(tx.TextData) > 64 {
+	if len(tx.TextData) > MAX_MEMO_CHARACTORS {
 		return fmt.Errorf("memo too long: max 64 chars, got %d", len(tx.TextData))
 	}
 

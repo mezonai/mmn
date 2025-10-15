@@ -10,7 +10,6 @@ import (
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/security/abuse"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
@@ -30,6 +29,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -51,14 +51,13 @@ type server struct {
 	eventRouter   *events.EventRouter                    // Event router for complex event logic
 	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
 	rateLimiter   *ratelimit.GlobalRateLimiter           // Rate limiter for transaction submission protection
-	abuseDetector *abuse.AbuseDetector                   // Abuse detection and flagging system
 	txSvc         interfaces.TxService
 	acctSvc       interfaces.AccountService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, abuseDetector *abuse.AbuseDetector) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -73,21 +72,22 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		eventRouter:   eventRouter,
 		txTracker:     txTracker,
 		rateLimiter:   rateLimiter,
-		abuseDetector: abuseDetector,
 	}
 
-	// Initialize shared services with protection
-	s.txSvc = service.NewTxServiceWithProtection(ld, mempool, blockStore, txTracker, rateLimiter, abuseDetector)
+	// Initialize shared services
+	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
 	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
 
 	rLimiter := rate.NewLimiter(rate.Limit(GRPCRateLimitRPS), GRPCRateLimitBurst)
 
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		rateLimitUnaryInterceptor(rLimiter),
+		securityUnaryInterceptor(rateLimiter),
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{
 		rateLimitStreamInterceptor(rLimiter),
+		securityStreamInterceptor(rateLimiter),
 		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
 	}
 
@@ -130,6 +130,96 @@ func rateLimitStreamInterceptor(lim *rate.Limiter) grpc.StreamServerInterceptor 
 		}
 		return handler(srv, ss)
 	}
+}
+
+func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if !isApplyInterceptorRateLimitAndAbuse(info.FullMethod) {
+			return handler(ctx, req)
+		}
+
+		clientIP := extractClientIP(ctx)
+		walletAddr := extractWalletFromRequest(req)
+
+		if rateLimiter != nil {
+			if !rateLimiter.AllowAllWithContext(ctx, clientIP, walletAddr) {
+				logx.Warn("SECURITY", "Request blocked for IP:", clientIP, "Wallet:", walletAddr)
+				return nil, status.Errorf(codes.ResourceExhausted, "request blocked")
+			}
+		}
+
+		return handler(ctx, req)
+	}
+}
+
+func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if !isApplyInterceptorRateLimitAndAbuse(info.FullMethod) {
+			return handler(srv, ss)
+		}
+
+		clientIP := extractClientIP(ss.Context())
+		walletAddr := "unknown"
+
+		if rateLimiter != nil {
+			if !rateLimiter.AllowAllWithContext(ss.Context(), clientIP, walletAddr) {
+				logx.Warn("SECURITY", "Request blocked for stream IP:", clientIP)
+				return status.Errorf(codes.ResourceExhausted, "request blocked")
+			}
+		}
+
+		return handler(srv, ss)
+	}
+}
+
+func isApplyInterceptorRateLimitAndAbuse(method string) bool {
+	logx.Warn("METHID rate limit and abuse call", method)
+	transactionMethods := []string{
+		"/mmn.TxService/AddTx",
+	}
+
+	for _, txMethod := range transactionMethods {
+		if method == txMethod {
+			return true
+		}
+	}
+	return false
+}
+
+func extractClientIP(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return "unknown"
+	}
+
+	addr := p.Addr.String()
+	if addr == "" {
+		return "unknown"
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		if net.ParseIP(addr) != nil {
+			return addr
+		}
+		return "unknown"
+	}
+
+	if len(host) > 0 && host[0] == '[' && host[len(host)-1] == ']' {
+		host = host[1 : len(host)-1]
+	}
+
+	return host
+}
+
+func extractWalletFromRequest(req interface{}) string {
+	switch r := req.(type) {
+	case *pb.SignedTxMsg:
+		if r.TxMsg != nil {
+			return r.TxMsg.Sender
+		}
+	}
+	return "unknown"
 }
 
 func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnaryServerInterceptor {

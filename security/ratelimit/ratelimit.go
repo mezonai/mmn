@@ -176,7 +176,12 @@ func (rl *RateLimiter) UpdateConfig(config *RateLimiterConfig) {
 type GlobalRateLimiter struct {
 	ipLimiter     *RateLimiter
 	walletLimiter *RateLimiter
-	mu            sync.RWMutex
+	abuseDetector interface {
+		IsIPBlacklisted(ip string) bool
+		IsWalletBlacklisted(wallet string) bool
+		TrackTransaction(ip, wallet string)
+	}
+	mu sync.RWMutex
 }
 
 type GlobalRateLimiterConfig struct {
@@ -199,7 +204,11 @@ func DefaultGlobalConfig() *GlobalRateLimiterConfig {
 	}
 }
 
-func NewGlobalRateLimiter(config *GlobalRateLimiterConfig) *GlobalRateLimiter {
+func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abuseDetector interface {
+	IsIPBlacklisted(ip string) bool
+	IsWalletBlacklisted(wallet string) bool
+	TrackTransaction(ip, wallet string)
+}) *GlobalRateLimiter {
 	if config == nil {
 		config = DefaultGlobalConfig()
 	}
@@ -207,6 +216,7 @@ func NewGlobalRateLimiter(config *GlobalRateLimiterConfig) *GlobalRateLimiter {
 	return &GlobalRateLimiter{
 		ipLimiter:     NewRateLimiter(config.IPConfig),
 		walletLimiter: NewRateLimiter(config.WalletConfig),
+		abuseDetector: abuseDetector,
 	}
 }
 
@@ -240,12 +250,25 @@ func (grl *GlobalRateLimiter) AllowAllWithContext(ctx context.Context, ip, walle
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
 
+	if grl.abuseDetector != nil {
+		if grl.abuseDetector.IsIPBlacklisted(ip) {
+			return false
+		}
+		if grl.abuseDetector.IsWalletBlacklisted(wallet) {
+			return false
+		}
+	}
+
 	if !grl.ipLimiter.AllowWithContext(ctx, ip) {
 		return false
 	}
 
 	if !grl.walletLimiter.AllowWithContext(ctx, wallet) {
 		return false
+	}
+
+	if grl.abuseDetector != nil {
+		grl.abuseDetector.TrackTransaction(ip, wallet)
 	}
 
 	return true

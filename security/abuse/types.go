@@ -48,11 +48,7 @@ type AbuseConfig struct {
 	MaxTxPerHour   int
 	MaxTxPerDay    int
 
-	MaxFaucetPerHour int
-	MaxFaucetPerDay  int
-
 	AutoBlacklistTxPerMinute   int
-	AutoBlacklistFaucetPerHour int
 }
 
 type AbuseFlag struct {
@@ -66,8 +62,6 @@ type AbuseFlag struct {
 }
 
 type AbuseMetrics struct {
-	mu sync.RWMutex
-
 	TotalFlags        int64 `json:"total_flags"`
 	AutoBlacklists    int64 `json:"auto_blacklists"`
 	CurrentFlags      int   `json:"current_flags"`

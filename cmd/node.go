@@ -240,7 +240,7 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(nodeConfig, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -378,7 +378,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *consensus.Collector,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
@@ -387,14 +387,12 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		log.Fatalf("Failed to load private key for gRPC server: %v", err)
 	}
 
-	// Create rate limiter for transaction submission protection
-	rateLimiterConfig := ratelimit.DefaultGlobalConfig()
-	rateLimiter := ratelimit.NewGlobalRateLimiter(rateLimiterConfig)
-	defer rateLimiter.Stop()
-
-	// Create abuse detector for tracking and flagging
 	abuseConfig := abuse.DefaultAbuseConfig()
 	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
+
+	rateLimiterConfig := ratelimit.DefaultGlobalConfig()
+	rateLimiter := ratelimit.NewGlobalRateLimiterWithAbuseDetector(rateLimiterConfig, abuseDetector)
+	defer rateLimiter.Stop()
 
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
@@ -411,14 +409,13 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		eventRouter,
 		txTracker,
 		rateLimiter,
-		abuseDetector,
 	)
 	_ = grpcSrv // Keep server running
 
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
-	txSvc := service.NewTxServiceWithProtection(ld, mp, bs, txTracker, rateLimiter, abuseDetector)
+	txSvc := service.NewTxService(ld, mp, bs, txTracker)
 	acctSvc := service.NewAccountService(ld, mp, txTracker)
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
