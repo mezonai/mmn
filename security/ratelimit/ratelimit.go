@@ -2,7 +2,6 @@ package ratelimit
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -46,10 +45,6 @@ func NewRateLimiter(config *RateLimiterConfig) *RateLimiter {
 	go rl.cleanupExpiredEntries()
 
 	return rl
-}
-
-func (rl *RateLimiter) Allow(key string) bool {
-	return rl.AllowWithContext(context.Background(), key)
 }
 
 // AllowWithContext checks if a request from the given key is allowed with context
@@ -163,15 +158,6 @@ func (rl *RateLimiter) Stop() {
 	close(rl.stopCleanup)
 }
 
-func (rl *RateLimiter) GetConfig() *RateLimiterConfig {
-	return rl.config
-}
-
-func (rl *RateLimiter) UpdateConfig(config *RateLimiterConfig) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	rl.config = config
-}
 
 type GlobalRateLimiter struct {
 	ipLimiter     *RateLimiter
@@ -219,11 +205,6 @@ func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abus
 		abuseDetector: abuseDetector,
 	}
 }
-
-func (grl *GlobalRateLimiter) AllowIP(ip string) bool {
-	return grl.AllowIPWithContext(context.Background(), ip)
-}
-
 func (grl *GlobalRateLimiter) AllowIPWithContext(ctx context.Context, ip string) bool {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
@@ -231,19 +212,11 @@ func (grl *GlobalRateLimiter) AllowIPWithContext(ctx context.Context, ip string)
 	return grl.ipLimiter.AllowWithContext(ctx, ip)
 }
 
-func (grl *GlobalRateLimiter) AllowWallet(wallet string) bool {
-	return grl.AllowWalletWithContext(context.Background(), wallet)
-}
-
 func (grl *GlobalRateLimiter) AllowWalletWithContext(ctx context.Context, wallet string) bool {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
 
 	return grl.walletLimiter.AllowWithContext(ctx, wallet)
-}
-
-func (grl *GlobalRateLimiter) AllowAll(ip, wallet string) bool {
-	return grl.AllowAllWithContext(context.Background(), ip, wallet)
 }
 
 func (grl *GlobalRateLimiter) AllowAllWithContext(ctx context.Context, ip, wallet string) bool {
@@ -293,46 +266,17 @@ func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{
 	}, nil
 }
 
-func (grl *GlobalRateLimiter) ResetIP(ip string) {
-	grl.mu.Lock()
-	defer grl.mu.Unlock()
-	grl.ipLimiter.Reset(ip)
-}
 
-func (grl *GlobalRateLimiter) ResetWallet(wallet string) {
-	grl.mu.Lock()
-	defer grl.mu.Unlock()
-	grl.walletLimiter.Reset(wallet)
-}
-
-func (grl *GlobalRateLimiter) ResetAll() {
-	grl.mu.Lock()
-	defer grl.mu.Unlock()
-	grl.ipLimiter.ResetAll()
-	grl.walletLimiter.ResetAll()
-}
+// func (grl *GlobalRateLimiter) ResetAll() {
+// 	grl.mu.Lock()
+// 	defer grl.mu.Unlock()
+// 	grl.ipLimiter.ResetAll()
+// 	grl.walletLimiter.ResetAll()
+// }
 
 func (grl *GlobalRateLimiter) Stop() {
 	grl.mu.Lock()
 	defer grl.mu.Unlock()
 	grl.ipLimiter.Stop()
 	grl.walletLimiter.Stop()
-}
-
-type RateLimitError struct {
-	Type    string
-	Key     string
-	Message string
-}
-
-func (e *RateLimitError) Error() string {
-	return fmt.Sprintf("rate limit exceeded for %s '%s': %s", e.Type, e.Key, e.Message)
-}
-
-func NewRateLimitError(rateType, key, message string) *RateLimitError {
-	return &RateLimitError{
-		Type:    rateType,
-		Key:     key,
-		Message: message,
-	}
 }

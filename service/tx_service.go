@@ -48,6 +48,7 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 	}
 	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
 }
+
 func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
 	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
 	if errTx != nil || errTxMeta != nil {
