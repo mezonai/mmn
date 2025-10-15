@@ -153,6 +153,10 @@ func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.Una
 			}
 		}
 
+		exception.SafeGo("RecordTransaction", func() {
+			rateLimiter.RecordTransaction(clientIP, walletAddr)
+		})
+
 		return handler(ctx, req)
 	}
 }

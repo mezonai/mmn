@@ -16,6 +16,7 @@ import (
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/creachadair/jrpc2/jhttp"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
@@ -234,6 +235,9 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 					return
 				}
 			}
+			exception.SafeGo("RecordTransaction", func() {
+				s.rateLimiter.RecordTransaction(clientIP, wallet)
+			})
 		}
 		jh.ServeHTTP(w, r)
 	})

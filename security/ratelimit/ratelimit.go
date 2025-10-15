@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/mezonai/mmn/security/abuse"
 )
 
 type RateLimiterConfig struct {
@@ -146,16 +148,11 @@ func (rl *RateLimiter) Stop() {
 	close(rl.stopCleanup)
 }
 
-
 type GlobalRateLimiter struct {
 	ipLimiter     *RateLimiter
 	walletLimiter *RateLimiter
-	abuseDetector interface {
-		IsIPBlacklisted(ip string) bool
-		IsWalletBlacklisted(wallet string) bool
-		TrackTransaction(ip, wallet string)
-	}
-	mu sync.RWMutex
+	abuseDetector *abuse.AbuseDetector
+	mu            sync.RWMutex
 }
 
 type GlobalRateLimiterConfig struct {
@@ -178,11 +175,7 @@ func DefaultGlobalConfig() *GlobalRateLimiterConfig {
 	}
 }
 
-func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abuseDetector interface {
-	IsIPBlacklisted(ip string) bool
-	IsWalletBlacklisted(wallet string) bool
-	TrackTransaction(ip, wallet string)
-}) *GlobalRateLimiter {
+func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abuseDetector *abuse.AbuseDetector) *GlobalRateLimiter {
 	if config == nil {
 		config = DefaultGlobalConfig()
 	}
@@ -196,15 +189,26 @@ func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abus
 func (grl *GlobalRateLimiter) AllowIPWithContext(ctx context.Context, ip string) bool {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
-
+	if grl.abuseDetector.IsIPBlacklisted(ip) {
+		return false
+	}
 	return grl.ipLimiter.AllowWithContext(ctx, ip)
 }
 
 func (grl *GlobalRateLimiter) AllowWalletWithContext(ctx context.Context, wallet string) bool {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
+	if grl.abuseDetector.IsWalletBlacklisted(wallet) {
+		return false
+	}
 
 	return grl.walletLimiter.AllowWithContext(ctx, wallet)
+}
+
+func (grl *GlobalRateLimiter) RecordTransaction(ip, wallet string) {
+	grl.mu.RLock()
+	defer grl.mu.RUnlock()
+	grl.abuseDetector.TrackTransaction(ip, wallet)
 }
 
 func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{}, error) {
@@ -225,7 +229,6 @@ func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{
 		},
 	}, nil
 }
-
 
 func (grl *GlobalRateLimiter) Stop() {
 	grl.mu.Lock()
