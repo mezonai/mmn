@@ -176,14 +176,12 @@ func (rl *RateLimiter) UpdateConfig(config *RateLimiterConfig) {
 type GlobalRateLimiter struct {
 	ipLimiter     *RateLimiter
 	walletLimiter *RateLimiter
-	globalLimiter *RateLimiter
 	mu            sync.RWMutex
 }
 
 type GlobalRateLimiterConfig struct {
 	IPConfig     *RateLimiterConfig
 	WalletConfig *RateLimiterConfig
-	GlobalConfig *RateLimiterConfig
 }
 
 func DefaultGlobalConfig() *GlobalRateLimiterConfig {
@@ -198,11 +196,6 @@ func DefaultGlobalConfig() *GlobalRateLimiterConfig {
 			WindowSize:      time.Second,
 			CleanupInterval: 5 * time.Minute,
 		},
-		GlobalConfig: &RateLimiterConfig{
-			MaxRequests:     1000,
-			WindowSize:      time.Second,
-			CleanupInterval: 5 * time.Minute,
-		},
 	}
 }
 
@@ -214,7 +207,6 @@ func NewGlobalRateLimiter(config *GlobalRateLimiterConfig) *GlobalRateLimiter {
 	return &GlobalRateLimiter{
 		ipLimiter:     NewRateLimiter(config.IPConfig),
 		walletLimiter: NewRateLimiter(config.WalletConfig),
-		globalLimiter: NewRateLimiter(config.GlobalConfig),
 	}
 }
 
@@ -240,17 +232,6 @@ func (grl *GlobalRateLimiter) AllowWalletWithContext(ctx context.Context, wallet
 	return grl.walletLimiter.AllowWithContext(ctx, wallet)
 }
 
-func (grl *GlobalRateLimiter) AllowGlobal() bool {
-	return grl.AllowGlobalWithContext(context.Background())
-}
-
-func (grl *GlobalRateLimiter) AllowGlobalWithContext(ctx context.Context) bool {
-	grl.mu.RLock()
-	defer grl.mu.RUnlock()
-
-	return grl.globalLimiter.AllowWithContext(ctx, "global")
-}
-
 func (grl *GlobalRateLimiter) AllowAll(ip, wallet string) bool {
 	return grl.AllowAllWithContext(context.Background(), ip, wallet)
 }
@@ -267,10 +248,6 @@ func (grl *GlobalRateLimiter) AllowAllWithContext(ctx context.Context, ip, walle
 		return false
 	}
 
-	if !grl.globalLimiter.AllowWithContext(ctx, "global") {
-		return false
-	}
-
 	return true
 }
 
@@ -280,7 +257,6 @@ func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{
 
 	ipCount, ipOldest := grl.ipLimiter.GetStats(ip)
 	walletCount, walletOldest := grl.walletLimiter.GetStats(wallet)
-	globalCount, globalOldest := grl.globalLimiter.GetStats("global")
 
 	return map[string]interface{}{
 		"ip": map[string]interface{}{
@@ -290,10 +266,6 @@ func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{
 		"wallet": map[string]interface{}{
 			"count":  walletCount,
 			"oldest": walletOldest,
-		},
-		"global": map[string]interface{}{
-			"count":  globalCount,
-			"oldest": globalOldest,
 		},
 	}, nil
 }
@@ -315,7 +287,6 @@ func (grl *GlobalRateLimiter) ResetAll() {
 	defer grl.mu.Unlock()
 	grl.ipLimiter.ResetAll()
 	grl.walletLimiter.ResetAll()
-	grl.globalLimiter.ResetAll()
 }
 
 func (grl *GlobalRateLimiter) Stop() {
@@ -323,7 +294,6 @@ func (grl *GlobalRateLimiter) Stop() {
 	defer grl.mu.Unlock()
 	grl.ipLimiter.Stop()
 	grl.walletLimiter.Stop()
-	grl.globalLimiter.Stop()
 }
 
 type RateLimitError struct {
