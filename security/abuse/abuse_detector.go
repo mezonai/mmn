@@ -9,11 +9,11 @@ import (
 
 func DefaultAbuseConfig() *AbuseConfig {
 	return &AbuseConfig{
-		MaxTxPerMinute: 1,     // 10 tx per second
+		MaxTxPerMinute: 10,      // 10 tx per second
 		MaxTxPerHour:   36000,  // 10 tx per second for 1 hour
 		MaxTxPerDay:    864000, // 10 tx per second for 1 day
 
-		AutoBlacklistTxPerMinute: 2, // 20 tx per second
+		AutoBlacklistTxPerMinute: 20, // 20 tx per second
 	}
 }
 
@@ -94,7 +94,7 @@ func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 	now := time.Now()
 
 	switch entityType {
-case IP:
+	case IP:
 		flag, exists := ad.flaggedIPs[entity]
 		if exists {
 			// Update existing flag
@@ -142,55 +142,16 @@ case IP:
 }
 
 // GetFlaggedIPs returns all flagged IPs
-func (ad *AbuseDetector) GetFlaggedIPs() map[string]*AbuseFlag {
-	ad.mu.RLock()
-	defer ad.mu.RUnlock()
-
-	result := make(map[string]*AbuseFlag)
-	for ip, flag := range ad.flaggedIPs {
-		result[ip] = flag
-	}
-	return result
-}
+// GetFlaggedIPs removed from production surface
 
 // GetFlaggedWallets returns all flagged wallets
-func (ad *AbuseDetector) GetFlaggedWallets() map[string]*AbuseFlag {
-	ad.mu.RLock()
-	defer ad.mu.RUnlock()
-
-	result := make(map[string]*AbuseFlag)
-	for wallet, flag := range ad.flaggedWallets {
-		result[wallet] = flag
-	}
-	return result
-}
+// GetFlaggedWallets removed from production surface
 
 // GetMetrics returns current metrics
-func (ad *AbuseDetector) GetMetrics() *AbuseMetrics {
-	ad.mu.RLock()
-	defer ad.mu.RUnlock()
-
-	ad.metrics.CurrentFlags = len(ad.flaggedIPs) + len(ad.flaggedWallets)
-	ad.metrics.CurrentBlacklists = 0
-
-	for _, flag := range ad.flaggedIPs {
-		if flag.IsBlacklisted {
-			ad.metrics.CurrentBlacklists++
-		}
-	}
-	for _, flag := range ad.flaggedWallets {
-		if flag.IsBlacklisted {
-			ad.metrics.CurrentBlacklists++
-		}
-	}
-
-	return ad.metrics
-}
+// GetMetrics removed from production surface
 
 // GetRateStats returns current rate statistics
-func (ad *AbuseDetector) GetRateStats() *RateStats {
-	return ad.rateTracker.GetStats()
-}
+// GetRateStats removed from production surface
 
 func (ad *AbuseDetector) IsIPBlacklisted(ip string) bool {
 	ad.mu.RLock()

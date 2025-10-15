@@ -105,18 +105,6 @@ func (rl *RateLimiter) GetStats(key string) (int, time.Time) {
 	return validCount, oldestRequest
 }
 
-func (rl *RateLimiter) Reset(key string) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	delete(rl.requests, key)
-}
-
-func (rl *RateLimiter) ResetAll() {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	rl.requests = make(map[string][]RequestEntry)
-}
-
 func (rl *RateLimiter) cleanupExpiredEntries() {
 	ticker := time.NewTicker(rl.config.CleanupInterval)
 	defer ticker.Stop()
@@ -266,13 +254,6 @@ func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{
 	}, nil
 }
 
-
-// func (grl *GlobalRateLimiter) ResetAll() {
-// 	grl.mu.Lock()
-// 	defer grl.mu.Unlock()
-// 	grl.ipLimiter.ResetAll()
-// 	grl.walletLimiter.ResetAll()
-// }
 
 func (grl *GlobalRateLimiter) Stop() {
 	grl.mu.Lock()
