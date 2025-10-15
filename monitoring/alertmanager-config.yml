@@ -24,7 +24,7 @@ route:
 receivers:
   - name: 'mezon-webhook'
     webhook_configs:
-      - url: 'http://webhook-receiver:8080'
+      - url: 'http://webhook-receiver:8088'
         send_resolved: true
 
 inhibit_rules:
