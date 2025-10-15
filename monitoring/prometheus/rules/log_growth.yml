@@ -1,0 +1,114 @@
+groups:
+  - name: log_growth_alerts
+    rules:
+      - alert: LogEntriesSpikeWarning
+        expr: |
+          (
+            sum(rate(mmn_node_log_entries_total[5m])) > 
+            10 * sum(rate(mmn_node_log_entries_total[1h] offset 1h))
+          ) and (
+            sum(rate(mmn_node_log_entries_total[5m])) > 50
+          )
+        for: 2m
+        labels:
+          severity: warning
+          alert_type: log_growth
+        annotations:
+          summary: "Sudden spike in log entries on {{ $labels.node }}"
+          description: "Log entry rate is {{ $value | humanize }} entries/sec, which is significantly higher than normal on {{ $labels.node }}"
+          message: |
+            @here [WARNING]
+            Log abnormal increase more than 10 times compared to 1 hour ago!
+            Current Rate: {{ $value | humanize }} entries/sec
+
+      - alert: LogEntriesSpikeCritical
+        expr: |
+          (
+            sum(rate(mmn_node_log_entries_total[5m])) > 
+            50 * sum(rate(mmn_node_log_entries_total[1h] offset 1h))
+          ) and (
+            sum(rate(mmn_node_log_entries_total[5m])) > 250
+          )
+        for: 1m
+        labels:
+          severity: critical
+          alert_type: log_growth
+        annotations:
+          summary: "Critical spike in log entries on {{ $labels.node }}"
+          description: "Log entry rate is {{ $value | humanize }} entries/sec, which is critically higher than normal on {{ $labels.node }}"
+          message: |
+            @here [CRITICAL]
+            Log abnormal increase more than 50 times compared to 1 hour ago!
+            Current Rate: {{ $value | humanize }} entries/sec
+
+      - alert: LogSizeSpikeWarning
+        expr: |
+          (
+            sum(rate(mmn_node_log_size_bytes_total[5m])) > 
+            10 * sum(rate(mmn_node_log_size_bytes_total[1h] offset 1h))
+          ) and (
+            sum(rate(mmn_node_log_size_bytes_total[5m])) > 5120
+          )
+        for: 2m
+        labels:
+          severity: warning
+          alert_type: log_growth
+        annotations:
+          summary: "Sudden spike in log size on {{ $labels.node }}"
+          description: "Log size growth rate is {{ $value }}/sec, which is significantly higher than normal on {{ $labels.node }}"
+          message: |
+            @here [WARNING]
+            Log size increased abnormally more than 10 times compared to 1 hour ago
+            Current Rate: {{ $value }}/sec
+
+      - alert: LogSizeSpikeCritical
+        expr: |
+          (
+            sum(rate(mmn_node_log_size_bytes_total[5m])) > 
+            50 * sum(rate(mmn_node_log_size_bytes_total[1h] offset 1h))
+          ) and (
+            sum(rate(mmn_node_log_size_bytes_total[5m])) > 25600
+          )
+        for: 1m
+        labels:
+          severity: critical
+          alert_type: log_growth
+        annotations:
+          summary: "Critical spike in log size on {{ $labels.node }}"
+          description: "Log size growth rate is {{ $value }}/sec, which is critically higher than normal on {{ $labels.node }}"
+          message: |
+            @here [CRITICAL]
+            Log size increased abnormally more than 50 times compared to 1 hour ago
+            Current Rate: {{ $value  }}/sec
+
+      - alert: HighErrorLogRate
+        # 0.42 errors/sec = 25 errors/minute/node
+        expr: sum by (node)(rate(mmn_node_log_entries_total{level="error"}[5m])) > 0.42
+        for: 3m
+        labels:
+          severity: warning
+          alert_type: log_growth
+        annotations:
+          summary: "High error log rate on {{ $labels.node }}"
+          description: "Error log rate is {{ $value | humanize }} errors/sec on {{ $labels.node }}"
+          message: |
+            @here [WARNING]
+            Log errors appear more than 25 errors/minute/node
+            Rate: {{ $value | humanize }} errors/sec
+            Node: {{ $labels.node }}
+
+      - alert: VeryHighErrorLogRate
+        # 1 errors/sec/node = 60 errors/minute/node
+        expr: sum by (node)(rate(mmn_node_log_entries_total{level="error"}[5m])) > 1
+        for: 1m
+        labels:
+          severity: critical
+          alert_type: log_growth
+        annotations:
+          summary: "Very high error log rate on {{ $labels.node }}"
+          description: "Error log rate is {{ $value | humanize }} errors/sec on {{ $labels.node }}"
+          message: |
+            @here [CRITICAL]
+            Log errors appear more than 60 errors/minute/node
+            Rate: {{ $value | humanize }} errors/sec
+            Node: {{ $labels.node }}

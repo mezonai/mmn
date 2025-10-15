@@ -1,0 +1,35 @@
+route:
+  group_by: ['alertname', 'node']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 5m
+  receiver: 'mezon-webhook'
+  routes:
+    - match:
+        alert_type: disk_usage
+      receiver: 'mezon-webhook'
+      group_wait: 5s
+      repeat_interval: 30m
+    - match:
+        alert_type: inode_usage
+      receiver: 'mezon-webhook'
+      group_wait: 5s
+      repeat_interval: 30m
+    - match:
+        alert_type: log_growth
+      receiver: 'mezon-webhook'
+      group_wait: 5s
+      repeat_interval: 15m
+
+receivers:
+  - name: 'mezon-webhook'
+    webhook_configs:
+      - url: 'http://webhook-receiver:8088'
+        send_resolved: true
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'node']

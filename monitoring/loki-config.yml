@@ -28,6 +28,8 @@ storage_config:
 limits_config:
   allow_structured_metadata: true
   volume_enabled: true
+  retention_period: 720h
+  max_query_parallelism: 32
 
 pattern_ingester:
   enabled: true
@@ -48,3 +50,7 @@ ingester:
 compactor:
   working_directory: /tmp/loki/compactor
   compaction_interval: 5m
+  retention_enabled: true
+  retention_delete_delay: 1h
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
