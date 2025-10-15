@@ -58,7 +58,7 @@ type server struct {
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool, dir string) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -81,8 +81,8 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	var serverOpts []grpc.ServerOption
 
 	if tsl {
-		certFile := filepath.Join(GRPC_TLS_DIR, GRPC_TLS_CERT_FILE)
-		keyFile := filepath.Join(GRPC_TLS_DIR, GRPC_TLS_KEY_FILE)
+		certFile := filepath.Join(dir, GRPC_TLS_CERT_FILE)
+		keyFile := filepath.Join(dir, GRPC_TLS_KEY_FILE)
 
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
@@ -90,9 +90,9 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 			return nil
 		}
 		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}}
-		
+
 		if mtsl {
-			caFile := filepath.Join(GRPC_TLS_DIR, GRPC_TLS_CLIENT_CA_FILE)
+			caFile := filepath.Join(dir, GRPC_TLS_CLIENT_CA_FILE)
 			caPem, err := os.ReadFile(caFile)
 			if err != nil {
 				logx.Error("GRPC SERVER", fmt.Sprintf("failed to read client CA file: %v", err))

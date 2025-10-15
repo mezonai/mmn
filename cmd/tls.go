@@ -132,7 +132,7 @@ var tlsGenCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(tlsCmd)
 	tlsCmd.AddCommand(tlsGenCmd)
-	tlsGenCmd.Flags().StringVar(&tlsOutDir, "out-dir", "./tls", "Output directory")
+	tlsGenCmd.Flags().StringVar(&tlsOutDir, "data-dir", "./tls", "Output directory")
 	tlsGenCmd.Flags().StringVar(&tlsHosts, "hosts", "localhost,127.0.0.1", "Comma-separated DNS or IP SANs for server cert")
 	tlsGenCmd.Flags().IntVar(&tlsDays, "days", 365, "Validity days for certificates")
 	tlsGenCmd.Flags().StringVar(&tlsServerCN, "server-cn", "mmn-grpc", "Server certificate")

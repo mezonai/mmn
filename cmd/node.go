@@ -41,7 +41,8 @@ import (
 const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
-	leveldbBlockDir = "blockstore/leveldb"
+	// leveldbBlockDir = "blockstore/leveldb"
+	fileTlsDir = "tls"
 	LISTEN_MODE     = "listen"
 	FULL_MODE       = "full"
 )
@@ -60,7 +61,6 @@ var (
 	databaseBackend string
 	tsl             bool
 	mtsl            bool
-	tlsDir          string
 )
 
 var runCmd = &cobra.Command{
@@ -84,10 +84,8 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
-	// TLS flags
-	runCmd.Flags().BoolVar(&tsl, "tsl", false, "Enable gRPC TLS (use certs from --tls-dir)")
-	runCmd.Flags().BoolVar(&mtsl, "mtsl", false, "Enable gRPC mutual TLS (requires client certs); effective only when --tsl is true")
-	runCmd.Flags().StringVar(&tlsDir, "tls-dir", "./tls", "Directory containing TLS materials (server.crt, server.key, optional ca.crt, client.crt, client.key)")
+	runCmd.Flags().BoolVar(&tsl, "tsl", false, "Enable TLS (use certs from tls folder)")
+	runCmd.Flags().BoolVar(&mtsl, "mtsl", false, "Enable mutual TLS (requires client certs); effective only when --tsl is true")
 
 }
 
@@ -106,7 +104,7 @@ func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
-	logx.Info("NODE", "Running node")
+	logx.Info("NODE", "Running node", "with tls", tsl, "mtls", mtsl)
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
@@ -245,18 +243,7 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	// Apply TLS env if requested via flags
-	if tsl {
-		os.Setenv("GRPC_TLS_ENABLED", "true")
-		if tlsDir != "" {
-			os.Setenv("GRPC_TLS_DIR", tlsDir)
-		}
-		if mtsl {
-			os.Setenv("GRPC_TLS_REQUIRE_CLIENT_CERT", "true")
-		}
-	}
-
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, tsl, mtsl)
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, tsl, mtsl, filepath.Join(dataDir, fileTlsDir))
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -395,7 +382,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool, dir string) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -419,6 +406,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		txTracker,
 		tsl,
 		mtsl,
+		dir,
 	)
 	_ = grpcSrv // Keep server running
 
@@ -432,7 +420,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		rpcSrv.SetCORSConfig(corsCfg)
 	}
 
-	rpcSrv.Start()
+	rpcSrv.Start(tsl, mtsl, dir)
 	serveMetricsApi(nodeConfig.ListenAddr)
 }
 

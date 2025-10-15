@@ -18,6 +18,8 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/network"
 	pb "github.com/mezonai/mmn/proto"
 )
 
@@ -193,7 +195,7 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 	}
 }
 
-func (s *Server) Start() {
+func (s *Server) Start(isTls bool, isMtls bool, dir string) {
 	methods := s.buildMethodMap()
 	jh := jhttp.NewBridge(methods, &jhttp.BridgeOptions{Server: &jrpc2.ServerOptions{}})
 
@@ -207,40 +209,29 @@ func (s *Server) Start() {
 	})
 
 	http.Handle("/", h)
-	// Optional TLS/mTLS based on env; prefer single-folder JSONRPC_TLS_DIR with server.crt/server.key/ca.crt
-	if os.Getenv("JSONRPC_TLS_ENABLED") == "true" {
-		certFile := os.Getenv("JSONRPC_TLS_CERT_FILE")
-		keyFile := os.Getenv("JSONRPC_TLS_KEY_FILE")
-		caFile := os.Getenv("JSONRPC_TLS_CLIENT_CA_FILE")
-		if dir := os.Getenv("JSONRPC_TLS_DIR"); dir != "" {
-			if certFile == "" {
-				certFile = filepath.Join(dir, "server.crt")
+	if isTls {
+		certFile := filepath.Join(dir, network.GRPC_TLS_CERT_FILE)
+		keyFile := filepath.Join(dir, network.GRPC_TLS_KEY_FILE)
+		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		if isMtls {
+			caFile := filepath.Join(dir, network.GRPC_TLS_CLIENT_CA_FILE)
+			caPem, err := os.ReadFile(caFile)
+			if err != nil {
+				logx.Error("JSONRPC", fmt.Sprintf("failed to read client CA file: %v", err))
+				return
 			}
-			if keyFile == "" {
-				keyFile = filepath.Join(dir, "server.key")
+			pool := x509.NewCertPool()
+			if !pool.AppendCertsFromPEM(caPem) {
+				logx.Error("JSONRPC", "failed to append client CA certs")
+				return
 			}
-			if caFile == "" {
-				cand := filepath.Join(dir, "ca.crt")
-				if _, err := os.Stat(cand); err == nil {
-					caFile = cand
-				}
-			}
+			tlsCfg.ClientCAs = pool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
 		}
-		if certFile != "" && keyFile != "" {
-			tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-			if caFile != "" {
-				if caPem, err := os.ReadFile(caFile); err == nil {
-					pool := x509.NewCertPool()
-					if pool.AppendCertsFromPEM(caPem) {
-						tlsCfg.ClientCAs = pool
-						tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
-					}
-				}
-			}
-			srv := &http.Server{Addr: s.addr, TLSConfig: tlsCfg}
-			go srv.ListenAndServeTLS(certFile, keyFile)
-			return
-		}
+
+		srv := &http.Server{Addr: s.addr, TLSConfig: tlsCfg}
+		go srv.ListenAndServeTLS(certFile, keyFile)
+		return
 	}
 	go http.ListenAndServe(s.addr, nil)
 }

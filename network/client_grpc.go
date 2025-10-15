@@ -2,10 +2,7 @@ package network
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/mezonai/mmn/block"
@@ -15,7 +12,6 @@ import (
 	"github.com/mezonai/mmn/utils"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -24,33 +20,13 @@ type GRPCClient struct {
 	opts  []grpc.DialOption
 }
 
-func NewGRPCClient(peers []string, tsl bool) *GRPCClient {
-	var dialOpts []grpc.DialOption
-	if tsl {
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-
-		caFile := GRPC_TLS_DIR + string(os.PathSeparator) + GRPC_TLS_CLIENT_CA_FILE
-		certFile := GRPC_TLS_DIR + string(os.PathSeparator) + GRPC_TLS_CLIENT_CERT_FILE
-		keyFile := GRPC_TLS_DIR + string(os.PathSeparator) + GRPC_TLS_CLIENT_KEY_FILE
-		
-		caPem, err := os.ReadFile(caFile)
-		if err == nil {
-			pool := x509.NewCertPool()
-			if pool.AppendCertsFromPEM(caPem) {
-				tlsCfg.RootCAs = pool
-			}
-		}
-	
-		if cert, err := tls.LoadX509KeyPair(certFile, keyFile); err == nil {
-			tlsCfg.Certificates = []tls.Certificate{cert}
-		}
-	
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
-	} else {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func NewGRPCClient(peers []string) *GRPCClient {
+	return &GRPCClient{
+		peers: peers,
+		opts: []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		},
 	}
-
-	return &GRPCClient{peers: peers, opts: dialOpts}
 }
 
 func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
@@ -67,7 +43,6 @@ func (c *GRPCClient) BroadcastBlock(ctx context.Context, blk *block.BroadcastedB
 		pbBlk, err := utils.ToProtoBlock(blk)
 		if err != nil {
 			fmt.Printf("[gRPC Client] ToProtoBlock error: %v", err)
-			cancel()
 			continue
 		}
 		resp, err := client.Broadcast(rpcCtx, pbBlk)
