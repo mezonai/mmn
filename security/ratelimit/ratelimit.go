@@ -207,34 +207,6 @@ func (grl *GlobalRateLimiter) AllowWalletWithContext(ctx context.Context, wallet
 	return grl.walletLimiter.AllowWithContext(ctx, wallet)
 }
 
-func (grl *GlobalRateLimiter) AllowAllWithContext(ctx context.Context, ip, wallet string) bool {
-	grl.mu.RLock()
-	defer grl.mu.RUnlock()
-
-	if grl.abuseDetector != nil {
-		if grl.abuseDetector.IsIPBlacklisted(ip) {
-			return false
-		}
-		if grl.abuseDetector.IsWalletBlacklisted(wallet) {
-			return false
-		}
-	}
-
-	if !grl.ipLimiter.AllowWithContext(ctx, ip) {
-		return false
-	}
-
-	if !grl.walletLimiter.AllowWithContext(ctx, wallet) {
-		return false
-	}
-
-	if grl.abuseDetector != nil {
-		grl.abuseDetector.TrackTransaction(ip, wallet)
-	}
-
-	return true
-}
-
 func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{}, error) {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
