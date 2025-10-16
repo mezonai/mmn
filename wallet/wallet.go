@@ -1,5 +1,5 @@
 package wallet
 
 type Wallet struct {
-	address string
+	Address string
 }
