@@ -19,9 +19,6 @@ type RateData struct {
 	hourCount   int
 	dayCount    int
 
-	minuteBuckets [60]int
-	minuteHead    int
-
 	minuteStart time.Time
 	hourStart   time.Time
 	dayStart    time.Time

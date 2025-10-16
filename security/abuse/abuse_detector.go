@@ -10,7 +10,7 @@ import (
 
 func DefaultAbuseConfig() *AbuseConfig {
 	return &AbuseConfig{
-		MaxTxPerMinute: 6000,     // 100 tx per second
+		MaxTxPerMinute: 6000,    // 100 tx per second
 		MaxTxPerHour:   360000,  // 100 tx per second for 1 hour
 		MaxTxPerDay:    8640000, // 100 tx per second for 1 day
 
@@ -85,17 +85,11 @@ func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 	}
 }
 func (ad *AbuseDetector) IsIPBlacklisted(ip string) bool {
-	ad.mu.RLock()
-	defer ad.mu.RUnlock()
-
 	flag, exists := ad.flaggedIPs[ip]
 	return exists && flag.IsBlacklisted
 }
 
 func (ad *AbuseDetector) IsWalletBlacklisted(wallet string) bool {
-	ad.mu.RLock()
-	defer ad.mu.RUnlock()
-
 	flag, exists := ad.flaggedWallets[wallet]
 	return exists && flag.IsBlacklisted
 }
@@ -161,7 +155,7 @@ func (ad *AbuseDetector) autoBlacklistIP(ip, reason string) {
 	if !exists {
 		flag = &AbuseFlag{
 			Entity:        ip,
-			EntityType:    "ip",
+			EntityType:    IP,
 			Reason:        reason,
 			FirstSeen:     time.Now(),
 			LastSeen:      time.Now(),
@@ -185,7 +179,7 @@ func (ad *AbuseDetector) autoBlacklistWallet(wallet, reason string) {
 	if !exists {
 		flag = &AbuseFlag{
 			Entity:        wallet,
-			EntityType:    "wallet",
+			EntityType:    WALLET,
 			Reason:        reason,
 			FirstSeen:     time.Now(),
 			LastSeen:      time.Now(),

@@ -59,11 +59,6 @@ func (rt *RateTracker) trackRequest(rates map[string]*RateData, key string) {
 	if now.Sub(data.minuteStart) >= time.Minute {
 		data.minuteCount = 0
 		data.minuteStart = now
-		data.minuteHead = 0
-		// Clear circular buffer
-		for i := range data.minuteBuckets {
-			data.minuteBuckets[i] = 0
-		}
 	}
 	if now.Sub(data.hourStart) >= time.Hour {
 		data.hourCount = 0
@@ -78,11 +73,6 @@ func (rt *RateTracker) trackRequest(rates map[string]*RateData, key string) {
 	data.hourCount++
 	data.dayCount++
 
-	minuteBucket := now.Second()
-	if data.minuteBuckets[data.minuteHead] != minuteBucket {
-		data.minuteHead = (data.minuteHead + 1) % 60
-		data.minuteBuckets[data.minuteHead] = minuteBucket
-	}
 }
 
 func (rt *RateTracker) GetIPRate(ip string, window time.Duration) int {
