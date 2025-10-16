@@ -1,8 +1,11 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -13,12 +16,20 @@ import (
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/creachadair/jrpc2/jhttp"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/security/ratelimit"
 )
 
 // --- Error type used by handlers ---
+
+type jsonRPCRequest struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
 
 type rpcError struct {
 	Code    int         `json:"code"`
@@ -163,10 +174,11 @@ type getAccountByAddressResponse struct {
 // --- Server ---
 
 type Server struct {
-	addr       string
-	txSvc      interfaces.TxService
-	acctSvc    interfaces.AccountService
-	corsConfig CORSConfig
+	addr        string
+	txSvc       interfaces.TxService
+	acctSvc     interfaces.AccountService
+	corsConfig  CORSConfig
+	rateLimiter *ratelimit.GlobalRateLimiter
 }
 
 type CORSConfig struct {
@@ -176,7 +188,7 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *Server {
+func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, rateLimiter *ratelimit.GlobalRateLimiter) *Server {
 	return &Server{
 		addr:    addr,
 		txSvc:   txSvc,
@@ -187,10 +199,11 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 			AllowedHeaders: []string{},
 			MaxAge:         0,
 		},
+		rateLimiter: rateLimiter,
 	}
 }
 
-func (s *Server) Start() {
+func (s *Server) BuildHTTPHandler() http.Handler {
 	methods := s.buildMethodMap()
 	jh := jhttp.NewBridge(methods, &jhttp.BridgeOptions{Server: &jrpc2.ServerOptions{}})
 
@@ -200,9 +213,39 @@ func (s *Server) Start() {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+		if s.rateLimiter != nil && r.Method == http.MethodPost {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+			method, wallet := parseJSONRPCMethodAndWallet(bodyBytes)
+			clientIP := extractClientIPFromRequest(r)
+			if !s.rateLimiter.AllowIPWithContext(r.Context(), clientIP) {
+				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", method)
+				http.Error(w, "ip rate limit", http.StatusTooManyRequests)
+				return
+			}
+			if isTxJSONRPCMethod(method) {
+				if !s.rateLimiter.AllowWalletWithContext(r.Context(), wallet) {
+					logx.Warn("SECURITY", "Alert spam from wallet:", wallet, "IP:", clientIP)
+					http.Error(w, "wallet rate limit", http.StatusTooManyRequests)
+					return
+				}
+			}
+			exception.SafeGo("RecordTransaction", func() {
+				s.rateLimiter.RecordTransaction(clientIP, wallet)
+			})
+		}
 		jh.ServeHTTP(w, r)
 	})
+	return h
+}
 
+func (s *Server) Start() {
+	h := s.BuildHTTPHandler()
 	http.Handle("/", h)
 	go http.ListenAndServe(s.addr, nil)
 }

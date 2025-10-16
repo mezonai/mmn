@@ -19,10 +19,10 @@ import (
 )
 
 type TxServiceImpl struct {
-	ledger     *ledger.Ledger
-	mempool    *mempool.Mempool
-	blockStore store.BlockStore
-	tracker    interfaces.TransactionTrackerInterface
+	ledger      *ledger.Ledger
+	mempool     *mempool.Mempool
+	blockStore  store.BlockStore
+	tracker     interfaces.TransactionTrackerInterface
 }
 
 func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, tracker interfaces.TransactionTrackerInterface) *TxServiceImpl {
