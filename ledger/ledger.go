@@ -42,17 +42,7 @@ func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStor
 	}
 }
 
-// CreateAccount creates and stores a new account into db, return error if an account with the same addr existed
-func (l *Ledger) CreateAccount(addr string, balance *uint256.Int) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	_, err := l.createAccountWithoutLocking(addr, balance)
-	return err
-}
-
-// createAccountWithoutLocking creates account and store in db without locking ledger. This is useful
-// when calling method has already acquired lock for ledger to avoid recursive locking and deadlock
+// createAccountWithoutLocking creates account and store in db without locking ledger.
 func (l *Ledger) createAccountWithoutLocking(addr string, balance *uint256.Int) (*types.Account, error) {
 	existed, err := l.accountStore.ExistsByAddr(addr)
 	if err != nil {

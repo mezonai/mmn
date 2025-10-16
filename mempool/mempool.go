@@ -216,7 +216,6 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 	// Add nil check for balance
 	if senderAccount.Balance == nil {
-		logx.Warn("MEMPOOL", fmt.Sprintf("Sender account %s has nil balance, treating as zero", tx.Sender[:8]))
 		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 

@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -91,4 +92,9 @@ func Verify(tx *Tx, sig string) bool {
 	pubKey := ed25519.PublicKey(userSig.PubKey)
 
 	return ed25519.Verify(pubKey, tx_hash, userSig.Sig)
+}
+
+func GenerateAddress(input string) string {
+	sum := sha256.Sum256([]byte(input))
+	return base58.Encode(sum[:])
 }
