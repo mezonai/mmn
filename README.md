@@ -73,6 +73,26 @@ Note:
   docker compose up
   ```
 
+## Environment Configuration
+
+The project supports environment-based log level control to avoid excessive debug/trace logs in production:
+
+### Environment Variables
+- `LOGLEVEL`: Set log level (debug, info, warn, error). Default: info for production, debug for development
+
+### Log Levels
+- `debug`: Shows all log messages (DEBUG, INFO, WARN, ERROR)
+- `info`: Shows INFO, WARN, ERROR messages (hides DEBUG)
+- `warn`: Shows WARN, ERROR messages (hides DEBUG, INFO)
+- `error`: Shows only ERROR messages (hides DEBUG, INFO, WARN)
+
+Example `.env` file:
+```
+LOGLEVEL=info
+LOGFILE_MAX_SIZE_MB=500
+LOGFILE_MAX_AGE_DAYS=7
+```
+
 ## Build & run with LevelDB
 
 -Use direct command

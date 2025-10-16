@@ -400,11 +400,19 @@ jobs:
               -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
+          
+          if [[ "${{ inputs.env }}" == "prod" ]]; then
+            LOG_LEVEL="warn"
+            echo "==> Production environment detected. Setting LOGLEVEL to 'warn'."
+          else
+            LOG_LEVEL="info"
+            echo "==> Development environment detected. Setting LOGLEVEL to 'info'."
+          fi
 
           echo "==> Creating /etc/mezon/node1.env..."
           sudo tee /etc/mezon/node1.env >/dev/null <<EOL
           LOGFILE=node1.log
-          LOGLEVEL=info
+          LOGLEVEL=${LOG_LEVEL}
           LOGFILE_MAX_SIZE_MB=500
           LOGFILE_MAX_AGE_DAYS=30
           CORS_ALLOWED_ORIGINS=*
