@@ -147,36 +147,6 @@ func (rt *RateTracker) GetAllWallets() map[string]*RateData {
 	return result
 }
 
-func (rt *RateTracker) GetStats() *RateStats {
-	rt.mu.RLock()
-	defer rt.mu.RUnlock()
-
-	stats := &RateStats{
-		IPRates:     make(map[string]map[string]int),
-		WalletRates: make(map[string]map[string]int),
-	}
-
-	// Get IP rates
-	for ip, data := range rt.ipRates {
-		stats.IPRates[ip] = map[string]int{
-			"minute": rt.getRate(data, rt.config.MinuteWindow),
-			"hour":   rt.getRate(data, rt.config.HourWindow),
-			"day":    rt.getRate(data, rt.config.DayWindow),
-		}
-	}
-
-	// Get wallet rates
-	for wallet, data := range rt.walletRates {
-		stats.WalletRates[wallet] = map[string]int{
-			"minute": rt.getRate(data, rt.config.MinuteWindow),
-			"hour":   rt.getRate(data, rt.config.HourWindow),
-			"day":    rt.getRate(data, rt.config.DayWindow),
-		}
-	}
-
-	return stats
-}
-
 func (rt *RateTracker) cleanupRoutine() {
 	ticker := time.NewTicker(rt.config.CleanupInterval)
 	defer ticker.Stop()

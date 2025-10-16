@@ -89,28 +89,6 @@ func (rl *RateLimiter) AllowWithContext(ctx context.Context, key string) bool {
 	return true
 }
 
-func (rl *RateLimiter) GetStats(key string) (int, time.Time) {
-	rl.mu.RLock()
-	defer rl.mu.RUnlock()
-
-	data, exists := rl.requests[key]
-	if !exists {
-		return 0, time.Time{}
-	}
-
-	data.mu.RLock()
-	defer data.mu.RUnlock()
-
-	now := time.Now()
-
-	// Reset counter if window has passed
-	if now.Sub(data.windowStart) >= rl.config.WindowSize {
-		return 0, data.windowStart
-	}
-
-	return data.currentCount, data.windowStart
-}
-
 func (rl *RateLimiter) cleanupExpiredEntries() {
 	ticker := time.NewTicker(rl.config.CleanupInterval)
 	defer ticker.Stop()
