@@ -431,6 +431,7 @@ jobs:
           printf "export FAUCET_ADDRESS=%q\n" "$FAUCET_ADDRESS" >> mezon_env.sh
           printf "export BOOTNODE_IP=%q\n" "$BOOTNODE_IP" >> mezon_env.sh
           printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
+          printf "export PUBLIC_IP=%q\n" "$PUBLIC_IP" >> mezon_env.sh
         env:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
@@ -451,6 +452,7 @@ jobs:
           FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
         run: |
           set -e
 
