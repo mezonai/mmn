@@ -142,20 +142,20 @@ func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.Una
 
 		if rateLimiter != nil {
 			if !rateLimiter.AllowIPWithContext(ctx, clientIP) {
-				logx.Warn("SECURITY", "IP limited:", clientIP, "Method:", info.FullMethod)
+				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", info.FullMethod)
 				return nil, status.Errorf(codes.ResourceExhausted, "ip rate limit")
 			}
 			if isAddTx {
 				if !rateLimiter.AllowWalletWithContext(ctx, walletAddr) {
-					logx.Warn("SECURITY", "Wallet limited:", walletAddr, "IP:", clientIP)
+					logx.Warn("SECURITY", "Alert spam from wallet:", walletAddr, "IP:", clientIP)
 					return nil, status.Errorf(codes.ResourceExhausted, "wallet rate limit")
 				}
 			}
-		}
 
-		exception.SafeGo("RecordTransaction", func() {
-			rateLimiter.RecordTransaction(clientIP, walletAddr)
-		})
+			exception.SafeGo("RecordTransaction", func() {
+				rateLimiter.RecordTransaction(clientIP, walletAddr)
+			})
+		}
 
 		return handler(ctx, req)
 	}
@@ -175,7 +175,6 @@ func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.St
 }
 
 func isApplyInterceptorRateLimitAndAbuse(method string) bool {
-	logx.Warn("METHID rate limit and abuse call", method)
 	transactionMethods := []string{
 		"/mmn.TxService/AddTx",
 	}

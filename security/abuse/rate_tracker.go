@@ -38,20 +38,51 @@ func (rt *RateTracker) TrackTransaction(ip, wallet string) {
 	rt.trackRequest(rt.walletRates, wallet)
 }
 
-
 func (rt *RateTracker) trackRequest(rates map[string]*RateData, key string) {
 	data, exists := rates[key]
 	if !exists {
 		data = &RateData{
-			requests:  make([]time.Time, 0),
-			lastClean: time.Now(),
+			minuteStart: time.Now(),
+			hourStart:   time.Now(),
+			dayStart:    time.Now(),
+			lastClean:   time.Now(),
 		}
 		rates[key] = data
 	}
 
 	data.mu.Lock()
-	data.requests = append(data.requests, time.Now())
-	data.mu.Unlock()
+	defer data.mu.Unlock()
+
+	now := time.Now()
+
+	// Reset counters if window has passed
+	if now.Sub(data.minuteStart) >= time.Minute {
+		data.minuteCount = 0
+		data.minuteStart = now
+		data.minuteHead = 0
+		// Clear circular buffer
+		for i := range data.minuteBuckets {
+			data.minuteBuckets[i] = 0
+		}
+	}
+	if now.Sub(data.hourStart) >= time.Hour {
+		data.hourCount = 0
+		data.hourStart = now
+	}
+	if now.Sub(data.dayStart) >= 24*time.Hour {
+		data.dayCount = 0
+		data.dayStart = now
+	}
+
+	data.minuteCount++
+	data.hourCount++
+	data.dayCount++
+
+	minuteBucket := now.Second()
+	if data.minuteBuckets[data.minuteHead] != minuteBucket {
+		data.minuteHead = (data.minuteHead + 1) % 60
+		data.minuteBuckets[data.minuteHead] = minuteBucket
+	}
 }
 
 func (rt *RateTracker) GetIPRate(ip string, window time.Duration) int {
@@ -82,17 +113,38 @@ func (rt *RateTracker) getRate(data *RateData, window time.Duration) int {
 	data.mu.RLock()
 	defer data.mu.RUnlock()
 
-	now := time.Now()
-	cutoff := now.Add(-window)
-
-	count := 0
-	for _, t := range data.requests {
-		if t.After(cutoff) {
-			count++
-		}
+	switch {
+	case window <= time.Minute:
+		return data.minuteCount
+	case window <= time.Hour:
+		return data.hourCount
+	case window <= 24*time.Hour:
+		return data.dayCount
+	default:
+		return 0
 	}
+}
 
-	return count
+func (rt *RateTracker) GetAllIPs() map[string]*RateData {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	result := make(map[string]*RateData)
+	for ip, data := range rt.ipRates {
+		result[ip] = data
+	}
+	return result
+}
+
+func (rt *RateTracker) GetAllWallets() map[string]*RateData {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	result := make(map[string]*RateData)
+	for wallet, data := range rt.walletRates {
+		result[wallet] = data
+	}
+	return result
 }
 
 func (rt *RateTracker) GetStats() *RateStats {
@@ -158,13 +210,10 @@ func (rt *RateTracker) cleanupData(data *RateData, cutoff time.Time) bool {
 	data.mu.Lock()
 	defer data.mu.Unlock()
 
-	kept := data.requests[:0]
-	for _, t := range data.requests {
-		if t.After(cutoff) {
-			kept = append(kept, t)
-		}
+	if data.minuteCount == 0 && data.hourCount == 0 && data.dayCount == 0 {
+		return data.lastClean.Before(cutoff)
 	}
-	data.requests = kept
 
-	return len(data.requests) == 0
+	data.lastClean = time.Now()
+	return false
 }

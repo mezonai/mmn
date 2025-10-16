@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/security/abuse"
 )
 
@@ -16,7 +17,7 @@ type RateLimiterConfig struct {
 
 func DefaultConfig() *RateLimiterConfig {
 	return &RateLimiterConfig{
-		MaxRequests:     10,
+		MaxRequests:     100,
 		WindowSize:      time.Second,
 		CleanupInterval: 5 * time.Minute, // cleanup every 5 minutes
 	}
@@ -26,9 +27,16 @@ type RequestEntry struct {
 	Timestamp time.Time
 }
 
+type RateLimiterData struct {
+	mu           sync.RWMutex
+	currentCount int
+	windowStart  time.Time
+	lastClean    time.Time
+}
+
 type RateLimiter struct {
 	config      *RateLimiterConfig
-	requests    map[string][]RequestEntry
+	requests    map[string]*RateLimiterData
 	mu          sync.RWMutex
 	stopCleanup chan struct{}
 }
@@ -40,7 +48,7 @@ func NewRateLimiter(config *RateLimiterConfig) *RateLimiter {
 
 	rl := &RateLimiter{
 		config:      config,
-		requests:    make(map[string][]RequestEntry),
+		requests:    make(map[string]*RateLimiterData),
 		stopCleanup: make(chan struct{}),
 	}
 
@@ -52,31 +60,32 @@ func NewRateLimiter(config *RateLimiterConfig) *RateLimiter {
 // AllowWithContext checks if a request from the given key is allowed with context
 func (rl *RateLimiter) AllowWithContext(ctx context.Context, key string) bool {
 	now := time.Now()
-	cutoff := now.Add(-rl.config.WindowSize)
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	requests, exists := rl.requests[key]
+	data, exists := rl.requests[key]
 	if !exists {
-		requests = make([]RequestEntry, 0)
-	}
-
-	validRequests := make([]RequestEntry, 0)
-	for _, req := range requests {
-		if req.Timestamp.After(cutoff) {
-			validRequests = append(validRequests, req)
+		data = &RateLimiterData{
+			windowStart: now,
+			lastClean:   now,
 		}
+		rl.requests[key] = data
 	}
 
-	if len(validRequests) >= rl.config.MaxRequests {
-		rl.requests[key] = validRequests
+	data.mu.Lock()
+	defer data.mu.Unlock()
+
+	if now.Sub(data.windowStart) >= rl.config.WindowSize {
+		data.currentCount = 0
+		data.windowStart = now
+	}
+
+	if data.currentCount >= rl.config.MaxRequests {
 		return false
 	}
 
-	validRequests = append(validRequests, RequestEntry{Timestamp: now})
-	rl.requests[key] = validRequests
-
+	data.currentCount++
 	return true
 }
 
@@ -84,27 +93,22 @@ func (rl *RateLimiter) GetStats(key string) (int, time.Time) {
 	rl.mu.RLock()
 	defer rl.mu.RUnlock()
 
-	requests, exists := rl.requests[key]
+	data, exists := rl.requests[key]
 	if !exists {
 		return 0, time.Time{}
 	}
 
+	data.mu.RLock()
+	defer data.mu.RUnlock()
+
 	now := time.Now()
-	cutoff := now.Add(-rl.config.WindowSize)
 
-	validCount := 0
-	var oldestRequest time.Time
-
-	for _, req := range requests {
-		if req.Timestamp.After(cutoff) {
-			validCount++
-			if oldestRequest.IsZero() || req.Timestamp.Before(oldestRequest) {
-				oldestRequest = req.Timestamp
-			}
-		}
+	// Reset counter if window has passed
+	if now.Sub(data.windowStart) >= rl.config.WindowSize {
+		return 0, data.windowStart
 	}
 
-	return validCount, oldestRequest
+	return data.currentCount, data.windowStart
 }
 
 func (rl *RateLimiter) cleanupExpiredEntries() {
@@ -128,20 +132,23 @@ func (rl *RateLimiter) cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	for key, requests := range rl.requests {
-		validRequests := make([]RequestEntry, 0)
-		for _, req := range requests {
-			if req.Timestamp.After(cutoff) {
-				validRequests = append(validRequests, req)
-			}
-		}
-
-		if len(validRequests) == 0 {
+	for key, data := range rl.requests {
+		if rl.cleanupData(data, cutoff) {
 			delete(rl.requests, key)
-		} else {
-			rl.requests[key] = validRequests
 		}
 	}
+}
+
+func (rl *RateLimiter) cleanupData(data *RateLimiterData, cutoff time.Time) bool {
+	data.mu.Lock()
+	defer data.mu.Unlock()
+
+	if data.currentCount == 0 {
+		return data.lastClean.Before(cutoff)
+	}
+
+	data.lastClean = time.Now()
+	return false
 }
 
 func (rl *RateLimiter) Stop() {
@@ -163,12 +170,12 @@ type GlobalRateLimiterConfig struct {
 func DefaultGlobalConfig() *GlobalRateLimiterConfig {
 	return &GlobalRateLimiterConfig{
 		IPConfig: &RateLimiterConfig{
-			MaxRequests:     10,
+			MaxRequests:     100,
 			WindowSize:      time.Second,
 			CleanupInterval: 5 * time.Minute,
 		},
 		WalletConfig: &RateLimiterConfig{
-			MaxRequests:     10,
+			MaxRequests:     100,
 			WindowSize:      time.Second,
 			CleanupInterval: 5 * time.Minute,
 		},
@@ -189,9 +196,11 @@ func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abus
 func (grl *GlobalRateLimiter) AllowIPWithContext(ctx context.Context, ip string) bool {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
+
 	if grl.abuseDetector.IsIPBlacklisted(ip) {
-		return false
+		logx.Warn("SECURITY", "Alert abuse spam from IP:", ip)
 	}
+
 	return grl.ipLimiter.AllowWithContext(ctx, ip)
 }
 
@@ -199,7 +208,7 @@ func (grl *GlobalRateLimiter) AllowWalletWithContext(ctx context.Context, wallet
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
 	if grl.abuseDetector.IsWalletBlacklisted(wallet) {
-		return false
+		logx.Warn("SECURITY", "Alert abuse spam from wallet:", wallet)
 	}
 
 	return grl.walletLimiter.AllowWithContext(ctx, wallet)

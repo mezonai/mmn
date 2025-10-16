@@ -13,8 +13,19 @@ type RateTracker struct {
 }
 
 type RateData struct {
-	mu        sync.RWMutex
-	requests  []time.Time
+	mu sync.RWMutex
+
+	minuteCount int
+	hourCount   int
+	dayCount    int
+
+	minuteBuckets [60]int
+	minuteHead    int
+
+	minuteStart time.Time
+	hourStart   time.Time
+	dayStart    time.Time
+
 	lastClean time.Time
 }
 
@@ -48,7 +59,7 @@ type AbuseConfig struct {
 	MaxTxPerHour   int
 	MaxTxPerDay    int
 
-	AutoBlacklistTxPerMinute   int
+	AutoBlacklistTxPerMinute int
 }
 
 type AbuseFlag struct {

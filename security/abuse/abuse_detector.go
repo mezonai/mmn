@@ -45,12 +45,10 @@ func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 	case IP:
 		flag, exists := ad.flaggedIPs[entity]
 		if exists {
-			// Update existing flag
 			flag.LastSeen = now
 			flag.Count++
 			flag.Reason = reason
 		} else {
-			// Create new flag
 			ad.flaggedIPs[entity] = &AbuseFlag{
 				Entity:        entity,
 				EntityType:    entityType,
@@ -67,12 +65,10 @@ func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
 	case WALLET:
 		flag, exists := ad.flaggedWallets[entity]
 		if exists {
-			// Update existing flag
 			flag.LastSeen = now
 			flag.Count++
 			flag.Reason = reason
 		} else {
-			// Create new flag
 			ad.flaggedWallets[entity] = &AbuseFlag{
 				Entity:        entity,
 				EntityType:    entityType,
@@ -122,8 +118,8 @@ func (ad *AbuseDetector) performBackgroundChecks() {
 
 	now := time.Now()
 
-	for ip, flag := range ad.flaggedIPs {
-		if flag.IsBlacklisted {
+	for ip := range ad.rateTracker.GetAllIPs() {
+		if ad.flaggedIPs[ip] != nil && ad.flaggedIPs[ip].IsBlacklisted {
 			continue
 		}
 
@@ -139,8 +135,8 @@ func (ad *AbuseDetector) performBackgroundChecks() {
 		}
 	}
 
-	for wallet, flag := range ad.flaggedWallets {
-		if flag.IsBlacklisted {
+	for wallet := range ad.rateTracker.GetAllWallets() {
+		if ad.flaggedWallets[wallet] != nil && ad.flaggedWallets[wallet].IsBlacklisted {
 			continue
 		}
 

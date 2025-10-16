@@ -224,13 +224,13 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			method, wallet := parseJSONRPCMethodAndWallet(bodyBytes)
 			clientIP := extractClientIPFromRequest(r)
 			if !s.rateLimiter.AllowIPWithContext(r.Context(), clientIP) {
-				logx.Warn("SECURITY", "JSON-RPC IP limited", "IP:", clientIP, "Method:", method)
+				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", method)
 				http.Error(w, "ip rate limit", http.StatusTooManyRequests)
 				return
 			}
 			if isTxJSONRPCMethod(method) {
 				if !s.rateLimiter.AllowWalletWithContext(r.Context(), wallet) {
-					logx.Warn("SECURITY", "JSON-RPC wallet limited", "Wallet:", wallet, "IP:", clientIP, "Method:", method)
+					logx.Warn("SECURITY", "Alert spam from wallet:", wallet, "IP:", clientIP)
 					http.Error(w, "wallet rate limit", http.StatusTooManyRequests)
 					return
 				}
