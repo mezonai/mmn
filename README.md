@@ -18,7 +18,7 @@ go run main.go init \
   --data-dir <file folder> \
   --genesis "config/genesis.yml" \
   --database "leveldb" \
-  --rate-limit false \
+  --rate-limit true \
   --privkey-path <existing private key file> (optional)
 
 Example with existing private key:
@@ -39,21 +39,21 @@ MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node1" \
   --grpc-addr ":9001" \
   --listen-addr ":8001" \
-  --rate-limit false \
+  --rate-limit true \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node2" \
   --listen-addr ":8002" \
   --grpc-addr ":9002" \
-  --rate-limit false \
+  --rate-limit true \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node3" \
   --listen-addr ":8003" \
   --grpc-addr ":9003" \
-  --rate-limit false \
+  --rate-limit true \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
