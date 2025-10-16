@@ -220,25 +220,6 @@ func (grl *GlobalRateLimiter) RecordTransaction(ip, wallet string) {
 	grl.abuseDetector.TrackTransaction(ip, wallet)
 }
 
-func (grl *GlobalRateLimiter) GetStats(ip, wallet string) (map[string]interface{}, error) {
-	grl.mu.RLock()
-	defer grl.mu.RUnlock()
-
-	ipCount, ipOldest := grl.ipLimiter.GetStats(ip)
-	walletCount, walletOldest := grl.walletLimiter.GetStats(wallet)
-
-	return map[string]interface{}{
-		"ip": map[string]interface{}{
-			"count":  ipCount,
-			"oldest": ipOldest,
-		},
-		"wallet": map[string]interface{}{
-			"count":  walletCount,
-			"oldest": walletOldest,
-		},
-	}, nil
-}
-
 func (grl *GlobalRateLimiter) Stop() {
 	grl.mu.Lock()
 	defer grl.mu.Unlock()
