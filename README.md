@@ -78,7 +78,7 @@ Note:
 The project supports environment-based log level control to avoid excessive debug/trace logs in production:
 
 ### Environment Variables
-- `LOG_LEVEL`: Set log level (debug, info, warn, error). Default: info for production, debug for development
+- `LOGLEVEL`: Set log level (debug, info, warn, error). Default: info for production, debug for development
 
 ### Log Levels
 - `debug`: Shows all log messages (DEBUG, INFO, WARN, ERROR)
@@ -88,7 +88,7 @@ The project supports environment-based log level control to avoid excessive debu
 
 Example `.env` file:
 ```
-LOG_LEVEL=info
+LOGLEVEL=info
 LOGFILE_MAX_SIZE_MB=500
 LOGFILE_MAX_AGE_DAYS=7
 ```
