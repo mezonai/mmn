@@ -15,14 +15,13 @@ import {
 } from './utils';
 
 const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
-const HTTP_API_BASE = 'http://127.0.0.1:8001';
 
 describe('Token Transfer Tests', () => {
   let grpcClient: GrpcClient;
   let transactionTracker: TransactionTracker;
 
   beforeAll(() => {
-    grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, false, HTTP_API_BASE);
+    grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, false);
     transactionTracker = new TransactionTracker({
       serverAddress: GRPC_SERVER_ADDRESS,
       debug: true,

@@ -24,9 +24,8 @@ export class GrpcClient {
   private txClient: ITxServiceClient;
   private accountClient: IAccountServiceClient;
   private debug: boolean;
-  private httpApiHost: string;
 
-  constructor(serverAddress: string, debug: boolean = false, apiHttpBase?: string) {
+  constructor(serverAddress: string, debug: boolean = false) {
     this.transport = new GrpcTransport({
       host: serverAddress,
       channelCredentials: ChannelCredentials.createInsecure(),
@@ -34,24 +33,6 @@ export class GrpcClient {
     this.txClient = new TxServiceClient(this.transport);
     this.accountClient = new AccountServiceClient(this.transport);
     this.debug = debug;
-    const baseHttp = `http://${serverAddress}`;
-    let apiHost = baseHttp;
-    if (apiHttpBase && typeof apiHttpBase === 'string' && apiHttpBase.startsWith('http')) {
-      apiHost = apiHttpBase.replace(/\/$/, '');
-    } else {
-      try {
-        const [proto, rest] = baseHttp.split('://');
-        const [host, portStr] = rest.split(':');
-        const portNum = Number(portStr);
-        if (!Number.isNaN(portNum) && portNum >= 9001 && portNum <= 9009) {
-          const apiPort = portNum - 1000; // known mapping 900x -> 800x
-          apiHost = `${proto}://${host}:${apiPort}`;
-        }
-      } catch {
-        // keep baseHttp
-      }
-    }
-    this.httpApiHost = apiHost;
   }
 
   async addTransaction(
@@ -208,25 +189,6 @@ export class GrpcClient {
       tag: res.tag,
       error: res.error,
     };
-  }
-
-  async requestFaucet(address: string): Promise<{ status: string; error?: string }> {
-    try {
-      const res = await fetch(`${this.httpApiHost}/faucet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        return { status: 'error', error: text || res.statusText };
-      }
-      const data = (await res.json()) as any;
-      const stat = (data && typeof data.status === 'string') ? data.status : 'ok';
-      return { status: stat };
-    } catch (e: any) {
-      return { status: 'error', error: e?.message || 'unknown error' };
-    }
   }
 
   close(): void {

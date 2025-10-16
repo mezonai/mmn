@@ -1,7 +1,6 @@
 import { EventEmitter } from 'events';
 import { GrpcClient } from './grpc_client';
 import { TransactionStatus, TransactionStatusInfo } from './generated/tx';
-const HTTP_API_BASE = 'http://127.0.0.1:8001';
 
 export interface TransactionTrackerOptions {
   serverAddress?: string;
@@ -29,7 +28,7 @@ export class TransactionTracker extends EventEmitter {
     } = options;
 
     // Initialize gRPC client
-    this.grpcClient = new GrpcClient(serverAddress, debug, HTTP_API_BASE);
+    this.grpcClient = new GrpcClient(serverAddress, debug);
     this.statusConsumptionDelay = statusConsumptionDelay;
     this.debug = debug;
   }
