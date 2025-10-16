@@ -10,13 +10,14 @@ import (
 
 type Stake struct {
 	wallet 		*wallet.Wallet
-	stakeType 	string
 	stakedAt	time.Time
+	apr			uint64
 }
 
 type StakingPool struct {
 	apr 		uint64
 	fee 		uint64
+	stakeType 	string
 	stakers		map[string]*Stake
 	total		uint64
 
