@@ -41,7 +41,8 @@ import (
 const (
 	// Storage paths - using absolute paths
 	fileBlockDir    = "./blockstore/blocks"
-	leveldbBlockDir = "blockstore/leveldb"
+	// leveldbBlockDir = "blockstore/leveldb"
+	fileTlsDir = "tls"
 	LISTEN_MODE     = "listen"
 	FULL_MODE       = "full"
 )
@@ -58,6 +59,8 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+	tsl             bool
+	mtsl            bool
 )
 
 var runCmd = &cobra.Command{
@@ -81,6 +84,8 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().BoolVar(&tsl, "tls", false, "Enable TLS (use certs from tls folder)")
+	runCmd.Flags().BoolVar(&mtsl, "mtls", false, "Enable mutual TLS (requires client certs); effective only when --tls is true")
 
 }
 
@@ -99,7 +104,7 @@ func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
-	logx.Info("NODE", "Running node")
+	logx.Info("NODE", "Running node", "with tls", tsl, "mtls", mtsl)
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
@@ -238,7 +243,7 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, tsl, mtsl, filepath.Join(dataDir, fileTlsDir))
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -377,7 +382,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, tsl bool, mtsl bool, dir string) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -399,6 +404,9 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		mp,
 		eventRouter,
 		txTracker,
+		tsl,
+		mtsl,
+		dir,
 	)
 	_ = grpcSrv // Keep server running
 
@@ -412,7 +420,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		rpcSrv.SetCORSConfig(corsCfg)
 	}
 
-	rpcSrv.Start()
+	rpcSrv.Start(tsl, mtsl, dir)
 	serveMetricsApi(nodeConfig.ListenAddr)
 }
 

@@ -2,10 +2,13 @@ package jsonrpc
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -15,6 +18,8 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/network"
 	pb "github.com/mezonai/mmn/proto"
 )
 
@@ -190,7 +195,7 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 	}
 }
 
-func (s *Server) Start() {
+func (s *Server) Start(isTls bool, isMtls bool, dir string) {
 	methods := s.buildMethodMap()
 	jh := jhttp.NewBridge(methods, &jhttp.BridgeOptions{Server: &jrpc2.ServerOptions{}})
 
@@ -204,6 +209,30 @@ func (s *Server) Start() {
 	})
 
 	http.Handle("/", h)
+	if isTls {
+		certFile := filepath.Join(dir, network.GRPC_TLS_CERT_FILE)
+		keyFile := filepath.Join(dir, network.GRPC_TLS_KEY_FILE)
+		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		if isMtls {
+			caFile := filepath.Join(dir, network.GRPC_TLS_CLIENT_CA_FILE)
+			caPem, err := os.ReadFile(caFile)
+			if err != nil {
+				logx.Error("JSONRPC", fmt.Sprintf("failed to read client CA file: %v", err))
+				return
+			}
+			pool := x509.NewCertPool()
+			if !pool.AppendCertsFromPEM(caPem) {
+				logx.Error("JSONRPC", "failed to append client CA certs")
+				return
+			}
+			tlsCfg.ClientCAs = pool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+		}
+
+		srv := &http.Server{Addr: s.addr, TLSConfig: tlsCfg}
+		go srv.ListenAndServeTLS(certFile, keyFile)
+		return
+	}
 	go http.ListenAndServe(s.addr, nil)
 }
 
