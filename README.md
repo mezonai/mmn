@@ -31,6 +31,8 @@ go run main.go init --data-dir "./node-data/node3" --genesis "config/genesis.yml
 MSYS_NO_PATHCONV=1 go run main.go node \
   --privkey-path <file path> \
   --grpc-addr ":<port>" \
+  --public-ip <public_ip> \
+  --p2p-port <p2p_port> \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/<port>/p2p/<peerID>"
 
 example:
@@ -38,21 +40,30 @@ MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node1" \
   --grpc-addr ":9001" \
   --listen-addr ":8001" \
+  --public-ip "xx.xxx.xxx.xx" \
+  --p2p-port "9090" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node2" \
   --listen-addr ":8002" \
   --grpc-addr ":9002" \
+  --public-ip "xx.xxx.xxx.xx" \
+  --p2p-port "9090" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 MSYS_NO_PATHCONV=1 go run main.go node \
   --data-dir "./node-data/node3" \
   --listen-addr ":8003" \
   --grpc-addr ":9003" \
+  --public-ip "xx.xxx.xxx.xx" \
+  --p2p-port "9090" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
-Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
+Note: 
+- Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
+- `--public-ip` flag is required for P2P advertising to external peers
+- `--p2p-port` specifies the LibP2P port (use the same port for all nodes default: 9090)
 
 # Run with docker
 ## Build and run nodes
