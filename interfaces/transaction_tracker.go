@@ -6,5 +6,6 @@ import "github.com/mezonai/mmn/transaction"
 type TransactionTrackerInterface interface {
 	TrackProcessingTransaction(tx *transaction.Transaction)
 	RemoveTransaction(txHash string)
+	GetTransaction(txHash string) (*transaction.Transaction, error)
 	GetLargestProcessingNonce(sender string) uint64
 }

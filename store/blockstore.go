@@ -39,7 +39,6 @@ type BlockStore interface {
 	GetLatestStoreSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
 	MarkFinalized(slot uint64) error
-	GetTransactionBlockInfo(clientHashHex string) (slot uint64, block *block.Block, finalized bool, found bool)
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
@@ -506,23 +505,4 @@ func (bs *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
 		return latest - blockSlot + 1
 	}
 	return 1 // Confirmed but not yet finalized
-}
-
-// GetTransactionBlockInfo searches all stored blocks for a transaction. It returns the containing slot, the whole block, whether the
-// block is finalized, and whether it was found.
-func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot uint64, blk *block.Block, finalized bool, found bool) {
-	txMeta, err := bs.txMetaStore.GetByHash(clientHashHex)
-	if err != nil {
-		return 0, nil, false, false
-	}
-	if txMeta.Status != types.TxStatusProcessed {
-		return 0, nil, false, false
-	}
-
-	blk = bs.Block(txMeta.Slot)
-	if blk == nil {
-		return 0, nil, false, false
-	}
-
-	return txMeta.Slot, blk, blk.Status == block.BlockFinalized, true
 }

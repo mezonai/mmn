@@ -79,7 +79,7 @@ func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashReque
 func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
 	txHash := in.TxHash
 
-	// 1) Check mempool
+	// 1) Check from mempool O(1) lookup
 	if s.mempool != nil {
 		if data, ok := s.mempool.GetTransaction(txHash); ok {
 			tx, err := utils.ParseTx(data)
@@ -88,7 +88,7 @@ func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTran
 					TxHash:        txHash,
 					Status:        pb.TransactionStatus_PENDING,
 					Confirmations: 0, // No confirmations for mempool transactions
-					Timestamp:     uint64(time.Now().Unix()),
+					Timestamp:     tx.Timestamp,
 					ExtraInfo:     tx.ExtraInfo,
 					Amount:        utils.Uint256ToString(tx.Amount),
 					TextData:      tx.TextData,
@@ -97,27 +97,15 @@ func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTran
 		}
 	}
 
-	// 2) Search in stored blocks
-	if s.blockStore != nil {
-		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
-		if found {
-			confirmations := s.blockStore.GetConfirmations(slot)
-			status := pb.TransactionStatus_CONFIRMED
-			if confirmations > 1 {
-				status = pb.TransactionStatus_FINALIZED
-			}
-			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
-			if errTx != nil || errTxMeta != nil {
-				logx.Error("GRPC GET TX STATUS", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
-				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
-			}
+	// 2) Check from tracker O(1) lookup
+	if s.tracker != nil {
+		tx, err := s.tracker.GetTransaction(txHash)
+		if err == nil {
 			return &pb.TransactionStatusInfo{
 				TxHash:        txHash,
-				Status:        status,
-				BlockSlot:     slot,
-				BlockHash:     blk.HashString(),
-				Confirmations: confirmations,
-				Timestamp:     uint64(time.Now().Unix()),
+				Status:        pb.TransactionStatus_PENDING,
+				Confirmations: 0, // No confirmations for mempool transactions
+				Timestamp:     tx.Timestamp,
 				ExtraInfo:     tx.ExtraInfo,
 				Amount:        utils.Uint256ToString(tx.Amount),
 				TextData:      tx.TextData,
@@ -125,7 +113,29 @@ func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTran
 		}
 	}
 
-	// 3) Transaction not found anywhere -> return nil and error
+	// 3) Search in stored records
+	if s.ledger != nil {
+		tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
+		if errTx != nil || errTxMeta != nil {
+			logx.Error("GRPC GET TX STATUS", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
+			return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
+		}
+		confirmations := s.blockStore.GetConfirmations(txMeta.Slot)
+		txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
+		return &pb.TransactionStatusInfo{
+			TxHash:        txHash,
+			Status:        txStatus,
+			BlockSlot:     txMeta.Slot,
+			BlockHash:     txMeta.BlockHash,
+			Confirmations: confirmations,
+			Timestamp:     tx.Timestamp,
+			ExtraInfo:     tx.ExtraInfo,
+			Amount:        utils.Uint256ToString(tx.Amount),
+			TextData:      tx.TextData,
+		}, nil
+	}
+
+	// 4) Transaction not found anywhere -> return nil and error
 	return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 }
 
