@@ -84,8 +84,8 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
-	runCmd.Flags().BoolVar(&tsl, "tsl", false, "Enable TLS (use certs from tls folder)")
-	runCmd.Flags().BoolVar(&mtsl, "mtsl", false, "Enable mutual TLS (requires client certs); effective only when --tsl is true")
+	runCmd.Flags().BoolVar(&tsl, "tls", false, "Enable TLS (use certs from tls folder)")
+	runCmd.Flags().BoolVar(&mtsl, "mtls", false, "Enable mutual TLS (requires client certs); effective only when --tls is true")
 
 }
 
