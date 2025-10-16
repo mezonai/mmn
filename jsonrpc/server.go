@@ -216,7 +216,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			return
 		}
 		
-		if s.rateLimiter != nil && r.Method == http.MethodPost && !s.enableRateLimit {
+		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
