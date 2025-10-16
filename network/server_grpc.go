@@ -56,7 +56,7 @@ type server struct {
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -80,14 +80,22 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	rLimiter := rate.NewLimiter(rate.Limit(GRPCRateLimitRPS), GRPCRateLimitBurst)
 
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
-		rateLimitUnaryInterceptor(rLimiter),
-		securityUnaryInterceptor(rateLimiter),
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{
-		rateLimitStreamInterceptor(rLimiter),
-		securityStreamInterceptor(rateLimiter),
 		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
+	}
+
+	if enableRateLimit {
+		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
+			rateLimitUnaryInterceptor(rLimiter),
+			securityUnaryInterceptor(rateLimiter),
+		}, unaryInterceptors...)
+		
+		streamInterceptors = append([]grpc.StreamServerInterceptor{
+			rateLimitStreamInterceptor(rLimiter),
+			securityStreamInterceptor(rateLimiter),
+		}, streamInterceptors...)
 	}
 
 	grpcSrv := grpc.NewServer(

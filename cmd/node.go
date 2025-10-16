@@ -49,17 +49,18 @@ const (
 )
 
 var (
-	dataDir            string
-	listenAddr         string
-	jsonrpcAddr        string
-	p2pPort            string
-	bootstrapAddresses []string
-	grpcAddr           string
-	nodeName           string
-	mode               string
+	dataDir            	string
+	listenAddr         	string
+	jsonrpcAddr        	string
+	p2pPort            	string
+	bootstrapAddresses 	[]string
+	grpcAddr           	string
+	nodeName           	string
+	mode               	string
 	// legacy init command
 	// database backend
-	databaseBackend string
+	databaseBackend 	string
+	rateLimit 			bool
 )
 
 var runCmd = &cobra.Command{
@@ -83,6 +84,7 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().BoolVar(&rateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
 
 }
 
@@ -101,7 +103,7 @@ func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
-	logx.Info("NODE", "Running node")
+	logx.Info("NODE", "Running node", "with", "rate limit", rateLimit)
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
@@ -409,13 +411,14 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *c
 		eventRouter,
 		txTracker,
 		rateLimiter,
+		rateLimit,
 	)
 	_ = grpcSrv // Keep server running
 
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
 	txSvc := service.NewTxService(ld, mp, bs, txTracker)
 	acctSvc := service.NewAccountService(ld, mp, txTracker)
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter, rateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {

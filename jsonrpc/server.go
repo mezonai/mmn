@@ -174,11 +174,12 @@ type getAccountByAddressResponse struct {
 // --- Server ---
 
 type Server struct {
-	addr        string
-	txSvc       interfaces.TxService
-	acctSvc     interfaces.AccountService
-	corsConfig  CORSConfig
-	rateLimiter *ratelimit.GlobalRateLimiter
+	addr        	string
+	txSvc       	interfaces.TxService
+	acctSvc     	interfaces.AccountService
+	corsConfig  	CORSConfig
+	enableRateLimit bool
+	rateLimiter 	*ratelimit.GlobalRateLimiter
 }
 
 type CORSConfig struct {
@@ -188,7 +189,7 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, rateLimiter *ratelimit.GlobalRateLimiter) *Server {
+func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *Server {
 	return &Server{
 		addr:    addr,
 		txSvc:   txSvc,
@@ -200,6 +201,7 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 			MaxAge:         0,
 		},
 		rateLimiter: rateLimiter,
+		enableRateLimit: enableRateLimit,
 	}
 }
 
@@ -213,7 +215,8 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		if s.rateLimiter != nil && r.Method == http.MethodPost {
+		
+		if s.rateLimiter != nil && r.Method == http.MethodPost && !s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
