@@ -1204,5 +1204,4 @@ describe('Token Transfer Tests', () => {
       });
     });
   });
-
 });
