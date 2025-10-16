@@ -118,6 +118,7 @@ jobs:
           echo "==> Updating systemd for node1..."
           BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP/tcp/9000/p2p/$BOOTNODE_ID"
           sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
+              -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
 
@@ -159,6 +160,7 @@ jobs:
           FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
