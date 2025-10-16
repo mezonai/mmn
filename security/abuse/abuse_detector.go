@@ -10,11 +10,11 @@ import (
 
 func DefaultAbuseConfig() *AbuseConfig {
 	return &AbuseConfig{
-		MaxTxPerMinute: 100,     // 100 tx per second
+		MaxTxPerMinute: 6000,     // 100 tx per second
 		MaxTxPerHour:   360000,  // 100 tx per second for 1 hour
 		MaxTxPerDay:    8640000, // 100 tx per second for 1 day
 
-		AutoBlacklistTxPerMinute: 200, // 200 tx per second
+		AutoBlacklistTxPerMinute: 12000, // 200 tx per second
 	}
 }
 
