@@ -94,7 +94,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
   beforeAll(async () => {
     // Initialize connections to all three nodes
     for (const config of NODE_CONFIGS) {
-      const client = new GrpcClient(config.address, false);
+      const client = new GrpcClient(config.address);
       nodeClients.push({
         name: config.name,
         client: client,

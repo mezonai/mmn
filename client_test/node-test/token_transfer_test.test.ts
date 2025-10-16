@@ -21,7 +21,7 @@ describe('Token Transfer Tests', () => {
   let transactionTracker: TransactionTracker;
 
   beforeAll(() => {
-    grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS, false);
+    grpcClient = new GrpcClient(GRPC_SERVER_ADDRESS);
     transactionTracker = new TransactionTracker({
       serverAddress: GRPC_SERVER_ADDRESS,
       debug: true,
@@ -333,7 +333,7 @@ describe('Token Transfer Tests', () => {
       // Try to send the same transaction again (same nonce)
       const duplicateResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(duplicateResponse.ok).toBe(false);
-       expect(duplicateResponse.error).toContain('nonce too low');
+      expect(duplicateResponse.error).toContain('nonce too low');
 
       // Verify balances remain unchanged after duplicate attempt
       const senderBalanceFinal = await getAccountBalance(grpcClient, sender.address);
@@ -1204,4 +1204,5 @@ describe('Token Transfer Tests', () => {
       });
     });
   });
+
 });
