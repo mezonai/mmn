@@ -22,6 +22,7 @@ type MmnClient struct {
 	healthClient mmnpb.HealthServiceClient
 	txClient     mmnpb.TxServiceClient
 	accClient    mmnpb.AccountServiceClient
+	blClient     mmnpb.BlacklistServiceClient
 }
 
 func NewClient(cfg Config) (*MmnClient, error) {
@@ -40,6 +41,7 @@ func NewClient(cfg Config) (*MmnClient, error) {
 		healthClient: mmnpb.NewHealthServiceClient(conn),
 		txClient:     mmnpb.NewTxServiceClient(conn),
 		accClient:    mmnpb.NewAccountServiceClient(conn),
+		blClient:     mmnpb.NewBlacklistServiceClient(conn),
 	}, nil
 }
 
@@ -126,6 +128,64 @@ func (c *MmnClient) GetCurrentNonce(ctx context.Context, addr string, tag string
 	}
 
 	return res.Nonce, nil
+}
+
+// AddToBlacklist adds an address to the blacklist with an optional reason
+func (c *MmnClient) AddToBlacklist(ctx context.Context, sign SignedBL) error {
+	if sign.Address == "" {
+		return fmt.Errorf("address is required")
+	}
+	if c.blClient == nil {
+		return fmt.Errorf("blacklist client not initialized")
+	}
+	resp, err := c.blClient.Add(ctx, &mmnpb.SignedBL{
+		Address: sign.Address,
+		Reason:  sign.Reason,
+		Sig:     sign.Sig,
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil || !resp.Ok {
+		return fmt.Errorf("blacklist add failed")
+	}
+	return nil
+}
+
+// RemoveFromBlacklist removes an address from the blacklist
+func (c *MmnClient) RemoveFromBlacklist(ctx context.Context, sign SignedBL) error {
+	if sign.Address == "" {
+		return fmt.Errorf("address is required")
+	}
+	if c.blClient == nil {
+		return fmt.Errorf("blacklist client not initialized")
+	}
+	resp, err := c.blClient.Remove(ctx, &mmnpb.SignedBL{
+		Address: sign.Address,
+		Sig:     sign.Sig,
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil || !resp.Ok {
+		return fmt.Errorf("blacklist remove failed")
+	}
+	return nil
+}
+
+// ListBlacklist retrieves the current blacklist entries (address -> reason)
+func (c *MmnClient) ListBlacklist(ctx context.Context, sign SignedBL) (map[string]string, error) {
+	if c.blClient == nil {
+		return nil, fmt.Errorf("blacklist client not initialized")
+	}
+	resp, err := c.blClient.List(ctx, &mmnpb.SignedBL{
+		Sig: sign.Sig,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetEntries(), nil
 }
 
 func (c *MmnClient) Conn() *grpc.ClientConn {

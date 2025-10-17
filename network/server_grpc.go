@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+    "github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/logx"
@@ -35,6 +36,7 @@ type server struct {
 	pb.UnimplementedVoteServiceServer
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
+	pb.UnimplementedBlacklistServiceServer
 	pb.UnimplementedHealthServiceServer
 	pubKeys       map[string]ed25519.PublicKey
 	blockDir      string
@@ -78,6 +80,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
+	pb.RegisterBlacklistServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -113,6 +116,70 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 
 func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
 	return s.txSvc.GetPendingTransactions(ctx, in)
+}
+
+// --- BlacklistService implementation ---
+
+func (s *server) Add(ctx context.Context, in *pb.SignedBL) (*pb.BlacklistResponse, error) {
+	if s.mempool == nil {
+		return &pb.BlacklistResponse{Ok: false}, status.Errorf(codes.Unavailable, "mempool not available")
+	}
+	if in == nil || in.Address == "" {
+		return &pb.BlacklistResponse{Ok: false}, status.Errorf(codes.InvalidArgument, "address is required")
+	}
+    // Verify admin signature
+    if ok := s.verifyBlacklistSignature(in, "add"); !ok {
+        return &pb.BlacklistResponse{Ok: false}, status.Errorf(codes.PermissionDenied, "invalid admin signature")
+    }
+	reason := in.Reason
+	if reason == "" {
+		reason = "manual blacklist"
+	}
+	s.mempool.AddToBlacklist(in.Address, reason)
+	return &pb.BlacklistResponse{Ok: true}, nil
+}
+
+func (s *server) List(ctx context.Context, in *pb.SignedBL) (*pb.ListBlacklistResponse, error) {
+	if s.mempool == nil {
+		return nil, status.Errorf(codes.Unavailable, "mempool not available")
+	}
+	entries := s.mempool.ListBlacklist()
+	return &pb.ListBlacklistResponse{Entries: entries}, nil
+}
+
+func (s *server) Remove(ctx context.Context, in *pb.SignedBL) (*pb.BlacklistResponse, error) {
+	if s.mempool == nil {
+		return &pb.BlacklistResponse{Ok: false}, status.Errorf(codes.Unavailable, "mempool not available")
+	}
+	if in == nil || in.Address == "" {
+		return &pb.BlacklistResponse{Ok: false}, status.Errorf(codes.InvalidArgument, "address is required")
+	}
+    if ok := s.verifyBlacklistSignature(in, "remove"); !ok {
+        return &pb.BlacklistResponse{Ok: false}, status.Errorf(codes.PermissionDenied, "invalid admin signature")
+    }
+	s.mempool.RemoveFromBlacklist(in.Address)
+	return &pb.BlacklistResponse{Ok: true}, nil
+}
+
+// verifyBlacklistSignature checks the signature from admin over a deterministic message.
+// Message format: "<admin_address>|<op>|<address>|<reason>"
+func (s *server) verifyBlacklistSignature(in *pb.SignedBL, op string) bool {
+    if in == nil || in.AdminAddress == "" {
+        return false
+    }
+    // Check admin address matches this node's configured admin id (selfID)
+    if in.AdminAddress != s.selfID {
+        return false
+    }
+    pubBytes, err := common.DecodeBase58ToBytes(in.AdminAddress)
+    if err != nil {
+        return false
+    }
+    if len(pubBytes) != ed25519.PublicKeySize {
+        return false
+    }
+    msg := fmt.Sprintf("%s|%s|%s|%s", in.AdminAddress, op, in.Address, in.Reason)
+    return ed25519.Verify(ed25519.PublicKey(pubBytes), []byte(msg), in.Sig)
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system

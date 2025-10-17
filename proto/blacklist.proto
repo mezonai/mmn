@@ -1,0 +1,29 @@
+syntax = "proto3";
+package mmn;
+
+option go_package = "mmn/proto;proto";
+
+message SignedBL {
+  string admin_address = 1;
+  string address       = 2;
+  string reason        = 3;
+  bytes  sig           = 4;
+}
+
+message BlacklistResponse {
+  bool ok = 1;
+}
+
+message ListBlacklistRequest {}
+
+message ListBlacklistResponse {
+  map<string, string> entries = 1; // address -> reason
+}
+
+service BlacklistService {
+  rpc Add    (SignedBL)            returns (BlacklistResponse);
+  rpc List   (SignedBL)            returns (ListBlacklistResponse);
+  rpc Remove (SignedBL)            returns (BlacklistResponse);
+}
+
+

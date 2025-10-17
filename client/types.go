@@ -109,6 +109,13 @@ func DeserializeTxExtraInfo(raw string) (map[string]string, error) {
 	return extraInfo, nil
 }
 
+type SignedBL struct {
+	AdminAddress string
+	Address      string
+	Reason       string
+	Sig          []byte
+}
+
 type SignedTx struct {
 	Tx  *Tx
 	Sig string
