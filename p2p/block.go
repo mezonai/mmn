@@ -503,34 +503,6 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 	}
 }
 
-func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.BroadcastedBlock) error {
-	logx.Info("BLOCK", "Broadcasting block: slot=", blk.Slot)
-
-	if ln.topicBlocks != nil {
-		meshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("BLOCK", "Block topic mesh peers count:", len(meshPeers))
-		for i, peer := range meshPeers {
-			logx.Info("BLOCK", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("BLOCK", "Block topic is nil")
-	}
-
-	data, err := jsonx.Marshal(blk)
-	if err != nil {
-		logx.Error("BLOCK", "Failed to marshal block: ", err)
-		return err
-	}
-
-	if ln.topicBlocks != nil {
-		logx.Info("BLOCK", "Publishing block to pubsub topic")
-		if err := ln.topicBlocks.Publish(ctx, data); err != nil {
-			logx.Error("BLOCK", "Failed to publish block:", err)
-		}
-	}
-	return nil
-}
-
 func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
 
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
