@@ -70,10 +70,6 @@ func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) 
 		return nil, fmt.Errorf("slot full: %d entries >= %d", len(r.entries), MAX_ENTRIES_PER_SLOT)
 	}
 
-	if len(r.entries) >= MAX_ENTRIES_MEMORY {
-		return nil, fmt.Errorf("memory limit exceeded: %d entries >= %d", len(r.entries), MAX_ENTRIES_MEMORY)
-	}
-
 	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	if pohEntry == nil {
@@ -158,10 +154,6 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 }
 
 func HashTransactions(txs []*transaction.Transaction) [32]byte {
-	if len(txs) == 0 {
-		domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), []byte("EMPTY")...)
-		return sha256.Sum256(domainHash)
-	}
 	var all []byte
 	for _, tx := range txs {
 		txBytes := tx.Bytes()
@@ -171,8 +163,7 @@ func HashTransactions(txs []*transaction.Transaction) [32]byte {
 		all = append(all, txBytes...)
 	}
 	// Apply domain separation for transaction hashes
-	domainHash := append([]byte(TRANSACTION_DOMAIN_PREFIX), all...)
-	return sha256.Sum256(domainHash)
+	return sha256.Sum256(all)
 }
 
 func (r *PohRecorder) GetSlotHash(slot uint64) [32]byte {

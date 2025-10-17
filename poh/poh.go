@@ -69,9 +69,7 @@ func (p *Poh) Stop() {
 }
 
 func (p *Poh) hashOnce(hash []byte) {
-	// Apply domain separation for PoH hashes
-	domainHash := append([]byte(POH_DOMAIN_PREFIX), hash...)
-	p.Hash = sha256.Sum256(domainHash)
+	p.Hash = sha256.Sum256(hash)
 	p.NumHashes++
 	p.RemainingHashes--
 }
@@ -124,9 +122,7 @@ func (p *Poh) TickFastForward(seenHash [32]byte, fromTick uint64, toTick uint64)
 	p.Hash = seenHash
 	numHashes := (toTick - fromTick) * p.HashesPerTick
 	for i := uint64(0); i < numHashes; i++ {
-		// Apply domain separation for PoH hashes
-		domainHash := append([]byte(POH_DOMAIN_PREFIX), p.Hash[:]...)
-		p.Hash = sha256.Sum256(domainHash)
+		p.Hash = sha256.Sum256(p.Hash[:])
 	}
 	p.NumHashes = 0
 	p.RemainingHashes = p.HashesPerTick

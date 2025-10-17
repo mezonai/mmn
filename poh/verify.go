@@ -24,17 +24,14 @@ func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
 		}
 
 		for n := uint64(0); n < e.NumHashes-1; n++ {
-			domainHash := append([]byte(POH_DOMAIN_PREFIX), cur[:]...)
-			cur = sha256.Sum256(domainHash)
+			cur = sha256.Sum256(cur[:])
 		}
 
 		if len(e.Transactions) == 0 {
-			domainHash := append([]byte(POH_DOMAIN_PREFIX), cur[:]...)
-			cur = sha256.Sum256(domainHash)
+			cur = sha256.Sum256(cur[:])
 		} else {
 			mixin := HashTransactions(e.Transactions)
-			domainHash := append([]byte(POH_DOMAIN_PREFIX), append(cur[:], mixin[:]...)...)
-			hash := sha256.Sum256(domainHash)
+			hash := sha256.Sum256(append(cur[:], mixin[:]...))
 			copy(cur[:], hash[:])
 		}
 
