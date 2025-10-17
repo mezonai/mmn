@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -84,8 +85,9 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 	}
 
 	if ln.topicLatestSlot == nil {
-		logx.Error("NETWORK:LATEST SLOT", "topicLatestSlot is nil, cannot publish request")
-		return 0, fmt.Errorf("topicLatestSlot is nil")
+		errMsg := "latest slot topic is not initialized"
+		logx.Error("NETWORK:LATEST SLOT", errMsg)
+		return 0, errors.New(errMsg)
 	}
 
 	err = ln.topicLatestSlot.Publish(ctx, data)
@@ -123,7 +125,8 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 	}
 
 	if ln.topicBlockSyncReq == nil {
-		return fmt.Errorf("sync request topic is not initialized")
+		errMsg := "sync request topic is not initialized"
+		return errors.New(errMsg)
 	}
 
 	err = ln.topicBlockSyncReq.Publish(ctx, data)
