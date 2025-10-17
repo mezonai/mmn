@@ -159,6 +159,46 @@ func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
 	return false
 }
 
+func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs store.BlockStore) {
+	ln.missingBlocksMu.Lock()
+	defer ln.missingBlocksMu.Unlock()
+
+	now := time.Now()
+	var retrySlots []uint64
+
+	for slot, info := range ln.missingBlocksTracker {
+		// Skip if block was found
+		if bs.Block(slot) != nil {
+			delete(ln.missingBlocksTracker, slot)
+			continue
+		}
+
+		// Check if it's time to retry
+		if info.RetryCount < info.MaxRetries &&
+			(info.LastRetry.IsZero() || now.Sub(info.LastRetry) > 30*time.Second) {
+			retrySlots = append(retrySlots, slot)
+			info.LastRetry = now
+			info.RetryCount++
+		}
+
+		// Remove if max retries exceeded
+		if info.RetryCount >= info.MaxRetries {
+			delete(ln.missingBlocksTracker, slot)
+		}
+	}
+
+	// Request retry blocks
+	if len(retrySlots) > 0 {
+		go ln.requestMissingBlocks(retrySlots)
+	}
+}
+
+func (ln *Libp2pNetwork) removeFromMissingTracker(slot uint64) {
+	ln.missingBlocksMu.Lock()
+	defer ln.missingBlocksMu.Unlock()
+	delete(ln.missingBlocksTracker, slot)
+}
+
 func (ln *Libp2pNetwork) trackMissingBlock(slot uint64) {
 	ln.missingBlocksMu.Lock()
 	defer ln.missingBlocksMu.Unlock()
