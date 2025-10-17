@@ -397,13 +397,22 @@ jobs:
           echo "==> Updating systemd for node1..."
           BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP/tcp/9000/p2p/$BOOTNODE_ID"
           sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
+              -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
+          
+          if [[ "${{ inputs.env }}" == "prod" ]]; then
+            LOG_LEVEL="warn"
+            echo "==> Production environment detected. Setting LOGLEVEL to 'warn'."
+          else
+            LOG_LEVEL="info"
+            echo "==> Development environment detected. Setting LOGLEVEL to 'info'."
+          fi
 
           echo "==> Creating /etc/mezon/node1.env..."
           sudo tee /etc/mezon/node1.env >/dev/null <<EOL
           LOGFILE=node1.log
-          LOGLEVEL=info
+          LOGLEVEL=${LOG_LEVEL}
           LOGFILE_MAX_SIZE_MB=500
           LOGFILE_MAX_AGE_DAYS=30
           CORS_ALLOWED_ORIGINS=*
@@ -430,6 +439,7 @@ jobs:
           printf "export FAUCET_ADDRESS=%q\n" "$FAUCET_ADDRESS" >> mezon_env.sh
           printf "export BOOTNODE_IP=%q\n" "$BOOTNODE_IP" >> mezon_env.sh
           printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
+          printf "export PUBLIC_IP=%q\n" "$PUBLIC_IP" >> mezon_env.sh
         env:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
@@ -438,6 +448,7 @@ jobs:
           FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
@@ -449,6 +460,7 @@ jobs:
           FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
           BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
           BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
         run: |
           set -e
 

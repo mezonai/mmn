@@ -32,6 +32,8 @@ go run main.go init --data-dir "./node-data/node3" --genesis "config/genesis.yml
 MSYS_NO_PATHCONV=1 go run main.go node \
   --privkey-path <file path> \
   --grpc-addr ":<port>" \
+  --public-ip <public_ip> \
+  --p2p-port <p2p_port> \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/<port>/p2p/<peerID>"
 
 example:
@@ -40,6 +42,8 @@ MSYS_NO_PATHCONV=1 go run main.go node \
   --grpc-addr ":9001" \
   --listen-addr ":8001" \
   --rate-limit true \
+  --public-ip "xx.xxx.xxx.xx" \
+  --p2p-port "9090" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 MSYS_NO_PATHCONV=1 go run main.go node \
@@ -47,6 +51,8 @@ MSYS_NO_PATHCONV=1 go run main.go node \
   --listen-addr ":8002" \
   --grpc-addr ":9002" \
   --rate-limit true \
+  --public-ip "xx.xxx.xxx.xx" \
+  --p2p-port "9090" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
 MSYS_NO_PATHCONV=1 go run main.go node \
@@ -54,9 +60,14 @@ MSYS_NO_PATHCONV=1 go run main.go node \
   --listen-addr ":8003" \
   --grpc-addr ":9003" \
   --rate-limit true \
+  --public-ip "xx.xxx.xxx.xx" \
+  --p2p-port "9090" \
   --bootstrap-addresses "/ip4/127.0.0.1/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
 
-Note: Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
+Note: 
+- Faucet amount is now configured in the genesis configuration file (config/genesis.yml)
+- `--public-ip` flag is required for P2P advertising to external peers
+- `--p2p-port` specifies the LibP2P port (use the same port for all nodes default: 9090)
 
 # Run with docker
 ## Build and run nodes
@@ -65,6 +76,26 @@ Note: Faucet amount is now configured in the genesis configuration file (config/
   docker compose build
   docker compose up
   ```
+
+## Environment Configuration
+
+The project supports environment-based log level control to avoid excessive debug/trace logs in production:
+
+### Environment Variables
+- `LOGLEVEL`: Set log level (debug, info, warn, error). Default: info for production, debug for development
+
+### Log Levels
+- `debug`: Shows all log messages (DEBUG, INFO, WARN, ERROR)
+- `info`: Shows INFO, WARN, ERROR messages (hides DEBUG)
+- `warn`: Shows WARN, ERROR messages (hides DEBUG, INFO)
+- `error`: Shows only ERROR messages (hides DEBUG, INFO, WARN)
+
+Example `.env` file:
+```
+LOGLEVEL=info
+LOGFILE_MAX_SIZE_MB=500
+LOGFILE_MAX_AGE_DAYS=7
+```
 
 ## Build & run with LevelDB
 
