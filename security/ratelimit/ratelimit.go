@@ -1,7 +1,6 @@
 package ratelimit
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -58,7 +57,7 @@ func NewRateLimiter(config *RateLimiterConfig) *RateLimiter {
 }
 
 // AllowWithContext checks if a request from the given key is allowed with context
-func (rl *RateLimiter) AllowWithContext(ctx context.Context, key string) bool {
+func (rl *RateLimiter) isAllowed(key string) bool {
 	now := time.Now()
 
 	rl.mu.Lock()
@@ -135,24 +134,17 @@ func (rl *RateLimiter) Stop() {
 
 type GlobalRateLimiter struct {
 	ipLimiter     *RateLimiter
-	walletLimiter *RateLimiter
 	abuseDetector *abuse.AbuseDetector
 	mu            sync.RWMutex
 }
 
 type GlobalRateLimiterConfig struct {
-	IPConfig     *RateLimiterConfig
-	WalletConfig *RateLimiterConfig
+	IPConfig *RateLimiterConfig
 }
 
 func DefaultGlobalConfig() *GlobalRateLimiterConfig {
 	return &GlobalRateLimiterConfig{
 		IPConfig: &RateLimiterConfig{
-			MaxRequests:     100,
-			WindowSize:      time.Second,
-			CleanupInterval: 5 * time.Minute,
-		},
-		WalletConfig: &RateLimiterConfig{
 			MaxRequests:     100,
 			WindowSize:      time.Second,
 			CleanupInterval: 5 * time.Minute,
@@ -167,11 +159,10 @@ func NewGlobalRateLimiterWithAbuseDetector(config *GlobalRateLimiterConfig, abus
 
 	return &GlobalRateLimiter{
 		ipLimiter:     NewRateLimiter(config.IPConfig),
-		walletLimiter: NewRateLimiter(config.WalletConfig),
 		abuseDetector: abuseDetector,
 	}
 }
-func (grl *GlobalRateLimiter) AllowIPWithContext(ctx context.Context, ip string) bool {
+func (grl *GlobalRateLimiter) IsIPAllowed(ip string) bool {
 	grl.mu.RLock()
 	defer grl.mu.RUnlock()
 
@@ -179,28 +170,19 @@ func (grl *GlobalRateLimiter) AllowIPWithContext(ctx context.Context, ip string)
 		logx.Warn("SECURITY", "Alert abuse spam from IP:", ip)
 	}
 
-	return grl.ipLimiter.AllowWithContext(ctx, ip)
+	return grl.ipLimiter.isAllowed(ip)
 }
 
-func (grl *GlobalRateLimiter) AllowWalletWithContext(ctx context.Context, wallet string) bool {
-	grl.mu.RLock()
-	defer grl.mu.RUnlock()
-	if grl.abuseDetector.IsWalletBlacklisted(wallet) {
-		logx.Warn("SECURITY", "Alert abuse spam from wallet:", wallet)
-	}
-
-	return grl.walletLimiter.AllowWithContext(ctx, wallet)
+func (grl *GlobalRateLimiter) TrackIPRequest(ip string) {
+	grl.abuseDetector.TrackIPRequest(ip)
 }
 
-func (grl *GlobalRateLimiter) RecordTransaction(ip, wallet string) {
-	grl.mu.RLock()
-	defer grl.mu.RUnlock()
-	grl.abuseDetector.TrackTransaction(ip, wallet)
+func (grl *GlobalRateLimiter) TrackWalletRequest(wallet string) {
+	grl.abuseDetector.TrackWalletRequest(wallet)
 }
 
 func (grl *GlobalRateLimiter) Stop() {
 	grl.mu.Lock()
 	defer grl.mu.Unlock()
 	grl.ipLimiter.Stop()
-	grl.walletLimiter.Stop()
 }

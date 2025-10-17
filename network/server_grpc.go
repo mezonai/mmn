@@ -8,25 +8,22 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
-	"github.com/mezonai/mmn/errors"
-	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/security/ratelimit"
-	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/types"
-
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
-	"github.com/mezonai/mmn/service"
+	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
-	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -56,7 +53,7 @@ type server struct {
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -71,14 +68,11 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		eventRouter:   eventRouter,
 		txTracker:     txTracker,
 		rateLimiter:   rateLimiter,
+		txSvc:         txSvc,
+		acctSvc:       acctSvc,
 	}
 
 	// Initialize shared services
-	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
-	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
-
-	rLimiter := rate.NewLimiter(rate.Limit(GRPCRateLimitRPS), GRPCRateLimitBurst)
-
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
 	}
@@ -88,12 +82,10 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 
 	if enableRateLimit {
 		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
-			rateLimitUnaryInterceptor(rLimiter),
 			securityUnaryInterceptor(rateLimiter),
 		}, unaryInterceptors...)
-		
+
 		streamInterceptors = append([]grpc.StreamServerInterceptor{
-			rateLimitStreamInterceptor(rLimiter),
 			securityStreamInterceptor(rateLimiter),
 		}, streamInterceptors...)
 	}
@@ -121,47 +113,16 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	return grpcSrv
 }
 
-func rateLimitUnaryInterceptor(lim *rate.Limiter) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if !lim.Allow() {
-			logx.Warn("GRPC RL", "rate limiter exceeded for ", info.FullMethod)
-		}
-		return handler(ctx, req)
-	}
-}
-
-func rateLimitStreamInterceptor(lim *rate.Limiter) grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if !lim.Allow() {
-			logx.Warn("GRPC RL", "rate limiter exceeded for stream ", info.FullMethod)
-		}
-		return handler(srv, ss)
-	}
-}
-
 func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		clientIP := ExtractClientIP(ctx)
-		walletAddr := "unknown"
-		isAddTx := isApplyInterceptorRateLimitAndAbuse(info.FullMethod)
-		if isAddTx {
-			walletAddr = ExtractWalletFromRequest(req)
-		}
-
+		clientIP := extractClientIP(ctx)
 		if rateLimiter != nil {
-			if !rateLimiter.AllowIPWithContext(ctx, clientIP) {
+			if !rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", info.FullMethod)
-				return nil, status.Errorf(codes.ResourceExhausted, "ip rate limit")
+				return nil, status.Errorf(codes.ResourceExhausted, "Too many requests")
 			}
-			if isAddTx {
-				if !rateLimiter.AllowWalletWithContext(ctx, walletAddr) {
-					logx.Warn("SECURITY", "Alert spam from wallet:", walletAddr, "IP:", clientIP)
-					return nil, status.Errorf(codes.ResourceExhausted, "wallet rate limit")
-				}
-			}
-
-			exception.SafeGo("RecordTransaction", func() {
-				rateLimiter.RecordTransaction(clientIP, walletAddr)
+			exception.SafeGo("TrackIPRequest", func() {
+				rateLimiter.TrackIPRequest(clientIP)
 			})
 		}
 
@@ -171,28 +132,18 @@ func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.Una
 
 func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		clientIP := ExtractClientIP(ss.Context())
+		clientIP := extractClientIP(ss.Context())
 		if rateLimiter != nil {
-			if !rateLimiter.AllowIPWithContext(ss.Context(), clientIP) {
+			if !rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "IP limited (stream):", clientIP, "Method:", info.FullMethod)
 				return status.Errorf(codes.ResourceExhausted, "ip rate limit")
 			}
+			exception.SafeGo("TrackIPRequest", func() {
+				rateLimiter.TrackIPRequest(clientIP)
+			})
 		}
 		return handler(srv, ss)
 	}
-}
-
-func isApplyInterceptorRateLimitAndAbuse(method string) bool {
-	transactionMethods := []string{
-		"/mmn.TxService/AddTx",
-	}
-
-	for _, txMethod := range transactionMethods {
-		if method == txMethod {
-			return true
-		}
-	}
-	return false
 }
 
 func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnaryServerInterceptor {

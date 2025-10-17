@@ -7,33 +7,26 @@ import (
 	"strings"
 )
 
-func parseJSONRPCMethodAndWallet(body []byte) (string, string) {
+// JSON-RPC Method name constants
+const (
+	// Transaction methods
+	MethodTxAddTx                  = "tx.addtx"
+	MethodTxGetTxByHash            = "tx.gettxbyhash"
+	MethodTxGetTransactionStatus   = "tx.gettransactionstatus"
+	MethodTxGetPendingTransactions = "tx.getpendingtransactions"
+
+	// Account methods
+	MethodAccountGetAccount          = "account.getaccount"
+	MethodAccountGetCurrentNonce     = "account.getcurrentnonce"
+	MethodAccountGetAccountByAddress = "account.getaccountbyaddress"
+)
+
+func parseJSONRPCRequest(body []byte) *jsonRPCRequest {
 	var req jsonRPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return "", "unknown"
+		return nil
 	}
-
-	if !isTxJSONRPCMethod(req.Method) {
-		return req.Method, "unknown"
-	}
-
-	var p signedTxParams
-	if len(req.Params) > 0 {
-		_ = json.Unmarshal(req.Params, &p)
-		if p.TxMsg.Sender != "" {
-			return req.Method, p.TxMsg.Sender
-		}
-	}
-	return req.Method, "unknown"
-}
-
-func isTxJSONRPCMethod(method string) bool {
-	switch strings.ToLower(method) {
-	case "tx.addtx":
-		return true
-	default:
-		return false
-	}
+	return &req
 }
 
 func extractClientIPFromRequest(r *http.Request) string {

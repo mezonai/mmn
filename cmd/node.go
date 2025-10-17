@@ -14,13 +14,13 @@ import (
 
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/security/abuse"
+	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
 	"github.com/mezonai/mmn/security/ratelimit"
-	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
@@ -59,7 +59,7 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
-	rateLimit       bool
+	enableRateLimit bool
 )
 
 var runCmd = &cobra.Command{
@@ -84,7 +84,7 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
-	runCmd.Flags().BoolVar(&rateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
+	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
 
 }
 
@@ -92,7 +92,7 @@ func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
-	logx.Info("NODE", "Running node", "with", "rate limit", rateLimit)
+	logx.Info("NODE", "Running node", "with", "rate limit", enableRateLimit)
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
@@ -382,6 +382,10 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *c
 	rateLimiter := ratelimit.NewGlobalRateLimiterWithAbuseDetector(rateLimiterConfig, abuseDetector)
 	defer rateLimiter.Stop()
 
+	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
+	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
+	acctSvc := service.NewAccountService(ld, mp, txTracker)
+
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
 		nodeConfig.GRPCAddr,
@@ -397,14 +401,13 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *c
 		eventRouter,
 		txTracker,
 		rateLimiter,
-		rateLimit,
+		enableRateLimit,
+		txSvc,
+		acctSvc,
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
-	txSvc := service.NewTxService(ld, mp, bs, txTracker)
-	acctSvc := service.NewAccountService(ld, mp, txTracker)
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter, rateLimit)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter, enableRateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {

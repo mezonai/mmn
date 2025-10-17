@@ -93,8 +93,13 @@ func (ad *AbuseDetector) IsWalletBlacklisted(wallet string) bool {
 	flag, exists := ad.flaggedWallets[wallet]
 	return exists && flag.IsBlacklisted
 }
-func (ad *AbuseDetector) TrackTransaction(ip, wallet string) {
-	ad.rateTracker.TrackTransaction(ip, wallet)
+
+func (ad *AbuseDetector) TrackIPRequest(ip string) {
+	ad.rateTracker.TrackIPRequest(ip)
+}
+
+func (ad *AbuseDetector) TrackWalletRequest(wallet string) {
+	ad.rateTracker.TrackWalletRequest(wallet)
 }
 
 func (ad *AbuseDetector) startBackgroundMonitoring() {
@@ -107,9 +112,6 @@ func (ad *AbuseDetector) startBackgroundMonitoring() {
 }
 
 func (ad *AbuseDetector) performBackgroundChecks() {
-	ad.mu.Lock()
-	defer ad.mu.Unlock()
-
 	now := time.Now()
 
 	for ip := range ad.rateTracker.GetAllIPs() {

@@ -29,12 +29,15 @@ func NewRateTracker(config *RateConfig) *RateTracker {
 	return rt
 }
 
-func (rt *RateTracker) TrackTransaction(ip, wallet string) {
+func (rt *RateTracker) TrackIPRequest(ip string) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-
 	rt.trackRequest(rt.ipRates, ip)
+}
 
+func (rt *RateTracker) TrackWalletRequest(wallet string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
 	rt.trackRequest(rt.walletRates, wallet)
 }
 

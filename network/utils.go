@@ -4,11 +4,10 @@ import (
 	"context"
 	"net"
 
-	pb "github.com/mezonai/mmn/proto"
 	"google.golang.org/grpc/peer"
 )
 
-func ExtractClientIP(ctx context.Context) string {
+func extractClientIP(ctx context.Context) string {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
 		return "unknown"
@@ -32,14 +31,4 @@ func ExtractClientIP(ctx context.Context) string {
 	}
 
 	return host
-}
-
-func ExtractWalletFromRequest(req interface{}) string {
-	switch r := req.(type) {
-	case *pb.SignedTxMsg:
-		if r.TxMsg != nil {
-			return r.TxMsg.Sender
-		}
-	}
-	return "unknown"
 }

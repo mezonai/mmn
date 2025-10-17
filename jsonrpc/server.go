@@ -174,12 +174,12 @@ type getAccountByAddressResponse struct {
 // --- Server ---
 
 type Server struct {
-	addr        	string
-	txSvc       	interfaces.TxService
-	acctSvc     	interfaces.AccountService
-	corsConfig  	CORSConfig
+	addr            string
+	txSvc           interfaces.TxService
+	acctSvc         interfaces.AccountService
+	corsConfig      CORSConfig
 	enableRateLimit bool
-	rateLimiter 	*ratelimit.GlobalRateLimiter
+	rateLimiter     *ratelimit.GlobalRateLimiter
 }
 
 type CORSConfig struct {
@@ -200,7 +200,7 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 			AllowedHeaders: []string{},
 			MaxAge:         0,
 		},
-		rateLimiter: rateLimiter,
+		rateLimiter:     rateLimiter,
 		enableRateLimit: enableRateLimit,
 	}
 }
@@ -215,7 +215,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -224,22 +224,20 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-			method, wallet := parseJSONRPCMethodAndWallet(bodyBytes)
 			clientIP := extractClientIPFromRequest(r)
-			if !s.rateLimiter.AllowIPWithContext(r.Context(), clientIP) {
-				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", method)
-				http.Error(w, "ip rate limit", http.StatusTooManyRequests)
+			req := parseJSONRPCRequest(bodyBytes)
+			if req == nil {
+				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-			if isTxJSONRPCMethod(method) {
-				if !s.rateLimiter.AllowWalletWithContext(r.Context(), wallet) {
-					logx.Warn("SECURITY", "Alert spam from wallet:", wallet, "IP:", clientIP)
-					http.Error(w, "wallet rate limit", http.StatusTooManyRequests)
-					return
-				}
+
+			if !s.rateLimiter.IsIPAllowed(clientIP) {
+				logx.Warn("SECURITY", "IP rate limit exceeded:", clientIP, "Method:", req.Method)
+				http.Error(w, "Too many requests", http.StatusTooManyRequests)
+				return
 			}
-			exception.SafeGo("RecordTransaction", func() {
-				s.rateLimiter.RecordTransaction(clientIP, wallet)
+			exception.SafeGo("TrackIPRequest", func() {
+				s.rateLimiter.TrackIPRequest(clientIP)
 			})
 		}
 		jh.ServeHTTP(w, r)
@@ -261,7 +259,7 @@ func (s *Server) SetCORSConfig(config CORSConfig) {
 // Build jrpc2 method map
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
-		"tx.addtx": handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
+		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
 			res, err := s.rpcAddTx(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -271,7 +269,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*addTxResponse), nil
 		}),
-		"tx.gettxbyhash": handler.New(func(ctx context.Context, p getTxByHashRequest) (*getTxByHashResponse, error) {
+		MethodTxGetTxByHash: handler.New(func(ctx context.Context, p getTxByHashRequest) (*getTxByHashResponse, error) {
 			res, err := s.rpcGetTxByHash(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -281,7 +279,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getTxByHashResponse), nil
 		}),
-		"tx.gettransactionstatus": handler.New(func(ctx context.Context, p getTxStatusRequest) (*txStatusInfo, error) {
+		MethodTxGetTransactionStatus: handler.New(func(ctx context.Context, p getTxStatusRequest) (*txStatusInfo, error) {
 			res, err := s.rpcGetTransactionStatus(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -291,7 +289,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*txStatusInfo), nil
 		}),
-		"tx.getpendingtransactions": handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
+		MethodTxGetPendingTransactions: handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
 			res, err := s.rpcGetPendingTransactions()
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -301,7 +299,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getPendingTxsResponse), nil
 		}),
-		"account.getaccount": handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
+		MethodAccountGetAccount: handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
 			res, err := s.rpcGetAccount(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -311,7 +309,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getAccountResponse), nil
 		}),
-		"account.getcurrentnonce": handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
+		MethodAccountGetCurrentNonce: handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
 			res, err := s.rpcGetCurrentNonce(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -321,7 +319,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getCurrentNonceResponse), nil
 		}),
-		"account.getaccountbyaddress": handler.New(func(ctx context.Context, p getAccountByAddressRequest) (*getAccountByAddressResponse, error) {
+		MethodAccountGetAccountByAddress: handler.New(func(ctx context.Context, p getAccountByAddressRequest) (*getAccountByAddressResponse, error) {
 			res, err := s.rpcGetAccountByAddress(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
