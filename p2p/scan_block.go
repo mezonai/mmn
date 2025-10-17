@@ -138,27 +138,6 @@ func (ln *Libp2pNetwork) requestMissingBlocks(missingSlots []uint64) {
 	logx.Info("NETWORK:SCAN", "Completed processing all ")
 }
 
-func (ln *Libp2pNetwork) shouldScanForMissingBlocks(bs store.BlockStore) bool {
-	latest := bs.GetLatestFinalizedSlot()
-	if latest < 1 {
-		return false
-	}
-
-	ln.scanMu.RLock()
-	lastScanned := ln.lastScannedSlot
-	ln.scanMu.RUnlock()
-
-	if lastScanned == 0 {
-		return true
-	}
-
-	if latest > lastScanned {
-		return true
-	}
-
-	return false
-}
-
 func (ln *Libp2pNetwork) checkRetryMissingBlocks(bs store.BlockStore) {
 	ln.missingBlocksMu.Lock()
 	defer ln.missingBlocksMu.Unlock()
