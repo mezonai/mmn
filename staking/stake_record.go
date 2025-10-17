@@ -7,34 +7,41 @@ import (
 )
 
 type StakeRecord struct {
-	Address        [32]byte
-	wallet         *wallet.Wallet
-	Validator      [32]byte
-	TotalStake     uint64
-	CreatedAt      time.Time
-	APR            uint64
-	LockPeriod     time.Duration
-	StartTime      time.Time
-	LastClaimTime  time.Time
-	UnbondingUntil time.Time
-	Status         StakeStatus
+	Address          [32]byte
+	wallet           *wallet.Wallet
+	Validator        [32]byte
+	TotalStake       uint64
+	CreatedAt        time.Time
+	APR              uint64
+	LockPeriod       time.Duration
+	ActivatedAt      time.Time
+	DeactivatedAt    time.Time
+	ExpiredAt        time.Time
+	Status           StakeStatus
+	RewardAccrued    uint64
+	LastRewardUpdate time.Time
 }
 
 func (stakeRecord *StakeRecord) Expired() {
 	// unlock when the time wait unlock end
 	// need to check correct time
-	stakeRecord.Status = StatusExpired
-}
-func (stakeRecord *StakeRecord) canUnStake() bool {
-	return stakeRecord.Status == StatusActive
+	stakeRecord.Status = StakeExpired
 }
 
-func (stakeRecord *StakeRecord) canWithdrawn() bool {
-	return stakeRecord.Status == StatusUnlocked
+func (stakeRecord *StakeRecord) CanUnStake() bool {
+	return stakeRecord.Status == StakeActive
+}
+
+func (stakeRecord *StakeRecord) CanStaking() bool {
+	return stakeRecord.Status == StakePending
+}
+
+func (stakeRecord *StakeRecord) CanClaim() bool {
+	return stakeRecord.Status == StakeInactive
 }
 
 func (stakeRecord *StakeRecord) UnLocked() {
 	// unlock when the time wait unlock end
 	// need to check correct time
-	stakeRecord.Status = StatusUnlocked
+	stakeRecord.Status = StakeInactive
 }

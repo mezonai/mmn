@@ -10,9 +10,10 @@ const (
 type StakeStatus string
 
 const (
-	StatusActive    StakeStatus = "active"
-	StatusUnbonding StakeStatus = "unbonding"
-	StatusUnlocked  StakeStatus = "unlocked"
-	StatusWithdrawn StakeStatus = "withdrawn"
-	StatusExpired   StakeStatus = "expired"
+	StakePending      StakeStatus = "Pending"
+	StakeActive       StakeStatus = "Active"
+	StakeDeactivating StakeStatus = "Deactivating"
+	StakeInactive     StakeStatus = "Inactive"
+	StakeWithdrawned  StakeStatus = "Withdrawned"
+	StakeExpired      StakeStatus = "Expired"
 )
