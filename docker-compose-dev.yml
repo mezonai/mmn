@@ -27,7 +27,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --rate-limit=false --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -56,7 +56,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --public-ip "127.0.0.1" --p2p-port "9092" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --public-ip "127.0.0.1" --p2p-port "9092" --rate-limit=false --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -84,7 +84,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --public-ip "127.0.0.1" --p2p-port "9093" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --rate-limit=false --public-ip "127.0.0.1" --p2p-port "9093" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode

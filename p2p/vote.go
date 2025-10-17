@@ -64,7 +64,6 @@ func (ln *Libp2pNetwork) ProcessVote(bs store.BlockStore, ld *ledger.Ledger, mp 
 		logx.Error("VOTE", "Failed to add vote: ", err)
 		return err
 	}
-
 	if existed := bs.HasCompleteBlock(vote.Slot); !existed {
 		logx.Warn("VOTE", "Received vote from network: slot= ", vote.Slot, ",voter= ", vote.VoterID, " but dont have block")
 		return nil
