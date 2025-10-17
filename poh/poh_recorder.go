@@ -156,13 +156,8 @@ func (r *PohRecorder) CurrentSlot() uint64 {
 func HashTransactions(txs []*transaction.Transaction) [32]byte {
 	var all []byte
 	for _, tx := range txs {
-		txBytes := tx.Bytes()
-		lengthBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(lengthBytes, uint32(len(txBytes)))
-		all = append(all, lengthBytes...)
-		all = append(all, txBytes...)
+		all = append(all, tx.Bytes()...)
 	}
-	// Apply domain separation for transaction hashes
 	return sha256.Sum256(all)
 }
 
