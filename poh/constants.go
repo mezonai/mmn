@@ -8,7 +8,7 @@ const (
 	MAX_ENTRIES_PER_SLOT = 100
 
 	// This prevents DoS attacks with extremely large transaction batches
-	MAX_TRANSACTIONS_PER_ENTRY = 100
+	MAX_TRANSACTIONS_PER_ENTRY = 6000
 
 	// This prevents memory bombs with extremely large entries
 	MAX_ENTRY_SIZE = 1024 * 1024
