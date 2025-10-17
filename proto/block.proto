@@ -21,15 +21,6 @@ message Block {
   repeated TransactionData transaction_data = 8;
 }
 
-message BroadcastResponse {
-  bool ok      = 1;
-  string error = 2;
-}
-
-message SubscribeRequest {
-  string follower_id = 1;
-}
-
 message EmptyParams {}
 
 message GetBlockByNumberRequest {
@@ -69,8 +60,6 @@ message GetBlockByRangeResponse {
 }
 
 service BlockService {
-  rpc Broadcast(Block) returns (BroadcastResponse);
-  rpc Subscribe(SubscribeRequest) returns (stream Block);
   rpc GetBlockNumber(EmptyParams) returns (GetBlockNumberResponse);
   rpc GetBlockByNumber(GetBlockByNumberRequest) returns (GetBlockByNumberResponse);
   rpc GetBlockByRange(GetBlockByRangeRequest) returns (GetBlockByRangeResponse);

@@ -32,7 +32,6 @@ import (
 
 type server struct {
 	pb.UnimplementedBlockServiceServer
-	pb.UnimplementedVoteServiceServer
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
@@ -75,7 +74,6 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
-	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
