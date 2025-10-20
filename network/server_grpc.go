@@ -551,8 +551,3 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 		Errors:      errors,
 	}, nil
 }
-
-// GetAccountByAddress is a convenience RPC under AccountService to fetch account info
-func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
-	return s.acctSvc.GetAccountByAddress(ctx, in)
-}
