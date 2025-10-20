@@ -20,7 +20,6 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	AccountService_GetAccount_FullMethodName      = "/mmn.AccountService/GetAccount"
-	AccountService_GetTxHistory_FullMethodName    = "/mmn.AccountService/GetTxHistory"
 	AccountService_GetCurrentNonce_FullMethodName = "/mmn.AccountService/GetCurrentNonce"
 )
 
@@ -29,7 +28,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AccountServiceClient interface {
 	GetAccount(ctx context.Context, in *GetAccountRequest, opts ...grpc.CallOption) (*GetAccountResponse, error)
-	GetTxHistory(ctx context.Context, in *GetTxHistoryRequest, opts ...grpc.CallOption) (*GetTxHistoryResponse, error)
 	GetCurrentNonce(ctx context.Context, in *GetCurrentNonceRequest, opts ...grpc.CallOption) (*GetCurrentNonceResponse, error)
 }
 
@@ -51,16 +49,6 @@ func (c *accountServiceClient) GetAccount(ctx context.Context, in *GetAccountReq
 	return out, nil
 }
 
-func (c *accountServiceClient) GetTxHistory(ctx context.Context, in *GetTxHistoryRequest, opts ...grpc.CallOption) (*GetTxHistoryResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetTxHistoryResponse)
-	err := c.cc.Invoke(ctx, AccountService_GetTxHistory_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *accountServiceClient) GetCurrentNonce(ctx context.Context, in *GetCurrentNonceRequest, opts ...grpc.CallOption) (*GetCurrentNonceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCurrentNonceResponse)
@@ -76,7 +64,6 @@ func (c *accountServiceClient) GetCurrentNonce(ctx context.Context, in *GetCurre
 // for forward compatibility.
 type AccountServiceServer interface {
 	GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error)
-	GetTxHistory(context.Context, *GetTxHistoryRequest) (*GetTxHistoryResponse, error)
 	GetCurrentNonce(context.Context, *GetCurrentNonceRequest) (*GetCurrentNonceResponse, error)
 	mustEmbedUnimplementedAccountServiceServer()
 }
@@ -90,9 +77,6 @@ type UnimplementedAccountServiceServer struct{}
 
 func (UnimplementedAccountServiceServer) GetAccount(context.Context, *GetAccountRequest) (*GetAccountResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAccount not implemented")
-}
-func (UnimplementedAccountServiceServer) GetTxHistory(context.Context, *GetTxHistoryRequest) (*GetTxHistoryResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTxHistory not implemented")
 }
 func (UnimplementedAccountServiceServer) GetCurrentNonce(context.Context, *GetCurrentNonceRequest) (*GetCurrentNonceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCurrentNonce not implemented")
@@ -136,24 +120,6 @@ func _AccountService_GetAccount_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AccountService_GetTxHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTxHistoryRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AccountServiceServer).GetTxHistory(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AccountService_GetTxHistory_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AccountServiceServer).GetTxHistory(ctx, req.(*GetTxHistoryRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _AccountService_GetCurrentNonce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetCurrentNonceRequest)
 	if err := dec(in); err != nil {
@@ -182,10 +148,6 @@ var AccountService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAccount",
 			Handler:    _AccountService_GetAccount_Handler,
-		},
-		{
-			MethodName: "GetTxHistory",
-			Handler:    _AccountService_GetTxHistory_Handler,
 		},
 		{
 			MethodName: "GetCurrentNonce",

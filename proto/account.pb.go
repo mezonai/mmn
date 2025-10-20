@@ -70,7 +70,7 @@ func (x TxMeta_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TxMeta_Status.Descriptor instead.
 func (TxMeta_Status) EnumDescriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{3, 0}
+	return file_account_proto_rawDescGZIP(), []int{2, 0}
 }
 
 type GetAccountRequest struct {
@@ -185,74 +185,6 @@ func (x *GetAccountResponse) GetDecimals() uint32 {
 	return 0
 }
 
-type GetTxHistoryRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
-	Limit         uint32                 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        uint32                 `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
-	Filter        uint32                 `protobuf:"varint,4,opt,name=filter,proto3" json:"filter,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetTxHistoryRequest) Reset() {
-	*x = GetTxHistoryRequest{}
-	mi := &file_account_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetTxHistoryRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetTxHistoryRequest) ProtoMessage() {}
-
-func (x *GetTxHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetTxHistoryRequest.ProtoReflect.Descriptor instead.
-func (*GetTxHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *GetTxHistoryRequest) GetAddress() string {
-	if x != nil {
-		return x.Address
-	}
-	return ""
-}
-
-func (x *GetTxHistoryRequest) GetLimit() uint32 {
-	if x != nil {
-		return x.Limit
-	}
-	return 0
-}
-
-func (x *GetTxHistoryRequest) GetOffset() uint32 {
-	if x != nil {
-		return x.Offset
-	}
-	return 0
-}
-
-func (x *GetTxHistoryRequest) GetFilter() uint32 {
-	if x != nil {
-		return x.Filter
-	}
-	return 0
-}
-
 type TxMeta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Sender        string                 `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`       // sender address
@@ -268,7 +200,7 @@ type TxMeta struct {
 
 func (x *TxMeta) Reset() {
 	*x = TxMeta{}
-	mi := &file_account_proto_msgTypes[3]
+	mi := &file_account_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -280,7 +212,7 @@ func (x *TxMeta) String() string {
 func (*TxMeta) ProtoMessage() {}
 
 func (x *TxMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[3]
+	mi := &file_account_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -293,7 +225,7 @@ func (x *TxMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxMeta.ProtoReflect.Descriptor instead.
 func (*TxMeta) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{3}
+	return file_account_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *TxMeta) GetSender() string {
@@ -345,66 +277,6 @@ func (x *TxMeta) GetExtraInfo() string {
 	return ""
 }
 
-type GetTxHistoryResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Total         uint32                 `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
-	Txs           []*TxMeta              `protobuf:"bytes,2,rep,name=txs,proto3" json:"txs,omitempty"`
-	Decimals      uint32                 `protobuf:"varint,3,opt,name=decimals,proto3" json:"decimals,omitempty"` // Number of fractional digits for amount formatting
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GetTxHistoryResponse) Reset() {
-	*x = GetTxHistoryResponse{}
-	mi := &file_account_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GetTxHistoryResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GetTxHistoryResponse) ProtoMessage() {}
-
-func (x *GetTxHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GetTxHistoryResponse.ProtoReflect.Descriptor instead.
-func (*GetTxHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *GetTxHistoryResponse) GetTotal() uint32 {
-	if x != nil {
-		return x.Total
-	}
-	return 0
-}
-
-func (x *GetTxHistoryResponse) GetTxs() []*TxMeta {
-	if x != nil {
-		return x.Txs
-	}
-	return nil
-}
-
-func (x *GetTxHistoryResponse) GetDecimals() uint32 {
-	if x != nil {
-		return x.Decimals
-	}
-	return 0
-}
-
 type GetCurrentNonceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
@@ -415,7 +287,7 @@ type GetCurrentNonceRequest struct {
 
 func (x *GetCurrentNonceRequest) Reset() {
 	*x = GetCurrentNonceRequest{}
-	mi := &file_account_proto_msgTypes[5]
+	mi := &file_account_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -427,7 +299,7 @@ func (x *GetCurrentNonceRequest) String() string {
 func (*GetCurrentNonceRequest) ProtoMessage() {}
 
 func (x *GetCurrentNonceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[5]
+	mi := &file_account_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +312,7 @@ func (x *GetCurrentNonceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentNonceRequest.ProtoReflect.Descriptor instead.
 func (*GetCurrentNonceRequest) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{5}
+	return file_account_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetCurrentNonceRequest) GetAddress() string {
@@ -469,7 +341,7 @@ type GetCurrentNonceResponse struct {
 
 func (x *GetCurrentNonceResponse) Reset() {
 	*x = GetCurrentNonceResponse{}
-	mi := &file_account_proto_msgTypes[6]
+	mi := &file_account_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +353,7 @@ func (x *GetCurrentNonceResponse) String() string {
 func (*GetCurrentNonceResponse) ProtoMessage() {}
 
 func (x *GetCurrentNonceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_account_proto_msgTypes[6]
+	mi := &file_account_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +366,7 @@ func (x *GetCurrentNonceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentNonceResponse.ProtoReflect.Descriptor instead.
 func (*GetCurrentNonceResponse) Descriptor() ([]byte, []int) {
-	return file_account_proto_rawDescGZIP(), []int{6}
+	return file_account_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetCurrentNonceResponse) GetAddress() string {
@@ -536,12 +408,7 @@ const file_account_proto_rawDesc = "" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x18\n" +
 	"\abalance\x18\x02 \x01(\tR\abalance\x12\x14\n" +
 	"\x05nonce\x18\x03 \x01(\x04R\x05nonce\x12\x1a\n" +
-	"\bdecimals\x18\x04 \x01(\rR\bdecimals\"u\n" +
-	"\x13GetTxHistoryRequest\x12\x18\n" +
-	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\rR\x05limit\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\rR\x06offset\x12\x16\n" +
-	"\x06filter\x18\x04 \x01(\rR\x06filter\"\x96\x02\n" +
+	"\bdecimals\x18\x04 \x01(\rR\bdecimals\"\x96\x02\n" +
 	"\x06TxMeta\x12\x16\n" +
 	"\x06sender\x18\x01 \x01(\tR\x06sender\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
@@ -556,11 +423,7 @@ const file_account_proto_rawDesc = "" +
 	"\tCONFIRMED\x10\x01\x12\r\n" +
 	"\tFINALIZED\x10\x02\x12\n" +
 	"\n" +
-	"\x06FAILED\x10\x03\"g\n" +
-	"\x14GetTxHistoryResponse\x12\x14\n" +
-	"\x05total\x18\x01 \x01(\rR\x05total\x12\x1d\n" +
-	"\x03txs\x18\x02 \x03(\v2\v.mmn.TxMetaR\x03txs\x12\x1a\n" +
-	"\bdecimals\x18\x03 \x01(\rR\bdecimals\"D\n" +
+	"\x06FAILED\x10\x03\"D\n" +
 	"\x16GetCurrentNonceRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x10\n" +
 	"\x03tag\x18\x02 \x01(\tR\x03tag\"q\n" +
@@ -568,11 +431,10 @@ const file_account_proto_rawDesc = "" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\x04R\x05nonce\x12\x10\n" +
 	"\x03tag\x18\x03 \x01(\tR\x03tag\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error2\xe2\x01\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error2\x9d\x01\n" +
 	"\x0eAccountService\x12=\n" +
 	"\n" +
-	"GetAccount\x12\x16.mmn.GetAccountRequest\x1a\x17.mmn.GetAccountResponse\x12C\n" +
-	"\fGetTxHistory\x12\x18.mmn.GetTxHistoryRequest\x1a\x19.mmn.GetTxHistoryResponse\x12L\n" +
+	"GetAccount\x12\x16.mmn.GetAccountRequest\x1a\x17.mmn.GetAccountResponse\x12L\n" +
 	"\x0fGetCurrentNonce\x12\x1b.mmn.GetCurrentNonceRequest\x1a\x1c.mmn.GetCurrentNonceResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
 
 var (
@@ -588,31 +450,26 @@ func file_account_proto_rawDescGZIP() []byte {
 }
 
 var file_account_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_account_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_account_proto_goTypes = []any{
 	(TxMeta_Status)(0),              // 0: mmn.TxMeta.Status
 	(*GetAccountRequest)(nil),       // 1: mmn.GetAccountRequest
 	(*GetAccountResponse)(nil),      // 2: mmn.GetAccountResponse
-	(*GetTxHistoryRequest)(nil),     // 3: mmn.GetTxHistoryRequest
-	(*TxMeta)(nil),                  // 4: mmn.TxMeta
-	(*GetTxHistoryResponse)(nil),    // 5: mmn.GetTxHistoryResponse
-	(*GetCurrentNonceRequest)(nil),  // 6: mmn.GetCurrentNonceRequest
-	(*GetCurrentNonceResponse)(nil), // 7: mmn.GetCurrentNonceResponse
+	(*TxMeta)(nil),                  // 3: mmn.TxMeta
+	(*GetCurrentNonceRequest)(nil),  // 4: mmn.GetCurrentNonceRequest
+	(*GetCurrentNonceResponse)(nil), // 5: mmn.GetCurrentNonceResponse
 }
 var file_account_proto_depIdxs = []int32{
 	0, // 0: mmn.TxMeta.status:type_name -> mmn.TxMeta.Status
-	4, // 1: mmn.GetTxHistoryResponse.txs:type_name -> mmn.TxMeta
-	1, // 2: mmn.AccountService.GetAccount:input_type -> mmn.GetAccountRequest
-	3, // 3: mmn.AccountService.GetTxHistory:input_type -> mmn.GetTxHistoryRequest
-	6, // 4: mmn.AccountService.GetCurrentNonce:input_type -> mmn.GetCurrentNonceRequest
-	2, // 5: mmn.AccountService.GetAccount:output_type -> mmn.GetAccountResponse
-	5, // 6: mmn.AccountService.GetTxHistory:output_type -> mmn.GetTxHistoryResponse
-	7, // 7: mmn.AccountService.GetCurrentNonce:output_type -> mmn.GetCurrentNonceResponse
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // 1: mmn.AccountService.GetAccount:input_type -> mmn.GetAccountRequest
+	4, // 2: mmn.AccountService.GetCurrentNonce:input_type -> mmn.GetCurrentNonceRequest
+	2, // 3: mmn.AccountService.GetAccount:output_type -> mmn.GetAccountResponse
+	5, // 4: mmn.AccountService.GetCurrentNonce:output_type -> mmn.GetCurrentNonceResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_account_proto_init() }
@@ -626,7 +483,7 @@ func file_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_account_proto_rawDesc), len(file_account_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -14,13 +14,6 @@ message GetAccountResponse {
   uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
-message GetTxHistoryRequest {
-  string address = 1;
-  uint32 limit   = 2;
-  uint32 offset  = 3;
-  uint32 filter  = 4;
-}
-
 message TxMeta {
   string sender    = 1; // sender address
   string recipient = 2; // recipient address
@@ -35,12 +28,6 @@ message TxMeta {
   }
   Status status = 6;
   string extra_info = 7;
-}
-
-message GetTxHistoryResponse {
-  uint32 total = 1;
-  repeated TxMeta txs = 2;
-  uint32 decimals = 3; // Number of fractional digits for amount formatting
 }
 
 message GetCurrentNonceRequest {
@@ -58,6 +45,5 @@ message GetCurrentNonceResponse {
 
 service AccountService {
   rpc GetAccount     (GetAccountRequest)     returns (GetAccountResponse);
-  rpc GetTxHistory   (GetTxHistoryRequest)   returns (GetTxHistoryResponse);
   rpc GetCurrentNonce (GetCurrentNonceRequest) returns (GetCurrentNonceResponse);
 }

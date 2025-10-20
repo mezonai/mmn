@@ -34,21 +34,3 @@ func FromProtoAccount(acc *proto.GetAccountResponse) Account {
 		Nonce:   acc.Nonce,
 	}
 }
-
-func FromProtoTxHistory(res *proto.GetTxHistoryResponse) TxHistoryResponse {
-	txs := make([]*TxMetaResponse, len(res.Txs))
-	for i, tx := range res.Txs {
-		txs[i] = &TxMetaResponse{
-			Sender:    tx.Sender,
-			Recipient: tx.Recipient,
-			Amount:    utils.Uint256FromString(tx.Amount),
-			Nonce:     tx.Nonce,
-			Timestamp: tx.Timestamp,
-			Status:    TxMeta_Status(tx.Status),
-		}
-	}
-	return TxHistoryResponse{
-		Total: res.Total,
-		Txs:   txs,
-	}
-}
