@@ -139,9 +139,10 @@ func (c *MmnClient) AddToBlacklist(ctx context.Context, sign SignedBL) error {
 		return fmt.Errorf("blacklist client not initialized")
 	}
 	resp, err := c.blClient.Add(ctx, &mmnpb.SignedBL{
-		Address: sign.Address,
-		Reason:  sign.Reason,
-		Sig:     sign.Sig,
+		AdminAddress: sign.AdminAddress,
+		Address:      sign.Address,
+		Reason:       sign.Reason,
+		Sig:          sign.Sig,
 	})
 	if err != nil {
 		return err
@@ -161,8 +162,9 @@ func (c *MmnClient) RemoveFromBlacklist(ctx context.Context, sign SignedBL) erro
 		return fmt.Errorf("blacklist client not initialized")
 	}
 	resp, err := c.blClient.Remove(ctx, &mmnpb.SignedBL{
-		Address: sign.Address,
-		Sig:     sign.Sig,
+		AdminAddress: sign.AdminAddress,
+		Address:      sign.Address,
+		Sig:          sign.Sig,
 	})
 	if err != nil {
 		return err
@@ -179,7 +181,8 @@ func (c *MmnClient) ListBlacklist(ctx context.Context, sign SignedBL) (map[strin
 		return nil, fmt.Errorf("blacklist client not initialized")
 	}
 	resp, err := c.blClient.List(ctx, &mmnpb.SignedBL{
-		Sig: sign.Sig,
+		AdminAddress: sign.AdminAddress,
+		Sig:          sign.Sig,
 	})
 
 	if err != nil {

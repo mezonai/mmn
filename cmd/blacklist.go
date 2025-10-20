@@ -33,9 +33,48 @@ var blacklistAddCmd = &cobra.Command{
 			return fmt.Errorf("--address is required")
 		}
 		if blNodeURL == "" {
-			blNodeURL = transferConfig.NodeURL
+			return fmt.Errorf("--node url is required")
 		}
 		// Load admin private key for signing
+		privKeyStr, err := loadBLPrivateKey()
+		if err != nil {
+			return err
+		}
+		adminAddr, adminPriv, err := parseBLPrivateKey(privKeyStr)
+		if err != nil {
+			return err
+		}
+		client, err := mmn.NewClient(mmn.Config{Endpoint: blNodeURL})
+		if err != nil {
+			fmt.Printf("add blacklist error: %s", err.Error())
+			return err
+		}
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		message := fmt.Sprintf("%s|%s", adminAddr, blAddr)
+		sig := ed25519.Sign(adminPriv, []byte(message))
+		signed := mmn.SignedBL{
+			AdminAddress: adminAddr,
+			Address:      blAddr,
+			Reason:       blReason,
+			Sig:          sig,
+		}
+		if err := client.AddToBlacklist(ctx, signed); err != nil {
+			return err
+		}
+		fmt.Printf("Blacklisted %s (reason: %s) by admin %s\n", blAddr, blReason, adminAddr)
+		return nil
+	},
+}
+
+var blacklistListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List blacklisted addresses",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if blNodeURL == "" {
+			return fmt.Errorf("--node url is required")
+		}
 		privKeyStr, err := loadBLPrivateKey()
 		if err != nil {
 			return err
@@ -51,41 +90,15 @@ var blacklistAddCmd = &cobra.Command{
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		// Build and sign message, then send signature via SignedBL
-		// Message format must match server verification: "<admin_address>|add|<address>|<reason>"
-		message := fmt.Sprintf("%s|add|%s|%s", adminAddr, blAddr, blReason)
+		message := fmt.Sprintf("%s|", adminAddr)
 		sig := ed25519.Sign(adminPriv, []byte(message))
 		signed := mmn.SignedBL{
 			AdminAddress: adminAddr,
-			Address:      blAddr,
-			Reason:       blReason,
 			Sig:          sig,
 		}
-		if err := client.AddToBlacklist(ctx, signed); err != nil {
-			return err
-		}
-		fmt.Println("OK")
-		return nil
-	},
-}
-
-var blacklistListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List blacklisted addresses",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if blNodeURL == "" {
-			blNodeURL = transferConfig.NodeURL
-		}
-		client, err := mmn.NewClient(mmn.Config{Endpoint: blNodeURL})
+		entries, err := client.ListBlacklist(ctx, signed)
 		if err != nil {
-			return err
-		}
-		defer client.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		// If the server requires auth for listing, pass an empty or signed payload. Here we pass empty.
-		entries, err := client.ListBlacklist(ctx, mmn.SignedBL{})
-		if err != nil {
+			fmt.Printf("get blacklist error: %s", err.Error())
 			return err
 		}
 		if len(entries) == 0 {
@@ -125,9 +138,7 @@ var blacklistRemoveCmd = &cobra.Command{
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		// Sign remove as well
-		// Message format must match server verification: "<admin_address>|remove|<address>|remove"
-		message := fmt.Sprintf("%s|remove|%s|%s", adminAddr, blAddr, "remove")
+		message := fmt.Sprintf("%s|%s", adminAddr, blAddr)
 		sig := ed25519.Sign(adminPriv, []byte(message))
 		signed := mmn.SignedBL{
 			AdminAddress: adminAddr,
@@ -136,9 +147,10 @@ var blacklistRemoveCmd = &cobra.Command{
 			Sig:          sig,
 		}
 		if err := client.RemoveFromBlacklist(ctx, signed); err != nil {
+			fmt.Printf("remove blacklist error: %s", err.Error())
 			return err
 		}
-		fmt.Println("OK")
+		fmt.Printf("Removed %s from blacklist by admin %s\n", blAddr, adminAddr)
 		return nil
 	},
 }
@@ -154,6 +166,8 @@ func init() {
 	blacklistAddCmd.Flags().StringVar(&blPrivKey, "private-key", "", "admin private key in hex")
 	blacklistAddCmd.Flags().StringVar(&blPrivKeyFile, "private-key-file", "", "admin private key file (hex)")
 	blacklistListCmd.Flags().StringVar(&blNodeURL, "node-url", "localhost:9001", "gRPC node URL (host:port)")
+	blacklistListCmd.Flags().StringVar(&blPrivKey, "private-key", "", "admin private key in hex")
+	blacklistListCmd.Flags().StringVar(&blPrivKeyFile, "private-key-file", "", "admin private key file (hex)")
 	blacklistRemoveCmd.Flags().StringVar(&blNodeURL, "node-url", "localhost:9001", "gRPC node URL (host:port)")
 	blacklistRemoveCmd.Flags().StringVar(&blAddr, "address", "", "address to remove from blacklist")
 	blacklistRemoveCmd.Flags().StringVar(&blPrivKey, "private-key", "", "admin private key in hex")
@@ -175,7 +189,6 @@ func loadBLPrivateKey() (string, error) {
 	return string(b), nil
 }
 
-// parseBLPrivateKey converts a hex private key to ed25519 key and returns base58 pubkey string
 func parseBLPrivateKey(privKeyHex string) (string, ed25519.PrivateKey, error) {
 	s := strings.TrimSpace(privKeyHex)
 	addr, pk, err := parsePrivateKey(s)
