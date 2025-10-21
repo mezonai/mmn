@@ -31,7 +31,7 @@ var currentLogLevel LogLevel = INFO
 
 func InitWithOutput(output io.Writer) {
 	logger.SetOutput(output)
-	logLevelEnv := os.Getenv("LOG_LEVEL")
+	logLevelEnv := os.Getenv("LOGLEVEL")
 	if logLevelEnv != "" {
 		SetLogLevelFromString(logLevelEnv)
 	} else {

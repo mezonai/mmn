@@ -319,16 +319,6 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getCurrentNonceResponse), nil
 		}),
-		MethodAccountGetAccountByAddress: handler.New(func(ctx context.Context, p getAccountByAddressRequest) (*getAccountByAddressResponse, error) {
-			res, err := s.rpcGetAccountByAddress(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*getAccountByAddressResponse), nil
-		}),
 	}
 }
 
@@ -441,23 +431,6 @@ func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpc
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
 	return &getCurrentNonceResponse{Address: resp.Address, Nonce: resp.Nonce, Tag: resp.Tag, Error: resp.Error}, nil
-}
-
-func (s *Server) rpcGetAccountByAddress(p getAccountByAddressRequest) (interface{}, *rpcError) {
-	if p.Address == "" {
-		return &getAccountByAddressResponse{Error: "empty address"}, nil
-	}
-	resp, err := s.acctSvc.GetAccountByAddress(context.Background(), &pb.GetAccountByAddressRequest{Address: p.Address})
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	if resp.Error != "" {
-		return &getAccountByAddressResponse{Error: resp.Error}, nil
-	}
-	if resp.Account == nil {
-		return &getAccountByAddressResponse{Error: fmt.Sprintf("account %s not found", p.Address)}, nil
-	}
-	return &getAccountByAddressResponse{Account: &accountData{Address: resp.Account.Address, Balance: resp.Account.Balance, Nonce: resp.Account.Nonce}}, nil
 }
 
 // --- Helpers ---

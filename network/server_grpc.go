@@ -31,7 +31,6 @@ import (
 
 type server struct {
 	pb.UnimplementedBlockServiceServer
-	pb.UnimplementedVoteServiceServer
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
@@ -97,7 +96,6 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
 	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
-	pb.RegisterVoteServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
@@ -637,9 +635,4 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 		Decimals:    uint32(config.GetDecimalsFactor()),
 		Errors:      errors,
 	}, nil
-}
-
-// GetAccountByAddress is a convenience RPC under AccountService to fetch account info
-func (s *server) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
-	return s.acctSvc.GetAccountByAddress(ctx, in)
 }
