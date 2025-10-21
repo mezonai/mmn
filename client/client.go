@@ -80,15 +80,6 @@ func (c *MmnClient) GetAccount(ctx context.Context, addr string) (Account, error
 	return FromProtoAccount(res), nil
 }
 
-func (c *MmnClient) GetTxHistory(ctx context.Context, addr string, limit, offset, filter int) (TxHistoryResponse, error) {
-	res, err := c.accClient.GetTxHistory(ctx, &mmnpb.GetTxHistoryRequest{Address: addr, Limit: uint32(limit), Offset: uint32(offset), Filter: uint32(filter)})
-	if err != nil {
-		return TxHistoryResponse{}, err
-	}
-
-	return FromProtoTxHistory(res), nil
-}
-
 func (c *MmnClient) SubscribeTransactionStatus(ctx context.Context) (mmnpb.TxService_SubscribeTransactionStatusClient, error) {
 	stream, err := c.txClient.SubscribeTransactionStatus(ctx, &mmnpb.SubscribeTransactionStatusRequest{})
 	if err != nil {
