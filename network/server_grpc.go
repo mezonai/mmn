@@ -115,6 +115,7 @@ func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.Una
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		clientIP := extractClientIP(ctx)
 		if rateLimiter != nil {
+			logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
 			if !rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", info.FullMethod)
 				return nil, status.Errorf(codes.ResourceExhausted, "Too many requests")
