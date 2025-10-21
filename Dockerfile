@@ -33,13 +33,14 @@ RUN rm -rf /var/lib/apt/lists/*
 #     rm -rf rocksdb
 
 ## Option 2: Using pre-built RocksDB binaries
-# Copy prebuilt rocksdb only when DB_VENDOR is rocksdb (kept for cache; harmless for leveldb)
 COPY libs/librocksdb.a /usr/local/lib/
 COPY libs/rocksdb /usr/local/include/rocksdb
 
 
-# Set up CGO build environment (linker flags applied conditionally at build step)
+# Set up CGO build environment
 ENV CGO_ENABLED=1
+ENV CGO_CFLAGS="-I/usr/local/include"
+ENV CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
 
 WORKDIR /app
 
@@ -54,7 +55,6 @@ COPY . .
 
 # Build binary with appropriate tags
 RUN if [ "$DB_VENDOR" = "rocksdb" ]; then \
-        CGO_CFLAGS="-I/usr/local/include" CGO_LDFLAGS="-L/usr/local/lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring" \
         go build -tags rocksdb -o mmn .; \
     else \
         go build -o mmn .; \

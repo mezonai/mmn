@@ -133,10 +133,6 @@ func (s *server) Remove(ctx context.Context, in *pb.SignedBL) (*pb.BlacklistResp
 	return s.blSvc.Remove(ctx, in)
 }
 
-// verifyBlacklistSignature checks the signature from admin over a deterministic message.
-// Message format: "<admin_address>|<op>|<address>|<reason>"
-// verifyBlacklistSignature moved into blacklist service implementation
-
 // SubscribeTransactionStatus streams transaction status updates using event-based system
 func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusRequest, stream grpc.ServerStreamingServer[pb.TransactionStatusInfo]) error {
 	// Subscribe to all blockchain events
