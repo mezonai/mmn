@@ -141,6 +141,71 @@ go build -o bin/mmn ./cmd
   ```
 - For more details about command, run `./mmn transfer --help`
 
+# Blacklist Management
+
+The MMN node supports blacklist functionality to block specific wallet addresses from sending transactions. Blacklist data is automatically persisted to a JSON file in the node's data directory and loaded on startup.
+
+## Blacklist Commands
+
+### Add Address to Blacklist
+Add a wallet address to the blacklist with a specified reason:
+
+```bash
+./mmn blacklist add --node-url <node-url> --address <wallet-address> --reason <reason> --private-key <admin-private-key>
+```
+
+Example:
+```bash
+./mmn blacklist add \
+    --node-url localhost:9001 \
+    --address 7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV \
+    --reason "spam" \
+    --private-key 4303ad33ea39c199ccca4e88df8665013b1d6c4f36f76f4b9b35e7e86550ff11
+```
+
+### Remove Address from Blacklist
+Remove a wallet address from the blacklist:
+
+```bash
+./mmn blacklist remove --node-url <node-url> --address <wallet-address> --private-key <admin-private-key>
+```
+
+Example:
+```bash
+./mmn blacklist remove \
+    --node-url localhost:9001 \
+    --address 7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV \
+    --private-key 4303ad33ea39c199ccca4e88df8665013b1d6c4f36f76f4b9b35e7e86550ff11
+```
+
+### List Blacklisted Addresses
+Show all currently blacklisted addresses:
+
+```bash
+./mmn blacklist list --node-url <node-url> --private-key <admin-private-key>
+```
+
+Example:
+```bash
+./mmn blacklist list \
+    --node-url localhost:9001 \
+    --private-key 4303ad33ea39c199ccca4e88df8665013b1d6c4f36f76f4b9b35e7e86550ff11
+```
+
+### Using Private Key File
+Instead of providing the private key directly, you can use a file:
+
+```bash
+./mmn blacklist add --node-url localhost:9001 --address <wallet-address> --reason "spam" --private-key-file config/key1.txt
+./mmn blacklist remove --node-url localhost:9001 --address <wallet-address> --private-key-file config/key1.txt
+./mmn blacklist list --node-url localhost:9001 --private-key-file config/key1.txt
+```
+
+## Notes
+
+- Only the node's admin (matching the node's private key) can manage the blacklist
+- Blacklisted addresses will have their transactions rejected by the mempool
+- The blacklist is node-specific and not synchronized across the network
 
 # uses cases
 Mezon -> (auto gen wallet) => user has a wallet

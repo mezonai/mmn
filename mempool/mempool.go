@@ -51,7 +51,8 @@ type Mempool struct {
 	readyQueueIndex map[string]map[uint64]bool // sender -> nonce -> exists (for O(1) duplicate check)
 
 	// Blacklist: address -> reason
-	blacklist map[string]string
+	blacklist        map[string]string
+	blacklistManager *BlacklistManager
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter,
@@ -71,7 +72,8 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		txTracker:       txTracker,
 		zkVerify:        zkVerify,
 
-		blacklist: make(map[string]string),
+		blacklist:        make(map[string]string),
+		blacklistManager: nil,
 	}
 }
 
@@ -344,6 +346,15 @@ func (mp *Mempool) AddToBlacklist(address string, reason string) error {
 		return fmt.Errorf("address already blacklisted")
 	}
 	mp.blacklist[address] = reason
+
+	if mp.blacklistManager != nil {
+		go func() {
+			if err := mp.blacklistManager.SaveBlacklistToFile(mp.blacklist); err != nil {
+				logx.Error("MEMPOOL", fmt.Sprintf("Failed to save blacklist to file: %v", err))
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -357,6 +368,15 @@ func (mp *Mempool) RemoveFromBlacklist(address string) error {
 		return fmt.Errorf("address not in blacklist")
 	}
 	delete(mp.blacklist, address)
+
+	if mp.blacklistManager != nil {
+		go func() {
+			if err := mp.blacklistManager.SaveBlacklistToFile(mp.blacklist); err != nil {
+				logx.Error("MEMPOOL", fmt.Sprintf("Failed to save blacklist to file: %v", err))
+			}
+		}()
+	}
+
 	return nil
 }
 
@@ -375,6 +395,22 @@ func (mp *Mempool) ListBlacklist() map[string]string {
 	}
 	mp.mu.RUnlock()
 	return out
+}
+
+func (mp *Mempool) LoadBlacklistFromFile(dataDir string) error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.blacklistManager = NewBlacklistManager(dataDir)
+	loadedBlacklist, err := mp.blacklistManager.LoadBlacklistFromFile()
+	if err != nil {
+		logx.Info("MEMPOOL", "No blacklist entries from file")
+	}
+
+	mp.blacklist = loadedBlacklist
+
+	logx.Info("MEMPOOL", fmt.Sprintf("Loaded %d blacklist entries from file", len(mp.blacklist)))
+	return nil
 }
 
 // PullBatch implements smart dependency resolution for zero-fee blockchain
