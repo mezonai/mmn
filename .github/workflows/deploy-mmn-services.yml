@@ -542,7 +542,7 @@ jobs:
     name: Deploy Node Sync (Listener)
     needs: prepare_sync_tags
     if: always() && inputs.env == 'prod'
-    uses: ./.github/workflows/deploy-node-sync.yml@master
+    uses: ./.github/workflows/deploy-node-sync.yml
     with:
       tag_to_deploy: ${{ needs.prepare_sync_tags.outputs.tag }}
       binary_path_from_caller: ${{ needs.prepare_sync_tags.outputs.path }}
