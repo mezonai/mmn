@@ -103,7 +103,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "up{node=\"$node\",job=\"node\"}",
+          "expr": "up{node=\"$node\",job=\"mmn-node\"}",
           "legendFormat": "Node State",
           "range": true,
           "refId": "A"

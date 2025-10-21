@@ -12,8 +12,6 @@ import (
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/utils"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type AccountServiceImpl struct {
@@ -65,7 +63,6 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 	}
 
 	// Get account from ledger
-	// TODO: verify this segment
 	acc, err := s.ledger.GetAccount(addr)
 	if err != nil {
 		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
@@ -77,7 +74,7 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		}, nil
 	}
 	if acc == nil {
-		logx.Warn("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
+		logx.Info("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
 		return &pb.GetCurrentNonceResponse{
 			Address: addr,
 			Nonce:   0,
@@ -110,19 +107,3 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 	}, nil
 }
 
-func (s *AccountServiceImpl) GetAccountByAddress(ctx context.Context, in *pb.GetAccountByAddressRequest) (*pb.GetAccountByAddressResponse, error) {
-	if in == nil || in.Address == "" {
-		return &pb.GetAccountByAddressResponse{Error: "empty address"}, nil
-	}
-
-	acc, err := s.ledger.GetAccount(in.Address)
-	if err != nil {
-		return &pb.GetAccountByAddressResponse{Error: err.Error()}, nil
-	}
-	if acc == nil {
-		return nil, status.Errorf(codes.NotFound, "account %s not found", in.Address)
-	}
-	return &pb.GetAccountByAddressResponse{
-		Account: &pb.AccountData{Address: acc.Address, Balance: utils.Uint256ToString(acc.Balance), Nonce: acc.Nonce},
-	}, nil
-}
