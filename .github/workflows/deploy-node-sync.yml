@@ -6,6 +6,10 @@ on:
       tag_to_deploy:
         description: "Tag of the release to deploy (e.g., v0.1.0)"
         required: true
+      ref:
+        description: "Git ref (branch, tag, or commit)"
+        required: false
+        default: "master"
 
   workflow_call:
     inputs:
