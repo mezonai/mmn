@@ -103,7 +103,12 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("invalid signature")
 
 	}
-	// Verify PoH
+
+	if err := ln.verifyBlockTransactions(blk); err != nil {
+		logx.Error("BLOCK", fmt.Sprintf("Transaction verification failed at slot %d: %v", blk.Slot, err))
+		return fmt.Errorf("transaction verification failed: %w", err)
+	}
+
 	if err := blk.VerifyPoH(); err != nil {
 		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 		blk.InvalidPoH = true
