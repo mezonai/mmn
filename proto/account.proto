@@ -14,13 +14,6 @@ message GetAccountResponse {
   uint32 decimals = 4; // Number of fractional digits for amount formatting
 }
 
-message GetTxHistoryRequest {
-  string address = 1;
-  uint32 limit   = 2;
-  uint32 offset  = 3;
-  uint32 filter  = 4;
-}
-
 message TxMeta {
   string sender    = 1; // sender address
   string recipient = 2; // recipient address
@@ -37,12 +30,6 @@ message TxMeta {
   string extra_info = 7;
 }
 
-message GetTxHistoryResponse {
-  uint32 total = 1;
-  repeated TxMeta txs = 2;
-  uint32 decimals = 3; // Number of fractional digits for amount formatting
-}
-
 message GetCurrentNonceRequest {
   string address = 1;
   string tag = 2; // "latest" or "pending"
@@ -55,26 +42,8 @@ message GetCurrentNonceResponse {
   string error = 4;
 }
 
-// Get account by address (convenience wrapper)
-message GetAccountByAddressRequest {
-  string address = 1;
-}
-
-message GetAccountByAddressResponse {
-  AccountData account = 1; // null fields if not found
-  string error = 2;
-}
-
-// Account data structure
-message AccountData {
-  string address = 1;
-  string balance = 2;
-  uint64 nonce   = 3;
-}
 
 service AccountService {
   rpc GetAccount     (GetAccountRequest)     returns (GetAccountResponse);
-  rpc GetTxHistory   (GetTxHistoryRequest)   returns (GetTxHistoryResponse);
   rpc GetCurrentNonce (GetCurrentNonceRequest) returns (GetCurrentNonceResponse);
-  rpc GetAccountByAddress (GetAccountByAddressRequest) returns (GetAccountByAddressResponse);
 }
