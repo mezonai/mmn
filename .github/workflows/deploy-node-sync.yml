@@ -1,0 +1,137 @@
+name: Deploy Node Sync (Listener)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_to_deploy:
+        description: "Tag of the release to deploy (e.g., v0.1.0)"
+        required: true
+      env:
+        description: "Environment (dev|prod)"
+        required: true
+        default: "prod"
+
+  workflow_call:
+    inputs:
+      tag_to_deploy:
+        description: "Tag of the release to deploy"
+        required: true
+        type: string
+      env:
+        description: "Environment (dev|prod)"
+        required: true
+        type: string
+    secrets:
+      LISTENER_PRIVKEY:
+        required: true
+
+jobs:
+  deploy_listener:
+    if: inputs.env == 'prod'
+    runs-on: [self-hosted, Linux, mezon-runner]
+    environment: ${{ inputs.env }}
+
+    steps:
+      - name: Checkout code to access config templates
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_to_deploy }}
+
+      - name: Download release binary
+        run: |
+          set -e
+          BINARY_NAME="mmn-${{ inputs.tag_to_deploy }}"
+          BINARY_PATH="build/${BINARY_NAME}"
+          OWNER=$(echo "$GITHUB_REPOSITORY" | cut -d/ -f1)
+          REPO=$(echo "$GITHUB_REPOSITORY" | cut -d/ -f2)
+          DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/${{ inputs.tag_to_deploy }}/${BINARY_NAME}"
+
+          echo "==> Downloading from URL: $DOWNLOAD_URL"
+          mkdir -p build
+          curl -sSL --fail -o "$BINARY_PATH" "$DOWNLOAD_URL"
+          echo "==> Download complete: $BINARY_PATH"
+          ls -lh "$BINARY_PATH"
+          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+
+      - name: Setup Listener Service
+        env:
+          LISTENER_PRIVKEY: ${{ secrets.LISTENER_PRIVKEY }}
+          BOOTNODE_IP: ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID: ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP: ${{ vars.PUBLIC_IP }}
+        run: |
+          set -e
+          echo "==> Setting up mezon-listener service locally for prod env..."
+          echo "--> Preparing directories..."
+          sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
+
+          echo "--> Writing listener private key..."
+          printf '%s' "$LISTENER_PRIVKEY" | sudo tee /etc/mezon/listener_privkey.txt >/dev/null
+          sudo chmod 600 /etc/mezon/listener_privkey.txt
+          sudo chown mmn:mmn /etc/mezon/listener_privkey.txt
+
+          echo "--> Creating listener systemd service file..."
+          BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP/tcp/9000/p2p/$BOOTNODE_ID"
+          sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
+            -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
+            ./config/systemd/mezon-listener.service.tpl \
+            | sudo tee /etc/systemd/system/mezon-listener.service >/dev/null
+
+          echo "--> Creating listener env file..."
+          sudo tee /etc/mezon/node-listener.env >/dev/null <<EOL
+          LOGFILE=node-listener.log
+          LOGLEVEL=warn
+          LOGFILE_MAX_SIZE_MB=500
+          LOGFILE_MAX_AGE_DAYS=3
+          CORS_ALLOWED_ORIGINS=*
+          CORS_ALLOWED_METHODS=POST,OPTIONS
+          CORS_ALLOWED_HEADERS=Content-Type
+          EOL
+          sudo chmod 644 /etc/mezon/node-listener.env
+          sudo chown mmn:mmn /etc/mezon/node-listener.env
+
+          sudo systemctl daemon-reload
+          sudo systemctl enable mezon-listener
+
+      - name: Deploy and Restart Listener
+        env:
+          NODE1_ADDRESS: ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS: ${{ vars.FAUCET_ADDRESS }}
+        run: |
+          set -e
+          echo "==> Deploying and restarting mezon-listener..."
+          SHA=$(date +%s)
+          
+          sudo systemctl stop mezon-listener || true
+
+          sudo install -m 0755 ${{ env.BINARY_PATH }} /opt/mezon/mmn/bin/mmn-${SHA}
+          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+          
+          if [ ! -f "/etc/mezon/genesis.yml" ]; then
+            echo "--> Generating genesis.yml locally for listener..."
+            sed \
+              -e "s|__LEADER_ADDRESS__|$NODE1_ADDRESS|g" \
+              -e "s|__FAUCET_ADDRESS__|$FAUCET_ADDRESS|g" \
+              ./config/genesis.template.yml \
+              | sudo tee /etc/mezon/genesis.yml >/dev/null
+            sudo chown mmn:mmn /etc/mezon/genesis.yml
+          fi
+
+          if [ ! -d "/opt/mezon/node-data/node-listener" ]; then
+            set -a
+            source /etc/mezon/node-listener.env
+            set +a
+            /opt/mezon/mmn/bin/mmn init \
+              --data-dir "/opt/mezon/node-data/node-listener" \
+              --genesis "/etc/mezon/genesis.yml" \
+              --database rocksdb \
+              --privkey-path "/etc/mezon/listener_privkey.txt"
+          fi
+
+          sudo systemctl start mezon-listener || true
+
+      - name: Healthcheck Listener
+        run: |
+          echo "==> Healthchecking local listener..."
+          sudo systemctl --no-pager -l status mezon-listener | tail -n 50
+          curl -sSf http://127.0.0.1:8084/health || true
