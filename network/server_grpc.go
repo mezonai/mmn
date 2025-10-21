@@ -114,8 +114,8 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		clientIP := extractClientIP(ctx)
+		logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
 		if rateLimiter != nil {
-			logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
 			if !rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", info.FullMethod)
 				return nil, status.Errorf(codes.ResourceExhausted, "Too many requests")
@@ -132,6 +132,7 @@ func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.Una
 func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		clientIP := extractClientIP(ss.Context())
+		logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
 		if rateLimiter != nil {
 			if !rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "IP limited (stream):", clientIP, "Method:", info.FullMethod)

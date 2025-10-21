@@ -230,7 +230,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
-
+			logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", req.Method)
 			if !s.rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "IP rate limit exceeded:", clientIP, "Method:", req.Method)
 				http.Error(w, "Too many requests", http.StatusTooManyRequests)
