@@ -253,7 +253,6 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 // Stateless validation, simple for tx
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
-	// 0. Blacklist check (fast path)
 	if tx != nil {
 		if _, blocked := mp.blacklist[tx.Sender]; blocked {
 			monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
