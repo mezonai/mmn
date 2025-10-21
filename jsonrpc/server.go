@@ -145,21 +145,6 @@ type getCurrentNonceResponse struct {
 	Error   string `json:"error"`
 }
 
-type getAccountByAddressRequest struct {
-	Address string `json:"address"`
-}
-
-type accountData struct {
-	Address string `json:"address"`
-	Balance string `json:"balance"`
-	Nonce   uint64 `json:"nonce"`
-}
-
-type getAccountByAddressResponse struct {
-	Account *accountData `json:"account"`
-	Error   string       `json:"error"`
-}
-
 // --- Server ---
 
 type Server struct {

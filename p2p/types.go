@@ -54,20 +54,8 @@ type Libp2pNetwork struct {
 
 	maxPeers int
 
-	activeSyncRequests map[string]*SyncRequestInfo
-	syncMu             sync.RWMutex
-
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
-
-	missingBlocksTracker map[uint64]*MissingBlockInfo
-	missingBlocksMu      sync.RWMutex
-
-	lastScannedSlot uint64
-	scanMu          sync.RWMutex
-
-	recentlyRequestedSlots map[uint64]time.Time
-	recentlyRequestedMu    sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc

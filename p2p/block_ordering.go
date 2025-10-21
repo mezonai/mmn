@@ -122,9 +122,6 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("apply block error: %w", err)
 	}
 
-	// Remove from missing blocks tracker
-	ln.removeFromMissingTracker(blk.Slot)
-
 	logx.Info("BLOCK:ORDERING", "Successfully processed block at slot", blk.Slot)
 	return nil
 }
