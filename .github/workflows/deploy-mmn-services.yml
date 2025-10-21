@@ -525,7 +525,7 @@ jobs:
 
           if [ ! -d "/opt/mezon/node-data/node-listener" ]; then
             set -a
-            source /etc/mezon/listener.env
+            source /etc/mezon/node-listener.env
             set +a
             /opt/mezon/mmn/bin/mmn init \
               --data-dir "/opt/mezon/node-data/node-listener" \
