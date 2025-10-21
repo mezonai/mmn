@@ -93,7 +93,6 @@ func (ln *Libp2pNetwork) RequestLatestSlotFromPeers(ctx context.Context) (uint64
 		logx.Error("NETWORK:LATEST SLOT", "Failed to publish request:", err)
 		return 0, err
 	}
-
 	logx.Info("NETWORK:LATEST SLOT", "Latest slot request published successfully")
 	return 0, nil
 }

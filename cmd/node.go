@@ -5,12 +5,10 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -51,6 +49,7 @@ var (
 	listenAddr         string
 	jsonrpcAddr        string
 	p2pPort            string
+	publicIP           string
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
@@ -76,23 +75,13 @@ func init() {
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
 	runCmd.Flags().StringVar(&jsonrpcAddr, "jsonrpc-addr", ":8080", "Listen address for JSON-RPC server :<port>")
 	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
-	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "", "LibP2P listen port (optional, random free port if not specified)")
+	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "9090", "LibP2P listen port (optional, random free port if not specified)")
+	runCmd.Flags().StringVar(&publicIP, "public-ip", "", "Public IP address for P2P advertising (required)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 
-}
-
-// getRandomFreePort returns a random free port
-func getRandomFreePort() (string, error) {
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return "", err
-	}
-	defer listener.Close()
-	addr := listener.Addr().(*net.TCPAddr)
-	return strconv.Itoa(addr.Port), nil
 }
 
 func runNode() {
@@ -106,6 +95,11 @@ func runNode() {
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+
+	if publicIP == "" {
+		logx.Error("NODE", "Public IP is required. Use --public-ip flag.")
+		return
+	}
 
 	// Construct paths from data directory
 	privKeyPath := filepath.Join(dataDir, "privkey.txt")
@@ -159,16 +153,6 @@ func runNode() {
 	defer ts.MustClose()
 	defer tms.MustClose()
 	defer as.MustClose()
-
-	// Handle optional p2p-port: use random free port if not specified
-	if p2pPort == "" {
-		p2pPort, err = getRandomFreePort()
-		if err != nil {
-			logx.Error("NODE", "Failed to get random free port:", err.Error())
-			return
-		}
-		logx.Info("NODE", "Using random P2P port:", p2pPort)
-	}
 
 	// Load genesis configuration from file
 	cfg, err := loadConfiguration(genesisPath)
@@ -319,6 +303,8 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		self.PubKey,
 		privKey,
 		self.Libp2pAddr,
+		p2pPort,
+		publicIP,
 		self.BootStrapAddresses,
 		bs,
 		ts,

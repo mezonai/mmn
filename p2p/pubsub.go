@@ -634,7 +634,7 @@ func (ln *Libp2pNetwork) logMeshChanges() {
 		logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Block topic mesh peers: %d", len(currentMeshPeers)))
 
 		if len(currentMeshPeers) == 0 {
-			logx.Warn("NETWORK:PUBSUB:MESH", "Block topic mesh is EMPTY - this may cause block propagation issues!")
+			logx.Info("NETWORK:PUBSUB:MESH", "Block topic mesh is EMPTY - this may cause block propagation issues!")
 		}
 	}
 
@@ -643,7 +643,7 @@ func (ln *Libp2pNetwork) logMeshChanges() {
 		logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Vote topic mesh peers: %d", len(currentMeshPeers)))
 
 		if len(currentMeshPeers) == 0 {
-			logx.Warn("NETWORK:PUBSUB:MESH", "Vote topic mesh is EMPTY - this may cause vote propagation issues!")
+			logx.Info("NETWORK:PUBSUB:MESH", "Vote topic mesh is EMPTY - this may cause vote propagation issues!")
 		}
 	}
 
@@ -652,7 +652,7 @@ func (ln *Libp2pNetwork) logMeshChanges() {
 		voteMeshSize := len(ln.topicVotes.ListPeers())
 
 		if blockMeshSize != voteMeshSize {
-			logx.Warn("NETWORK:PUBSUB:MESH", fmt.Sprintf("Mesh size mismatch: Block=%d, Vote=%d", blockMeshSize, voteMeshSize))
+			logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Mesh size mismatch: Block=%d, Vote=%d", blockMeshSize, voteMeshSize))
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,8 @@ func NewNetWork(
 	selfPubKey string,
 	selfPrivKey ed25519.PrivateKey,
 	listenAddr string,
+	p2pPort string,
+	publicIP string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
 	txStore store.TxStore,
@@ -66,6 +69,8 @@ func NewNetWork(
 
 	quicAddr := strings.Replace(listenAddr, "/tcp/", "/udp/", 1) + "/quic-v1"
 
+	publicTcpAddr, publicQuicAddr := createPublicAddresses(p2pPort, publicIP)
+
 	h, err := libp2p.New(
 		libp2p.Identity(privKey),
 		libp2p.ListenAddrStrings(listenAddr, quicAddr),
@@ -74,6 +79,13 @@ func NewNetWork(
 		libp2p.EnableHolePunching(),
 		libp2p.EnableNATService(),
 		libp2p.NATPortMap(),
+		libp2p.ForceReachabilityPublic(),
+		libp2p.AddrsFactory(func(addrs []ma.Multiaddr) []ma.Multiaddr {
+			if publicTcpAddr != nil && publicQuicAddr != nil {
+				addrs = append(addrs, publicTcpAddr, publicQuicAddr)
+			}
+			return addrs
+		}),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			ddht, err = dht.New(ctx, h, dht.Mode(dht.ModeServer))
 			return ddht, err
@@ -103,6 +115,12 @@ func NewNetWork(
 		pubsub.WithMaxMessageSize(5*1024*1024),
 		pubsub.WithValidateQueueSize(128),
 		pubsub.WithPeerOutboundQueueSize(128),
+		// Ensure publishes are forwarded even if not in mesh yet
+		pubsub.WithFloodPublish(true),
+		// Help small networks discover pubsub peers quickly
+		pubsub.WithPeerExchange(true),
+		// Ensure we forward directly to bootstrap/relay peers
+		pubsub.WithDirectPeers(relays),
 	)
 	if err != nil {
 		cancel()
@@ -189,6 +207,7 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		bootstrapConnected = true
 
 		ln.bootstrapPeerIDs[info.ID] = struct{}{}
+		ln.reserveViaPeer(ctx, info)
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
 			ln.RequestNodeInfo(bootstrapPeer, &info)
 		})
@@ -215,7 +234,57 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Libp2p network started with ID: %s", ln.host.ID().String()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Listening on addresses: %v", ln.host.Addrs()))
 	logx.Info("NETWORK:SETUP", fmt.Sprintf("Self public key: %s", ln.selfPubKey))
+
+	ln.startRelayReservationMaintainer()
 	return nil
+}
+
+// reserveViaPeer tries to  a circuit v2 relay slot via the given peer
+func (ln *Libp2pNetwork) reserveViaPeer(ctx context.Context, info peer.AddrInfo) {
+	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := rclient.Reserve(ctx2, ln.host, info); err != nil {
+		logx.Warn("RELAYER", "Bootstrap relay reservation failed:", err)
+		return
+	}
+}
+
+func (ln *Libp2pNetwork) startRelayReservationMaintainer() {
+	exception.SafeGo("RelayReservationMaintainer", func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				for pid := range ln.bootstrapPeerIDs {
+					pi := ln.host.Peerstore().PeerInfo(pid)
+					if pi.ID == "" {
+						continue
+					}
+					ctx2, cancel := context.WithTimeout(ln.ctx, 10*time.Second)
+					if _, err := rclient.Reserve(ctx2, ln.host, pi); err != nil {
+						logx.Warn("RELAYER", "Periodic relay reservation failed:", err)
+					}
+					cancel()
+				}
+
+			case <-ln.ctx.Done():
+				return
+			}
+		}
+	})
+}
+
+func createPublicAddresses(p2pPort string, publicIP string) (ma.Multiaddr, ma.Multiaddr) {
+	port, err := strconv.Atoi(p2pPort)
+	if err != nil {
+		return nil, nil
+	}
+
+	publicTcpAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", publicIP, port))
+	publicQuicAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", publicIP, port))
+
+	return publicTcpAddr, publicQuicAddr
 }
 
 // this func will call if node shutdown for now just cancle when error
