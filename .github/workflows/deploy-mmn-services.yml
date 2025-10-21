@@ -1,4 +1,6 @@
 ﻿name: Deploy MMN
+permissions:
+  contents: write
 
 on:
   workflow_dispatch:
@@ -11,19 +13,77 @@ on:
         description: "Git ref (branch, tag, or commit)"
         required: true
         default: "master"
+      new_tag_to_build:
+        description: "(Optional) New tag"
+        required: false
+      existing_tag_to_deploy:
+        description: "(Optional) Existing tag"
+        required: false
 
 jobs:
+  determine_tag:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.new_tag_to_build == '' && github.event.inputs.existing_tag_to_deploy == ''
+    outputs:
+      new_tag: ${{ steps.get_tag.outputs.new_tag }}
+      is_run: "true"
+    steps:
+      - name: Checkout for git history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Calculate new tag
+        id: get_tag
+        run: |
+          echo "==> No new or existing tag provided. Calculating the next tag..."
+
+          LATEST_TAG=$(git tag -l --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_TAG="v0.1.0"
+            echo "==> No existing tags found. Starting with initial tag: $NEW_TAG"
+          else
+            echo "==> Latest tag is: $LATEST_TAG"
+            VERSION=$(echo $LATEST_TAG | sed 's/^v//')
+            MAJOR=$(echo $VERSION | cut -d. -f1)
+            MINOR=$(echo $VERSION | cut -d. -f2)
+            PATCH=$(echo $VERSION | cut -d. -f3)
+            NEXT_PATCH=$((PATCH + 1))
+            NEW_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+            echo "==> Calculated next tag: $NEW_TAG"
+          fi
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
   build:
+    needs: determine_tag
+    if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     outputs:
-      git_sha: ${{ steps.build.outputs.git_sha }}
+      tag_name: ${{ steps.determine_release_tag.outputs.tag }}
     steps:
+      - name: Decide whether to build
+        id: decide
+        run: |
+          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
+            echo "==> Skipping build because 'existing_tag_to_deploy' is set. Will deploy directly."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "==> Proceeding with new build."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
       - name: Checkout
+        if: steps.decide.outputs.skip == 'false'
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+      
+      - name: Get Git Commit SHA
+        if: steps.decide.outputs.skip == 'false'
+        id: get_sha
+        run: echo "sha=$(git rev-parse --short=12 HEAD)" >> $GITHUB_OUTPUT
 
       - name: Setup Go
+        if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
         with:
           go-version: "1.22.5"
@@ -31,6 +91,7 @@ jobs:
           check-latest: false
 
       - name: Install build dependencies
+        if: steps.decide.outputs.skip == 'false'
         run: |
           PACKAGES="
           build-essential
@@ -58,7 +119,28 @@ jobs:
             echo "==> All build dependencies are already installed. Skipping."
           fi
 
+      - name: Determine and Standardize Tag for Release
+        if: steps.decide.outputs.skip == 'false'
+        id: determine_release_tag
+        run: |
+          if [ -n "${{ inputs.new_tag_to_build }}" ]; then
+            TAG_INPUT="${{ inputs.new_tag_to_build }}"
+          else
+            TAG_INPUT="${{ needs.determine_tag.outputs.new_tag }}"
+          fi
+
+          if [[ ! "$TAG_INPUT" == v* ]]; then
+            TAG_TO_USE="v$TAG_INPUT"
+            echo "==> Prefix 'v' was missing. Standardizing to: $TAG_TO_USE"
+          else
+            TAG_TO_USE="$TAG_INPUT"
+          fi
+
+          echo "==> Using tag for release: $TAG_TO_USE"
+          echo "tag=$TAG_TO_USE" >> $GITHUB_OUTPUT
+
       - name: Build MMN binary
+        if: steps.decide.outputs.skip == 'false'
         id: build
         env:
           CGO_ENABLED: 1
@@ -66,18 +148,71 @@ jobs:
           CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
         run: |
           mkdir -p build
-          GOOS=linux GOARCH=amd64 go build -tags rocksdb -o build/mmn .
+          GOOS=linux GOARCH=amd64 go build -tags rocksdb -o "build/mmn-${{ steps.determine_release_tag.outputs.tag }}" .
           GIT_SHA=$(git rev-parse --short=12 HEAD)
-          echo "git_sha=$GIT_SHA" >> $GITHUB_OUTPUT
-          echo "GIT_SHA=$GIT_SHA" | tee -a $GITHUB_ENV
+
+      - name: Create Release and Upload Binary
+        if: steps.decide.outputs.skip == 'false'
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.determine_release_tag.outputs.tag }}
+          name: "Release ${{ steps.determine_release_tag.outputs.tag }}"
+          fail_on_unmatched_files: true
+          files: |
+            build/mmn-${{ steps.determine_release_tag.outputs.tag }}
 
   deploy:
-    needs: build
+    needs: [determine_tag, build]
+    if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     environment: ${{ inputs.env }}
     env:
       TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
+      - name: Determine Binary Path and Tag
+        id: determine_binary
+        run: |
+          TAG_INPUT=""
+          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
+            TAG_INPUT="${{ inputs.existing_tag_to_deploy }}"
+            echo "==> Will deploy existing tag: $TAG_INPUT"
+          elif [ "${{ needs.build.result }}" == "success" ]; then
+            TAG_INPUT="${{ needs.build.outputs.tag_name }}"
+            echo "==> Will deploy newly built tag: $TAG_INPUT"
+          else
+            echo "::error::Cannot proceed. No existing tag was provided and the build job did not succeed."
+            exit 1
+          fi
+
+          if [[ ! "$TAG_INPUT" == v* ]]; then
+            TAG_TO_DEPLOY="v$TAG_INPUT"
+            echo "==> Prefix 'v' was missing. Standardizing to: $TAG_TO_DEPLOY"
+          else
+            TAG_TO_DEPLOY="$TAG_INPUT"
+          fi
+          
+          echo "tag_name=$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+          echo "binary_name=mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+          echo "binary_path=build/mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+
+      - name: Download release binary using curl
+        if: inputs.existing_tag_to_deploy != ''
+        run: |
+          set -e
+          OWNER=$(echo "$GITHUB_REPOSITORY" | cut -d/ -f1)
+          REPO=$(echo "$GITHUB_REPOSITORY" | cut -d/ -f2)
+          TAG_NAME="${{ steps.determine_binary.outputs.tag_name }}"
+          BINARY_NAME="${{ steps.determine_binary.outputs.binary_name }}"
+          BINARY_PATH="${{ steps.determine_binary.outputs.binary_path }}"
+          DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/$TAG_NAME/$BINARY_NAME"
+
+          echo "==> Downloading from URL: $DOWNLOAD_URL"
+          mkdir -p build
+          curl -sSL --fail -o "$BINARY_PATH" "$DOWNLOAD_URL"
+          echo "==> Download complete: $BINARY_PATH"
+          ls -lh "$BINARY_PATH"
+
       - name: Deploy Monitoring Configurations
         if: inputs.env == 'dev'
         env:
@@ -85,17 +220,17 @@ jobs:
         run: |
           set -e
           echo "==> Deploying monitoring configs for MMN..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
             set -e
             sudo mkdir -p /etc/mezon/monitoring
             sudo chown mmn:mmn /etc/mezon/monitoring
           "
 
           echo "==> Copying configs to a temporary location on the MMN server..."
-          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ secrets.HOST_ALIAS }}:/tmp/promtail-config.yml
+          scp -i /home/nccsoft/.ssh/mmn_deploy ./monitoring/promtail-config.yml ${{ vars.HOST_ALIAS }}:/tmp/promtail-config.yml
 
           echo "==> Moving configs to final destination with sudo..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<EOF
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<EOF
             set -e
             sed \
               -e "s|__URL_LOKI_PUSH__|${URL_LOKI_PUSH}|g" \
@@ -106,7 +241,7 @@ jobs:
           EOF
       
       - name: Monitoring config server runner
-        if: inputs.env != 'dev'
+        if: inputs.env == 'prod'
         env:
           PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
           NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
@@ -134,10 +269,69 @@ jobs:
           sudo sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" /etc/prometheus/targets/nodes.yml
           sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
 
+      - name: Deploy Full Monitoring Stack to Dev Server
+        if: inputs.env == 'dev'
+        env:
+          PORT_NODE_EXPORTER: ${{ vars.PORT_NODE_EXPORTER }}
+          NODE1_URL_PORT: ${{ vars.NODE1_URL_PORT }}
+          LISTENER_URL_PORT: ${{ vars.LISTENER_URL_PORT }}
+        run: |
+          set -e
+          echo "==> 1. Preparing monitoring configs on the runner..."
+
+          cp -r ./monitoring ./monitoring_deploy_temp
+
+          sed -i "s/__PORT_NODE_EXPORTER__/${PORT_NODE_EXPORTER}/g" ./monitoring_deploy_temp/prometheus-config.yml
+          sed -i -e "s#__NODE1_URL_PORT__#${NODE1_URL_PORT}#g" -e "s#__LISTENER_URL_PORT__#${LISTENER_URL_PORT}#g" ./monitoring_deploy_temp/prometheus/targets/nodes.example.yml
+
+          echo "==> 2. Copying prepared monitoring stack to the dev server..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
+            set -e
+            sudo mkdir -p /etc/mezon/monitoring
+            sudo chown mmn:mmn /etc/mezon/monitoring
+          "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
+            set -e
+            sudo mkdir -p /tmp/monitoring_deploy
+            sudo chown mmn:mmn /tmp/monitoring_deploy
+          "
+          scp -i /home/nccsoft/.ssh/mmn_deploy -r ./monitoring_deploy_temp/* ${{ vars.HOST_ALIAS }}:/tmp/monitoring_deploy
+
+          echo "==> 3. Running setup script on the dev server..."
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<'EOF'
+            set -e
+            echo "--> Preparing directories on remote server..."
+            sudo mkdir -p /etc/mezon/monitoring/ /etc/grafana/ /etc/prometheus/targets
+
+            echo "--> Setting up Prometheus..."
+            sudo mv /tmp/monitoring_deploy/prometheus-config.yml /etc/mezon/monitoring/prometheus-config.yml
+            sudo mv /tmp/monitoring_deploy/prometheus/targets/nodes.example.yml /etc/prometheus/targets/nodes.yml
+            sudo chown mmn:mmn /etc/mezon/monitoring/prometheus-config.yml
+            sudo chown mmn:mmn /etc/prometheus/targets/nodes.yml
+
+            echo "--> Setting up Loki..."
+            sudo mv /tmp/monitoring_deploy/loki-config.yml /etc/mezon/monitoring/loki-config.yml
+            sudo chown mmn:mmn /etc/mezon/monitoring/loki-config.yml
+
+            echo "--> Setting up Grafana..."
+            sudo cp -r /tmp/monitoring_deploy/grafana/* /etc/grafana/
+            
+            sudo chown -R grafana:grafana /etc/grafana/provisioning
+            sudo chown -R grafana:grafana /etc/grafana/dashboards
+
+            sudo sed -i 's#url: http://loki:3100#url: http://localhost:3100#g' /etc/grafana/provisioning/datasources/loki.yml
+            sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
+            sudo sed -i 's#path: /var/lib/grafana/dashboards#path: /etc/grafana/dashboards#g' /etc/grafana/provisioning/dashboards/dashboard.yaml
+            echo "--> Cleaning up temporary files..."
+            sudo rm -rf /tmp/monitoring_deploy
+
+            echo "Full monitoring stack deployed to dev server."
+          EOF
+
       - name: Copy binary and config to target
         run: |
-          scp -i /home/nccsoft/.ssh/mmn_deploy build/mmn ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
-          scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ secrets.HOST_ALIAS }}:/opt/mezon/mmn/config/
+          scp -i /home/nccsoft/.ssh/mmn_deploy ${{ steps.determine_binary.outputs.binary_path }} ${{ vars.HOST_ALIAS }}:/opt/mezon/mmn/staging/mmn_new
+          scp -i /home/nccsoft/.ssh/mmn_deploy config/genesis.template.yml ${{ vars.HOST_ALIAS }}:/opt/mezon/mmn/config/
 
       - name: Generate remote setup and env files locally
         run: |
@@ -203,13 +397,22 @@ jobs:
           echo "==> Updating systemd for node1..."
           BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP/tcp/9000/p2p/$BOOTNODE_ID"
           sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
+              -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
+          
+          if [[ "${{ inputs.env }}" == "prod" ]]; then
+            LOG_LEVEL="warn"
+            echo "==> Production environment detected. Setting LOGLEVEL to 'warn'."
+          else
+            LOG_LEVEL="info"
+            echo "==> Development environment detected. Setting LOGLEVEL to 'info'."
+          fi
 
           echo "==> Creating /etc/mezon/node1.env..."
           sudo tee /etc/mezon/node1.env >/dev/null <<EOL
           LOGFILE=node1.log
-          LOGLEVEL=info
+          LOGLEVEL=${LOG_LEVEL}
           LOGFILE_MAX_SIZE_MB=500
           LOGFILE_MAX_AGE_DAYS=30
           CORS_ALLOWED_ORIGINS=*
@@ -236,14 +439,16 @@ jobs:
           printf "export FAUCET_ADDRESS=%q\n" "$FAUCET_ADDRESS" >> mezon_env.sh
           printf "export BOOTNODE_IP=%q\n" "$BOOTNODE_IP" >> mezon_env.sh
           printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
+          printf "export PUBLIC_IP=%q\n" "$PUBLIC_IP" >> mezon_env.sh
         env:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
-          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
-          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          NODE1_ADDRESS:     ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
@@ -251,18 +456,19 @@ jobs:
           BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
           NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:     ${{ secrets.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:    ${{ secrets.FAUCET_ADDRESS }}
-          BOOTNODE_IP:       ${{ secrets.BOOTNODE_IP }}
-          BOOTNODE_ID:       ${{ secrets.BOOTNODE_ID }}
+          NODE1_ADDRESS:     ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
+          BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
         run: |
           set -e
 
           echo "==> Copying remote_setup.sh and mezon_env.sh..."
-          scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ secrets.HOST_ALIAS }}:/tmp/
+          scp -i /home/nccsoft/.ssh/mmn_deploy remote_setup.sh mezon_env.sh ${{ vars.HOST_ALIAS }}:/tmp/
 
           echo "==> Running remote setup..."
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "
             set -e
             chmod +x /tmp/remote_setup.sh
             bash -c 'set -e; source /tmp/mezon_env.sh; bash /tmp/remote_setup.sh'
@@ -271,7 +477,7 @@ jobs:
 
       - name: Atomic swap + restart services
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} <<'EOF'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<'EOF'
           set -e
           SHA=$(date +%s)
 
@@ -299,5 +505,5 @@ jobs:
 
       - name: Healthcheck
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ secrets.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
