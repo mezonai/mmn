@@ -508,13 +508,43 @@ jobs:
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "sudo systemctl --no-pager -l status mezon-node1 | tail -n 50"
           ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} "curl -sSf http://127.0.0.1:8081/health || true"
 
+  prepare_sync_tags:
+    name: Prepare Variables for Node Sync
+    needs: [determine_tag, build]
+    if: always() && inputs.env == 'prod'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.determine_vars.outputs.tag_to_deploy }}
+      path: ${{ steps.determine_vars.outputs.binary_path }}
+    steps:
+      - name: Determine Tag and Path for Listener
+        id: determine_vars
+        run: |
+          TAG_INPUT=""
+          if [ -n "${{ inputs.existing_tag_to_deploy }}" ]; then
+            TAG_INPUT="${{ inputs.existing_tag_to_deploy }}"
+          elif [ "${{ needs.build.result }}" == "success" ]; then
+            TAG_INPUT="${{ needs.build.outputs.tag_name }}"
+          else
+            TAG_INPUT="${{ needs.determine_tag.outputs.new_tag }}"
+          fi
+          
+          if [[ ! "$TAG_INPUT" == v* ]]; then
+            TAG_TO_DEPLOY="v$TAG_INPUT"
+          else
+            TAG_TO_DEPLOY="$TAG_INPUT"
+          fi
+          
+          echo "tag_to_deploy=$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+          echo "binary_path=build/mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
+
   deploy_sync_node:
     name: Deploy Node Sync (Listener)
-    needs: [determine_tag, build]
+    needs: prepare_sync_tags
     if: always() && inputs.env == 'prod'
     uses: ./.github/workflows/deploy-node-sync.yml@master
     with:
-      tag_to_deploy: ${{ needs.build.outputs.tag_name || inputs.existing_tag_to_deploy || needs.determine_tag.outputs.new_tag }}
-      env: ${{ inputs.env }}
+      tag_to_deploy: ${{ needs.prepare_sync_tags.outputs.tag }}
+      binary_path_from_caller: ${{ needs.prepare_sync_tags.outputs.path }}
     secrets:
       LISTENER_PRIVKEY: ${{ secrets.LISTENER_PRIVKEY }}

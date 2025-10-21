@@ -6,10 +6,6 @@ on:
       tag_to_deploy:
         description: "Tag of the release to deploy (e.g., v0.1.0)"
         required: true
-      env:
-        description: "Environment (dev|prod)"
-        required: true
-        default: "prod"
 
   workflow_call:
     inputs:
@@ -17,9 +13,9 @@ on:
         description: "Tag of the release to deploy"
         required: true
         type: string
-      env:
-        description: "Environment (dev|prod)"
-        required: true
+      binary_path_from_caller:
+        description: "Path to binary file if already present on the runner"
+        required: false
         type: string
     secrets:
       LISTENER_PRIVKEY:
@@ -27,17 +23,18 @@ on:
 
 jobs:
   deploy_listener:
-    if: inputs.env == 'prod'
     runs-on: [self-hosted, Linux, mezon-runner]
-    environment: ${{ inputs.env }}
-
+    environment: prod
     steps:
       - name: Checkout code to access config templates
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag_to_deploy }}
 
       - name: Download release binary
+        if: github.event_name == 'workflow_dispatch'
+        id: download_step
         run: |
           set -e
           BINARY_NAME="mmn-${{ inputs.tag_to_deploy }}"
@@ -51,7 +48,7 @@ jobs:
           curl -sSL --fail -o "$BINARY_PATH" "$DOWNLOAD_URL"
           echo "==> Download complete: $BINARY_PATH"
           ls -lh "$BINARY_PATH"
-          echo "BINARY_PATH=$BINARY_PATH" >> $GITHUB_ENV
+          echo "binary_path=$BINARY_PATH" >> $GITHUB_OUTPUT
 
       - name: Setup Listener Service
         env:
@@ -99,12 +96,20 @@ jobs:
           FAUCET_ADDRESS: ${{ vars.FAUCET_ADDRESS }}
         run: |
           set -e
+          BINARY_TO_INSTALL="${{ inputs.binary_path_from_caller || steps.download_step.outputs.binary_path }}"
+          
+          if [ -z "$BINARY_TO_INSTALL" ]; then
+            echo "::error::Binary path is not available. Aborting."
+            exit 1
+          fi
+          echo "==> Using binary file at: $BINARY_TO_INSTALL"
+
           echo "==> Deploying and restarting mezon-listener..."
           SHA=$(date +%s)
           
           sudo systemctl stop mezon-listener || true
 
-          sudo install -m 0755 ${{ env.BINARY_PATH }} /opt/mezon/mmn/bin/mmn-${SHA}
+          sudo install -m 0755 "$BINARY_TO_INSTALL" /opt/mezon/mmn/bin/mmn-${SHA}
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
           
           if [ ! -f "/etc/mezon/genesis.yml" ]; then
