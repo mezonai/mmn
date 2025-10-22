@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/abuse"
+	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/service"
+	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 
@@ -38,10 +40,10 @@ import (
 
 const (
 	// Storage paths - using absolute paths
-	fileBlockDir    = "./blockstore/blocks"
-	leveldbBlockDir = "blockstore/leveldb"
-	LISTEN_MODE     = "listen"
-	FULL_MODE       = "full"
+	fileBlockDir = "./blockstore/blocks"
+	// leveldbBlockDir = "blockstore/leveldb"
+	LISTEN_MODE = "listen"
+	FULL_MODE   = "full"
 )
 
 var (
@@ -49,14 +51,15 @@ var (
 	listenAddr         string
 	jsonrpcAddr        string
 	p2pPort            string
-	publicIP           string
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
 	mode               string
+	publicIP           string
 	// legacy init command
 	// database backend
 	databaseBackend string
+	enableRateLimit bool
 )
 
 var runCmd = &cobra.Command{
@@ -81,6 +84,7 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
 
 }
 
@@ -88,7 +92,7 @@ func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
-	logx.Info("NODE", "Running node")
+	logx.Info("NODE", "Running node", "with", "rate limit", enableRateLimit)
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
@@ -207,7 +211,7 @@ func runNode() {
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, zkVerify)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
@@ -222,7 +226,7 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(nodeConfig, ld, collector, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -362,7 +366,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *consensus.Collector,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 
 	// Load private key for gRPC server
@@ -370,6 +374,17 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	if err != nil {
 		log.Fatalf("Failed to load private key for gRPC server: %v", err)
 	}
+
+	abuseConfig := abuse.DefaultAbuseConfig()
+	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
+
+	rateLimiterConfig := ratelimit.DefaultGlobalConfig()
+	rateLimiter := ratelimit.NewGlobalRateLimiterWithAbuseDetector(rateLimiterConfig, abuseDetector)
+	defer rateLimiter.Stop()
+
+	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
+	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
+	acctSvc := service.NewAccountService(ld, mp, txTracker)
 
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
@@ -385,13 +400,14 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		mp,
 		eventRouter,
 		txTracker,
+		rateLimiter,
+		enableRateLimit,
+		txSvc,
+		acctSvc,
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start JSON-RPC server on dedicated JSON-RPC address using shared services
-	txSvc := service.NewTxService(ld, mp, bs, txTracker)
-	acctSvc := service.NewAccountService(ld, mp, txTracker)
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter, enableRateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {

@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -96,6 +97,9 @@ type Libp2pNetwork struct {
 	// PoH config
 	pohCfg     *config.PohConfig
 	isListener bool
+
+	// ZK verify for transaction verification
+	zkVerify *zkverify.ZkVerify
 }
 
 type PeerInfo struct {

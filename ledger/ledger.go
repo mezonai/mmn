@@ -103,6 +103,7 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 		return nil
 	}
 
+
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
@@ -164,6 +165,7 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 				l.txTracker.RemoveTransaction(txHash)
 			}
 
+			// commit the update
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -242,7 +244,6 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 	return tx, txMeta, nil, nil
 }
 
-// GetTxBatch retrieves multiple transactions and their metadata using batch operations
 func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
 	if len(hashes) == 0 {
 		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil

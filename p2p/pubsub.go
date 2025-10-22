@@ -22,9 +22,13 @@ import (
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/zkverify"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder, zkVerify *zkverify.ZkVerify) {
+	// Store zkVerify for transaction verification
+	ln.zkVerify = zkVerify
+
 	latestSlot := bs.GetLatestFinalizedSlot()
 	ln.SetNextExpectedSlot(latestSlot + 1)
 
@@ -39,13 +43,16 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("invalid leader")
 			}
 
-			// Verify signature
 			if !blk.VerifySignature() {
 				logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
 				return fmt.Errorf("invalid signature")
 			}
 
-			// Verify PoH. If invalid, mark block and continue to process as a failed block
+			if err := ln.verifyBlockTransactions(blk); err != nil {
+				logx.Error("BLOCK", fmt.Sprintf("Transaction verification failed at slot %d: %v", blk.Slot, err))
+				return fmt.Errorf("transaction verification failed: %w", err)
+			}
+
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
