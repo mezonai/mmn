@@ -19,6 +19,9 @@ const (
 	MethodAccountGetAccount          = "account.getaccount"
 	MethodAccountGetCurrentNonce     = "account.getcurrentnonce"
 	MethodAccountGetAccountByAddress = "account.getaccountbyaddress"
+
+	// Health methods
+	MethodHealthCheck = "health.check"
 )
 
 func parseJSONRPCRequest(body []byte) *jsonRPCRequest {
