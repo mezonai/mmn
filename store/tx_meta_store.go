@@ -16,6 +16,7 @@ type TxMetaStore interface {
 	StoreBatch(txMetas []*types.TransactionMeta) error
 	GetByHash(txHash string) (*types.TransactionMeta, error)
 	GetBatch(txHashes []string) (map[string]*types.TransactionMeta, error)
+	DeleteBatch(txHashes []string) error
 	MustClose()
 }
 
@@ -140,4 +141,27 @@ func (tms *GenericTxMetaStore) MustClose() {
 
 func (tms *GenericTxMetaStore) getDbKey(txHash string) []byte {
 	return []byte(PrefixTxMeta + txHash)
+}
+
+// DeleteBatch deletes a batch of transaction metas from the database
+func (tms *GenericTxMetaStore) DeleteBatch(txHashes []string) error {
+	if len(txHashes) == 0 {
+		logx.Info("TX_META_STORE", "DeleteBatch: no transaction metas to delete")
+		return nil
+	}
+	logx.Info("TX_META_STORE", fmt.Sprintf("DeleteBatch: deleting %d transaction metas", len(txHashes)))
+
+	batch := tms.dbProvider.Batch()
+	defer batch.Close()
+
+	for _, h := range txHashes {
+		batch.Delete(tms.getDbKey(h))
+	}
+
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to batch delete transaction metas: %w", err)
+	}
+
+	logx.Info("TX_META_STORE", fmt.Sprintf("DeleteBatch: deleted %d transaction metas", len(txHashes)))
+	return nil
 }

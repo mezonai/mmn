@@ -22,6 +22,10 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
+const (
+	UNINT64_BYTES = 8
+)
+
 // SlotBoundary represents slot boundary information
 type SlotBoundary struct {
 	Slot uint64
@@ -75,7 +79,7 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore 
 	}
 
 	// Load existing metadata
-	if err := store.loadLatestFinalized(); err != nil {
+	if err := store.loadExistingMetadataAndCleanup(); err != nil {
 		return nil, fmt.Errorf("failed to load metadata: %w", err)
 	}
 
@@ -88,48 +92,35 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore 
 	return store, nil
 }
 
-// loadLatestFinalized loads the latest finalized slot from the database
-func (s *GenericBlockStore) loadLatestFinalized() error {
-	key := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
-	value, err := s.provider.Get(key)
+// loadExistingMetadata loads the latest finalized slot and latest store slot from the database
+func (s *GenericBlockStore) loadExistingMetadataAndCleanup() error {
+	existLatestFinalized, err := s.loadMetaLatestFinalizedSlot()
 	if err != nil {
 		return fmt.Errorf("failed to get latest finalized: %w", err)
 	}
+	s.latestFinalized.Store(existLatestFinalized)
 
-	if value == nil {
-		// No existing data, start from 0
-		s.latestFinalized.Store(0)
-		return nil
-	}
-
-	if len(value) != 8 {
-		return fmt.Errorf("invalid latest finalized value length: %d", len(value))
-	}
-
-	s.latestFinalized.Store(binary.BigEndian.Uint64(value))
-
-	key = []byte(PrefixBlockMeta + BlockMetaKeyLatestStore)
-	value, err = s.provider.Get(key)
+	existLatestStore, err := s.loadMetaLatestStoreSlot()
 	if err != nil {
 		return fmt.Errorf("failed to get latest store: %w", err)
 	}
-
-	if value == nil {
-		s.latestStore.Store(0)
-		return nil
+	if existLatestStore > existLatestFinalized {
+		logx.Warn("BLOCKSTORE", fmt.Sprintf("Latest store is greater than latest finalized: %d > %d", existLatestStore, existLatestFinalized))
+		removeBlockSlots := make([]uint64, 0)
+		for slot := existLatestFinalized + 1; slot < existLatestStore; slot++ {
+			removeBlockSlots = append(removeBlockSlots, slot)
+		}
+		s.removeBlockBySlots(removeBlockSlots)
+		s.updateLatestStoreSlot(existLatestFinalized)
 	}
 
-	if len(value) != 8 {
-		return fmt.Errorf("invalid latest store value length: %d", len(value))
-	}
-
-	s.latestStore.Store(binary.BigEndian.Uint64(value))
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Loaded latest finalized slot: %d, latest store slot: %d", existLatestFinalized, existLatestStore))
 	return nil
 }
 
 // slotToBlockKey converts a slot number to a block storage key
 func slotToBlockKey(slot uint64) []byte {
-	key := make([]byte, len(PrefixBlock)+8)
+	key := make([]byte, len(PrefixBlock)+UNINT64_BYTES)
 	copy(key, PrefixBlock)
 	binary.BigEndian.PutUint64(key[len(PrefixBlock):], slot)
 	return key
@@ -137,10 +128,50 @@ func slotToBlockKey(slot uint64) []byte {
 
 // slotToFinalizedKey converts a slot number to a finalized marker key
 func slotToFinalizedKey(slot uint64) []byte {
-	key := make([]byte, len(PrefixBlockFinalized)+8)
+	key := make([]byte, len(PrefixBlockFinalized)+UNINT64_BYTES)
 	copy(key, PrefixBlockFinalized)
 	binary.BigEndian.PutUint64(key[len(PrefixBlockFinalized):], slot)
 	return key
+}
+
+func metaLatestFinalizedKey() []byte {
+	return []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
+}
+
+func metaLatestStoreKey() []byte {
+	return []byte(PrefixBlockMeta + BlockMetaKeyLatestStore)
+}
+
+func (s *GenericBlockStore) loadMetaLatestFinalizedSlot() (uint64, error) {
+	key := metaLatestFinalizedKey()
+	value, err := s.provider.Get(key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get latest finalized: %w", err)
+	}
+	if value == nil {
+		return 0, nil
+	}
+	if len(value) != UNINT64_BYTES {
+		return 0, fmt.Errorf("invalid latest finalized value length: %d", len(value))
+	}
+
+	return binary.BigEndian.Uint64(value), nil
+}
+
+func (s *GenericBlockStore) loadMetaLatestStoreSlot() (uint64, error) {
+	key := metaLatestStoreKey()
+	value, err := s.provider.Get(key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get latest store: %w", err)
+	}
+	if value == nil {
+		return 0, nil
+	}
+	if len(value) != UNINT64_BYTES {
+		return 0, fmt.Errorf("invalid latest store value length: %d", len(value))
+	}
+
+	return binary.BigEndian.Uint64(value), nil
 }
 
 // getSlotLock returns or creates a RWMutex for the given slot
@@ -290,18 +321,26 @@ func (s *GenericBlockStore) GetLatestStoreSlot() uint64 {
 }
 
 func (s *GenericBlockStore) updateLatestStoreSlot(slot uint64) error {
-	if slot <= s.latestStore.Load() {
-		logx.Warn("BLOCKSTORE", fmt.Sprintf("Latest store is already at %d", slot))
-		return nil
-	}
 	s.latestStore.Store(slot)
-	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestStore)
-	metaValue := make([]byte, 8)
+	metaKey := metaLatestStoreKey()
+	metaValue := make([]byte, UNINT64_BYTES)
 	binary.BigEndian.PutUint64(metaValue, slot)
 	if err := s.provider.Put(metaKey, metaValue); err != nil {
 		return fmt.Errorf("failed to update latest store: %w", err)
 	}
 	logx.Info("BLOCKSTORE", fmt.Sprintf("Updated latest store to %d", slot))
+	return nil
+}
+
+func (s *GenericBlockStore) updateLatestFinalizedSlot(slot uint64) error {
+	s.latestFinalized.Store(slot)
+	metaKey := metaLatestFinalizedKey()
+	metaValue := make([]byte, UNINT64_BYTES)
+	binary.BigEndian.PutUint64(metaValue, slot)
+	if err := s.provider.Put(metaKey, metaValue); err != nil {
+		return fmt.Errorf("failed to update latest finalized: %w", err)
+	}
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Updated latest finalized to %d", slot))
 	return nil
 }
 
@@ -469,23 +508,14 @@ func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
 
 	currentLatest := s.latestFinalized.Load()
 	if slot > currentLatest {
-		s.latestFinalized.Store(slot)
-
-		// Store updated metadata
-		metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
-		metaValue := make([]byte, 8)
-		binary.BigEndian.PutUint64(metaValue, slot)
-
-		if err := s.provider.Put(metaKey, metaValue); err != nil {
+		if err := s.updateLatestFinalizedSlot(slot); err != nil {
 			return fmt.Errorf("failed to update latest finalized: %w", err)
 		}
-
 		// Update block height metric
 		monitoring.SetBlockHeight(slot)
 	}
 
 	logx.Info("BLOCKSTORE", fmt.Sprintf("Marked block as finalized at slot %d", slot))
-
 	return nil
 }
 
@@ -525,4 +555,71 @@ func (bs *GenericBlockStore) GetTransactionBlockInfo(clientHashHex string) (slot
 	}
 
 	return txMeta.Slot, blk, blk.Status == block.BlockFinalized, true
+}
+
+func (bs *GenericBlockStore) removeBlockBySlots(slots []uint64) error {
+	if len(slots) == 0 {
+		logx.Debug("BLOCKSTORE", "removeBlockBySlots: no slots provided")
+		return nil
+	}
+
+	logx.Info("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: start removing %d slots", len(slots)))
+
+	// 1) Load blocks in batch to collect all tx hashes
+	blocks, err := bs.GetBatch(slots)
+	if err != nil {
+		logx.Error("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: failed to batch load blocks: %v", err))
+		return fmt.Errorf("failed to load blocks for deletion: %w", err)
+	}
+
+	txHashesSet := make(map[string]struct{})
+	for _, slot := range slots {
+		blk, ok := blocks[slot]
+		if !ok || blk == nil {
+			logx.Warn("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: block at slot %d not found during deletion", slot))
+			continue
+		}
+		for _, entry := range blk.Entries {
+			for _, h := range entry.TxHashes {
+				txHashesSet[h] = struct{}{}
+			}
+		}
+	}
+
+	// Convert set to slice
+	txHashes := make([]string, 0, len(txHashesSet))
+	for h := range txHashesSet {
+		txHashes = append(txHashes, h)
+	}
+
+	logx.Info("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: collected %d unique tx hashes to delete", len(txHashes)))
+
+	// 2) Delete tx metas then txs in batches
+	if len(txHashes) > 0 {
+		if err := bs.txMetaStore.DeleteBatch(txHashes); err != nil {
+			logx.Error("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: failed to delete tx metas: %v", err))
+			return fmt.Errorf("failed to delete tx metas: %w", err)
+		}
+		if err := bs.txStore.DeleteBatch(txHashes); err != nil {
+			logx.Error("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: failed to delete txs: %v", err))
+			return fmt.Errorf("failed to delete txs: %w", err)
+		}
+	}
+
+	// 3) Delete blocks in a single db batch
+	batch := bs.provider.Batch()
+	defer batch.Close()
+
+	for _, slot := range slots {
+		key := slotToBlockKey(slot)
+		batch.Delete(key)
+	}
+
+	if err := batch.Write(); err != nil {
+		logx.Error("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: failed to batch remove blocks: %v", err))
+		return fmt.Errorf("failed to batch remove blocks: %w", err)
+	}
+
+	logx.Info("BLOCKSTORE", fmt.Sprintf("removeBlockBySlots: removed %d blocks and %d txs/metas", len(slots), len(txHashes)))
+	return nil
 }
