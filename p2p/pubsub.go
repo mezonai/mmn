@@ -202,7 +202,7 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		return fmt.Errorf("mark block as finalized error: %w", err)
 	}
 
-	if err := ld.ApplyBlock(block); err != nil {
+	if err := ld.ApplyBlock(block, ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
 
