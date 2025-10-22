@@ -125,19 +125,15 @@ jobs:
             sudo chown mmn:mmn /etc/mezon/genesis.yml
           fi
 
-          if [ ! -d "/opt/mezon/node-data/node-listener" ]; then
-            echo "--> Initializing node data directory..."
-            set -a
-            source /etc/mezon/node-listener.env
-            set +a
-            /opt/mezon/mmn/bin/mmn init \
-              --data-dir "/opt/mezon/node-data/node-listener" \
-              --genesis "/etc/mezon/genesis.yml" \
-              --database rocksdb \
-              --privkey-path "/etc/mezon/listener_privkey.txt"
-          else
-            echo "--> Node data directory already exists, skipping init."
-          fi
+          echo "--> Initializing node data directory..."
+          set -a
+          source /etc/mezon/node-listener.env
+          set +a
+          /opt/mezon/mmn/bin/mmn init \
+            --data-dir "/opt/mezon/node-data/node-listener" \
+            --genesis "/etc/mezon/genesis.yml" \
+            --database rocksdb \
+            --privkey-path "/etc/mezon/listener_privkey.txt"
 
           sudo systemctl start mezon-listener || true
 
