@@ -81,6 +81,7 @@ type txInfo struct {
 	Status    int32  `json:"status"`
 	ErrMsg    string `json:"err_msg"`
 	ExtraInfo string `json:"extra_info"`
+	TxHash    string `json:"tx_hash"`
 }
 
 type getTxByHashResponse struct {
@@ -235,16 +236,6 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getTxByHashResponse), nil
 		}),
-		"tx.gettransactionstatus": handler.New(func(ctx context.Context, p getTxStatusRequest) (*txStatusInfo, error) {
-			res, err := s.rpcGetTransactionStatus(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*txStatusInfo), nil
-		}),
 		"tx.getpendingtransactions": handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
 			res, err := s.rpcGetPendingTransactions()
 			if err != nil {
@@ -325,28 +316,12 @@ func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
 		Nonce:     resp.Tx.Nonce,
 		Slot:      resp.Tx.Slot,
 		BlockHash: resp.Tx.Blockhash,
-		Status:    resp.Tx.Status,
+		Status:    int32(resp.Tx.Status),
 		ErrMsg:    resp.Tx.ErrMsg,
 		ExtraInfo: resp.Tx.ExtraInfo,
+		TxHash:    resp.Tx.TxHash,
 	}
 	return &getTxByHashResponse{Tx: info, Decimals: resp.Decimals}, nil
-}
-
-func (s *Server) rpcGetTransactionStatus(p getTxStatusRequest) (interface{}, *rpcError) {
-	resp, err := s.txSvc.GetTransactionStatus(context.Background(), &pb.GetTransactionStatusRequest{TxHash: p.TxHash})
-	if err != nil {
-		return nil, &rpcError{Code: -32004, Message: err.Error(), Data: p.TxHash}
-	}
-	return &txStatusInfo{
-		TxHash:        resp.TxHash,
-		Status:        int32(resp.Status),
-		BlockSlot:     resp.BlockSlot,
-		BlockHash:     resp.BlockHash,
-		Confirmations: resp.Confirmations,
-		ErrorMessage:  resp.ErrorMessage,
-		Timestamp:     resp.Timestamp,
-		ExtraInfo:     resp.ExtraInfo,
-	}, nil
 }
 
 func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
