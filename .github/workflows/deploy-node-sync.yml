@@ -76,6 +76,7 @@ jobs:
             -e "s|p2p-port 9001|p2p-port 9094|g" \
             /opt/mezon/mmn/config/systemd/mezon-listener.service.tpl \
             | sudo tee /etc/systemd/system/mezon-listener.service >/dev/null
+          cat /etc/systemd/system/mezon-listener.service
 
           echo "--> Creating listener env file..."
           sudo tee /etc/mezon/node-listener.env >/dev/null <<EOL
@@ -129,11 +130,14 @@ jobs:
           set -a
           source /etc/mezon/node-listener.env
           set +a
-          /opt/mezon/mmn/bin/mmn init \
+          sudo -u mmn -E /opt/mezon/mmn/bin/mmn init \
             --data-dir "/opt/mezon/node-data/node-listener" \
             --genesis "/etc/mezon/genesis.yml" \
             --database rocksdb \
-            --privkey-path "/etc/mezon/listener_privkey.txt"
+            --privkey-path "/etc/mezon/listener_privkey.txt" 2>&1
+
+          echo "--> [VERIFY] Checking directory contents AFTER init..."
+          sudo ls -l /opt/mezon/node-data/node-listener
 
           sudo systemctl start mezon-listener || true
 
