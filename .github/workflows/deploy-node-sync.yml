@@ -20,6 +20,8 @@ on:
     secrets:
       LISTENER_PRIVKEY:
         required: true
+      VERIFYING_KEY_B64:
+        required: true
 
 jobs:
   deploy_listener:
@@ -56,6 +58,7 @@ jobs:
           BOOTNODE_IP_LISTENER: ${{ vars.BOOTNODE_IP_LISTENER }}
           BOOTNODE_ID: ${{ vars.BOOTNODE_ID }}
           PUBLIC_IP_LISTENER: ${{ vars.PUBLIC_IP_LISTENER }}
+          VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
         run: |
           set -e
           echo "==> Setting up mezon-listener service locally for prod env..."
@@ -68,6 +71,11 @@ jobs:
           printf '%s' "$LISTENER_PRIVKEY" | sudo tee /etc/mezon/listener_privkey.txt >/dev/null
           sudo chmod 600 /etc/mezon/listener_privkey.txt
           sudo chown mmn:mmn /etc/mezon/listener_privkey.txt
+
+          echo "--> Writing verifying key..."
+          printf '%s' "$VERIFYING_KEY_B64" | sudo tee /opt/mezon/mmn/config/verifying_key.b64 >/dev/null
+          sudo chmod 600 /opt/mezon/mmn/config/verifying_key.b64
+          sudo chown mmn:mmn /opt/mezon/mmn/config/verifying_key.b64
 
           echo "--> Creating listener systemd service file..."
           BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP_LISTENER/tcp/9000/p2p/$BOOTNODE_ID"
