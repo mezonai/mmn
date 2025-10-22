@@ -94,7 +94,7 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block) error {
+func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
@@ -102,6 +102,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
 		return nil
 	}
+
 
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
@@ -152,7 +153,7 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 				state[tx.Sender].Nonce++
 				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
 				// Remove failed transaction from tracker
-				if l.txTracker != nil {
+				if l.txTracker != nil && !isListener {
 					l.txTracker.RemoveTransaction(txHash)
 				}
 				continue
@@ -160,10 +161,11 @@ func (l *Ledger) ApplyBlock(b *block.Block) error {
 			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			// Remove successful transaction from tracker
-			if l.txTracker != nil {
+			if l.txTracker != nil && !isListener {
 				l.txTracker.RemoveTransaction(txHash)
 			}
 
+			// commit the update
 			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -242,7 +244,6 @@ func (l *Ledger) GetTxByHash(hash string) (*transaction.Transaction, *types.Tran
 	return tx, txMeta, nil, nil
 }
 
-// GetTxBatch retrieves multiple transactions and their metadata using batch operations
 func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[string]*types.TransactionMeta, error) {
 	if len(hashes) == 0 {
 		return []*transaction.Transaction{}, map[string]*types.TransactionMeta{}, nil

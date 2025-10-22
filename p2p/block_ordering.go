@@ -97,13 +97,18 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 }
 
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
-	// Verify signature
+
 	if !blk.VerifySignature() {
 		logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
 		return fmt.Errorf("invalid signature")
+
 	}
 
-	// Verify PoH
+	if err := ln.verifyBlockTransactions(blk); err != nil {
+		logx.Error("BLOCK", fmt.Sprintf("Transaction verification failed at slot %d: %v", blk.Slot, err))
+		return fmt.Errorf("transaction verification failed: %w", err)
+	}
+
 	if err := blk.VerifyPoH(); err != nil {
 		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 		blk.InvalidPoH = true
@@ -118,7 +123,7 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("failed to finalize block at slot %d: %w", blk.Slot, err)
 	}
 
-	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk), ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
 

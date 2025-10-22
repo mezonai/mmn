@@ -520,3 +520,27 @@ func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock
 
 	return nil
 }
+
+func (ln *Libp2pNetwork) verifyBlockTransactions(blk *block.BroadcastedBlock) error {
+	if blk == nil {
+		return fmt.Errorf("block is nil")
+	}
+
+	for entryIdx, entry := range blk.Entries {
+		for txIdx, tx := range entry.Transactions {
+			if tx == nil {
+				logx.Warn("BLOCK:TX:VERIFY", fmt.Sprintf("Nil transaction at slot %d, entry %d, tx %d", blk.Slot, entryIdx, txIdx))
+				continue
+			}
+			if !tx.Verify(ln.zkVerify) {
+				logx.Error("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verification failed at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, tx.Hash()))
+				return fmt.Errorf("transaction verification failed for tx hash: %s", tx.Hash())
+			}
+
+			logx.Debug("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verified successfully at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, tx.Hash()))
+		}
+	}
+
+	logx.Info("BLOCK:TX:VERIFY", fmt.Sprintf("All transactions verified successfully for block at slot %d", blk.Slot))
+	return nil
+}

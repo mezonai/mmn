@@ -548,3 +548,4 @@ jobs:
       binary_path_from_caller: ${{ needs.prepare_sync_tags.outputs.path }}
     secrets:
       LISTENER_PRIVKEY: ${{ secrets.LISTENER_PRIVKEY }}
+      VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
