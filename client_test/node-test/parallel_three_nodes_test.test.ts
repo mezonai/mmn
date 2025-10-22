@@ -1,5 +1,5 @@
-import { GrpcClient } from './grpc_client';
-import { TransactionTracker } from './transaction_tracker';
+import { GrpcClient } from "./grpc_client";
+import { TransactionTracker } from "./transaction_tracker";
 import {
   faucetPublicKeyBase58,
   TxTypeTransfer,
@@ -11,14 +11,14 @@ import {
   signTx,
   sendTxViaGrpc,
   fundAccount,
-  getCurrentNonce
-} from './utils';
+  getCurrentNonce,
+} from "./utils";
 
 // Node configurations
 const NODE_CONFIGS = [
-  { name: 'node1', address: '127.0.0.1:9001' },
-  { name: 'node2', address: '127.0.0.1:9002' },
-  { name: 'node3', address: '127.0.0.1:9003' },
+  { name: "node1", address: "127.0.0.1:9001" },
+  { name: "node2", address: "127.0.0.1:9002" },
+  { name: "node3", address: "127.0.0.1:9003" },
 ];
 
 interface NodeClient {
@@ -31,7 +31,7 @@ interface NodeClient {
 async function verifyBalanceAcrossNodes(
   nodeClients: NodeClient[],
   address: string,
-  expectedBalance: number
+  expectedBalance: number,
 ): Promise<boolean> {
   const balances: { [key: string]: number } = {};
 
@@ -49,34 +49,47 @@ async function verifyBalanceAcrossNodes(
 
   // Check if all nodes have the same balance
   const uniqueBalances = Object.values(balances);
-  const allSame = uniqueBalances.every((balance) => balance === expectedBalance);
+  const allSame = uniqueBalances.every(
+    (balance) => balance === expectedBalance,
+  );
 
   if (!allSame) {
-    console.error(`Balance mismatch! Expected: ${expectedBalance}, Got:`, balances);
+    console.error(
+      `Balance mismatch! Expected: ${expectedBalance}, Got:`,
+      balances,
+    );
   }
 
   return allSame;
 }
 
 // Check consensus across all nodes (single attempt)
-async function getBalanceCrossNodes(nodeClients: NodeClient[], address: string): Promise<number | null> {
+async function getBalanceCrossNodes(
+  nodeClients: NodeClient[],
+  address: string,
+): Promise<number | null> {
   const balances: number[] = [];
   const nodeBalances: { [key: string]: number } = {};
-  
+
   for (const nodeClient of nodeClients) {
     try {
       const balance = await getAccountBalance(nodeClient.client, address);
       balances.push(balance);
       nodeBalances[nodeClient.name] = balance;
-      console.log(`${nodeClient.name} balance for ${address.substring(0, 8)}...: ${balance}`);
+      console.log(
+        `${nodeClient.name} balance for ${address.substring(0, 8)}...: ${balance}`,
+      );
     } catch (error) {
       console.error(`Failed to get balance from ${nodeClient.name}:`, error);
       return null;
     }
   }
-  
-  console.log(`All node balances for ${address.substring(0, 8)}...:`, nodeBalances);
-  
+
+  console.log(
+    `All node balances for ${address.substring(0, 8)}...:`,
+    nodeBalances,
+  );
+
   // Check if all balances are the same
   if (balances.every((balance) => balance === balances[0])) {
     return balances[0];
@@ -87,7 +100,7 @@ async function getBalanceCrossNodes(nodeClients: NodeClient[], address: string):
   return null;
 }
 
-describe('Parallel Three Nodes Token Transfer Tests', () => {
+describe("Parallel Three Nodes Token Transfer Tests", () => {
   let nodeClients: NodeClient[] = [];
   let transactionTracker: TransactionTracker;
 
@@ -109,8 +122,8 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
     transactionTracker.trackTransactions();
 
     console.log(
-      'Connected to nodes:',
-      nodeClients.map((nc) => nc.name)
+      "Connected to nodes:",
+      nodeClients.map((nc) => nc.name),
     );
   });
 
@@ -128,14 +141,14 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
     // await waitForTransaction(2000);
   });
 
-  describe('Multi-Node Parallel Transfer Tests', () => {
-    test('Parallel Transfers Across 3 Nodes with Consensus Verification', async () => {
+  describe("Multi-Node Parallel Transfer Tests", () => {
+    test("Parallel Transfers Across 3 Nodes with Consensus Verification", async () => {
       const sender = await generateTestAccount();
       const recipient1 = await generateTestAccount();
       const recipient2 = await generateTestAccount();
       const recipient3 = await generateTestAccount();
 
-      console.log('Test accounts created:', {
+      console.log("Test accounts created:", {
         sender: sender.address,
         recipient1: recipient1.address,
         recipient2: recipient2.address,
@@ -144,46 +157,100 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
 
       // Fund sender account using node1
       await waitForTransaction(800); // ~ 2 slots
-      const faucetAccount = await nodeClients[0].client.getAccount(faucetPublicKeyBase58);
-      console.log('Faucet account state:', {
+      const faucetAccount = await nodeClients[0].client.getAccount(
+        faucetPublicKeyBase58,
+      );
+      console.log("Faucet account state:", {
         address: faucetAccount.address,
         balance: faucetAccount.balance,
         nonce: faucetAccount.nonce,
       });
-      
+
       // Get current faucet account nonce using getCurrentNonce
-      const currentFaucetNonce = await getCurrentNonce(nodeClients[0].client, faucetPublicKeyBase58, 'pending');
+      const currentFaucetNonce = await getCurrentNonce(
+        nodeClients[0].client,
+        faucetPublicKeyBase58,
+        "pending",
+      );
       const fundingNonce = currentFaucetNonce + 1;
-      
-      console.log(`Funding sender ${sender.address.substring(0, 8)}... with nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.address, 3000, 'Parallel Transfers Across 3 Nodes with Consensus Verification');
+
+      console.log(
+        `Funding sender ${sender.address.substring(0, 8)}... with nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`,
+      );
+      const fundResponse = await fundAccount(
+        nodeClients[0].client,
+        sender.address,
+        3000,
+        "Parallel Transfers Across 3 Nodes with Consensus Verification",
+      );
       if (!fundResponse.ok) {
-        console.warn('Funding failed, this might be due to mempool being full or nonce conflicts:', fundResponse.error);
-        console.warn('Faucet current nonce:', currentFaucetNonce, 'Used nonce:', fundingNonce);
+        console.warn(
+          "Funding failed, this might be due to mempool being full or nonce conflicts:",
+          fundResponse.error,
+        );
+        console.warn(
+          "Faucet current nonce:",
+          currentFaucetNonce,
+          "Used nonce:",
+          fundingNonce,
+        );
         // Skip this test if funding fails - this is expected in a busy test environment
         return;
       }
 
       await transactionTracker.waitForTerminalStatus(fundResponse.tx_hash!);
-      console.log('Funding successful!');
+      console.log("Funding successful!");
 
       // Verify sender balance across all nodes
-      const senderBalanceConsensus = await getBalanceCrossNodes(nodeClients, sender.address);
+      const senderBalanceConsensus = await getBalanceCrossNodes(
+        nodeClients,
+        sender.address,
+      );
       expect(senderBalanceConsensus).toBe(3000);
 
-      console.log('Sender funded successfully across all nodes with balance:', senderBalanceConsensus);
+      console.log(
+        "Sender funded successfully across all nodes with balance:",
+        senderBalanceConsensus,
+      );
 
       // Create transactions for parallel execution
-      const tx1 = buildTx(sender.address, recipient1.address, 500, 'Parallel tx to node1', 1, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx1 = buildTx(
+        sender.address,
+        recipient1.address,
+        500,
+        "Parallel tx to node1",
+        1,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx1.signature = signTx(tx1, sender.privateKey);
 
-      const tx2 = buildTx(sender.address, recipient2.address, 700, 'Parallel tx to node2', 2, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx2 = buildTx(
+        sender.address,
+        recipient2.address,
+        700,
+        "Parallel tx to node2",
+        2,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx2.signature = signTx(tx2, sender.privateKey);
 
-      const tx3 = buildTx(sender.address, recipient3.address, 800, 'Parallel tx to node3', 3, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx3 = buildTx(
+        sender.address,
+        recipient3.address,
+        800,
+        "Parallel tx to node3",
+        3,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx3.signature = signTx(tx3, sender.privateKey);
 
-      console.log('Sending parallel transactions to different nodes...');
+      console.log("Sending parallel transactions to different nodes...");
 
       // Send transactions to different nodes in parallel
       const [response1, response2, response3] = await Promise.all([
@@ -192,21 +259,37 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
         sendTxViaGrpc(nodeClients[2].client, tx3), // Send to node3
       ]);
 
-      console.log('Parallel transaction results:', {
-        node1_tx1: { success: response1.ok, hash: response1.tx_hash, error: response1.error },
-        node2_tx2: { success: response2.ok, hash: response2.tx_hash, error: response2.error },
-        node3_tx3: { success: response3.ok, hash: response3.tx_hash, error: response3.error },
+      console.log("Parallel transaction results:", {
+        node1_tx1: {
+          success: response1.ok,
+          hash: response1.tx_hash,
+          error: response1.error,
+        },
+        node2_tx2: {
+          success: response2.ok,
+          hash: response2.tx_hash,
+          error: response2.error,
+        },
+        node3_tx3: {
+          success: response3.ok,
+          hash: response3.tx_hash,
+          error: response3.error,
+        },
       });
 
       // Wait for transactions to propagate and reach consensus
       await Promise.all([
         transactionTracker.waitForTerminalStatus(response1.tx_hash!),
-        response2.ok && response2.tx_hash && transactionTracker.waitForTerminalStatus(response2.tx_hash!),
-        response3.ok && response3.tx_hash && transactionTracker.waitForTerminalStatus(response3.tx_hash!),
+        response2.ok &&
+          response2.tx_hash &&
+          transactionTracker.waitForTerminalStatus(response2.tx_hash!),
+        response3.ok &&
+          response3.tx_hash &&
+          transactionTracker.waitForTerminalStatus(response3.tx_hash!),
       ]);
 
       // Verify consensus across all nodes for all accounts
-      console.log('Verifying consensus across all nodes...');
+      console.log("Verifying consensus across all nodes...");
 
       // Calculate expected balances based on successful transactions
       let expectedSenderBalance = 3000;
@@ -228,12 +311,24 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       }
 
       // Wait for consensus on all accounts
-      const finalSenderBalance = await getBalanceCrossNodes(nodeClients, sender.address);
-      const finalRecipient1Balance = await getBalanceCrossNodes(nodeClients, recipient1.address);
-      const finalRecipient2Balance = await getBalanceCrossNodes(nodeClients, recipient2.address);
-      const finalRecipient3Balance = await getBalanceCrossNodes(nodeClients, recipient3.address);
+      const finalSenderBalance = await getBalanceCrossNodes(
+        nodeClients,
+        sender.address,
+      );
+      const finalRecipient1Balance = await getBalanceCrossNodes(
+        nodeClients,
+        recipient1.address,
+      );
+      const finalRecipient2Balance = await getBalanceCrossNodes(
+        nodeClients,
+        recipient2.address,
+      );
+      const finalRecipient3Balance = await getBalanceCrossNodes(
+        nodeClients,
+        recipient3.address,
+      );
 
-      console.log('Final consensus balances:', {
+      console.log("Final consensus balances:", {
         sender: finalSenderBalance,
         recipient1: finalRecipient1Balance,
         recipient2: finalRecipient2Balance,
@@ -256,27 +351,57 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
 
       // Additional verification: Check that all nodes have identical states
       const allAccountsConsistent = await Promise.all([
-        verifyBalanceAcrossNodes(nodeClients, sender.address, expectedSenderBalance),
-        verifyBalanceAcrossNodes(nodeClients, recipient1.address, expectedRecipient1Balance),
-        verifyBalanceAcrossNodes(nodeClients, recipient2.address, expectedRecipient2Balance),
-        verifyBalanceAcrossNodes(nodeClients, recipient3.address, expectedRecipient3Balance),
+        verifyBalanceAcrossNodes(
+          nodeClients,
+          sender.address,
+          expectedSenderBalance,
+        ),
+        verifyBalanceAcrossNodes(
+          nodeClients,
+          recipient1.address,
+          expectedRecipient1Balance,
+        ),
+        verifyBalanceAcrossNodes(
+          nodeClients,
+          recipient2.address,
+          expectedRecipient2Balance,
+        ),
+        verifyBalanceAcrossNodes(
+          nodeClients,
+          recipient3.address,
+          expectedRecipient3Balance,
+        ),
       ]);
 
-      expect(allAccountsConsistent.every((consistent) => consistent)).toBe(true);
+      expect(allAccountsConsistent.every((consistent) => consistent)).toBe(
+        true,
+      );
 
-      console.log('✅ All nodes reached consensus successfully!');
+      console.log("✅ All nodes reached consensus successfully!");
     }, 60000); // 60 second timeout for this complex test
 
-    test('Concurrent Same-Sender Transactions to Different Nodes', async () => {
+    test("Concurrent Same-Sender Transactions to Different Nodes", async () => {
       const sender = await generateTestAccount();
-      const recipients = [await generateTestAccount(), await generateTestAccount(), await generateTestAccount()];
+      const recipients = [
+        await generateTestAccount(),
+        await generateTestAccount(),
+        await generateTestAccount(),
+      ];
 
       // Fund sender
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.address, 2000, 'Concurrent Same-Sender Transactions to Different Nodes');
+      const fundResponse = await fundAccount(
+        nodeClients[0].client,
+        sender.address,
+        2000,
+        "Concurrent Same-Sender Transactions to Different Nodes",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial funding consensus
-      const initialBalance = await getBalanceCrossNodes(nodeClients, sender.address);
+      const initialBalance = await getBalanceCrossNodes(
+        nodeClients,
+        sender.address,
+      );
       expect(initialBalance).toBe(2000);
 
       // Create concurrent transactions with sequential nonces
@@ -289,13 +414,13 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
           index + 1,
           TxTypeTransfer,
           sender.zkProof,
-          sender.zkPub
+          sender.zkPub,
         );
         tx.signature = signTx(tx, sender.privateKey);
         return tx;
       });
 
-      console.log('Sending concurrent transactions with sequential nonces...');
+      console.log("Sending concurrent transactions with sequential nonces...");
 
       // Send all transactions concurrently to different nodes
       const responses = await Promise.all([
@@ -305,16 +430,19 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       ]);
 
       console.log(
-        'Concurrent transaction responses:',
+        "Concurrent transaction responses:",
         responses.map((r, i) => ({
           [`tx${i + 1}`]: { success: r.ok, error: r.error },
-        }))
+        })),
       );
 
       await waitForTransaction(6000);
 
       // Verify final state consensus
-      const finalSenderBalance = await getBalanceCrossNodes(nodeClients, sender.address);
+      const finalSenderBalance = await getBalanceCrossNodes(
+        nodeClients,
+        sender.address,
+      );
 
       // Count successful transactions
       const successfulTxCount = responses.filter((r) => r.ok).length;
@@ -324,31 +452,55 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
 
       // Verify recipients received funds correctly
       for (let i = 0; i < recipients.length; i++) {
-        const recipientBalance = await getBalanceCrossNodes(nodeClients, recipients[i].address);
+        const recipientBalance = await getBalanceCrossNodes(
+          nodeClients,
+          recipients[i].address,
+        );
         const expectedRecipientBalance = responses[i].ok ? 300 : 0;
         expect(recipientBalance).toBe(expectedRecipientBalance);
       }
 
-      console.log('✅ Concurrent transactions handled correctly across all nodes!');
+      console.log(
+        "✅ Concurrent transactions handled correctly across all nodes!",
+      );
     }, 60000);
 
-    test('Network Partition Recovery Simulation', async () => {
+    test("Network Partition Recovery Simulation", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender through node1
-      const fundResponse = await fundAccount(nodeClients[0].client, sender.address, 1000, 'Network Partition Recovery Simulation');
+      const fundResponse = await fundAccount(
+        nodeClients[0].client,
+        sender.address,
+        1000,
+        "Network Partition Recovery Simulation",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial consensus
-      const initialBalance = await getBalanceCrossNodes(nodeClients, sender.address);
+      const initialBalance = await getBalanceCrossNodes(
+        nodeClients,
+        sender.address,
+      );
       expect(initialBalance).toBe(1000);
 
       // Send transaction to only one node (simulating network partition)
-      const tx = buildTx(sender.address, recipient.address, 400, 'Partition test tx', 1, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx = buildTx(
+        sender.address,
+        recipient.address,
+        400,
+        "Partition test tx",
+        1,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx.signature = signTx(tx, sender.privateKey);
 
-      console.log('Sending transaction to node1 only (simulating partition)...');
+      console.log(
+        "Sending transaction to node1 only (simulating partition)...",
+      );
       const response = await sendTxViaGrpc(nodeClients[0].client, tx);
       expect(response.ok).toBe(true);
 
@@ -356,23 +508,37 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       await transactionTracker.waitForTerminalStatus(response.tx_hash!);
 
       // Verify all nodes eventually reach consensus
-      const finalSenderBalance = await getBalanceCrossNodes(nodeClients, sender.address);
-      const finalRecipientBalance = await getBalanceCrossNodes(nodeClients, recipient.address);
+      const finalSenderBalance = await getBalanceCrossNodes(
+        nodeClients,
+        sender.address,
+      );
+      const finalRecipientBalance = await getBalanceCrossNodes(
+        nodeClients,
+        recipient.address,
+      );
 
       expect(finalSenderBalance).toBe(600);
       expect(finalRecipientBalance).toBe(400);
 
       // Verify consistency across all nodes
-      const senderConsistent = await verifyBalanceAcrossNodes(nodeClients, sender.address, 600);
-      const recipientConsistent = await verifyBalanceAcrossNodes(nodeClients, recipient.address, 400);
+      const senderConsistent = await verifyBalanceAcrossNodes(
+        nodeClients,
+        sender.address,
+        600,
+      );
+      const recipientConsistent = await verifyBalanceAcrossNodes(
+        nodeClients,
+        recipient.address,
+        400,
+      );
 
       expect(senderConsistent).toBe(true);
       expect(recipientConsistent).toBe(true);
 
-      console.log('✅ Network partition recovery successful!');
+      console.log("✅ Network partition recovery successful!");
     }, 60000);
 
-    test('Node Failure Resilience', async () => {
+    test("Node Failure Resilience", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
@@ -380,10 +546,21 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       let fundResponse;
       for (let i = 0; i < nodeClients.length; i++) {
         try {
-          const currentFaucetNonce = await getCurrentNonce(nodeClients[i].client, faucetPublicKeyBase58, 'pending');
+          const currentFaucetNonce = await getCurrentNonce(
+            nodeClients[i].client,
+            faucetPublicKeyBase58,
+            "pending",
+          );
           const fundingNonce = currentFaucetNonce + 1;
-          console.log(`Node ${i + 1}: Using nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`);
-          fundResponse = await fundAccount(nodeClients[i].client, sender.address, 1000, 'Node Failure Resilience');
+          console.log(
+            `Node ${i + 1}: Using nonce ${fundingNonce} (current nonce: ${currentFaucetNonce})`,
+          );
+          fundResponse = await fundAccount(
+            nodeClients[i].client,
+            sender.address,
+            1000,
+            "Node Failure Resilience",
+          );
           if (fundResponse.ok) break;
         } catch (error) {
           console.warn(`Node ${i + 1} failed during funding:`, error);
@@ -392,7 +569,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       }
 
       if (!fundResponse?.ok) {
-        console.warn('All nodes failed during funding. Skipping test.');
+        console.warn("All nodes failed during funding. Skipping test.");
         return;
       }
 
@@ -409,7 +586,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
           i + 1,
           TxTypeTransfer,
           sender.zkProof,
-          sender.zkPub
+          sender.zkPub,
         );
         tx.signature = signTx(tx, sender.privateKey);
         transactions.push(tx);
@@ -421,20 +598,30 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
         let success = false;
         for (let nodeIndex = 0; nodeIndex < nodeClients.length; nodeIndex++) {
           try {
-            const response = await sendTxViaGrpc(nodeClients[nodeIndex].client, tx);
+            const response = await sendTxViaGrpc(
+              nodeClients[nodeIndex].client,
+              tx,
+            );
             if (response.ok) {
-              results.push({ success: true, nodeUsed: nodeIndex + 1, txHash: response.tx_hash });
+              results.push({
+                success: true,
+                nodeUsed: nodeIndex + 1,
+                txHash: response.tx_hash,
+              });
               success = true;
               break;
             }
           } catch (error) {
-            console.warn(`Node ${nodeIndex + 1} failed for transaction:`, error);
+            console.warn(
+              `Node ${nodeIndex + 1} failed for transaction:`,
+              error,
+            );
             continue;
           }
         }
 
         if (!success) {
-          results.push({ success: false, error: 'All nodes failed' });
+          results.push({ success: false, error: "All nodes failed" });
         }
 
         // Small delay between transactions
@@ -443,29 +630,43 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
 
       // Wait for all transactions to propagate
       await Promise.all([
-        results.map((r) => r.success && r.txHash && transactionTracker.waitForTerminalStatus(r.txHash)),
+        results.map(
+          (r) =>
+            r.success &&
+            r.txHash &&
+            transactionTracker.waitForTerminalStatus(r.txHash),
+        ),
       ]);
 
       // Verify final state across all available nodes
       const finalBalances = [];
       for (let i = 0; i < nodeClients.length; i++) {
         try {
-          const balance = await getAccountBalance(nodeClients[i].client, recipient.address);
+          const balance = await getAccountBalance(
+            nodeClients[i].client,
+            recipient.address,
+          );
           finalBalances.push({ node: i + 1, balance });
         } catch (error: any) {
-          finalBalances.push({ node: i + 1, balance: null, error: error?.message || 'Unknown error' });
+          finalBalances.push({
+            node: i + 1,
+            balance: null,
+            error: error?.message || "Unknown error",
+          });
         }
       }
 
-      console.log('Transaction results:', results);
-      console.log('Final balances across nodes:', finalBalances);
+      console.log("Transaction results:", results);
+      console.log("Final balances across nodes:", finalBalances);
 
       // At least some transactions should succeed
       const successfulTxs = results.filter((r) => r.success).length;
       expect(successfulTxs).toBeGreaterThan(0);
 
       // Available nodes should have consistent balances
-      const validBalances = finalBalances.filter((b) => b.balance !== null).map((b) => b.balance);
+      const validBalances = finalBalances
+        .filter((b) => b.balance !== null)
+        .map((b) => b.balance);
       if (validBalances.length > 1) {
         const firstBalance = validBalances[0];
         validBalances.forEach((balance) => {
@@ -474,7 +675,7 @@ describe('Parallel Three Nodes Token Transfer Tests', () => {
       }
 
       console.log(
-        `✅ Node failure resilience test passed (${successfulTxs}/${numTransactions} transactions succeeded)`
+        `✅ Node failure resilience test passed (${successfulTxs}/${numTransactions} transactions succeeded)`,
       );
     }, 90000);
   });

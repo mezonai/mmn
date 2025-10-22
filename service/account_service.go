@@ -11,7 +11,6 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/utils"
-
 )
 
 type AccountServiceImpl struct {
@@ -106,4 +105,3 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		Tag:     tag,
 	}, nil
 }
-

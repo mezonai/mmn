@@ -1,6 +1,6 @@
-import {TransactionStatus} from './generated/tx';
-import {GrpcClient} from './grpc_client';
-import {TransactionTracker} from './transaction_tracker';
+import { TransactionStatus } from "./generated/tx";
+import { GrpcClient } from "./grpc_client";
+import { TransactionTracker } from "./transaction_tracker";
 import {
   buildTx,
   faucetPublicKeyBase58,
@@ -11,12 +11,12 @@ import {
   sendTxViaGrpc,
   signTx,
   TxTypeTransfer,
-  waitForTransaction
-} from './utils';
+  waitForTransaction,
+} from "./utils";
 
-const GRPC_SERVER_ADDRESS = '127.0.0.1:9001';
+const GRPC_SERVER_ADDRESS = "127.0.0.1:9001";
 
-describe('Token Transfer Tests', () => {
+describe("Token Transfer Tests", () => {
   let grpcClient: GrpcClient;
   let transactionTracker: TransactionTracker;
 
@@ -36,131 +36,236 @@ describe('Token Transfer Tests', () => {
 
   beforeEach(async () => {
     // Wait between tests to avoid conflicts
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   });
 
-  describe('Success Cases', () => {
-    test('Valid Transfer Transaction', async () => {
+  describe("Success Cases", () => {
+    test("Valid Transfer Transaction", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Valid Transfer Transaction');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Valid Transfer Transaction",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender balance before transfer
-      const senderBalanceBefore = await getAccountBalance(grpcClient, sender.address);
+      const senderBalanceBefore = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
       expect(senderBalanceBefore).toBe(1000);
 
       // Get current nonce for sender before transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Perform transfer
-      const extraInfo = JSON.stringify({ type: "bribe" })
-      const transferTx = buildTx(sender.address, recipient.address, 100, 'Valid transfer', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub, extraInfo);
+      const extraInfo = JSON.stringify({ type: "bribe" });
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Valid transfer",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+        extraInfo,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const transferResponse = await sendTxViaGrpc(grpcClient, transferTx);
-      console.log('Transfer response error:', transferResponse.error);
+      console.log("Transfer response error:", transferResponse.error);
       expect(transferResponse.ok).toBe(true);
       expect(transferResponse.tx_hash).toBeDefined();
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(transferResponse.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        transferResponse.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Verify balances after transfer
-      const senderBalanceAfter = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalanceAfter = await getAccountBalance(grpcClient, recipient.address);
+      const senderBalanceAfter = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const recipientBalanceAfter = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalanceAfter).toBe(900);
       expect(recipientBalanceAfter).toBe(100);
     });
 
-    test('Transfer with Text Data', async () => {
+    test("Transfer with Text Data", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Transfer with Text Data');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Transfer with Text Data",
+      );
       if (!fundResponse.ok) {
-        console.log('Fund response error:', fundResponse.error || 'Unknown error');
+        console.log(
+          "Fund response error:",
+          fundResponse.error || "Unknown error",
+        );
       }
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Perform transfer with text data
-      const customMessage = 'Transfer with custom message - blockchain test';
-      const transferTx = buildTx(sender.address, recipient.address, 50, customMessage, senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const customMessage = "Transfer with custom message - blockchain test";
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        50,
+        customMessage,
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       expect(response.tx_hash).toBeDefined();
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(response.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        response.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Verify balances
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalance).toBe(950);
       expect(recipientBalance).toBe(50);
     });
 
-    test('Transfer Full Balance', async () => {
+    test("Transfer Full Balance", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 500, 'Transfer Full Balance');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        500,
+        "Transfer Full Balance",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Transfer full balance
-      const transferTx = buildTx(sender.address, recipient.address, 500, 'Full balance transfer', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        500,
+        "Full balance transfer",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       expect(response.tx_hash).toBeDefined();
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(response.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        response.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Verify sender has zero balance and recipient has full amount
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalance).toBe(0);
       expect(recipientBalance).toBe(500);
     });
 
-    test('Transfer Between Multiple Accounts', async () => {
+    test("Transfer Between Multiple Accounts", async () => {
       const account1 = await generateTestAccount();
       const account2 = await generateTestAccount();
       const account3 = await generateTestAccount();
 
-      const fundResponse = await fundAccount(grpcClient, account1.address, 1000, 'Transfer Between Multiple Accounts');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        account1.address,
+        1000,
+        "Transfer Between Multiple Accounts",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for account1 before first transfer
-      const account1CurrentNonce = await getCurrentNonce(grpcClient, account1.address, 'pending');
+      const account1CurrentNonce = await getCurrentNonce(
+        grpcClient,
+        account1.address,
+        "pending",
+      );
       const account1NextNonce = account1CurrentNonce + 1;
-      console.log(`Account1 current nonce: ${account1CurrentNonce}, using nonce: ${account1NextNonce}`);
+      console.log(
+        `Account1 current nonce: ${account1CurrentNonce}, using nonce: ${account1NextNonce}`,
+      );
 
       // Transfer from account1 to account2
-      const transfer1 = buildTx(account1.address, account2.address, 300, 'Chain transfer 1', account1NextNonce, TxTypeTransfer, account1.zkProof, account1.zkPub);
+      const transfer1 = buildTx(
+        account1.address,
+        account2.address,
+        300,
+        "Chain transfer 1",
+        account1NextNonce,
+        TxTypeTransfer,
+        account1.zkProof,
+        account1.zkPub,
+      );
       transfer1.signature = signTx(transfer1, account1.privateKey);
 
       const response1 = await sendTxViaGrpc(grpcClient, transfer1);
@@ -169,29 +274,51 @@ describe('Token Transfer Tests', () => {
       await waitForTransaction(2000);
 
       // Get current nonce for account2 before second transfer
-      const account2CurrentNonce = await getCurrentNonce(grpcClient, account2.address, 'pending');
+      const account2CurrentNonce = await getCurrentNonce(
+        grpcClient,
+        account2.address,
+        "pending",
+      );
       const account2NextNonce = account2CurrentNonce + 1;
-      console.log(`Account2 current nonce: ${account2CurrentNonce}, using nonce: ${account2NextNonce}`);
+      console.log(
+        `Account2 current nonce: ${account2CurrentNonce}, using nonce: ${account2NextNonce}`,
+      );
 
       // Transfer from account2 to account3
-      const transfer2 = buildTx(account2.address, account3.address, 100, 'Chain transfer 2', account2NextNonce, TxTypeTransfer, account2.zkProof, account2.zkPub);
+      const transfer2 = buildTx(
+        account2.address,
+        account3.address,
+        100,
+        "Chain transfer 2",
+        account2NextNonce,
+        TxTypeTransfer,
+        account2.zkProof,
+        account2.zkPub,
+      );
       transfer2.signature = signTx(transfer2, account2.privateKey);
 
       const response2 = await sendTxViaGrpc(grpcClient, transfer2);
       expect(response2.ok).toBe(true);
       expect(response2.tx_hash).toBeDefined();
 
-      const txStatus2 = await transactionTracker.waitForTerminalStatus(response2.tx_hash!);
+      const txStatus2 = await transactionTracker.waitForTerminalStatus(
+        response2.tx_hash!,
+      );
       expect(txStatus2.status).toBe(TransactionStatus.FINALIZED);
     });
   });
 
-  describe('Failure Cases', () => {
-    test('Transfer with Insufficient Balance', async () => {
+  describe("Failure Cases", () => {
+    test("Transfer with Insufficient Balance", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
-      const fundResponse = await fundAccount(grpcClient, sender.address, 50, 'Transfer with Insufficient Balance');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        50,
+        "Transfer with Insufficient Balance",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender has the expected balance before attempting transfer
@@ -199,86 +326,153 @@ describe('Token Transfer Tests', () => {
       expect(senderBalance).toBe(50);
 
       // Get current nonce for sender before transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Try to transfer more than available balance
-      const transferTx = buildTx(sender.address, recipient.address, 100, 'Insufficient balance test', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Insufficient balance test",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(false);
-      expect(response.error).toContain('insufficient available balance');
+      expect(response.error).toContain("insufficient available balance");
 
       // Verify balances remain unchanged after failed transaction
-      const senderBalanceAfter = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalanceAfter = await getAccountBalance(grpcClient, recipient.address);
+      const senderBalanceAfter = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const recipientBalanceAfter = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalanceAfter).toBe(50);
       expect(recipientBalanceAfter).toBe(0);
     });
 
-    test('Transfer with Invalid Signature', async () => {
+    test("Transfer with Invalid Signature", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
       const wrongSigner = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Transfer with Invalid Signature');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Transfer with Invalid Signature",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Create transaction but sign with wrong private key
-      const transferTx = buildTx(sender.address, recipient.address, 100, 'Invalid signature test', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Invalid signature test",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, wrongSigner.privateKey); // Wrong signature
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(false);
-      expect(response.error).toContain('invalid signature');
+      expect(response.error).toContain("invalid signature");
 
       // Verify balances remain unchanged
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalance).toBe(1000);
       expect(recipientBalance).toBe(0);
     });
 
-    test('Transfer with Zero Amount', async () => {
+    test("Transfer with Zero Amount", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Transfer with Zero Amount');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Transfer with Zero Amount",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Try to transfer zero amount
-      const transferTx = buildTx(sender.address, recipient.address, 0, 'Zero amount test', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        0,
+        "Zero amount test",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(false);
-      expect(response.error).toContain('zero amount not allowed');
+      expect(response.error).toContain("zero amount not allowed");
 
       // Verify balances remain unchanged
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalance).toBe(1000);
       expect(recipientBalance).toBe(0);
     });
 
-    test('Transfer from Non-existent Account', async () => {
+    test("Transfer from Non-existent Account", async () => {
       const nonExistentSender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
@@ -287,11 +481,11 @@ describe('Token Transfer Tests', () => {
         nonExistentSender.address,
         recipient.address,
         100,
-        'Non-existent sender test',
+        "Non-existent sender test",
         0,
         TxTypeTransfer,
         nonExistentSender.zkProof,
-        nonExistentSender.zkPub
+        nonExistentSender.zkPub,
       );
       transferTx.signature = signTx(transferTx, nonExistentSender.privateKey);
 
@@ -299,33 +493,61 @@ describe('Token Transfer Tests', () => {
       expect(response.ok).toBe(false);
     });
 
-    test('Duplicate Transfer Transaction', async () => {
+    test("Duplicate Transfer Transaction", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Duplicate Transfer Transaction');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Duplicate Transfer Transaction",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before first transfer
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Create and send first transaction
-      const transferTx = buildTx(sender.address, recipient.address, 100, 'Duplicate test', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Duplicate test",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const firstResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(firstResponse.ok).toBe(true);
       expect(firstResponse.tx_hash).toBeDefined();
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(firstResponse.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        firstResponse.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Verify first transaction succeeded
-      const senderBalanceAfterFirst = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalanceAfterFirst = await getAccountBalance(grpcClient, recipient.address);
+      const senderBalanceAfterFirst = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const recipientBalanceAfterFirst = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalanceAfterFirst).toBe(900);
       expect(recipientBalanceAfterFirst).toBe(100);
@@ -333,39 +555,55 @@ describe('Token Transfer Tests', () => {
       // Try to send the same transaction again (same nonce)
       const duplicateResponse = await sendTxViaGrpc(grpcClient, transferTx);
       expect(duplicateResponse.ok).toBe(false);
-      expect(duplicateResponse.error).toContain('nonce too low');
+      expect(duplicateResponse.error).toContain("nonce too low");
 
       // Verify balances remain unchanged after duplicate attempt
-      const senderBalanceFinal = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalanceFinal = await getAccountBalance(grpcClient, recipient.address);
+      const senderBalanceFinal = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const recipientBalanceFinal = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalanceFinal).toBe(900);
       expect(recipientBalanceFinal).toBe(100);
     });
   });
 
-  describe('Edge Cases', () => {
-    test('Multiple Sequential Transfers', async () => {
+  describe("Edge Cases", () => {
+    test("Multiple Sequential Transfers", async () => {
       const sender = await generateTestAccount();
       const recipient1 = await generateTestAccount();
       const recipient2 = await generateTestAccount();
       const recipient3 = await generateTestAccount();
 
       // Fund sender account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Multiple Sequential Transfers');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Multiple Sequential Transfers",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender account was created and funded properly
       let senderAccount;
       try {
         senderAccount = await grpcClient.getAccount(sender.address);
-        console.log(`Sender account created: nonce=${senderAccount.nonce}, balance=${senderAccount.balance}`);
+        console.log(
+          `Sender account created: nonce=${senderAccount.nonce}, balance=${senderAccount.balance}`,
+        );
       } catch (error) {
-        console.error('Failed to get sender account after funding:', error);
+        console.error("Failed to get sender account after funding:", error);
         throw error;
       }
 
-      const initialSenderBalance = await getAccountBalance(grpcClient, sender.address);
+      const initialSenderBalance = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
       expect(initialSenderBalance).toBe(1000);
 
       // Perform multiple sequential transfers with correct nonces
@@ -379,11 +617,26 @@ describe('Token Transfer Tests', () => {
         const transfer = transfers[i];
 
         // Get current nonce for sender using GetCurrentNonce
-        const currentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+        const currentNonce = await getCurrentNonce(
+          grpcClient,
+          sender.address,
+          "pending",
+        );
         const senderNonce = currentNonce + 1;
-        console.log(`Transfer ${i + 1}: Using nonce ${senderNonce} (current nonce: ${currentNonce})`);
+        console.log(
+          `Transfer ${i + 1}: Using nonce ${senderNonce} (current nonce: ${currentNonce})`,
+        );
 
-        const transferTx = buildTx(sender.address, transfer.recipient, transfer.amount, `Transfer ${senderNonce}`, senderNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+        const transferTx = buildTx(
+          sender.address,
+          transfer.recipient,
+          transfer.amount,
+          `Transfer ${senderNonce}`,
+          senderNonce,
+          TxTypeTransfer,
+          sender.zkProof,
+          sender.zkPub,
+        );
         transferTx.signature = signTx(transferTx, sender.privateKey);
 
         const response = await sendTxViaGrpc(grpcClient, transferTx);
@@ -393,15 +646,26 @@ describe('Token Transfer Tests', () => {
         expect(response.ok).toBe(true);
         expect(response.tx_hash).toBeDefined();
 
-        const txStatus = await transactionTracker.waitForTerminalStatus(response.tx_hash!);
+        const txStatus = await transactionTracker.waitForTerminalStatus(
+          response.tx_hash!,
+        );
         expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
       }
 
       // Verify final balances
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipient1Balance = await getAccountBalance(grpcClient, recipient1.address);
-      const recipient2Balance = await getAccountBalance(grpcClient, recipient2.address);
-      const recipient3Balance = await getAccountBalance(grpcClient, recipient3.address);
+      const recipient1Balance = await getAccountBalance(
+        grpcClient,
+        recipient1.address,
+      );
+      const recipient2Balance = await getAccountBalance(
+        grpcClient,
+        recipient2.address,
+      );
+      const recipient3Balance = await getAccountBalance(
+        grpcClient,
+        recipient3.address,
+      );
 
       expect(senderBalance).toBe(400); // 1000 - 100 - 200 - 300
       expect(recipient1Balance).toBe(100);
@@ -409,31 +673,56 @@ describe('Token Transfer Tests', () => {
       expect(recipient3Balance).toBe(300);
     });
 
-    test('Transfer to Self', async () => {
+    test("Transfer to Self", async () => {
       const account = await generateTestAccount();
 
       // Fund account using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, account.address, 1000, 'Transfer to Self');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        account.address,
+        1000,
+        "Transfer to Self",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify initial balance
-      const initialBalance = await getAccountBalance(grpcClient, account.address);
+      const initialBalance = await getAccountBalance(
+        grpcClient,
+        account.address,
+      );
       expect(initialBalance).toBe(1000);
 
       // Get current nonce for account before self transfer
-      const currentNonce = await getCurrentNonce(grpcClient, account.address, 'pending');
+      const currentNonce = await getCurrentNonce(
+        grpcClient,
+        account.address,
+        "pending",
+      );
       const nextNonce = currentNonce + 1;
-      console.log(`Account current nonce: ${currentNonce}, using nonce: ${nextNonce}`);
+      console.log(
+        `Account current nonce: ${currentNonce}, using nonce: ${nextNonce}`,
+      );
 
       // Transfer to self
-      const transferTx = buildTx(account.address, account.address, 100, 'Self transfer', nextNonce, TxTypeTransfer, account.zkProof, account.zkPub);
+      const transferTx = buildTx(
+        account.address,
+        account.address,
+        100,
+        "Self transfer",
+        nextNonce,
+        TxTypeTransfer,
+        account.zkProof,
+        account.zkPub,
+      );
       transferTx.signature = signTx(transferTx, account.privateKey);
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       expect(response.tx_hash).toBeDefined();
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(response.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        response.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Balance should remain the same (self transfer)
@@ -441,13 +730,18 @@ describe('Token Transfer Tests', () => {
       expect(finalBalance).toBe(1000);
     });
 
-    test('Large Amount Transfer', async () => {
+    test("Large Amount Transfer", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
       const largeAmount = 999999;
 
       // Fund sender account with large amount using fundAccount (which now uses GetCurrentNonce internally)
-      const fundResponse = await fundAccount(grpcClient, sender.address, largeAmount, 'Large Amount Transfer');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        largeAmount,
+        "Large Amount Transfer",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Verify sender has the large amount
@@ -455,45 +749,76 @@ describe('Token Transfer Tests', () => {
       expect(senderBalance).toBe(largeAmount);
 
       // Get current nonce for sender before large transfer
-      const currentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const currentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const nextNonce = currentNonce + 1;
-      console.log(`Sender current nonce: ${currentNonce}, using nonce: ${nextNonce}`);
+      console.log(
+        `Sender current nonce: ${currentNonce}, using nonce: ${nextNonce}`,
+      );
 
       // Transfer large amount
       const transferAmount = 500000;
-      const transferTx = buildTx(sender.address, recipient.address, transferAmount, 'Large amount transfer', nextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const transferTx = buildTx(
+        sender.address,
+        recipient.address,
+        transferAmount,
+        "Large amount transfer",
+        nextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       transferTx.signature = signTx(transferTx, sender.privateKey);
 
       const response = await sendTxViaGrpc(grpcClient, transferTx);
       expect(response.ok).toBe(true);
       expect(response.tx_hash).toBeDefined();
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(response.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        response.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Verify balances after large transfer
-      const senderBalanceAfter = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalanceAfter = await getAccountBalance(grpcClient, recipient.address);
+      const senderBalanceAfter = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const recipientBalanceAfter = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalanceAfter).toBe(largeAmount - transferAmount);
       expect(recipientBalanceAfter).toBe(transferAmount);
     });
   });
 
-  describe('Security Attack Simulations', () => {
-    test('Double Spending Attack Simulation', async () => {
+  describe("Security Attack Simulations", () => {
+    test("Double Spending Attack Simulation", async () => {
       const attacker = await generateTestAccount();
       const victim1 = await generateTestAccount();
       const victim2 = await generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.address, 1000, 'Double Spending Attack Simulation');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        attacker.address,
+        1000,
+        "Double Spending Attack Simulation",
+      );
 
       // Check if funding was successful
-      const attackerBalance = await getAccountBalance(grpcClient, attacker.address);
+      const attackerBalance = await getAccountBalance(
+        grpcClient,
+        attacker.address,
+      );
 
       if (!fundResponse.ok || attackerBalance === 0) {
-        console.log('Funding failed - skipping double spending test');
+        console.log("Funding failed - skipping double spending test");
         expect(attackerBalance).toBe(0); // Document the funding failure
         return; // Skip the rest of the test
       }
@@ -501,15 +826,39 @@ describe('Token Transfer Tests', () => {
       expect(attackerBalance).toBe(1000);
 
       // Get current nonce for attacker
-      const attackerCurrentNonce = await getCurrentNonce(grpcClient, attacker.address, 'pending');
+      const attackerCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        attacker.address,
+        "pending",
+      );
       const attackerNextNonce = attackerCurrentNonce + 1;
-      console.log(`Attacker current nonce: ${attackerCurrentNonce}, using nonce: ${attackerNextNonce}`);
+      console.log(
+        `Attacker current nonce: ${attackerCurrentNonce}, using nonce: ${attackerNextNonce}`,
+      );
 
       // Create two transactions with same nonce (double spending attempt)
-      const tx1 = buildTx(attacker.address, victim1.address, 800, 'Double spend attempt 1', attackerNextNonce, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const tx1 = buildTx(
+        attacker.address,
+        victim1.address,
+        800,
+        "Double spend attempt 1",
+        attackerNextNonce,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       tx1.signature = signTx(tx1, attacker.privateKey);
 
-      const tx2 = buildTx(attacker.address, victim2.address, 800, 'Double spend attempt 2', attackerNextNonce, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const tx2 = buildTx(
+        attacker.address,
+        victim2.address,
+        800,
+        "Double spend attempt 2",
+        attackerNextNonce,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       tx2.signature = signTx(tx2, attacker.privateKey);
 
       // Send both transactions rapidly
@@ -522,22 +871,32 @@ describe('Token Transfer Tests', () => {
 
       // SECURITY VALIDATION: Only one transaction should succeed in a proper system
       const successCount = (response1.ok ? 1 : 0) + (response2.ok ? 1 : 0);
-      console.log('Double spending attack results:', {
+      console.log("Double spending attack results:", {
         tx1Success: response1.ok,
         tx2Success: response2.ok,
         totalSuccessful: successCount,
       });
 
       // SECURITY VALIDATION: Adapt to actual system behavior while maintaining security checks
-      const victim1Balance = await getAccountBalance(grpcClient, victim1.address);
-      const victim2Balance = await getAccountBalance(grpcClient, victim2.address);
-      const attackerFinalBalance = await getAccountBalance(grpcClient, attacker.address);
+      const victim1Balance = await getAccountBalance(
+        grpcClient,
+        victim1.address,
+      );
+      const victim2Balance = await getAccountBalance(
+        grpcClient,
+        victim2.address,
+      );
+      const attackerFinalBalance = await getAccountBalance(
+        grpcClient,
+        attacker.address,
+      );
 
       // only one transaction should be successful
       // Proper double spending prevention
-      const victimsWithFunds = (victim1Balance > 0 ? 1 : 0) + (victim2Balance > 0 ? 1 : 0);
+      const victimsWithFunds =
+        (victim1Balance > 0 ? 1 : 0) + (victim2Balance > 0 ? 1 : 0);
       // Log final balances for analysis
-      console.log('Balances logs:', {
+      console.log("Balances logs:", {
         attacker: attackerFinalBalance,
         victim1: victim1Balance,
         victim2: victim2Balance,
@@ -546,14 +905,15 @@ describe('Token Transfer Tests', () => {
       expect(attackerFinalBalance).toBe(200); // 1000 - 800
       // sent success but should be fail tx => Todo: check after tx failed handler done
       // expect(successCount).toBe(1);
-      console.log('System properly prevented double spending');
+      console.log("System properly prevented double spending");
 
       // Total balance conservation check
-      const totalBalance = victim1Balance + victim2Balance + attackerFinalBalance;
+      const totalBalance =
+        victim1Balance + victim2Balance + attackerFinalBalance;
       expect(totalBalance).toBe(1000);
 
       // Log final balances for analysis
-      console.log('Final balances (security validated):', {
+      console.log("Final balances (security validated):", {
         attacker: attackerFinalBalance,
         victim1: victim1Balance,
         victim2: victim2Balance,
@@ -565,33 +925,55 @@ describe('Token Transfer Tests', () => {
       expect(totalBalance).toBeGreaterThan(0);
     });
 
-    test('Replay Attack Simulation', async () => {
+    test("Replay Attack Simulation", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Replay Attack Simulation');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Replay Attack Simulation",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender before first transaction
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const senderNextNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using nonce: ${senderNextNonce}`,
+      );
 
       // Create and send first transaction
-      const originalTx = buildTx(sender.address, recipient.address, 100, 'Original transaction', senderNextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const originalTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Original transaction",
+        senderNextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       originalTx.signature = signTx(originalTx, sender.privateKey);
 
       const firstResponse = await sendTxViaGrpc(grpcClient, originalTx);
       expect(firstResponse.tx_hash).toBeDefined();
-      console.log('First transaction result:', firstResponse.ok);
+      console.log("First transaction result:", firstResponse.ok);
 
-      const txStatus = await transactionTracker.waitForTerminalStatus(firstResponse.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        firstResponse.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // SECURITY VALIDATION: Attempt to replay the same transaction (replay attack)
       const replayResponse = await sendTxViaGrpc(grpcClient, originalTx);
-      console.log('Replay attack results:', {
+      console.log("Replay attack results:", {
         firstTxSuccess: firstResponse.ok,
         replaySuccess: replayResponse.ok,
       });
@@ -606,12 +988,15 @@ describe('Token Transfer Tests', () => {
 
       // Verify nonce validation error in replay response
       if (replayResponse.error) {
-        expect(replayResponse.error.toLowerCase()).toContain('nonce');
+        expect(replayResponse.error.toLowerCase()).toContain("nonce");
       }
 
       // Verify balances reflect only single transaction execution
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       // STRICT VALIDATION: Balances must reflect exactly one transaction
       expect(senderBalance).toBe(900); // 1000 - 100
@@ -621,7 +1006,7 @@ describe('Token Transfer Tests', () => {
       const totalBalance = senderBalance + recipientBalance;
       expect(totalBalance).toBe(1000);
 
-      console.log('Replay attack final balances (security validated):', {
+      console.log("Replay attack final balances (security validated):", {
         sender: senderBalance,
         recipient: recipientBalance,
         total: totalBalance,
@@ -633,33 +1018,68 @@ describe('Token Transfer Tests', () => {
       expect(secondReplayResponse.ok).toBe(false);
 
       // Verify balances remain unchanged after multiple replay attempts
-      const finalSenderBalance = await getAccountBalance(grpcClient, sender.address);
-      const finalRecipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const finalSenderBalance = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const finalRecipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
       expect(finalSenderBalance).toBe(900);
       expect(finalRecipientBalance).toBe(100);
     });
 
-    test('Nonce Manipulation Attack Prevention', async () => {
+    test("Nonce Manipulation Attack Prevention", async () => {
       const attacker = await generateTestAccount();
       const victim = await generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.address, 1000, 'Nonce Manipulation Attack Prevention');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        attacker.address,
+        1000,
+        "Nonce Manipulation Attack Prevention",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for attacker
-      const attackerCurrentNonce = await getCurrentNonce(grpcClient, attacker.address, 'pending');
+      const attackerCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        attacker.address,
+        "pending",
+      );
       const attackerNextNonce = attackerCurrentNonce + 1;
-      console.log(`Attacker current nonce: ${attackerCurrentNonce}, next nonce: ${attackerNextNonce}`);
+      console.log(
+        `Attacker current nonce: ${attackerCurrentNonce}, next nonce: ${attackerNextNonce}`,
+      );
 
       // Attempt to use future nonce (nonce manipulation)
-      const futureTx = buildTx(attacker.address, victim.address, 100, 'Future nonce attack', attackerNextNonce + 10, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const futureTx = buildTx(
+        attacker.address,
+        victim.address,
+        100,
+        "Future nonce attack",
+        attackerNextNonce + 10,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       futureTx.signature = signTx(futureTx, attacker.privateKey);
 
       const futureResponse = await sendTxViaGrpc(grpcClient, futureTx);
 
       // Attempt to use past nonce (nonce manipulation)
-      const pastTx = buildTx(attacker.address, victim.address, 100, 'Past nonce attack', Math.max(0, attackerCurrentNonce - 1), TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const pastTx = buildTx(
+        attacker.address,
+        victim.address,
+        100,
+        "Past nonce attack",
+        Math.max(0, attackerCurrentNonce - 1),
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       pastTx.signature = signTx(pastTx, attacker.privateKey);
 
       const pastResponse = await sendTxViaGrpc(grpcClient, pastTx);
@@ -674,13 +1094,16 @@ describe('Token Transfer Tests', () => {
       // for now send trans success but fail to apply to blockstore
 
       // Future nonce may be queued or rejected depending on implementation
-      console.log('Nonce manipulation results:', {
+      console.log("Nonce manipulation results:", {
         futureResponse: futureResponse.ok,
         pastResponse: pastResponse.ok,
       });
 
       // Verify system maintains consistency
-      const attackerBalance = await getAccountBalance(grpcClient, attacker.address);
+      const attackerBalance = await getAccountBalance(
+        grpcClient,
+        attacker.address,
+      );
       const victimBalance = await getAccountBalance(grpcClient, victim.address);
 
       // Total balance should be conserved
@@ -691,28 +1114,66 @@ describe('Token Transfer Tests', () => {
       expect(victimBalance).toBe(0);
     });
 
-    test('Concurrent Transactions with Different Nonces', async () => {
+    test("Concurrent Transactions with Different Nonces", async () => {
       const sender = await generateTestAccount();
       const recipient1 = await generateTestAccount();
       const recipient2 = await generateTestAccount();
       const recipient3 = await generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Concurrent Transactions with Different Nonces');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Concurrent Transactions with Different Nonces",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for sender and create transactions with sequential nonces
-      const senderCurrentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const senderCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const baseNonce = senderCurrentNonce + 1;
-      console.log(`Sender current nonce: ${senderCurrentNonce}, using base nonce: ${baseNonce}`);
+      console.log(
+        `Sender current nonce: ${senderCurrentNonce}, using base nonce: ${baseNonce}`,
+      );
 
-      const tx1 = buildTx(sender.address, recipient1.address, 100, 'Sequential tx 1', baseNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx1 = buildTx(
+        sender.address,
+        recipient1.address,
+        100,
+        "Sequential tx 1",
+        baseNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx1.signature = signTx(tx1, sender.privateKey);
 
-      const tx2 = buildTx(sender.address, recipient2.address, 200, 'Sequential tx 2', baseNonce + 1, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx2 = buildTx(
+        sender.address,
+        recipient2.address,
+        200,
+        "Sequential tx 2",
+        baseNonce + 1,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx2.signature = signTx(tx2, sender.privateKey);
 
-      const tx3 = buildTx(sender.address, recipient3.address, 300, 'Sequential tx 3', baseNonce + 2, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const tx3 = buildTx(
+        sender.address,
+        recipient3.address,
+        300,
+        "Sequential tx 3",
+        baseNonce + 2,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       tx3.signature = signTx(tx3, sender.privateKey);
 
       // Send all transactions concurrently
@@ -722,23 +1183,42 @@ describe('Token Transfer Tests', () => {
         sendTxViaGrpc(grpcClient, tx3),
       ]);
 
-      console.log('Concurrent transaction results:', {
+      console.log("Concurrent transaction results:", {
         tx1Success: response1.ok,
         tx2Success: response2.ok,
         tx3Success: response3.ok,
       });
 
-      const txHashes = [response1.tx_hash, response2.tx_hash, response3.tx_hash].filter(Boolean);
-      await Promise.all(txHashes.map(txHash => transactionTracker.waitForTerminalStatus(txHash!)));
+      const txHashes = [
+        response1.tx_hash,
+        response2.tx_hash,
+        response3.tx_hash,
+      ].filter(Boolean);
+      await Promise.all(
+        txHashes.map((txHash) =>
+          transactionTracker.waitForTerminalStatus(txHash!),
+        ),
+      );
 
       // Verify balances
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipient1Balance = await getAccountBalance(grpcClient, recipient1.address);
-      const recipient2Balance = await getAccountBalance(grpcClient, recipient2.address);
-      const recipient3Balance = await getAccountBalance(grpcClient, recipient3.address);
+      const recipient1Balance = await getAccountBalance(
+        grpcClient,
+        recipient1.address,
+      );
+      const recipient2Balance = await getAccountBalance(
+        grpcClient,
+        recipient2.address,
+      );
+      const recipient3Balance = await getAccountBalance(
+        grpcClient,
+        recipient3.address,
+      );
 
       // SECURITY VALIDATION: Check which transactions succeeded
-      const successfulTxs = [response1.ok, response2.ok, response3.ok].filter(Boolean).length;
+      const successfulTxs = [response1.ok, response2.ok, response3.ok].filter(
+        Boolean,
+      ).length;
 
       // Calculate expected balances based on successful transactions
       let expectedSenderBalance = 1000;
@@ -768,10 +1248,14 @@ describe('Token Transfer Tests', () => {
       expect(recipient3Balance).toBe(expectedRecipient3);
 
       // Verify total balance conservation
-      const totalBalance = senderBalance + recipient1Balance + recipient2Balance + recipient3Balance;
+      const totalBalance =
+        senderBalance +
+        recipient1Balance +
+        recipient2Balance +
+        recipient3Balance;
       expect(totalBalance).toBe(1000);
 
-      console.log('Concurrent transactions final balances:', {
+      console.log("Concurrent transactions final balances:", {
         sender: senderBalance,
         recipient1: recipient1Balance,
         recipient2: recipient2Balance,
@@ -780,29 +1264,67 @@ describe('Token Transfer Tests', () => {
       });
     });
 
-    test('Strict Nonce Sequence Validation', async () => {
+    test("Strict Nonce Sequence Validation", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Strict Nonce Sequence Validation');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Strict Nonce Sequence Validation",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Test strict nonce sequence using GetCurrentNonce
-      const currentNonce = await getCurrentNonce(grpcClient, sender.address, 'pending');
+      const currentNonce = await getCurrentNonce(
+        grpcClient,
+        sender.address,
+        "pending",
+      );
       const nextNonce = currentNonce + 1;
-      console.log(`Sender current nonce: ${currentNonce}, next nonce: ${nextNonce}`);
+      console.log(
+        `Sender current nonce: ${currentNonce}, next nonce: ${nextNonce}`,
+      );
 
       // Valid transaction with correct nonce (currentNonce + 1)
-      const validTx = buildTx(sender.address, recipient.address, 100, 'Valid nonce tx', nextNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const validTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Valid nonce tx",
+        nextNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       validTx.signature = signTx(validTx, sender.privateKey);
 
       // Invalid transaction with wrong nonce (currentNonce + 3, skipping one)
-      const validTx2 = buildTx(sender.address, recipient.address, 100, 'Invalid nonce tx', nextNonce + 1, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const validTx2 = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Invalid nonce tx",
+        nextNonce + 1,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       validTx2.signature = signTx(validTx2, sender.privateKey);
 
       // Invalid transaction with wrong nonce (currentNonce + 3, skipping one)
-      const invalidTx = buildTx(sender.address, recipient.address, 100, 'Invalid nonce tx', nextNonce + 3, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const invalidTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Invalid nonce tx",
+        nextNonce + 3,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       invalidTx.signature = signTx(invalidTx, sender.privateKey);
 
       const validResponse = await sendTxViaGrpc(grpcClient, validTx);
@@ -816,14 +1338,17 @@ describe('Token Transfer Tests', () => {
       // Future nonce may be queued or rejected depending on system implementation
       // The key security property is that balances remain consistent
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       // If future nonce was queued and processed, both transactions succeeded
       expect(senderBalance).toBe(800); // 1000 - 200 (both transactions)
       expect(recipientBalance).toBe(200);
-      console.log('Future nonce transaction was queued and processed');
+      console.log("Future nonce transaction was queued and processed");
 
-      console.log('Nonce sequence validation results:', {
+      console.log("Nonce sequence validation results:", {
         validTxSuccess: validResponse.ok,
         invalidTxSuccess: invalidResponse.ok,
         senderBalance,
@@ -831,31 +1356,69 @@ describe('Token Transfer Tests', () => {
       });
     });
 
-    test('Front-Running Attack Simulation', async () => {
+    test("Front-Running Attack Simulation", async () => {
       const victim = await generateTestAccount();
       const attacker = await generateTestAccount();
       const target = await generateTestAccount();
 
       // Fund both accounts
-      const fundVictim = await fundAccount(grpcClient, victim.address, 1000, 'Front-Running Attack Simulation');
+      const fundVictim = await fundAccount(
+        grpcClient,
+        victim.address,
+        1000,
+        "Front-Running Attack Simulation",
+      );
       expect(fundVictim.ok).toBe(true);
 
-      const fundAttacker = await fundAccount(grpcClient, attacker.address, 1000, 'Front-Running Attack Simulation');
+      const fundAttacker = await fundAccount(
+        grpcClient,
+        attacker.address,
+        1000,
+        "Front-Running Attack Simulation",
+      );
       expect(fundAttacker.ok).toBe(true);
 
       // Get current nonces for both accounts
-      const victimCurrentNonce = await getCurrentNonce(grpcClient, victim.address, 'pending');
-      const attackerCurrentNonce = await getCurrentNonce(grpcClient, attacker.address, 'pending');
+      const victimCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        victim.address,
+        "pending",
+      );
+      const attackerCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        attacker.address,
+        "pending",
+      );
       const victimNextNonce = victimCurrentNonce + 1;
       const attackerNextNonce = attackerCurrentNonce + 1;
-      console.log(`Victim nonce: ${victimCurrentNonce} -> ${victimNextNonce}, Attacker nonce: ${attackerCurrentNonce} -> ${attackerNextNonce}`);
+      console.log(
+        `Victim nonce: ${victimCurrentNonce} -> ${victimNextNonce}, Attacker nonce: ${attackerCurrentNonce} -> ${attackerNextNonce}`,
+      );
 
       // Victim creates a transaction
-      const victimTx = buildTx(victim.address, target.address, 500, 'Victim transaction', victimNextNonce, TxTypeTransfer, victim.zkProof, victim.zkPub);
+      const victimTx = buildTx(
+        victim.address,
+        target.address,
+        500,
+        "Victim transaction",
+        victimNextNonce,
+        TxTypeTransfer,
+        victim.zkProof,
+        victim.zkPub,
+      );
       victimTx.signature = signTx(victimTx, victim.privateKey);
 
       // Attacker tries to front-run with higher priority (same target, different amount)
-      const attackerTx = buildTx(attacker.address, target.address, 600, 'Front-running attack', attackerNextNonce, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const attackerTx = buildTx(
+        attacker.address,
+        target.address,
+        600,
+        "Front-running attack",
+        attackerNextNonce,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       attackerTx.signature = signTx(attackerTx, attacker.privateKey);
 
       // Send attacker transaction first (simulating front-running)
@@ -880,22 +1443,42 @@ describe('Token Transfer Tests', () => {
       expect(targetBalance).toBe(1100); // 500 + 600
     });
 
-    test('Integer Overflow Attack Prevention', async () => {
+    test("Integer Overflow Attack Prevention", async () => {
       const attacker = await generateTestAccount();
       const victim = await generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.address, 1000, 'Integer Overflow Attack Prevention');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        attacker.address,
+        1000,
+        "Integer Overflow Attack Prevention",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for attacker
-      const attackerCurrentNonce = await getCurrentNonce(grpcClient, attacker.address, 'pending');
+      const attackerCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        attacker.address,
+        "pending",
+      );
       const attackerNextNonce = attackerCurrentNonce + 1;
-      console.log(`Attacker current nonce: ${attackerCurrentNonce}, using nonce: ${attackerNextNonce}`);
+      console.log(
+        `Attacker current nonce: ${attackerCurrentNonce}, using nonce: ${attackerNextNonce}`,
+      );
 
       // Attempt integer overflow attack with maximum possible value
       const maxInt = Number.MAX_SAFE_INTEGER;
-      const overflowTx = buildTx(attacker.address, victim.address, maxInt, 'Overflow attack', attackerNextNonce, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const overflowTx = buildTx(
+        attacker.address,
+        victim.address,
+        maxInt,
+        "Overflow attack",
+        attackerNextNonce,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       overflowTx.signature = signTx(overflowTx, attacker.privateKey);
 
       const overflowResponse = await sendTxViaGrpc(grpcClient, overflowTx);
@@ -906,29 +1489,52 @@ describe('Token Transfer Tests', () => {
       expect(overflowResponse.ok).toBe(false);
 
       // Verify balances remain unchanged
-      const attackerBalance = await getAccountBalance(grpcClient, attacker.address);
+      const attackerBalance = await getAccountBalance(
+        grpcClient,
+        attacker.address,
+      );
       const victimBalance = await getAccountBalance(grpcClient, victim.address);
 
       expect(attackerBalance).toBe(1000);
       expect(victimBalance).toBe(0);
     });
 
-    test('Signature Forgery Attack Prevention', async () => {
+    test("Signature Forgery Attack Prevention", async () => {
       const victim = await generateTestAccount();
       const attacker = await generateTestAccount();
       const target = await generateTestAccount();
 
       // Fund victim account
-      const fundResponse = await fundAccount(grpcClient, victim.address, 1000, 'Signature Forgery Attack Prevention');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        victim.address,
+        1000,
+        "Signature Forgery Attack Prevention",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for victim account
-      const victimCurrentNonce = await getCurrentNonce(grpcClient, victim.address, 'pending');
+      const victimCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        victim.address,
+        "pending",
+      );
       const victimNextNonce = victimCurrentNonce + 1;
-      console.log(`Victim current nonce: ${victimCurrentNonce}, using nonce: ${victimNextNonce}`);
+      console.log(
+        `Victim current nonce: ${victimCurrentNonce}, using nonce: ${victimNextNonce}`,
+      );
 
       // Attacker tries to forge a transaction from victim's account
-      const forgedTx = buildTx(victim.address, target.address, 500, 'Forged transaction', victimNextNonce, TxTypeTransfer, victim.zkProof, victim.zkPub);
+      const forgedTx = buildTx(
+        victim.address,
+        target.address,
+        500,
+        "Forged transaction",
+        victimNextNonce,
+        TxTypeTransfer,
+        victim.zkProof,
+        victim.zkPub,
+      );
       // Sign with attacker's key instead of victim's (signature forgery attempt)
       forgedTx.signature = signTx(forgedTx, attacker.privateKey);
 
@@ -947,46 +1553,97 @@ describe('Token Transfer Tests', () => {
       expect(targetBalance).toBe(0); // No transfer occurred
     });
 
-    test('Race Condition Attack Simulation', async () => {
+    test("Race Condition Attack Simulation", async () => {
       const attacker = await generateTestAccount();
       const victim1 = await generateTestAccount();
       const victim2 = await generateTestAccount();
 
       // Fund attacker account
-      const fundResponse = await fundAccount(grpcClient, attacker.address, 1000, 'Race Condition Attack Simulation');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        attacker.address,
+        1000,
+        "Race Condition Attack Simulation",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Get current nonce for attacker and create transactions with sequential nonces
-      const attackerCurrentNonce = await getCurrentNonce(grpcClient, attacker.address, 'pending');
+      const attackerCurrentNonce = await getCurrentNonce(
+        grpcClient,
+        attacker.address,
+        "pending",
+      );
       const baseNonce = attackerCurrentNonce + 1;
-      console.log(`Attacker current nonce: ${attackerCurrentNonce}, using base nonce: ${baseNonce}`);
+      console.log(
+        `Attacker current nonce: ${attackerCurrentNonce}, using base nonce: ${baseNonce}`,
+      );
 
-      const tx1 = buildTx(attacker.address, victim1.address, 400, 'Race condition tx1', baseNonce, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const tx1 = buildTx(
+        attacker.address,
+        victim1.address,
+        400,
+        "Race condition tx1",
+        baseNonce,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       tx1.signature = signTx(tx1, attacker.privateKey);
 
-      const tx2 = buildTx(attacker.address, victim2.address, 400, 'Race condition tx2', baseNonce + 1, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const tx2 = buildTx(
+        attacker.address,
+        victim2.address,
+        400,
+        "Race condition tx2",
+        baseNonce + 1,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       tx2.signature = signTx(tx2, attacker.privateKey);
 
-      const tx3 = buildTx(attacker.address, victim1.address, 400, 'Race condition tx3', baseNonce + 2, TxTypeTransfer, attacker.zkProof, attacker.zkPub);
+      const tx3 = buildTx(
+        attacker.address,
+        victim1.address,
+        400,
+        "Race condition tx3",
+        baseNonce + 2,
+        TxTypeTransfer,
+        attacker.zkProof,
+        attacker.zkPub,
+      );
       tx3.signature = signTx(tx3, attacker.privateKey);
 
       // Send all transactions simultaneously to test race conditions
-      const promises = [sendTxViaGrpc(grpcClient, tx1), sendTxViaGrpc(grpcClient, tx2), sendTxViaGrpc(grpcClient, tx3)];
+      const promises = [
+        sendTxViaGrpc(grpcClient, tx1),
+        sendTxViaGrpc(grpcClient, tx2),
+        sendTxViaGrpc(grpcClient, tx3),
+      ];
 
       const responses = await Promise.all(promises);
 
       await waitForTransaction(4000);
 
       // Verify system handles race conditions properly
-      const attackerFinalBalance = await getAccountBalance(grpcClient, attacker.address);
-      const victim1Balance = await getAccountBalance(grpcClient, victim1.address);
-      const victim2Balance = await getAccountBalance(grpcClient, victim2.address);
+      const attackerFinalBalance = await getAccountBalance(
+        grpcClient,
+        attacker.address,
+      );
+      const victim1Balance = await getAccountBalance(
+        grpcClient,
+        victim1.address,
+      );
+      const victim2Balance = await getAccountBalance(
+        grpcClient,
+        victim2.address,
+      );
 
       // Total outgoing should not exceed available balance
       const totalTransferred = victim1Balance + victim2Balance;
       const totalBalance = attackerFinalBalance + totalTransferred;
 
-      console.log('Race condition balance check:', {
+      console.log("Race condition balance check:", {
         attacker: attackerFinalBalance,
         victim1: victim1Balance,
         victim2: victim2Balance,
@@ -1002,12 +1659,17 @@ describe('Token Transfer Tests', () => {
       // expect(successfulTxs).toBe(2);
     });
 
-    test('Edge Case Nonce Security Tests', async () => {
+    test("Edge Case Nonce Security Tests", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Edge Case Nonce Security Tests');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Edge Case Nonce Security Tests",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Test 1: Negative nonce
@@ -1015,18 +1677,27 @@ describe('Token Transfer Tests', () => {
         sender.address,
         recipient.address,
         100,
-        'Negative nonce test',
+        "Negative nonce test",
         -1,
         TxTypeTransfer,
         sender.zkProof,
-        sender.zkPub
+        sender.zkPub,
       );
       negativeTx.signature = signTx(negativeTx, sender.privateKey);
 
       const negativeResponse = await sendTxViaGrpc(grpcClient, negativeTx);
 
       // Test 2: Zero nonce (should be invalid for most accounts)
-      const zeroTx = buildTx(sender.address, recipient.address, 100, 'Zero nonce test', 0, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const zeroTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Zero nonce test",
+        0,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       zeroTx.signature = signTx(zeroTx, sender.privateKey);
 
       const zeroResponse = await sendTxViaGrpc(grpcClient, zeroTx);
@@ -1036,11 +1707,11 @@ describe('Token Transfer Tests', () => {
         sender.address,
         recipient.address,
         100,
-        'Large nonce test',
+        "Large nonce test",
         999999,
         TxTypeTransfer,
         sender.zkProof,
-        sender.zkPub
+        sender.zkPub,
       );
       largeTx.signature = signTx(largeTx, sender.privateKey);
 
@@ -1051,11 +1722,11 @@ describe('Token Transfer Tests', () => {
         sender.address,
         recipient.address,
         100,
-        'Max nonce test',
+        "Max nonce test",
         Number.MAX_SAFE_INTEGER,
         TxTypeTransfer,
         sender.zkProof,
-        sender.zkPub
+        sender.zkPub,
       );
       maxTx.signature = signTx(maxTx, sender.privateKey);
 
@@ -1070,7 +1741,10 @@ describe('Token Transfer Tests', () => {
       // Large nonces may be queued or rejected depending on system limits
       // The key security property is balance consistency
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       let expectedTransfers = 0;
       if (largeResponse.ok) expectedTransfers++;
@@ -1082,7 +1756,7 @@ describe('Token Transfer Tests', () => {
       // Verify total balance conservation
       expect(senderBalance + recipientBalance).toBe(1000);
 
-      console.log('Edge case nonce test results:', {
+      console.log("Edge case nonce test results:", {
         negativeNonce: negativeResponse.ok,
         zeroNonce: zeroResponse.ok,
         largeNonce: largeResponse.ok,
@@ -1092,40 +1766,65 @@ describe('Token Transfer Tests', () => {
       });
 
       // Test 5: Valid nonce after edge cases (should still work)
-      const nextValidNonce = await getCurrentNonce(grpcClient, sender.address, 'pending') + 1;
+      const nextValidNonce =
+        (await getCurrentNonce(grpcClient, sender.address, "pending")) + 1;
 
-      const validTx = buildTx(sender.address, recipient.address, 100, 'Valid after edge cases', nextValidNonce, TxTypeTransfer, sender.zkProof, sender.zkPub);
+      const validTx = buildTx(
+        sender.address,
+        recipient.address,
+        100,
+        "Valid after edge cases",
+        nextValidNonce,
+        TxTypeTransfer,
+        sender.zkProof,
+        sender.zkPub,
+      );
       validTx.signature = signTx(validTx, sender.privateKey);
 
       const validResponse = await sendTxViaGrpc(grpcClient, validTx);
 
       expect(validResponse.tx_hash).toBeDefined();
-      const txStatus = await transactionTracker.waitForTerminalStatus(validResponse.tx_hash!);
+      const txStatus = await transactionTracker.waitForTerminalStatus(
+        validResponse.tx_hash!,
+      );
       expect(txStatus.status).toBe(TransactionStatus.FINALIZED);
 
       // Valid transaction should succeed if sender has sufficient balance
-      const finalSenderBalance = await getAccountBalance(grpcClient, sender.address);
-      const finalRecipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const finalSenderBalance = await getAccountBalance(
+        grpcClient,
+        sender.address,
+      );
+      const finalRecipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       if (validResponse.ok) {
         // If valid transaction succeeded, verify balance changes
         expect(finalSenderBalance).toBe(senderBalance - 100);
         expect(finalRecipientBalance).toBe(recipientBalance + 100);
-        console.log('Valid transaction after edge cases succeeded');
+        console.log("Valid transaction after edge cases succeeded");
       } else {
         // If failed, balances should remain unchanged
         expect(finalSenderBalance).toBe(senderBalance);
         expect(finalRecipientBalance).toBe(recipientBalance);
-        console.log('Valid transaction after edge cases failed - possibly due to insufficient balance');
+        console.log(
+          "Valid transaction after edge cases failed - possibly due to insufficient balance",
+        );
       }
     });
 
-    test('Nonce Overflow and Underflow Protection', async () => {
+    test("Nonce Overflow and Underflow Protection", async () => {
       const sender = await generateTestAccount();
       const recipient = await generateTestAccount();
 
       // Fund sender account
-      const fundResponse = await fundAccount(grpcClient, sender.address, 1000, 'Nonce Overflow and Underflow Protection');
+      const fundResponse = await fundAccount(
+        grpcClient,
+        sender.address,
+        1000,
+        "Nonce Overflow and Underflow Protection",
+      );
       expect(fundResponse.ok).toBe(true);
 
       // Test potential integer overflow scenarios
@@ -1156,7 +1855,7 @@ describe('Token Transfer Tests', () => {
             nonce,
             TxTypeTransfer,
             sender.zkProof,
-            sender.zkPub
+            sender.zkPub,
           );
           tx.signature = signTx(tx, sender.privateKey);
 
@@ -1172,13 +1871,13 @@ describe('Token Transfer Tests', () => {
           // Skip infinite values
           const tx = buildTx(
             sender.address,
-            recipient.address, 
+            recipient.address,
             50,
             `Underflow test ${i}`,
             nonce,
             TxTypeTransfer,
             sender.zkProof,
-            sender.zkPub
+            sender.zkPub,
           );
           tx.signature = signTx(tx, sender.privateKey);
 
@@ -1191,12 +1890,15 @@ describe('Token Transfer Tests', () => {
 
       // Verify account balances remain unchanged
       const senderBalance = await getAccountBalance(grpcClient, sender.address);
-      const recipientBalance = await getAccountBalance(grpcClient, recipient.address);
+      const recipientBalance = await getAccountBalance(
+        grpcClient,
+        recipient.address,
+      );
 
       expect(senderBalance).toBe(1000);
       expect(recipientBalance).toBe(0);
 
-      console.log('Nonce overflow/underflow protection verified:', {
+      console.log("Nonce overflow/underflow protection verified:", {
         senderBalance,
         recipientBalance,
         overflowTestsCount: overflowNonces.filter((n) => isFinite(n)).length,

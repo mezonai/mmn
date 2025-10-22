@@ -23,4 +23,4 @@ console.log(`const faucetPrivateKeyHex = "${pkcs8DerHex}";`);
 console.log(`const faucetPublicKeyHex = "${publicKeyHex}";`);
 
 console.log("\n--- For genesis config ---");
-console.log(`faucet_address: "${publicKeyHex}"`); 
+console.log(`faucet_address: "${publicKeyHex}"`);

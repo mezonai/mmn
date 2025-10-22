@@ -1,15 +1,18 @@
-import {GrpcTransport} from '@protobuf-ts/grpc-transport';
-import {ChannelCredentials} from '@grpc/grpc-js';
-import {ITxServiceClient, TxServiceClient} from './generated/tx.client';
-import {AccountServiceClient, IAccountServiceClient} from './generated/account.client';
+import { GrpcTransport } from "@protobuf-ts/grpc-transport";
+import { ChannelCredentials } from "@grpc/grpc-js";
+import { ITxServiceClient, TxServiceClient } from "./generated/tx.client";
+import {
+  AccountServiceClient,
+  IAccountServiceClient,
+} from "./generated/account.client";
 import type {
   AddTxResponse as GenAddTxResponse,
   SignedTxMsg as GenSignedTxMsg,
   SubscribeTransactionStatusRequest as GenSubscribeTxStatusRequest,
   TransactionStatusInfo as GenTxStatusInfo,
   TxMsg as GenTxMsg,
-} from './generated/tx';
-import {TransactionStatus as GenTxStatusEnum} from './generated/tx';
+} from "./generated/tx";
+import { TransactionStatus as GenTxStatusEnum } from "./generated/tx";
 import type {
   GetAccountRequest as GenGetAccountRequest,
   GetAccountResponse as GenGetAccountResponse,
@@ -17,7 +20,7 @@ import type {
   GetCurrentNonceResponse as GenGetCurrentNonceResponse,
   GetTxHistoryRequest as GenGetTxHistoryRequest,
   GetTxHistoryResponse as GenGetTxHistoryResponse,
-} from './generated/account';
+} from "./generated/account";
 
 export class GrpcClient {
   private transport: GrpcTransport;
@@ -48,7 +51,7 @@ export class GrpcClient {
       zk_proof: string;
       zk_pub: string;
     },
-    signature: string
+    signature: string,
   ): Promise<{ ok: boolean; tx_hash?: string; error?: string }> {
     const genTx: GenTxMsg = {
       type: txMsg.type,
@@ -69,7 +72,9 @@ export class GrpcClient {
     return { ok: res.ok, tx_hash: res.txHash, error: res.error };
   }
 
-  async getAccount(address: string): Promise<{ address: string; balance: string; nonce: string }> {
+  async getAccount(
+    address: string,
+  ): Promise<{ address: string; balance: string; nonce: string }> {
     const req: GenGetAccountRequest = { address };
     const call = this.accountClient.getAccount(req);
     const res: GenGetAccountResponse = await call.response;
@@ -84,10 +89,18 @@ export class GrpcClient {
     address: string,
     limit: number,
     offset: number,
-    filter: number
+    filter: number,
   ): Promise<{
     total: number;
-    txs: { sender: string; recipient: string; amount: string; nonce: string; timestamp: string; status: string, extraInfo?: string }[];
+    txs: {
+      sender: string;
+      recipient: string;
+      amount: string;
+      nonce: string;
+      timestamp: string;
+      status: string;
+      extraInfo?: string;
+    }[];
   }> {
     const req: GenGetTxHistoryRequest = { address, limit, offset, filter };
     const call = this.accountClient.getTxHistory(req);
@@ -100,7 +113,9 @@ export class GrpcClient {
         amount: tx.amount.toString(),
         nonce: tx.nonce.toString(),
         timestamp: tx.timestamp.toString(),
-        status: ['PENDING', 'CONFIRMED', 'FINALIZED', 'FAILED'][tx.status] || 'PENDING',
+        status:
+          ["PENDING", "CONFIRMED", "FINALIZED", "FAILED"][tx.status] ||
+          "PENDING",
         extraInfo: tx.extraInfo,
       })),
     };
@@ -117,11 +132,13 @@ export class GrpcClient {
       timestamp?: string;
     }) => void,
     onError: (error: any) => void,
-    onComplete: () => void
+    onComplete: () => void,
   ): () => void {
     const req: GenSubscribeTxStatusRequest = {}; // Empty request for all transactions
     const abortController = new AbortController();
-    const call = this.txClient.subscribeTransactionStatus(req, { abort: abortController.signal });
+    const call = this.txClient.subscribeTransactionStatus(req, {
+      abort: abortController.signal,
+    });
 
     (async () => {
       try {
@@ -137,24 +154,36 @@ export class GrpcClient {
             timestamp: update.timestamp?.toString(),
           };
           if (this.debug) {
-          console.log(`🔄 Raw Update from Server:`, JSON.stringify(serializableUpdate, null, 2));
-        }
+            console.log(
+              `🔄 Raw Update from Server:`,
+              JSON.stringify(serializableUpdate, null, 2),
+            );
+          }
 
           const statusStr = GenTxStatusEnum[update.status] as unknown as string;
           const processedUpdate = {
             tx_hash: update.txHash,
-            status: statusStr || 'UNKNOWN',
-            block_slot: update.blockSlot ? update.blockSlot.toString() : undefined,
+            status: statusStr || "UNKNOWN",
+            block_slot: update.blockSlot
+              ? update.blockSlot.toString()
+              : undefined,
             block_hash: update.blockHash || undefined,
-            confirmations: update.confirmations ? update.confirmations.toString() : undefined,
+            confirmations: update.confirmations
+              ? update.confirmations.toString()
+              : undefined,
             error_message: update.errorMessage || undefined,
-            timestamp: update.timestamp ? update.timestamp.toString() : undefined,
+            timestamp: update.timestamp
+              ? update.timestamp.toString()
+              : undefined,
           };
 
           // Log the processed update
           if (this.debug) {
-          console.log(`📤 Processing Update:`, JSON.stringify(processedUpdate, null, 2));
-        }
+            console.log(
+              `📤 Processing Update:`,
+              JSON.stringify(processedUpdate, null, 2),
+            );
+          }
 
           onUpdate(processedUpdate);
         }
@@ -179,7 +208,10 @@ export class GrpcClient {
     };
   }
 
-  async getCurrentNonce(address: string, tag: string = 'latest'): Promise<{ address: string; nonce: string; tag: string; error: string }> {
+  async getCurrentNonce(
+    address: string,
+    tag: string = "latest",
+  ): Promise<{ address: string; nonce: string; tag: string; error: string }> {
     const req: GenGetCurrentNonceRequest = { address, tag };
     const call = this.accountClient.getCurrentNonce(req);
     const res: GenGetCurrentNonceResponse = await call.response;

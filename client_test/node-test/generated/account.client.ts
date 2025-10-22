@@ -19,58 +19,108 @@ import type { RpcOptions } from "@protobuf-ts/runtime-rpc";
  * @generated from protobuf service mmn.AccountService
  */
 export interface IAccountServiceClient {
-    /**
-     * @generated from protobuf rpc: GetAccount
-     */
-    getAccount(input: GetAccountRequest, options?: RpcOptions): UnaryCall<GetAccountRequest, GetAccountResponse>;
-    /**
-     * @generated from protobuf rpc: GetTxHistory
-     */
-    getTxHistory(input: GetTxHistoryRequest, options?: RpcOptions): UnaryCall<GetTxHistoryRequest, GetTxHistoryResponse>;
-    /**
-     * @generated from protobuf rpc: GetCurrentNonce
-     */
-    getCurrentNonce(input: GetCurrentNonceRequest, options?: RpcOptions): UnaryCall<GetCurrentNonceRequest, GetCurrentNonceResponse>;
-    /**
-     * @generated from protobuf rpc: GetAccountByAddress
-     */
-    getAccountByAddress(input: GetAccountByAddressRequest, options?: RpcOptions): UnaryCall<GetAccountByAddressRequest, GetAccountByAddressResponse>;
+  /**
+   * @generated from protobuf rpc: GetAccount
+   */
+  getAccount(
+    input: GetAccountRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetAccountRequest, GetAccountResponse>;
+  /**
+   * @generated from protobuf rpc: GetTxHistory
+   */
+  getTxHistory(
+    input: GetTxHistoryRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetTxHistoryRequest, GetTxHistoryResponse>;
+  /**
+   * @generated from protobuf rpc: GetCurrentNonce
+   */
+  getCurrentNonce(
+    input: GetCurrentNonceRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetCurrentNonceRequest, GetCurrentNonceResponse>;
+  /**
+   * @generated from protobuf rpc: GetAccountByAddress
+   */
+  getAccountByAddress(
+    input: GetAccountByAddressRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetAccountByAddressRequest, GetAccountByAddressResponse>;
 }
 /**
  * @generated from protobuf service mmn.AccountService
  */
-export class AccountServiceClient implements IAccountServiceClient, ServiceInfo {
-    typeName = AccountService.typeName;
-    methods = AccountService.methods;
-    options = AccountService.options;
-    constructor(private readonly _transport: RpcTransport) {
-    }
-    /**
-     * @generated from protobuf rpc: GetAccount
-     */
-    getAccount(input: GetAccountRequest, options?: RpcOptions): UnaryCall<GetAccountRequest, GetAccountResponse> {
-        const method = this.methods[0], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetAccountRequest, GetAccountResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * @generated from protobuf rpc: GetTxHistory
-     */
-    getTxHistory(input: GetTxHistoryRequest, options?: RpcOptions): UnaryCall<GetTxHistoryRequest, GetTxHistoryResponse> {
-        const method = this.methods[1], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetTxHistoryRequest, GetTxHistoryResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * @generated from protobuf rpc: GetCurrentNonce
-     */
-    getCurrentNonce(input: GetCurrentNonceRequest, options?: RpcOptions): UnaryCall<GetCurrentNonceRequest, GetCurrentNonceResponse> {
-        const method = this.methods[2], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetCurrentNonceRequest, GetCurrentNonceResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * @generated from protobuf rpc: GetAccountByAddress
-     */
-    getAccountByAddress(input: GetAccountByAddressRequest, options?: RpcOptions): UnaryCall<GetAccountByAddressRequest, GetAccountByAddressResponse> {
-        const method = this.methods[3], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetAccountByAddressRequest, GetAccountByAddressResponse>("unary", this._transport, method, opt, input);
-    }
+export class AccountServiceClient
+  implements IAccountServiceClient, ServiceInfo
+{
+  typeName = AccountService.typeName;
+  methods = AccountService.methods;
+  options = AccountService.options;
+  constructor(private readonly _transport: RpcTransport) {}
+  /**
+   * @generated from protobuf rpc: GetAccount
+   */
+  getAccount(
+    input: GetAccountRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetAccountRequest, GetAccountResponse> {
+    const method = this.methods[0],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<GetAccountRequest, GetAccountResponse>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * @generated from protobuf rpc: GetTxHistory
+   */
+  getTxHistory(
+    input: GetTxHistoryRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetTxHistoryRequest, GetTxHistoryResponse> {
+    const method = this.methods[1],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<GetTxHistoryRequest, GetTxHistoryResponse>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * @generated from protobuf rpc: GetCurrentNonce
+   */
+  getCurrentNonce(
+    input: GetCurrentNonceRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetCurrentNonceRequest, GetCurrentNonceResponse> {
+    const method = this.methods[2],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<GetCurrentNonceRequest, GetCurrentNonceResponse>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * @generated from protobuf rpc: GetAccountByAddress
+   */
+  getAccountByAddress(
+    input: GetAccountByAddressRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetAccountByAddressRequest, GetAccountByAddressResponse> {
+    const method = this.methods[3],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<
+      GetAccountByAddressRequest,
+      GetAccountByAddressResponse
+    >("unary", this._transport, method, opt, input);
+  }
 }

@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events';
-import { GrpcClient } from './grpc_client';
-import { TransactionStatus, TransactionStatusInfo } from './generated/tx';
+import { EventEmitter } from "events";
+import { GrpcClient } from "./grpc_client";
+import { TransactionStatus, TransactionStatusInfo } from "./generated/tx";
 
 export interface TransactionTrackerOptions {
   serverAddress?: string;
@@ -22,7 +22,7 @@ export class TransactionTracker extends EventEmitter {
     super();
 
     const {
-      serverAddress = '127.0.0.1:9001',
+      serverAddress = "127.0.0.1:9001",
       statusConsumptionDelay = 0, // Default to no delay
       debug = false, // Default to no debug output
     } = options;
@@ -39,9 +39,9 @@ export class TransactionTracker extends EventEmitter {
   trackTransactions(): void {
     if (!this.isClosed) {
       if (this.debug) {
-        console.log('🔍 [DEBUG] Starting to track all transactions...');
+        console.log("🔍 [DEBUG] Starting to track all transactions...");
       } else {
-        console.log('🔍 Starting to track all transactions...');
+        console.log("🔍 Starting to track all transactions...");
       }
     }
 
@@ -61,29 +61,34 @@ export class TransactionTracker extends EventEmitter {
       },
       (error: any) => {
         if (this.debug) {
-          console.error('🔍 [DEBUG] Subscription error for all transactions:', error);
+          console.error(
+            "🔍 [DEBUG] Subscription error for all transactions:",
+            error,
+          );
         } else {
-          console.error('Subscription error for all transactions:', error);
+          console.error("Subscription error for all transactions:", error);
         }
-        this.emit('error', error);
+        this.emit("error", error);
       },
       () => {
         if (!this.isClosed) {
           if (this.debug) {
-            console.log('🔍 [DEBUG] Subscription completed for all transactions');
+            console.log(
+              "🔍 [DEBUG] Subscription completed for all transactions",
+            );
           } else {
-            console.log('Subscription completed for all transactions');
+            console.log("Subscription completed for all transactions");
           }
-          this.emit('allTransactionsSubscriptionCompleted');
+          this.emit("allTransactionsSubscriptionCompleted");
         }
-      }
+      },
     );
 
     // Store the unsubscribe function with a special key
-    this.subscriptions.set('*all*', unsubscribe);
+    this.subscriptions.set("*all*", unsubscribe);
 
     if (!this.isClosed) {
-      this.emit('allTransactionsTrackingStarted');
+      this.emit("allTransactionsTrackingStarted");
     }
   }
 
@@ -93,21 +98,21 @@ export class TransactionTracker extends EventEmitter {
   stopTracking(): void {
     if (!this.isClosed) {
       if (this.debug) {
-        console.log('🛑 [DEBUG] Stopping tracking of all transactions...');
+        console.log("🛑 [DEBUG] Stopping tracking of all transactions...");
       } else {
-        console.log('🛑 Stopping tracking of all transactions...');
+        console.log("🛑 Stopping tracking of all transactions...");
       }
     }
 
     // Cancel the all-transactions subscription
-    const unsubscribe = this.subscriptions.get('*all*');
+    const unsubscribe = this.subscriptions.get("*all*");
     if (unsubscribe) {
       unsubscribe();
-      this.subscriptions.delete('*all*');
+      this.subscriptions.delete("*all*");
     }
 
     if (!this.isClosed) {
-      this.emit('allTransactionsTrackingStopped');
+      this.emit("allTransactionsTrackingStopped");
     }
   }
 
@@ -123,7 +128,7 @@ export class TransactionTracker extends EventEmitter {
 
     this.trackedTransactions.clear();
     if (!this.isClosed) {
-      this.emit('allTrackingStopped');
+      this.emit("allTrackingStopped");
     }
   }
 
@@ -140,7 +145,7 @@ export class TransactionTracker extends EventEmitter {
       confirmations?: string;
       error_message?: string;
       timestamp?: string;
-    }
+    },
   ): Promise<void> {
     const statusMap: { [key: string]: TransactionStatus } = {
       PENDING: TransactionStatus.PENDING,
@@ -155,31 +160,37 @@ export class TransactionTracker extends EventEmitter {
         console.log(
           `⏳ [DEBUG] Slow consume: Waiting ${
             this.statusConsumptionDelay
-          }ms before processing status update for ${txHash.substring(0, 16)}...`
+          }ms before processing status update for ${txHash.substring(0, 16)}...`,
         );
       } else {
         console.log(
           `⏳ Slow consume: Waiting ${
             this.statusConsumptionDelay
-          }ms before processing status update for ${txHash.substring(0, 16)}...`
+          }ms before processing status update for ${txHash.substring(0, 16)}...`,
         );
       }
-      await new Promise((resolve) => setTimeout(resolve, this.statusConsumptionDelay));
+      await new Promise((resolve) =>
+        setTimeout(resolve, this.statusConsumptionDelay),
+      );
     }
 
-    const statusEnum = !update.status ? TransactionStatus.FAILED : statusMap[update.status];
+    const statusEnum = !update.status
+      ? TransactionStatus.FAILED
+      : statusMap[update.status];
 
     const newStatus: TransactionStatusInfo = {
       txHash,
       status: statusEnum,
       blockSlot: update.block_slot ? BigInt(update.block_slot) : 0n,
-      blockHash: update.block_hash || '',
+      blockHash: update.block_hash || "",
       confirmations: update.confirmations ? BigInt(update.confirmations) : 0n,
-      errorMessage: update.error_message || '',
-      timestamp: update.timestamp ? BigInt(update.timestamp) : BigInt(Date.now()),
-      extraInfo: '',
-      amount: '',
-      textData: '',
+      errorMessage: update.error_message || "",
+      timestamp: update.timestamp
+        ? BigInt(update.timestamp)
+        : BigInt(Date.now()),
+      extraInfo: "",
+      amount: "",
+      textData: "",
     };
 
     const oldStatus = this.trackedTransactions.get(txHash);
@@ -188,12 +199,14 @@ export class TransactionTracker extends EventEmitter {
     // Debug output for status changes
     if (this.debug && !this.isClosed) {
       console.log(
-        `🔍 [DEBUG] Status update for ${txHash.substring(0, 16)}...: ${oldStatus?.status || 'NEW'} → ${
+        `🔍 [DEBUG] Status update for ${txHash.substring(0, 16)}...: ${oldStatus?.status || "NEW"} → ${
           newStatus.status
-        }`
+        }`,
       );
       if (newStatus.blockHash) {
-        console.log(`🔍 [DEBUG] Block hash: ${newStatus.blockHash.substring(0, 16)}...`);
+        console.log(
+          `🔍 [DEBUG] Block hash: ${newStatus.blockHash.substring(0, 16)}...`,
+        );
       }
       if (newStatus.errorMessage) {
         console.log(`🔍 [DEBUG] Error message: ${newStatus.errorMessage}`);
@@ -202,13 +215,13 @@ export class TransactionTracker extends EventEmitter {
 
     // Emit status change event
     if (!this.isClosed) {
-      this.emit('statusChanged', txHash, newStatus, oldStatus);
+      this.emit("statusChanged", txHash, newStatus, oldStatus);
 
       // Emit specific status events
       if (newStatus.status === TransactionStatus.FINALIZED) {
-        this.emit('transactionFinalized', txHash, newStatus);
+        this.emit("transactionFinalized", txHash, newStatus);
       } else if (newStatus.status === TransactionStatus.FAILED) {
-        this.emit('transactionFailed', txHash, newStatus);
+        this.emit("transactionFailed", txHash, newStatus);
       }
     }
   }
@@ -222,7 +235,9 @@ export class TransactionTracker extends EventEmitter {
   /**
    * Get tracked transaction status
    */
-  getTrackedTransactionStatus(txHash: string): TransactionStatusInfo | undefined {
+  getTrackedTransactionStatus(
+    txHash: string,
+  ): TransactionStatusInfo | undefined {
     return this.trackedTransactions.get(txHash);
   }
 
@@ -230,7 +245,10 @@ export class TransactionTracker extends EventEmitter {
    * Check if a transaction status is terminal (FINALIZED, FAILED)
    */
   private isTerminalStatus(status: TransactionStatus): boolean {
-    return status === TransactionStatus.FINALIZED || status === TransactionStatus.FAILED;
+    return (
+      status === TransactionStatus.FINALIZED ||
+      status === TransactionStatus.FAILED
+    );
   }
 
   /**
@@ -239,19 +257,23 @@ export class TransactionTracker extends EventEmitter {
   async waitForTerminalStatus(
     txHash: string,
     timeoutMs: number = 20000,
-    skipCachedStatus: boolean = false
+    skipCachedStatus: boolean = false,
   ): Promise<TransactionStatusInfo> {
     // First check if the transaction already exists and has a terminal status
     const existingStatus = this.trackedTransactions.get(txHash);
-    if (existingStatus && this.isTerminalStatus(existingStatus.status) && !skipCachedStatus) {
+    if (
+      existingStatus &&
+      this.isTerminalStatus(existingStatus.status) &&
+      !skipCachedStatus
+    ) {
       if (!this.isClosed) {
         if (this.debug) {
           console.log(
-            `✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`
+            `✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`,
           );
         } else {
           console.log(
-            `✅ Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`
+            `✅ Transaction ${txHash.substring(0, 16)}... already has terminal status: ${existingStatus.status}`,
           );
         }
       }
@@ -260,30 +282,42 @@ export class TransactionTracker extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.off('statusChanged', statusListener);
+        this.off("statusChanged", statusListener);
         if (!this.isClosed && this.debug) {
-          console.log(`⏰ [DEBUG] Timeout waiting for terminal status for ${txHash.substring(0, 16)}...`);
+          console.log(
+            `⏰ [DEBUG] Timeout waiting for terminal status for ${txHash.substring(0, 16)}...`,
+          );
         }
         reject(new Error(`Timeout waiting for terminal status for ${txHash}`));
       }, timeoutMs);
 
-      const statusListener = (eventTxHash: string, newStatus: TransactionStatusInfo) => {
-        if (eventTxHash === txHash && TransactionTracker.isTerminalStatus(newStatus.status)) {
+      const statusListener = (
+        eventTxHash: string,
+        newStatus: TransactionStatusInfo,
+      ) => {
+        if (
+          eventTxHash === txHash &&
+          TransactionTracker.isTerminalStatus(newStatus.status)
+        ) {
           if (!this.isClosed && this.debug) {
-            console.log(`🔍 [DEBUG] Received terminal status for ${txHash.substring(0, 16)}...: ${newStatus.status}`);
+            console.log(
+              `🔍 [DEBUG] Received terminal status for ${txHash.substring(0, 16)}...: ${newStatus.status}`,
+            );
           }
           clearTimeout(timeout);
-          this.off('statusChanged', statusListener);
+          this.off("statusChanged", statusListener);
           resolve(newStatus);
         }
       };
 
-      this.on('statusChanged', statusListener);
+      this.on("statusChanged", statusListener);
 
       // Start tracking all transactions if not already tracking
-      if (!this.subscriptions.has('*all*')) {
+      if (!this.subscriptions.has("*all*")) {
         if (!this.isClosed && this.debug) {
-          console.log(`🔍 [DEBUG] Starting transaction tracking for ${txHash.substring(0, 16)}...`);
+          console.log(
+            `🔍 [DEBUG] Starting transaction tracking for ${txHash.substring(0, 16)}...`,
+          );
         }
         this.trackTransactions();
       }
@@ -294,7 +328,10 @@ export class TransactionTracker extends EventEmitter {
    * Check if a status represents a terminal state
    */
   static isTerminalStatus(status: TransactionStatus): boolean {
-    return status === TransactionStatus.FINALIZED || status === TransactionStatus.FAILED;
+    return (
+      status === TransactionStatus.FINALIZED ||
+      status === TransactionStatus.FAILED
+    );
   }
 
   /**
@@ -303,25 +340,35 @@ export class TransactionTracker extends EventEmitter {
   async waitForTransactionFinalization(
     txHash: string,
     timeoutMs: number = 30000,
-    skipCachedStatus: boolean = false
+    skipCachedStatus: boolean = false,
   ): Promise<TransactionStatusInfo> {
     try {
-      const status = await this.waitForTerminalStatus(txHash, timeoutMs, skipCachedStatus);
+      const status = await this.waitForTerminalStatus(
+        txHash,
+        timeoutMs,
+        skipCachedStatus,
+      );
 
       if (status.status === TransactionStatus.FAILED) {
-        throw new Error(`Transaction ${txHash.substring(0, 16)}... failed: ${status.errorMessage || 'Unknown error'}`);
+        throw new Error(
+          `Transaction ${txHash.substring(0, 16)}... failed: ${status.errorMessage || "Unknown error"}`,
+        );
       }
 
       if (!this.isClosed) {
         if (this.debug) {
-          console.log(`✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... finalized`);
+          console.log(
+            `✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... finalized`,
+          );
         } else {
           console.log(`✅ Transaction ${txHash.substring(0, 16)}... finalized`);
         }
       }
       return status;
     } catch (error) {
-      throw new Error(`Transaction finalization error: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Transaction finalization error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -331,31 +378,39 @@ export class TransactionTracker extends EventEmitter {
   async waitForTransactionFailure(
     txHash: string,
     timeoutMs: number = 30000,
-    skipCachedStatus: boolean = false
+    skipCachedStatus: boolean = false,
   ): Promise<TransactionStatusInfo> {
     try {
-      const status = await this.waitForTerminalStatus(txHash, timeoutMs, skipCachedStatus);
+      const status = await this.waitForTerminalStatus(
+        txHash,
+        timeoutMs,
+        skipCachedStatus,
+      );
 
       if (status.status === TransactionStatus.FAILED) {
         if (!this.isClosed) {
           if (this.debug) {
             console.log(
               `✅ [DEBUG] Transaction ${txHash.substring(0, 16)}... failed as expected: ${
-                status.errorMessage || 'Unknown error'
-              }`
+                status.errorMessage || "Unknown error"
+              }`,
             );
           } else {
             console.log(
-              `✅ Transaction ${txHash.substring(0, 16)}... failed as expected: ${status.errorMessage || 'Unknown error'}`
+              `✅ Transaction ${txHash.substring(0, 16)}... failed as expected: ${status.errorMessage || "Unknown error"}`,
             );
           }
         }
         return status;
       }
 
-      throw new Error(`Transaction ${txHash}... was expected to fail but reached status: ${status.status}`);
+      throw new Error(
+        `Transaction ${txHash}... was expected to fail but reached status: ${status.status}`,
+      );
     } catch (error) {
-      throw new Error(`Transaction failure check error: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Transaction failure check error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

@@ -22,92 +22,169 @@ import type { RpcOptions } from "@protobuf-ts/runtime-rpc";
  * @generated from protobuf service mmn.TxService
  */
 export interface ITxServiceClient {
-    /**
-     * @generated from protobuf rpc: TxBroadcast
-     */
-    txBroadcast(input: SignedTxMsg, options?: RpcOptions): UnaryCall<SignedTxMsg, TxResponse>;
-    /**
-     * @generated from protobuf rpc: AddTx
-     */
-    addTx(input: SignedTxMsg, options?: RpcOptions): UnaryCall<SignedTxMsg, AddTxResponse>;
-    /**
-     * @generated from protobuf rpc: GetTxByHash
-     */
-    getTxByHash(input: GetTxByHashRequest, options?: RpcOptions): UnaryCall<GetTxByHashRequest, GetTxByHashResponse>;
-    /**
-     * Get current status of a transaction
-     *
-     * @generated from protobuf rpc: GetTransactionStatus
-     */
-    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo>;
-    /**
-     * Subscribe to status updates for all transactions
-     *
-     * @generated from protobuf rpc: SubscribeTransactionStatus
-     */
-    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo>;
-    /**
-     * Get all pending transactions from mempool
-     *
-     * @generated from protobuf rpc: GetPendingTransactions
-     */
-    getPendingTransactions(input: GetPendingTransactionsRequest, options?: RpcOptions): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse>;
+  /**
+   * @generated from protobuf rpc: TxBroadcast
+   */
+  txBroadcast(
+    input: SignedTxMsg,
+    options?: RpcOptions,
+  ): UnaryCall<SignedTxMsg, TxResponse>;
+  /**
+   * @generated from protobuf rpc: AddTx
+   */
+  addTx(
+    input: SignedTxMsg,
+    options?: RpcOptions,
+  ): UnaryCall<SignedTxMsg, AddTxResponse>;
+  /**
+   * @generated from protobuf rpc: GetTxByHash
+   */
+  getTxByHash(
+    input: GetTxByHashRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetTxByHashRequest, GetTxByHashResponse>;
+  /**
+   * Get current status of a transaction
+   *
+   * @generated from protobuf rpc: GetTransactionStatus
+   */
+  getTransactionStatus(
+    input: GetTransactionStatusRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo>;
+  /**
+   * Subscribe to status updates for all transactions
+   *
+   * @generated from protobuf rpc: SubscribeTransactionStatus
+   */
+  subscribeTransactionStatus(
+    input: SubscribeTransactionStatusRequest,
+    options?: RpcOptions,
+  ): ServerStreamingCall<
+    SubscribeTransactionStatusRequest,
+    TransactionStatusInfo
+  >;
+  /**
+   * Get all pending transactions from mempool
+   *
+   * @generated from protobuf rpc: GetPendingTransactions
+   */
+  getPendingTransactions(
+    input: GetPendingTransactionsRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse>;
 }
 /**
  * @generated from protobuf service mmn.TxService
  */
 export class TxServiceClient implements ITxServiceClient, ServiceInfo {
-    typeName = TxService.typeName;
-    methods = TxService.methods;
-    options = TxService.options;
-    constructor(private readonly _transport: RpcTransport) {
-    }
-    /**
-     * @generated from protobuf rpc: TxBroadcast
-     */
-    txBroadcast(input: SignedTxMsg, options?: RpcOptions): UnaryCall<SignedTxMsg, TxResponse> {
-        const method = this.methods[0], opt = this._transport.mergeOptions(options);
-        return stackIntercept<SignedTxMsg, TxResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * @generated from protobuf rpc: AddTx
-     */
-    addTx(input: SignedTxMsg, options?: RpcOptions): UnaryCall<SignedTxMsg, AddTxResponse> {
-        const method = this.methods[1], opt = this._transport.mergeOptions(options);
-        return stackIntercept<SignedTxMsg, AddTxResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * @generated from protobuf rpc: GetTxByHash
-     */
-    getTxByHash(input: GetTxByHashRequest, options?: RpcOptions): UnaryCall<GetTxByHashRequest, GetTxByHashResponse> {
-        const method = this.methods[2], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetTxByHashRequest, GetTxByHashResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * Get current status of a transaction
-     *
-     * @generated from protobuf rpc: GetTransactionStatus
-     */
-    getTransactionStatus(input: GetTransactionStatusRequest, options?: RpcOptions): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo> {
-        const method = this.methods[3], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetTransactionStatusRequest, TransactionStatusInfo>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * Subscribe to status updates for all transactions
-     *
-     * @generated from protobuf rpc: SubscribeTransactionStatus
-     */
-    subscribeTransactionStatus(input: SubscribeTransactionStatusRequest, options?: RpcOptions): ServerStreamingCall<SubscribeTransactionStatusRequest, TransactionStatusInfo> {
-        const method = this.methods[4], opt = this._transport.mergeOptions(options);
-        return stackIntercept<SubscribeTransactionStatusRequest, TransactionStatusInfo>("serverStreaming", this._transport, method, opt, input);
-    }
-    /**
-     * Get all pending transactions from mempool
-     *
-     * @generated from protobuf rpc: GetPendingTransactions
-     */
-    getPendingTransactions(input: GetPendingTransactionsRequest, options?: RpcOptions): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse> {
-        const method = this.methods[5], opt = this._transport.mergeOptions(options);
-        return stackIntercept<GetPendingTransactionsRequest, GetPendingTransactionsResponse>("unary", this._transport, method, opt, input);
-    }
+  typeName = TxService.typeName;
+  methods = TxService.methods;
+  options = TxService.options;
+  constructor(private readonly _transport: RpcTransport) {}
+  /**
+   * @generated from protobuf rpc: TxBroadcast
+   */
+  txBroadcast(
+    input: SignedTxMsg,
+    options?: RpcOptions,
+  ): UnaryCall<SignedTxMsg, TxResponse> {
+    const method = this.methods[0],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<SignedTxMsg, TxResponse>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * @generated from protobuf rpc: AddTx
+   */
+  addTx(
+    input: SignedTxMsg,
+    options?: RpcOptions,
+  ): UnaryCall<SignedTxMsg, AddTxResponse> {
+    const method = this.methods[1],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<SignedTxMsg, AddTxResponse>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * @generated from protobuf rpc: GetTxByHash
+   */
+  getTxByHash(
+    input: GetTxByHashRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetTxByHashRequest, GetTxByHashResponse> {
+    const method = this.methods[2],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<GetTxByHashRequest, GetTxByHashResponse>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * Get current status of a transaction
+   *
+   * @generated from protobuf rpc: GetTransactionStatus
+   */
+  getTransactionStatus(
+    input: GetTransactionStatusRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetTransactionStatusRequest, TransactionStatusInfo> {
+    const method = this.methods[3],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<GetTransactionStatusRequest, TransactionStatusInfo>(
+      "unary",
+      this._transport,
+      method,
+      opt,
+      input,
+    );
+  }
+  /**
+   * Subscribe to status updates for all transactions
+   *
+   * @generated from protobuf rpc: SubscribeTransactionStatus
+   */
+  subscribeTransactionStatus(
+    input: SubscribeTransactionStatusRequest,
+    options?: RpcOptions,
+  ): ServerStreamingCall<
+    SubscribeTransactionStatusRequest,
+    TransactionStatusInfo
+  > {
+    const method = this.methods[4],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<
+      SubscribeTransactionStatusRequest,
+      TransactionStatusInfo
+    >("serverStreaming", this._transport, method, opt, input);
+  }
+  /**
+   * Get all pending transactions from mempool
+   *
+   * @generated from protobuf rpc: GetPendingTransactions
+   */
+  getPendingTransactions(
+    input: GetPendingTransactionsRequest,
+    options?: RpcOptions,
+  ): UnaryCall<GetPendingTransactionsRequest, GetPendingTransactionsResponse> {
+    const method = this.methods[5],
+      opt = this._transport.mergeOptions(options);
+    return stackIntercept<
+      GetPendingTransactionsRequest,
+      GetPendingTransactionsResponse
+    >("unary", this._transport, method, opt, input);
+  }
 }

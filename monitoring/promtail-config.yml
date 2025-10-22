@@ -29,7 +29,7 @@ scrape_configs:
           expression: '\[(?P<level>[A-Z]+)\]'
       - template:
           source: level
-          template: '{{ ToLower .Value }}'
+          template: "{{ ToLower .Value }}"
       - labels:
           level:
 

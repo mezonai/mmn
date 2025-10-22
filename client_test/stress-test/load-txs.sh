@@ -26,15 +26,15 @@ echo "Log file: $LOG_FILE"
 
 # Run in background with nohup
 nohup go run . \
-  -accounts $ACCOUNTS \
-  -rate $RATE \
-  -switch $SWITCH \
-  -fund $FUND \
-  -amount $AMOUNT \
-  -duration ${DURATION}s \
-  -minutes ${MINUTES} \
-  -workers ${WORKERS} \
-  > $LOG_FILE 2>&1 &
+	-accounts $ACCOUNTS \
+	-rate $RATE \
+	-switch $SWITCH \
+	-fund $FUND \
+	-amount $AMOUNT \
+	-duration ${DURATION}s \
+	-minutes ${MINUTES} \
+	-workers ${WORKERS} \
+	>$LOG_FILE 2>&1 &
 
 # Get the process ID
 PID=$!
@@ -43,5 +43,5 @@ echo "To stop: kill $PID"
 echo "To view logs: tail -f $LOG_FILE"
 
 # Save PID to file for easy management
-echo $PID > load_test.pid
+echo $PID >load_test.pid
 echo "PID saved to load_test.pid"

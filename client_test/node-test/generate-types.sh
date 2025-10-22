@@ -9,10 +9,10 @@ PROTO_DIR="./proto"
 GENERATED_DIR="./generated"
 
 # Create generated directory if it doesn't exist
-mkdir -p "$GENERATED_DIR"
+mkdir -p "${GENERATED_DIR}"
 
 echo "🔍 Found proto files:"
-ls -la "$PROTO_DIR"/*.proto
+ls -la "${PROTO_DIR}"/*.proto
 
 echo ""
 echo "🚀 Generating TypeScript interfaces..."
@@ -23,7 +23,7 @@ echo "📝 Using Windows batch file for protoc plugin compatibility..."
 
 echo ""
 echo "🎉 TypeScript interface generation completed!"
-echo "📁 Generated files are in: $GENERATED_DIR"
+echo "📁 Generated files are in: ${GENERATED_DIR}"
 echo ""
 echo "📋 Generated files:"
-ls -la "$GENERATED_DIR"/ 
+ls -la "${GENERATED_DIR}"/
