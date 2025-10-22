@@ -39,6 +39,7 @@ type RateStats struct {
 }
 
 type AbuseDetector struct {
+	mu             sync.RWMutex
 	rateTracker    *RateTracker
 	config         *AbuseConfig
 	flaggedIPs     map[string]*AbuseFlag

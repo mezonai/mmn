@@ -39,6 +39,8 @@ func NewAbuseDetector(config *AbuseConfig) *AbuseDetector {
 }
 
 func (ad *AbuseDetector) flagAbuse(entity, entityType, reason string) {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
 	now := time.Now()
 
 	switch entityType {
@@ -153,6 +155,8 @@ func (ad *AbuseDetector) performBackgroundChecks() {
 }
 
 func (ad *AbuseDetector) autoBlacklistIP(ip, reason string) {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
 	flag, exists := ad.flaggedIPs[ip]
 	if !exists {
 		flag = &AbuseFlag{
@@ -177,6 +181,8 @@ func (ad *AbuseDetector) autoBlacklistIP(ip, reason string) {
 }
 
 func (ad *AbuseDetector) autoBlacklistWallet(wallet, reason string) {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
 	flag, exists := ad.flaggedWallets[wallet]
 	if !exists {
 		flag = &AbuseFlag{
@@ -201,6 +207,8 @@ func (ad *AbuseDetector) autoBlacklistWallet(wallet, reason string) {
 }
 
 func (ad *AbuseDetector) cleanupOldFlags(cutoff time.Time) {
+	ad.mu.Lock()
+	defer ad.mu.Unlock()
 	for ip, flag := range ad.flaggedIPs {
 		if flag.LastSeen.Before(cutoff) && !flag.IsBlacklisted {
 			delete(ad.flaggedIPs, ip)
