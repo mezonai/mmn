@@ -9,9 +9,6 @@ import (
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/monitoring"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/network"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -179,7 +176,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	go ln.startCleanupRoutine()
 }
 
-func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
+func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger) error {
 	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
@@ -414,116 +411,7 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	if t, e := ln.pubsub.Join(CheckpointRequestTopic); e == nil {
-		ln.topicCheckpointRequest = t
-		if sub, err := ln.topicCheckpointRequest.Subscribe(); err == nil {
-			exception.SafeGoWithPanic("HandleCheckpointRequestTopic", func() {
-				ln.HandleCheckpointRequestTopic(ctx, sub)
-			})
-		}
-	}
-
 	ln.startRealtimeTopicMonitoring(ctx)
-}
-
-// HandleCheckpointRequestTopic listens for checkpoint hash requests and responds with local hash
-func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *pubsub.Subscription) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			msg, err := sub.Next(ctx)
-			if err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				continue
-			}
-			if msg.ReceivedFrom == ln.host.ID() {
-				continue
-			}
-
-			var req CheckpointHashRequest
-			if err := jsonx.Unmarshal(msg.Data, &req); err != nil {
-				logx.Error("NETWORK:CHECKPOINT", "Failed to unmarshal checkpoint request:", err)
-				continue
-			}
-
-			localSlot, localHash, ok := ln.getCheckpointHash(req.Checkpoint)
-			if !ok {
-				logx.Warn("NETWORK:CHECKPOINT", "No local block for checkpoint", req.Checkpoint)
-				continue
-			}
-
-			logx.Info("NETWORK:CHECKPOINT", "Sending checkpoint response to", msg.ReceivedFrom.String(), "checkpoint=", req.Checkpoint)
-			ln.sendCheckpointResponse(msg.ReceivedFrom, CheckpointHashResponse{
-				Checkpoint: req.Checkpoint,
-				Slot:       localSlot,
-				BlockHash:  localHash,
-				PeerID:     ln.host.ID().String(),
-			})
-		}
-	}
-}
-
-func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte, bool) {
-	if checkpoint == 0 {
-		return 0, [32]byte{}, false
-	}
-	latest := ln.blockStore.GetLatestFinalizedSlot()
-	if latest == 0 {
-		return 0, [32]byte{}, false
-	}
-	if latest < checkpoint {
-		return 0, [32]byte{}, false
-	}
-	blk := ln.blockStore.Block(checkpoint)
-	if blk == nil {
-		return 0, [32]byte{}, false
-	}
-	return checkpoint, blk.Hash, true
-}
-
-func (ln *Libp2pNetwork) sendCheckpointResponse(targetPeer peer.ID, resp CheckpointHashResponse) {
-	stream, err := ln.host.NewStream(context.Background(), targetPeer, CheckpointProtocol)
-	if err != nil {
-		logx.Error("NETWORK:CHECKPOINT", "Failed to open checkpoint stream:", err)
-		return
-	}
-	defer stream.Close()
-
-	data, err := jsonx.Marshal(resp)
-	if err != nil {
-		logx.Error("NETWORK:CHECKPOINT", "Failed to marshal checkpoint response:", err)
-		return
-	}
-	if _, err := stream.Write(data); err != nil {
-		logx.Error("NETWORK:CHECKPOINT", "Failed to write checkpoint response:", err)
-		return
-	}
-	logx.Info("NETWORK:CHECKPOINT", "Sent checkpoint response to", targetPeer.String(), "checkpoint=", resp.Checkpoint)
-}
-
-func (ln *Libp2pNetwork) handleCheckpointStream(s network.Stream) {
-	defer s.Close()
-	var resp CheckpointHashResponse
-	decoder := jsonx.NewDecoder(s)
-	if err := decoder.Decode(&resp); err != nil {
-		logx.Error("NETWORK:CHECKPOINT", "Failed to decode checkpoint response:", err)
-		return
-	}
-
-	_, localHash, ok := ln.getCheckpointHash(resp.Checkpoint)
-	if !ok {
-		return
-	}
-	if localHash != resp.BlockHash {
-		ctx := context.Background()
-		if err := ln.RequestSingleBlockSync(ctx, resp.Checkpoint); err != nil {
-			logx.Error("NETWORK:CHECKPOINT", "Failed to request single block sync:", err)
-		}
-	}
 }
 
 func (ln *Libp2pNetwork) RequestCheckpointHash(ctx context.Context, checkpoint uint64) error {

@@ -174,7 +174,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 	ln.host.SetStreamHandler(NodeInfoProtocol, ln.handleNodeInfoStream)
 	ln.host.SetStreamHandler(RequestBlockSyncStream, ln.handleBlockSyncRequestStream)
 	ln.host.SetStreamHandler(LatestSlotProtocol, ln.handleLatestSlotStream)
-	ln.host.SetStreamHandler(CheckpointProtocol, ln.handleCheckpointStream)
 
 	// Start latest slot request mechanism
 	ln.startLatestSlotRequestMechanism()
