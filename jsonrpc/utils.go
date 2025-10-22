@@ -33,6 +33,13 @@ func parseJSONRPCRequest(body []byte) *jsonRPCRequest {
 }
 
 func extractClientIPFromRequest(r *http.Request) string {
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		ip := strings.TrimSpace(xri)
+		if net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
 		if len(parts) > 0 {
