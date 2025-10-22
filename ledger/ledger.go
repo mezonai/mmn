@@ -103,7 +103,6 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 		return nil
 	}
 
-
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
