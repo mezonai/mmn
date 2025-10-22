@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/ratelimit"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/interfaces"
@@ -19,14 +21,15 @@ import (
 )
 
 type TxServiceImpl struct {
-	ledger     *ledger.Ledger
-	mempool    *mempool.Mempool
-	blockStore store.BlockStore
-	tracker    interfaces.TransactionTrackerInterface
+	ledger      *ledger.Ledger
+	mempool     *mempool.Mempool
+	blockStore  store.BlockStore
+	tracker     interfaces.TransactionTrackerInterface
+	rateLimiter *ratelimit.GlobalRateLimiter
 }
 
-func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, tracker interfaces.TransactionTrackerInterface) *TxServiceImpl {
-	return &TxServiceImpl{ledger: ld, mempool: mp, blockStore: bs, tracker: tracker}
+func NewTxService(ld *ledger.Ledger, mp *mempool.Mempool, bs store.BlockStore, tracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter) *TxServiceImpl {
+	return &TxServiceImpl{ledger: ld, mempool: mp, blockStore: bs, tracker: tracker, rateLimiter: rateLimiter}
 }
 
 func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
@@ -45,6 +48,9 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 	if err != nil {
 		return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 	}
+	exception.SafeGo("TrackWalletRequest", func() {
+		s.rateLimiter.TrackWalletRequest(tx.Sender)
+	})
 	return &pb.AddTxResponse{Ok: true, TxHash: txHash}, nil
 }
 

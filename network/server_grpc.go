@@ -8,20 +8,19 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
-	"github.com/mezonai/mmn/errors"
-	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/types"
-
 	"github.com/mezonai/mmn/consensus"
+	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
-	"github.com/mezonai/mmn/service"
+	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
@@ -46,13 +45,14 @@ type server struct {
 	mempool       *mempool.Mempool
 	eventRouter   *events.EventRouter                    // Event router for complex event logic
 	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
+	rateLimiter   *ratelimit.GlobalRateLimiter           // Rate limiter for transaction submission protection
 	txSvc         interfaces.TxService
 	acctSvc       interfaces.AccountService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *grpc.Server {
 
 	s := &server{
 		pubKeys:       pubKeys,
@@ -66,13 +66,35 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		mempool:       mempool,
 		eventRouter:   eventRouter,
 		txTracker:     txTracker,
+		rateLimiter:   rateLimiter,
+		txSvc:         txSvc,
+		acctSvc:       acctSvc,
 	}
 
 	// Initialize shared services
-	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
-	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
+	unaryInterceptors := []grpc.UnaryServerInterceptor{
+		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
+	}
+	streamInterceptors := []grpc.StreamServerInterceptor{
+		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
+	}
 
-	grpcSrv := grpc.NewServer()
+	if enableRateLimit {
+		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
+			securityUnaryInterceptor(rateLimiter),
+		}, unaryInterceptors...)
+
+		streamInterceptors = append([]grpc.StreamServerInterceptor{
+			securityStreamInterceptor(rateLimiter),
+		}, streamInterceptors...)
+	}
+
+	grpcSrv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
+		grpc.MaxRecvMsgSize(GRPCMaxRecvMsgSize),
+		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
+	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
@@ -88,6 +110,71 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
 }
+
+func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		clientIP := extractClientIP(ctx)
+		logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
+		if rateLimiter != nil {
+			if !rateLimiter.IsIPAllowed(clientIP) {
+				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", info.FullMethod)
+				return nil, status.Errorf(codes.ResourceExhausted, "Too many requests")
+			}
+			exception.SafeGo("TrackIPRequest", func() {
+				rateLimiter.TrackIPRequest(clientIP)
+			})
+		}
+
+		return handler(ctx, req)
+	}
+}
+
+func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		clientIP := extractClientIP(ss.Context())
+		logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
+		if rateLimiter != nil {
+			if !rateLimiter.IsIPAllowed(clientIP) {
+				logx.Warn("SECURITY", "IP limited (stream):", clientIP, "Method:", info.FullMethod)
+				return status.Errorf(codes.ResourceExhausted, "ip rate limit")
+			}
+			exception.SafeGo("TrackIPRequest", func() {
+				rateLimiter.TrackIPRequest(clientIP)
+			})
+		}
+		return handler(srv, ss)
+	}
+}
+
+func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) <= 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, defaultTimeout)
+			defer cancel()
+		}
+		return handler(ctx, req)
+	}
+}
+
+func defaultDeadlineStreamInterceptor(defaultTimeout time.Duration) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if deadline, ok := ss.Context().Deadline(); !ok || time.Until(deadline) <= 0 {
+			ctx, cancel := context.WithTimeout(ss.Context(), defaultTimeout)
+			defer cancel()
+			wrapped := &serverStreamWithContext{ServerStream: ss, ctx: ctx}
+			return handler(srv, wrapped)
+		}
+		return handler(srv, ss)
+	}
+}
+
+type serverStreamWithContext struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (w *serverStreamWithContext) Context() context.Context { return w.ctx }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	return s.txSvc.AddTx(ctx, in)
