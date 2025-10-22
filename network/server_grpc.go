@@ -34,6 +34,7 @@ type server struct {
 	pb.UnimplementedBlockServiceServer
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
+	pb.UnimplementedBlacklistServiceServer
 	pb.UnimplementedHealthServiceServer
 	pubKeys       map[string]ed25519.PublicKey
 	blockDir      string
@@ -48,6 +49,7 @@ type server struct {
 	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
 	txSvc         interfaces.TxService
 	acctSvc       interfaces.AccountService
+	blSvc         interfaces.BlService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
@@ -71,11 +73,13 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	// Initialize shared services
 	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
 	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
+	s.blSvc = service.NewBlService(mempool, selfID)
 
 	grpcSrv := grpc.NewServer()
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
+	pb.RegisterBlacklistServiceServer(grpcSrv, s)
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -111,6 +115,20 @@ func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransaction
 
 func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
 	return s.txSvc.GetPendingTransactions(ctx, in)
+}
+
+// --- BlacklistService implementation ---
+
+func (s *server) Add(ctx context.Context, in *pb.SignedBL) (*pb.BlacklistResponse, error) {
+	return s.blSvc.Add(ctx, in)
+}
+
+func (s *server) List(ctx context.Context, in *pb.SignedBL) (*pb.ListBlacklistResponse, error) {
+	return s.blSvc.List(ctx, in)
+}
+
+func (s *server) Remove(ctx context.Context, in *pb.SignedBL) (*pb.BlacklistResponse, error) {
+	return s.blSvc.Remove(ctx, in)
 }
 
 // SubscribeTransactionStatus streams transaction status updates using event-based system

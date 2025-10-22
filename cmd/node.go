@@ -200,7 +200,7 @@ func runNode() {
 	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dataDir, eventRouter, txTracker, zkVerify)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -316,7 +316,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string,
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, dataDir string,
 	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
@@ -324,6 +324,9 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 	}
 
 	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker, zkVerify)
+
+	mp.LoadBlacklistFromFile(dataDir)
+
 	return mp, nil
 }
 

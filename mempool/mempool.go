@@ -49,6 +49,10 @@ type Mempool struct {
 
 	// Performance optimization: index map to avoid O(n) scans in ready queue
 	readyQueueIndex map[string]map[uint64]bool // sender -> nonce -> exists (for O(1) duplicate check)
+
+	// Blacklist: address -> reason
+	blacklist        map[string]string
+	blacklistManager *BlacklistManager
 }
 
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, eventRouter *events.EventRouter,
@@ -67,6 +71,9 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		eventRouter:     eventRouter,
 		txTracker:       txTracker,
 		zkVerify:        zkVerify,
+
+		blacklist:        make(map[string]string),
+		blacklistManager: nil,
 	}
 }
 
@@ -246,6 +253,12 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 // Stateless validation, simple for tx
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
+	if tx != nil {
+		if _, blocked := mp.blacklist[tx.Sender]; blocked {
+			monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
+			return errors.NewError(errors.ErrCodeInvalidRequest, "sender is blacklisted")
+		}
+	}
 	// 1. Verify signature (skip for testing if signature is "test_signature")
 	if !tx.Verify(mp.zkVerify) {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
@@ -319,6 +332,83 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return err
 	}
 
+	return nil
+}
+
+func (mp *Mempool) AddToBlacklist(address string, reason string) error {
+	if address == "" {
+		return fmt.Errorf("address is empty")
+	}
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if _, exists := mp.blacklist[address]; exists {
+		return fmt.Errorf("address already blacklisted")
+	}
+	mp.blacklist[address] = reason
+
+	if mp.blacklistManager != nil {
+		go func() {
+			if err := mp.blacklistManager.SaveBlacklistToFile(mp.blacklist); err != nil {
+				logx.Error("MEMPOOL", fmt.Sprintf("Failed to save blacklist to file: %v", err))
+			}
+		}()
+	}
+
+	return nil
+}
+
+func (mp *Mempool) RemoveFromBlacklist(address string) error {
+	if address == "" {
+		return fmt.Errorf("address is empty")
+	}
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if _, exists := mp.blacklist[address]; !exists {
+		return fmt.Errorf("address not in blacklist")
+	}
+	delete(mp.blacklist, address)
+
+	if mp.blacklistManager != nil {
+		go func() {
+			if err := mp.blacklistManager.SaveBlacklistToFile(mp.blacklist); err != nil {
+				logx.Error("MEMPOOL", fmt.Sprintf("Failed to save blacklist to file: %v", err))
+			}
+		}()
+	}
+
+	return nil
+}
+
+func (mp *Mempool) IsBlacklisted(address string) bool {
+	mp.mu.RLock()
+	_, ok := mp.blacklist[address]
+	mp.mu.RUnlock()
+	return ok
+}
+
+func (mp *Mempool) ListBlacklist() map[string]string {
+	mp.mu.RLock()
+	out := make(map[string]string, len(mp.blacklist))
+	for k, v := range mp.blacklist {
+		out[k] = v
+	}
+	mp.mu.RUnlock()
+	return out
+}
+
+func (mp *Mempool) LoadBlacklistFromFile(dataDir string) error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+
+	mp.blacklistManager = NewBlacklistManager(dataDir)
+	loadedBlacklist, err := mp.blacklistManager.LoadBlacklistFromFile()
+	if err != nil {
+		logx.Info("MEMPOOL", "No blacklist entries from file")
+	}
+
+	mp.blacklist = loadedBlacklist
+
+	logx.Info("MEMPOOL", fmt.Sprintf("Loaded %d blacklist entries from file", len(mp.blacklist)))
 	return nil
 }
 
