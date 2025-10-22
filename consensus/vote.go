@@ -69,7 +69,7 @@ func (v *Vote) Validate() error {
 	}
 
 	if !ed25519.Verify(pubKey, v.serializeVote(), v.Signature) {
-		return fmt.Errorf("invalid signature: %w", err)
+		return fmt.Errorf("invalid signature")
 	}
 
 	return nil
