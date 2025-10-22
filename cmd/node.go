@@ -39,9 +39,6 @@ import (
 )
 
 const (
-	// Storage paths - using absolute paths
-	fileBlockDir = "./blockstore/blocks"
-	// leveldbBlockDir = "blockstore/leveldb"
 	LISTEN_MODE = "listen"
 	FULL_MODE   = "full"
 )
@@ -227,7 +224,7 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(nodeConfig, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -367,14 +364,8 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
-
-	// Load private key for gRPC server
-	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
-	if err != nil {
-		log.Fatalf("Failed to load private key for gRPC server: %v", err)
-	}
 
 	abuseConfig := abuse.DefaultAbuseConfig()
 	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
@@ -390,17 +381,12 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *c
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
 		nodeConfig.GRPCAddr,
-		map[string]ed25519.PublicKey{},
-		fileBlockDir,
 		ld,
-		collector,
 		nodeConfig.PubKey,
-		privKey,
 		val,
 		bs,
 		mp,
 		eventRouter,
-		txTracker,
 		rateLimiter,
 		enableRateLimit,
 		txSvc,
