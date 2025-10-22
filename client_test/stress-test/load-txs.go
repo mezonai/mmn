@@ -78,10 +78,14 @@ type LoadTester struct {
 	faucetPrivateKey ed25519.PrivateKey
 	faucetPublicKey  string
 
+	// Per-account balance tracking
+	perAccountBalances map[string]uint64
+	balanceMutex       sync.Mutex
+
 	// Per-account nonce tracking (align with performance test)
-	perAccountBaseNonce   map[string]uint64
-	perAccountLocalCounts map[string]uint64
-	nonceMutex            sync.Mutex
+	perAccountBaseNonce   sync.Map // map[address]uint64
+	perAccountLocalCounts sync.Map // map[address]uint64
+	nonceMuMap            sync.Map // map[address]*sync.Mutex
 
 	// Faucet nonce serialization to avoid duplicate nonce under parallel refills
 	faucetNonce     uint64
@@ -223,15 +227,14 @@ func NewLoadTester(config Config) (*LoadTester, error) {
 	}
 
 	tester := &LoadTester{
-		config:                config,
-		ctx:                   ctx,
-		cancel:                cancel,
-		logger:                logger,
-		faucetPrivateKey:      faucetPrivateKey,
-		faucetPublicKey:       faucetPublicKey,
-		fundingStartTime:      time.Now(),
-		perAccountBaseNonce:   make(map[string]uint64),
-		perAccountLocalCounts: make(map[string]uint64),
+		config:             config,
+		ctx:                ctx,
+		cancel:             cancel,
+		logger:             logger,
+		faucetPrivateKey:   faucetPrivateKey,
+		faucetPublicKey:    faucetPublicKey,
+		fundingStartTime:   time.Now(),
+		perAccountBalances: make(map[string]uint64),
 	}
 
 	// Connect to gRPC server
@@ -585,17 +588,12 @@ func (lt *LoadTester) Run() error {
 			go lt.logRealTimeMetrics()
 		case <-time.After(time.Until(nextSend)):
 			// Fan-out to N workers, each keeps its own schedule/account slice
-			var wg sync.WaitGroup
-			wg.Add(workers)
 			for w := 0; w < workers; w++ {
 				go func(workerID int) {
-					defer wg.Done()
 					idx := (currentAccountIndex + workerID) % lt.config.AccountCount
 					lt.sendTransaction(idx)
-					atomic.AddInt64(&lt.totalTxsSent, 1)
 				}(w)
 			}
-			wg.Wait()
 
 			// Update switching once per batch
 			txCountForCurrentAccount += workers
@@ -606,28 +604,20 @@ func (lt *LoadTester) Run() error {
 
 			// Schedule next send, skip backlog to avoid bursts
 			nextSend = nextSend.Add(interval)
-			now := time.Now()
-			if nextSend.Before(now) {
-				nextSend = now.Add(interval)
-			}
-			// per-second TPS tracking removed
 		}
 	}
 }
 
 func (lt *LoadTester) sendTransaction(accountIndex int) {
 	account := &lt.accounts[accountIndex]
-
 	// Check account balance first
-	accountResp, err := lt.client.GetAccount(lt.ctx, account.Address)
+	currentBalance, err := lt.getAccountBalance(account.Address)
 	if err != nil {
 		lt.logger.LogError("Failed to get account info for account %d: %v", accountIndex, err)
+		atomic.AddInt64(&lt.totalTxsSent, 1)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
-
-	var currentBalance uint64
-	fmt.Sscanf(accountResp.Balance.String(), "%d", &currentBalance)
 
 	// Check if account has sufficient balance
 	if currentBalance < lt.config.TransferAmount {
@@ -637,18 +627,23 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 		// Try to refill the account
 		if err := lt.refillAccount(accountIndex); err != nil {
 			lt.logger.LogError("Failed to refill account %d: %v", accountIndex, err)
+			atomic.AddInt64(&lt.totalTxsSent, 1)
 			atomic.AddInt64(&lt.totalTxsFailed, 1)
 			return
 		}
 
 		// Update local balance after refill
-		account.Balance = lt.config.FundAmount
+		account.Balance = lt.config.FundAmount + currentBalance
+		lt.balanceMutex.Lock()
+		lt.perAccountBalances[account.Address] = lt.config.FundAmount + currentBalance
+		lt.balanceMutex.Unlock()
 	}
 
 	// Determine nonce using per-account base + local counter
 	nextNonce, err := lt.nextAccountNonce(account.Address)
 	if err != nil {
 		lt.logger.LogError("Failed to get nonce for account %d: %v", accountIndex, err)
+		atomic.AddInt64(&lt.totalTxsSent, 1)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
@@ -665,6 +660,7 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 	unsigned, err := client.BuildTransferTx(client.TxTypeTransfer, account.Address, recipient.Address, amount, nextNonce, uint64(time.Now().Unix()), textData, extraInfo, account.ZkProof, account.ZkPub)
 	if err != nil {
 		lt.logger.LogError("Failed to build transfer transaction for account %d: %v", accountIndex, err)
+		atomic.AddInt64(&lt.totalTxsSent, 1)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
@@ -673,17 +669,20 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 	accountPublicKey, err := base58.Decode(account.PublicKey)
 	if err != nil {
 		lt.logger.LogError("Failed to decode from public key: %v", err)
+		atomic.AddInt64(&lt.totalTxsSent, 1)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
 	signedRaw, err := client.SignTx(unsigned, accountPublicKey, account.PrivateKey.Seed())
 	if err != nil {
 		lt.logger.LogError("Failed to sign transaction for account %d: %v", accountIndex, err)
+		atomic.AddInt64(&lt.totalTxsSent, 1)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		return
 	}
 
 	// Send transaction
+	atomic.AddInt64(&lt.totalTxsSent, 1)
 	resp, err := lt.client.AddTx(lt.ctx, signedRaw)
 	if err != nil {
 		lt.logger.LogError("Failed to send transaction for account %d: %v", accountIndex, err)
@@ -700,6 +699,9 @@ func (lt *LoadTester) sendTransaction(accountIndex int) {
 		// Update account nonce and balance
 		account.Nonce = nextNonce
 		account.Balance = currentBalance - lt.config.TransferAmount
+		lt.balanceMutex.Lock()
+		lt.perAccountBalances[account.Address] = account.Balance
+		lt.balanceMutex.Unlock()
 	} else {
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		// On any failure, refresh base nonce for this account
@@ -763,39 +765,78 @@ func stringIndex(haystack, needle string) int {
 	return -1
 }
 
+func (lt *LoadTester) getAccountNonceMutex(address string) *sync.Mutex {
+	val, _ := lt.nonceMuMap.LoadOrStore(address, &sync.Mutex{})
+	return val.(*sync.Mutex)
+}
+
 func (lt *LoadTester) refreshAccountBaseNonce(address string) (uint64, error) {
+	accountMu := lt.getAccountNonceMutex(address)
+
+	accountMu.Lock()
+	defer accountMu.Unlock()
+
 	current, err := lt.client.GetCurrentNonce(lt.ctx, address, "pending")
 	if err != nil {
 		return 0, err
 	}
-	lt.nonceMutex.Lock()
-	lt.perAccountBaseNonce[address] = current
-	lt.perAccountLocalCounts[address] = 0
-	lt.nonceMutex.Unlock()
+
+	lt.perAccountBaseNonce.Store(address, current)
+	lt.perAccountLocalCounts.Store(address, uint64(0))
+
 	return current, nil
 }
 
 func (lt *LoadTester) nextAccountNonce(address string) (uint64, error) {
-	lt.nonceMutex.Lock()
-	base, ok := lt.perAccountBaseNonce[address]
-	count := lt.perAccountLocalCounts[address]
-	lt.nonceMutex.Unlock()
+	accountMu := lt.getAccountNonceMutex(address)
+
+	accountMu.Lock()
+	defer accountMu.Unlock()
+
+	var base, count uint64
+
+	baseVal, ok := lt.perAccountBaseNonce.Load(address)
 
 	if !ok {
-		if _, err := lt.refreshAccountBaseNonce(address); err != nil {
+		current, err := lt.client.GetCurrentNonce(lt.ctx, address, "pending")
+		if err != nil {
 			return 0, err
 		}
-		lt.nonceMutex.Lock()
-		base = lt.perAccountBaseNonce[address]
-		count = lt.perAccountLocalCounts[address]
-		lt.nonceMutex.Unlock()
+
+		base = current
+		count = 0
+		lt.perAccountBaseNonce.Store(address, base)
+	} else {
+		base = baseVal.(uint64)
+		countVal, _ := lt.perAccountLocalCounts.Load(address)
+		if countVal != nil {
+			count = countVal.(uint64)
+		} else {
+			count = 0
+		}
 	}
 
 	next := base + count + 1
-	lt.nonceMutex.Lock()
-	lt.perAccountLocalCounts[address] = count + 1
-	lt.nonceMutex.Unlock()
+	lt.perAccountLocalCounts.Store(address, count+1)
+
 	return next, nil
+}
+
+func (lt *LoadTester) getAccountBalance(address string) (uint64, error) {
+	lt.balanceMutex.Lock()
+	defer lt.balanceMutex.Unlock()
+	balance, ok := lt.perAccountBalances[address]
+	if !ok {
+		accountResp, err := lt.client.GetAccount(lt.ctx, address)
+		if err != nil {
+			return 0, err
+		}
+		var accountBalance uint64
+		fmt.Sscanf(accountResp.Balance.String(), "%d", &accountBalance)
+		lt.perAccountBalances[address] = accountBalance
+		return accountBalance, nil
+	}
+	return balance, nil
 }
 
 // Faucet nonce helpers
