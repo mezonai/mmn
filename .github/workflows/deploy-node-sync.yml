@@ -76,7 +76,6 @@ jobs:
             -e "s|p2p-port 9001|p2p-port 9094|g" \
             /opt/mezon/mmn/config/systemd/mezon-listener.service.tpl \
             | sudo tee /etc/systemd/system/mezon-listener.service >/dev/null
-          cat /etc/systemd/system/mezon-listener.service
 
           echo "--> Creating listener env file..."
           sudo tee /etc/mezon/node-listener.env >/dev/null <<EOL
@@ -125,32 +124,22 @@ jobs:
               | sudo tee /etc/mezon/genesis.yml >/dev/null
             sudo chown mmn:mmn /etc/mezon/genesis.yml
           fi
-
-          echo "--> Initializing node data directory..."
-          set -a
-          source /etc/mezon/node-listener.env
-          set +a
-          sudo -u mmn -E /opt/mezon/mmn/bin/mmn init \
-            --data-dir "/opt/mezon/node-data/node-listener" \
-            --genesis "/etc/mezon/genesis.yml" \
-            --database rocksdb \
-            --privkey-path "/etc/mezon/listener_privkey.txt" 2>&1
-
-          echo "--> [VERIFY] Checking directory contents AFTER init..."
-          sudo ls -l /opt/mezon/node-data/node-listener
-
+          if [ ! -d "/opt/mezon/node-data/node-listener" ]; then
+            echo "--> Initializing node data directory..."
+            set -a
+            source /etc/mezon/node-listener.env
+            set +a
+            sudo -u mmn -E /opt/mezon/mmn/bin/mmn init \
+                --data-dir "/opt/mezon/node-data/node-listener" \
+                --genesis "/etc/mezon/genesis.yml" \
+                --database rocksdb \
+                --privkey-path "/etc/mezon/listener_privkey.txt"
+            fi
           sudo systemctl start mezon-listener || true
 
-      - name: Healthcheck and Debug Listener
-        if: always()
+      - name: Healthcheck Listener
         run: |
-          echo "--- [1] Checking systemd status (Summary) ---"
-          sudo systemctl status mezon-listener.service --no-pager || true
-          
-          echo ""
-          echo "--- [2] Checking detailed logs with journalctl"
-          sudo journalctl -u mezon-listener.service -n 100 --no-pager
-          
-          echo ""
-          echo "--- [3] Checking curl endpoint (Symptom) ---"
+          echo "==> Healthchecking local listener..."
+          sleep 5
+          sudo systemctl --no-pager -l status mezon-listener | tail -n 50
           curl -sSf http://127.0.0.1:8084/health || true
