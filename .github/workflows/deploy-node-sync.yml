@@ -137,8 +137,16 @@ jobs:
 
           sudo systemctl start mezon-listener || true
 
-      - name: Healthcheck Listener
+      - name: Healthcheck and Debug Listener
+        if: always()
         run: |
-          echo "==> Healthchecking local listener..."
-          sudo systemctl --no-pager -l status mezon-listener | tail -n 50
+          echo "--- [1] Checking systemd status (Summary) ---"
+          sudo systemctl status mezon-listener.service --no-pager || true
+          
+          echo ""
+          echo "--- [2] Checking detailed logs with journalctl"
+          sudo journalctl -u mezon-listener.service -n 100 --no-pager
+          
+          echo ""
+          echo "--- [3] Checking curl endpoint (Symptom) ---"
           curl -sSf http://127.0.0.1:8084/health || true
