@@ -377,6 +377,7 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
 	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
 	acctSvc := service.NewAccountService(ld, mp, txTracker)
+	healthSvc := service.NewHealthService(ld, bs, mp, val, nodeConfig.PubKey)
 
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
@@ -391,10 +392,11 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 		enableRateLimit,
 		txSvc,
 		acctSvc,
+		healthSvc,
 	)
 	_ = grpcSrv // Keep server running
 
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, rateLimiter, enableRateLimit)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, enableRateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {

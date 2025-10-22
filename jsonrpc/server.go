@@ -156,12 +156,27 @@ type getCurrentNonceResponse struct {
 	Error   string `json:"error"`
 }
 
+type HealthCheckResponse struct {
+	Status       int32  `json:"status"`
+	NodeId       string `json:"node_id"`
+	Timestamp    uint64 `json:"timestamp"`
+	CurrentSlot  uint64 `json:"current_slot"`
+	BlockHeight  uint64 `json:"block_height"`
+	MempoolSize  uint64 `json:"mempool_size"`
+	IsLeader     bool   `json:"is_leader"`
+	IsFollower   bool   `json:"is_follower"`
+	Version      string `json:"version"`
+	Uptime       uint64 `json:"uptime"`
+	ErrorMessage string `json:"error_message"`
+}
+
 // --- Server ---
 
 type Server struct {
 	addr            string
 	txSvc           interfaces.TxService
 	acctSvc         interfaces.AccountService
+	healthSvc       interfaces.HealthService
 	corsConfig      CORSConfig
 	enableRateLimit bool
 	rateLimiter     *ratelimit.GlobalRateLimiter
@@ -174,11 +189,12 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *Server {
+func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *Server {
 	return &Server{
-		addr:    addr,
-		txSvc:   txSvc,
-		acctSvc: acctSvc,
+		addr:      addr,
+		txSvc:     txSvc,
+		acctSvc:   acctSvc,
+		healthSvc: healthSvc,
 		corsConfig: CORSConfig{
 			AllowedOrigins: []string{},
 			AllowedMethods: []string{},
@@ -304,6 +320,16 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getCurrentNonceResponse), nil
 		}),
+		MethodHealthCheck: handler.New(func(ctx context.Context) (*HealthCheckResponse, error) {
+			res, err := s.rpcHealthCheck(ctx)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*HealthCheckResponse), nil
+		}),
 	}
 }
 
@@ -416,6 +442,14 @@ func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpc
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
 	return &getCurrentNonceResponse{Address: resp.Address, Nonce: resp.Nonce, Tag: resp.Tag, Error: resp.Error}, nil
+}
+
+func (s *Server) rpcHealthCheck(ctx context.Context) (interface{}, *rpcError) {
+	resp, err := s.healthSvc.Check(ctx)
+	if err != nil {
+		return nil, &rpcError{Code: -32000, Message: err.Error()}
+	}
+	return &HealthCheckResponse{Status: int32(resp.Status), NodeId: resp.NodeId, Timestamp: resp.Timestamp, CurrentSlot: resp.CurrentSlot, BlockHeight: resp.BlockHeight, MempoolSize: resp.MempoolSize, IsLeader: resp.IsLeader, IsFollower: resp.IsFollower, Version: resp.Version, Uptime: resp.Uptime, ErrorMessage: resp.ErrorMessage}, nil
 }
 
 // --- Helpers ---

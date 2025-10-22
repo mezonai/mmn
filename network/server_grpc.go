@@ -41,9 +41,10 @@ type server struct {
 	rateLimiter *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
 	txSvc       interfaces.TxService
 	acctSvc     interfaces.AccountService
+	healthSvc   interfaces.HealthService
 }
 
-func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *grpc.Server {
+func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
 
 	s := &server{
 		ledger:      ld,
@@ -55,6 +56,7 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *val
 		rateLimiter: rateLimiter,
 		txSvc:       txSvc,
 		acctSvc:     acctSvc,
+		healthSvc:   healthSvc,
 	}
 
 	// Initialize shared services
@@ -299,83 +301,10 @@ func (s *server) Watch(in *pb.Empty, stream pb.HealthService_WatchServer) error 
 
 // performHealthCheck performs the actual health check logic
 func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckResponse, error) {
-	// Check if context is cancelled
-	select {
-	case <-ctx.Done():
-		return nil, status.Errorf(codes.DeadlineExceeded, "health check timeout")
-	default:
+	resp, err := s.healthSvc.Check(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to perform health check: %v", err)
 	}
-
-	// Get current node status
-	now := time.Now()
-
-	// Calculate uptime (assuming server started at some point)
-	// In a real implementation, you'd track server start time
-	uptime := uint64(now.Unix()) // Placeholder for actual uptime
-
-	// Get current slot and block height
-	currentSlot := uint64(0)
-	blockHeight := uint64(0)
-
-	if s.validator != nil && s.validator.Recorder != nil {
-		currentSlot = s.validator.Recorder.CurrentSlot()
-	}
-
-	if s.blockStore != nil {
-		// Get the latest finalized block height
-		// For now, we'll use a simple approach to get block height
-		// In a real implementation, you might want to track this separately
-		blockHeight = currentSlot // Use current slot as approximation
-	}
-
-	// Get mempool size
-	mempoolSize := uint64(0)
-	if s.mempool != nil {
-		mempoolSize = uint64(s.mempool.Size())
-	}
-
-	// Determine if node is leader or follower
-	isLeader := false
-	isFollower := false
-	if s.validator != nil {
-		isLeader = s.validator.IsLeader(currentSlot)
-		isFollower = s.validator.IsFollower(currentSlot)
-	}
-
-	// Check if core services are healthy
-	status := pb.HealthCheckResponse_SERVING
-
-	// Basic health checks
-	if s.ledger == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
-	}
-	if s.blockStore == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
-	}
-	if s.mempool == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
-	}
-
-	// Create response
-	resp := &pb.HealthCheckResponse{
-		Status:       status,
-		NodeId:       s.selfID,
-		Timestamp:    uint64(now.Unix()),
-		CurrentSlot:  currentSlot,
-		BlockHeight:  blockHeight,
-		MempoolSize:  mempoolSize,
-		IsLeader:     isLeader,
-		IsFollower:   isFollower,
-		Version:      "1.0.0", // You can make this configurable
-		Uptime:       uptime,
-		ErrorMessage: "",
-	}
-
-	// If there are any errors, set status accordingly
-	if status == pb.HealthCheckResponse_NOT_SERVING {
-		resp.ErrorMessage = "One or more core services are not available"
-	}
-
 	return resp, nil
 }
 
