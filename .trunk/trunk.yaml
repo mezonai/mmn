@@ -51,3 +51,14 @@ lint:
 
     # Shell scripting
     - shfmt@3.6.0
+  ignore:
+    - linters:
+        - prettier
+        - shfmt
+        - markdownlint
+        - gofmt
+        - goimports
+        - golangci-lint2
+      paths:
+        - client_test/**
+        - mezon-migration/**

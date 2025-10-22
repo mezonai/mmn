@@ -1,20 +1,20 @@
-import crypto from "crypto";
-import nacl from "tweetnacl";
-import bs58 from "bs58";
-import { GrpcClient } from "./grpc_client";
-import jwt from "jsonwebtoken";
+import crypto from 'crypto';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
+import {GrpcClient} from './grpc_client';
+import jwt from 'jsonwebtoken';
 
 // Faucet keypair from genesis configuration
 export const faucetPrivateKeyHex =
-  "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee";
-export const faucetPrivateKeyDer = Buffer.from(faucetPrivateKeyHex, "hex");
+  '302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee';
+export const faucetPrivateKeyDer = Buffer.from(faucetPrivateKeyHex, 'hex');
 export const faucetSeed = faucetPrivateKeyDer.slice(-32);
 export const faucetKeyPair = nacl.sign.keyPair.fromSeed(faucetSeed);
 export const faucetPublicKeyBase58 = bs58.encode(faucetKeyPair.publicKey);
 export const faucetPrivateKey = crypto.createPrivateKey({
   key: faucetPrivateKeyDer,
-  format: "der",
-  type: "pkcs8",
+  format: 'der',
+  type: 'pkcs8',
 });
 
 // Transaction type constants
@@ -39,17 +39,17 @@ export interface Tx {
   sender: string;
   recipient: string;
   amount: number;
-  timestamp: number; // Should remove or not
+  timestamp: number;// Should remove or not
   text_data: string;
   nonce: number;
-  extra_info: string;
+  extra_info: string
   signature: string;
   zk_proof: string;
   zk_pub: string;
 }
 
 export function hashStringToBase58(input: number): string {
-  const hash = crypto.createHash("sha256").update(input.toString()).digest();
+  const hash = crypto.createHash('sha256').update(input.toString()).digest();
   return bs58.encode(hash);
 }
 
@@ -59,13 +59,13 @@ export async function generateTestAccount() {
   // Keep the field name publicKeyHex for compatibility; store base58 value
   const publicKeyHex = bs58.encode(keyPair.publicKey);
   const privateKeyDer = Buffer.concat([
-    Buffer.from("302e020100300506032b657004220420", "hex"),
-    Buffer.from(keyPair.secretKey.slice(0, 32)),
+    Buffer.from('302e020100300506032b657004220420', 'hex'),
+    Buffer.from(keyPair.secretKey.slice(0, 32))
   ]);
   const privateKey = crypto.createPrivateKey({
     key: privateKeyDer,
-    format: "der",
-    type: "pkcs8",
+    format: 'der',
+    type: 'pkcs8',
   });
 
   const userId = Math.floor(Math.random() * 100000000);
@@ -84,10 +84,10 @@ export async function generateTestAccount() {
     address,
     zkProof: zkProof || "",
     zkPub: zkPub || "",
-    publicKeyHex,
-    privateKey,
+    publicKeyHex, 
+    privateKey, 
     keyPair,
-    seed: Buffer.from(keyPair.secretKey.slice(0, 32)).toString("hex"),
+    seed: Buffer.from(keyPair.secretKey.slice(0, 32)).toString('hex')
   };
 }
 
@@ -97,10 +97,10 @@ function generateJwt(userId: number) {
     tid: userId.toString(10),
     uid: userId,
     usn: userId.toString(),
-    exp: expUnix,
+    exp: expUnix
   };
 
-  const token = jwt.sign(payload, JwtSecret, { algorithm: "HS256" });
+  const token = jwt.sign(payload, JwtSecret, { algorithm: 'HS256' });
   return token;
 }
 
@@ -112,10 +112,10 @@ async function generateZkProof(params: {
 }): Promise<ProveResponse> {
   const url = `${ZkVerifyUrl}/prove`;
   const res = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      Accept: "application/json, text/plain, */*",
-      "Content-Type": "application/json",
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       user_id: params.user_id,
@@ -126,10 +126,8 @@ async function generateZkProof(params: {
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `prove request failed: ${res.status} ${res.statusText} ${text ? "- " + text : ""}`,
-    );
+    const text = await res.text().catch(() => '');
+    throw new Error(`prove request failed: ${res.status} ${res.statusText} ${text ? '- ' + text : ''}`);
   }
 
   const json = await res.json();
@@ -138,24 +136,17 @@ async function generateZkProof(params: {
 
 // Helper function to wait for transaction processing
 export async function waitForTransaction(ms: number = 3000): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // Helper function to get account balance
-export async function getAccountBalance(
-  grpcClient: GrpcClient,
-  address: string,
-): Promise<number> {
+export async function getAccountBalance(grpcClient: GrpcClient, address: string): Promise<number> {
   const account = await grpcClient.getAccount(address);
   return parseInt(account.balance);
 }
 
 // Helper function to get current nonce for an account
-export async function getCurrentNonce(
-  grpcClient: GrpcClient,
-  address: string,
-  tag: string = "pending",
-): Promise<number> {
+export async function getCurrentNonce(grpcClient: GrpcClient, address: string, tag: string = 'pending'): Promise<number> {
   const nonceResponse = await grpcClient.getCurrentNonce(address, tag);
   return parseInt(nonceResponse.nonce);
 }
@@ -181,7 +172,7 @@ export function buildTx(
     text_data,
     nonce,
     extra_info: extra_info || "",
-    signature: "",
+    signature: '',
     zk_proof,
     zk_pub,
   };
@@ -190,7 +181,7 @@ export function buildTx(
 // Serialize transaction for signing
 export function serializeTx(tx: Tx): Buffer {
   const data = `${tx.type}|${tx.sender}|${tx.recipient}|${tx.amount}|${tx.text_data}|${tx.nonce}|${tx.extra_info}`;
-  return Buffer.from(data, "utf8");
+  return Buffer.from(data, 'utf8');
 }
 
 // Sign transaction with Ed25519
@@ -198,10 +189,7 @@ export function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
   const serializedData = serializeTx(tx);
 
   // Extract the Ed25519 seed from the private key for nacl signing
-  const privateKeyDer = privateKey.export({
-    format: "der",
-    type: "pkcs8",
-  }) as Buffer;
+  const privateKeyDer = privateKey.export({ format: 'der', type: 'pkcs8' }) as Buffer;
   const seed = privateKeyDer.slice(-32); // Last 32 bytes are the Ed25519 seed
   const keyPair = nacl.sign.keyPair.fromSeed(seed);
 
@@ -212,8 +200,8 @@ export function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
   }
   const userSig = {
     // Match Go struct field names and JSON encoding (bytes -> base64 string)
-    PubKey: Buffer.from(keyPair.publicKey).toString("base64"),
-    Sig: Buffer.from(signature).toString("base64"),
+    PubKey: Buffer.from(keyPair.publicKey).toString('base64'),
+    Sig: Buffer.from(signature).toString('base64'),
   };
 
   return bs58.encode(Buffer.from(JSON.stringify(userSig)));
@@ -222,71 +210,48 @@ export function signTx(tx: Tx, privateKey: crypto.KeyObject): string {
 // Send transaction via gRPC
 export async function sendTxViaGrpc(grpcClient: GrpcClient, tx: Tx) {
   try {
-    const response = await grpcClient.addTransaction(
-      {
-        type: tx.type,
-        sender: tx.sender,
-        recipient: tx.recipient,
-        amount: tx.amount,
-        timestamp: tx.timestamp,
-        text_data: tx.text_data,
-        nonce: tx.nonce,
-        extra_info: tx.extra_info,
-        zk_proof: tx.zk_proof,
-        zk_pub: tx.zk_pub,
-      },
-      tx.signature,
-    );
-
+    const response = await grpcClient.addTransaction({
+      type: tx.type,
+      sender: tx.sender,
+      recipient: tx.recipient,
+      amount: tx.amount,
+      timestamp: tx.timestamp,
+      text_data: tx.text_data,
+      nonce: tx.nonce,
+      extra_info: tx.extra_info,
+      zk_proof: tx.zk_proof,
+      zk_pub: tx.zk_pub,
+    }, tx.signature);
+    
     return {
       ok: response.ok,
       tx_hash: response.tx_hash,
-      error: response.error || null,
+      error: response.error || null
     };
+    
   } catch (error) {
-    console.error("gRPC transaction failed:", error);
+    console.error('gRPC transaction failed:', error);
     return {
       ok: false,
       tx_hash: null,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
 // Fund account with tokens (with retry logic for multi-threaded usage)
-export async function fundAccount(
-  grpcClient: GrpcClient,
-  recipientAddress: string,
-  amount: number,
-  testNote: string,
-  maxRetries: number = 5,
-) {
+export async function fundAccount(grpcClient: GrpcClient, recipientAddress: string, amount: number, testNote: string, maxRetries: number = 5) {
   let lastError: any;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       // Get current faucet account nonce using GetCurrentNonce gRPC method
-      const currentNonceValue = await getCurrentNonce(
-        grpcClient,
-        faucetPublicKeyBase58,
-        "pending",
-      );
+      const currentNonceValue = await getCurrentNonce(grpcClient, faucetPublicKeyBase58, 'pending');
       const nextNonce = currentNonceValue + 1;
 
-      console.log(
-        `Fund transaction attempt ${attempt}: Using nonce ${nextNonce} (current nonce from gRPC: ${currentNonceValue})`,
-      );
+      console.log(`Fund transaction attempt ${attempt}: Using nonce ${nextNonce} (current nonce from gRPC: ${currentNonceValue})`);
 
-      const fundTx = buildTx(
-        faucetPublicKeyBase58,
-        recipientAddress,
-        amount,
-        `Funding account for ${testNote}`,
-        nextNonce,
-        TxTypeFaucet,
-        "",
-        "",
-      );
+      const fundTx = buildTx(faucetPublicKeyBase58, recipientAddress, amount, `Funding account for ${testNote}`, nextNonce, TxTypeFaucet, "", "");
       fundTx.signature = signTx(fundTx, faucetPrivateKey);
 
       const response = await sendTxViaGrpc(grpcClient, fundTx);
@@ -297,65 +262,46 @@ export async function fundAccount(
         await waitForTransaction(800); // ~ 2 slots
         try {
           const balance = await getAccountBalance(grpcClient, recipientAddress);
-          console.log(
-            `Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`,
-          );
+          console.log(`Account ${recipientAddress.substring(0, 8)}... funded with ${amount}, current balance: ${balance}`);
         } catch (error) {
-          console.warn("Could not verify balance after funding:", error);
+          console.warn('Could not verify balance after funding:', error);
         }
         return response;
       } else {
         // Only retry on invalid nonce errors
         lastError = response.error;
-        const isNonceError =
-          response.error &&
-          (response.error.includes("nonce") ||
-            response.error.includes("invalid nonce"));
+        const isNonceError = response.error && (response.error.includes('nonce') || response.error.includes('invalid nonce'));
 
         if (isNonceError && attempt < maxRetries) {
           // delay should random from 100 to 800
           const delay = Math.floor(Math.random() * (1200 - 100 + 1)) + 400; // Random delay between 400ms and 1200ms
-          console.warn(
-            `Fund transaction failed due to nonce issue (attempt ${attempt}/${maxRetries}): ${response.error}. Retrying in ${delay}ms...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
+          console.warn(`Fund transaction failed due to nonce issue (attempt ${attempt}/${maxRetries}): ${response.error}. Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
       }
 
       return response;
+
     } catch (error) {
       lastError = error;
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      const isNonceError =
-        errorMessage.includes("nonce") ||
-        errorMessage.includes("invalid nonce");
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isNonceError = errorMessage.includes('nonce') || errorMessage.includes('invalid nonce');
 
       if (isNonceError && attempt < maxRetries) {
         const delay = Math.pow(2, attempt - 1) * 1000; // Exponential backoff: 1s, 2s, 4s
-        console.warn(
-          `Fund transaction error due to nonce issue (attempt ${attempt}/${maxRetries}):`,
-          error,
-          `Retrying in ${delay}ms...`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        console.warn(`Fund transaction error due to nonce issue (attempt ${attempt}/${maxRetries}):`, error, `Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
     }
   }
 
   // All retries exhausted
-  console.error(
-    `Fund transaction failed after ${maxRetries} attempts. Last error:`,
-    lastError,
-  );
+  console.error(`Fund transaction failed after ${maxRetries} attempts. Last error:`, lastError);
   return {
     ok: false,
     tx_hash: null,
-    error:
-      lastError instanceof Error
-        ? lastError.message
-        : lastError || "Unknown error after retries",
+    error: lastError instanceof Error ? lastError.message : (lastError || 'Unknown error after retries')
   };
 }

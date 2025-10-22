@@ -20,10 +20,10 @@ go run . -run-migration -mmn-endpoint=localhost:9001 -users-data-file=./users_20
 
 ## Command Line Options
 
-| Option                  | Description                  | Default Value |
-| ----------------------- | ---------------------------- | ------------- |
-| `-create-sender-wallet` | Create migration wallet only | `false`       |
-| `-run-migration`        | Run user migration only      | `false`       |
-| `-mmn-endpoint`         | Endpoint of MMN node         | `''`          |
-| `-users-data-file`      | Path file .csv user data     | `''`          |
-| `-faucet-private-key`   | Faucet private key hex       | `''`          |
+| Option                  | Description                                 | Default Value |
+| ------------------------| ------------------------------------------- | ------------- |
+| `-create-sender-wallet` | Create migration wallet only                | `false`       |
+| `-run-migration`        | Run user migration only                     | `false`       |
+| `-mmn-endpoint`         | Endpoint of MMN node                        | `''`          |
+| `-users-data-file`      | Path file .csv user data                    | `''`          |
+| `-faucet-private-key`   | Faucet private key hex                      | `''`          |
