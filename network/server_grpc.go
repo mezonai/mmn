@@ -194,10 +194,6 @@ func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*p
 	return s.txSvc.GetTxByHash(ctx, in)
 }
 
-func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
-	return s.txSvc.GetTransactionStatus(ctx, in)
-}
-
 func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
 	return s.txSvc.GetPendingTransactions(ctx, in)
 }
