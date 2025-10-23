@@ -118,7 +118,6 @@ func (ln *Libp2pNetwork) startCleanupRoutine() {
 		select {
 		case <-ticker.C:
 			ln.CleanupExpiredRequests()
-			ln.cleanupOldMissingBlocksTracker()
 			ln.cleanupOldRecentlyRequestedSlots()
 		case <-ln.ctx.Done():
 			logx.Info("NETWORK:CLEANUP", "Stopping cleanup routine")

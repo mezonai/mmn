@@ -6,7 +6,6 @@ const (
 	NodeInfoProtocol       = "/node-info"
 	RequestBlockSyncStream = "/sync-block-request"
 	LatestSlotProtocol     = "/latest-slot-request"
-	CheckpointProtocol     = "/checkpoint-hash"
 	SnapshotSyncProtocol   = "/snapshot-sync"
 
 	TopicBlocks            = "blocks"
@@ -18,7 +17,6 @@ const (
 	TopicSnapshotAnnounce  = "snapshot/announce"
 	TopicSnapshotRequest   = "snapshot/request"
 	LatestSlotTopic        = "latest-slot/request"
-	CheckpointRequestTopic = "checkpoint/request"
 	SnapshotRequestTopic   = "snapshot/request"
 	SnapshotResponseTopic  = "snapshot/response"
 	SnapshotSyncTopic      = "snapshot/sync"

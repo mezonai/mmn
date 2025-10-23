@@ -62,10 +62,8 @@ type Libp2pNetwork struct {
 	syncTrackerMu sync.RWMutex
 
 	missingBlocksTracker map[uint64]*MissingBlockInfo
-	missingBlocksMu      sync.RWMutex
 
 	lastScannedSlot uint64
-	scanMu          sync.RWMutex
 
 	recentlyRequestedSlots map[uint64]time.Time
 	recentlyRequestedMu    sync.RWMutex

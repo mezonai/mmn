@@ -361,26 +361,6 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 	logx.Info("NETWORK:SYNC BLOCK", "Completed sync for peer:", targetPeer.String(), "total blocks sent:", totalBlocksSent)
 }
 
-func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {
-	stream, err := ln.host.NewStream(context.Background(), targetPeer, RequestBlockSyncStream)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-	defer stream.Close()
-
-	data, err := jsonx.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	_, err = stream.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to write request: %w", err)
-	}
-
-	return nil
-}
-
 func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.Subscription) {
 	logx.Info("NETWORK:LATEST SLOT", "Starting latest slot topic handler")
 
