@@ -12,13 +12,16 @@ import (
 )
 
 var (
-	ErrInvalidThreshold       = errors.New("multisig: threshold must be > 0 and <= number of signers")
-	ErrInvalidSigners         = errors.New("multisig: must have at least 2 signers")
-	ErrDuplicateSigner        = errors.New("multisig: duplicate signer public key")
-	ErrInvalidSignature       = errors.New("multisig: invalid signature")
-	ErrInsufficientSignatures = errors.New("multisig: insufficient signatures")
-	ErrInvalidSigner          = errors.New("multisig: signer not authorized")
-	ErrInvalidMultisigTx      = errors.New("multisig: invalid multisig transaction")
+	ErrInvalidThreshold        = errors.New("multisig: threshold must be > 0 and <= number of signers")
+	ErrInvalidSigners          = errors.New("multisig: must have at least 2 signers")
+	ErrDuplicateSigner         = errors.New("multisig: duplicate signer public key")
+	ErrInvalidSignature        = errors.New("multisig: invalid signature")
+	ErrInsufficientSignatures  = errors.New("multisig: insufficient signatures")
+	ErrInvalidSigner           = errors.New("multisig: signer not authorized")
+	ErrInvalidMultisigTx       = errors.New("multisig: invalid multisig transaction")
+	ErrInvalidAddress          = errors.New("whitelist: invalid address")
+	ErrRecipientNotInWhitelist = errors.New("whitelist: recipient not in whitelist")
+	ErrRecipientAlreadyExists  = errors.New("whitelist: recipient already exists")
 )
 
 type MultisigConfig struct {
@@ -43,6 +46,7 @@ type MultisigTx struct {
 	ExtraInfo  string              `json:"extra_info"`
 	Signatures []MultisigSignature `json:"signatures"`
 	Config     MultisigConfig      `json:"config"`
+	Status     string              `json:"status"` // pending, executed, failed
 }
 
 func CreateMultisigConfig(threshold int, signers []string) (*MultisigConfig, error) {

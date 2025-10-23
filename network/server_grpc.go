@@ -3,12 +3,14 @@ package network
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"time"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
@@ -35,37 +37,39 @@ type server struct {
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
-	pubKeys       map[string]ed25519.PublicKey
-	blockDir      string
-	ledger        *ledger.Ledger
-	voteCollector *consensus.Collector
-	selfID        string
-	privKey       ed25519.PrivateKey
-	validator     *validator.Validator
-	blockStore    store.BlockStore
-	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter                    // Event router for complex event logic
-	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
-	txSvc         interfaces.TxService
-	acctSvc       interfaces.AccountService
+	pubKeys           map[string]ed25519.PublicKey
+	blockDir          string
+	ledger            *ledger.Ledger
+	voteCollector     *consensus.Collector
+	selfID            string
+	privKey           ed25519.PrivateKey
+	validator         *validator.Validator
+	blockStore        store.BlockStore
+	mempool           *mempool.Mempool
+	eventRouter       *events.EventRouter                    // Event router for complex event logic
+	txTracker         interfaces.TransactionTrackerInterface // Transaction state tracker
+	txSvc             interfaces.TxService
+	acctSvc           interfaces.AccountService
+	multisigFaucetSvc *faucet.MultisigFaucetService // Multisig faucet service
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
 	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
+	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, multisigFaucetSvc *faucet.MultisigFaucetService) *grpc.Server {
 
 	s := &server{
-		pubKeys:       pubKeys,
-		blockDir:      blockDir,
-		ledger:        ld,
-		voteCollector: collector,
-		selfID:        selfID,
-		privKey:       priv,
-		blockStore:    blockStore,
-		validator:     validator,
-		mempool:       mempool,
-		eventRouter:   eventRouter,
-		txTracker:     txTracker,
+		pubKeys:           pubKeys,
+		blockDir:          blockDir,
+		ledger:            ld,
+		voteCollector:     collector,
+		selfID:            selfID,
+		privKey:           priv,
+		blockStore:        blockStore,
+		validator:         validator,
+		mempool:           mempool,
+		eventRouter:       eventRouter,
+		txTracker:         txTracker,
+		multisigFaucetSvc: multisigFaucetSvc,
 	}
 
 	// Initialize shared services
@@ -549,5 +553,324 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 		TotalBlocks: uint32(len(blocks)),
 		Decimals:    uint32(config.GetDecimalsFactor()),
 		Errors:      errors,
+	}, nil
+}
+
+// Multisig Faucet Methods
+
+// CreateFaucetRequest creates a new multisig faucet request
+func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRequestRequest) (*pb.CreateFaucetRequestResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.CreateFaucetRequestResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "CreateFaucetRequest called",
+		"multisigAddress", req.MultisigAddress,
+		"recipient", req.Recipient,
+		"amount", req.Amount)
+
+	// Parse amount
+	amount := utils.Uint256FromString(req.Amount)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.CreateFaucetRequestResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Create faucet request
+	tx, err := s.multisigFaucetSvc.CreateFaucetRequest(
+		req.MultisigAddress,
+		req.Recipient,
+		amount,
+		req.TextData,
+		req.SignerPubkey,
+		signature,
+	)
+	if err != nil {
+		return &pb.CreateFaucetRequestResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to create faucet request: %v", err),
+		}, nil
+	}
+
+	return &pb.CreateFaucetRequestResponse{
+		Success: true,
+		Message: "Faucet request created successfully",
+		TxHash:  tx.Hash(),
+	}, nil
+}
+
+// AddSignature adds a signature to a multisig transaction
+func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) (*pb.AddSignatureResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "AddSignature called",
+		"txHash", req.TxHash,
+		"signerPubkey", req.SignerPubkey)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Add signature
+	err = s.multisigFaucetSvc.AddSignature(req.TxHash, req.SignerPubkey, signature)
+	if err != nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to add signature: %v", err),
+		}, nil
+	}
+
+	// Get updated transaction to count signatures
+	tx, err := s.multisigFaucetSvc.GetMultisigTx(req.TxHash)
+	if err != nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to get transaction: %v", err),
+		}, nil
+	}
+
+	return &pb.AddSignatureResponse{
+		Success:        true,
+		Message:        "Signature added successfully",
+		SignatureCount: int32(len(tx.Signatures)),
+	}, nil
+}
+
+// GetMultisigTransactionStatus gets the status of a multisig transaction
+func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMultisigTransactionStatusRequest) (*pb.GetMultisigTransactionStatusResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.GetMultisigTransactionStatusResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "GetMultisigTransactionStatus called",
+		"txHash", req.TxHash)
+
+	// Get transaction
+	tx, err := s.multisigFaucetSvc.GetMultisigTx(req.TxHash)
+	if err != nil {
+		return &pb.GetMultisigTransactionStatusResponse{
+			Success: false,
+			Message: fmt.Sprintf("Transaction not found: %v", err),
+		}, nil
+	}
+
+	// Determine status
+	status := tx.Status
+	if status == "" {
+		status = "pending"
+	}
+	
+	// Override status based on signature count if not executed
+	if status != "executed" && status != "failed" {
+		if len(tx.Signatures) >= tx.Config.Threshold {
+			// Check if transaction is still in pending (not executed yet)
+			if _, exists := s.multisigFaucetSvc.GetPendingTxs()[req.TxHash]; exists {
+				status = "ready_to_execute"
+			} else {
+				status = "executed"
+			}
+		} else {
+			status = "pending"
+		}
+	}
+
+	return &pb.GetMultisigTransactionStatusResponse{
+		Success:            true,
+		Message:            "Transaction status retrieved",
+		Status:             status,
+		SignatureCount:     int32(len(tx.Signatures)),
+		RequiredSignatures: int32(tx.Config.Threshold),
+	}, nil
+}
+
+// AddToApproverWhitelist adds an address to approver whitelist
+func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApproverWhitelistRequest) (*pb.AddToApproverWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.AddToApproverWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "AddToApproverWhitelist called",
+		"address", req.Address,
+		"signerPubkey", req.SignerPubkey)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.AddToApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Add to whitelist
+	err = s.multisigFaucetSvc.AddToApproverWhitelist(req.Address, req.SignerPubkey, signature)
+	if err != nil {
+		return &pb.AddToApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to add to approver whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.AddToApproverWhitelistResponse{
+		Success: true,
+		Message: "Address added to approver whitelist successfully",
+	}, nil
+}
+
+// AddToProposerWhitelist adds an address to proposer whitelist
+func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToProposerWhitelistRequest) (*pb.AddToProposerWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.AddToProposerWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "AddToProposerWhitelist called",
+		"address", req.Address,
+		"signerPubkey", req.SignerPubkey)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.AddToProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Add to whitelist
+	err = s.multisigFaucetSvc.AddToProposerWhitelist(req.Address, req.SignerPubkey, signature)
+	if err != nil {
+		return &pb.AddToProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to add to proposer whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.AddToProposerWhitelistResponse{
+		Success: true,
+		Message: "Address added to proposer whitelist successfully",
+	}, nil
+}
+
+// RemoveFromApproverWhitelist removes an address from approver whitelist
+func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.RemoveFromApproverWhitelistRequest) (*pb.RemoveFromApproverWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.RemoveFromApproverWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "RemoveFromApproverWhitelist called",
+		"address", req.Address,
+		"signerPubkey", req.SignerPubkey)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.RemoveFromApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Remove from whitelist
+	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(req.Address, req.SignerPubkey, signature)
+	if err != nil {
+		return &pb.RemoveFromApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to remove from approver whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.RemoveFromApproverWhitelistResponse{
+		Success: true,
+		Message: "Address removed from approver whitelist successfully",
+	}, nil
+}
+
+// RemoveFromProposerWhitelist removes an address from proposer whitelist
+func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.RemoveFromProposerWhitelistRequest) (*pb.RemoveFromProposerWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.RemoveFromProposerWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "RemoveFromProposerWhitelist called",
+		"address", req.Address,
+		"signerPubkey", req.SignerPubkey)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.RemoveFromProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Remove from whitelist
+	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(req.Address, req.SignerPubkey, signature)
+	if err != nil {
+		return &pb.RemoveFromProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to remove from proposer whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.RemoveFromProposerWhitelistResponse{
+		Success: true,
+		Message: "Address removed from proposer whitelist successfully",
+	}, nil
+}
+
+// CheckWhitelistStatus checks if an address is in whitelist
+func (s *server) CheckWhitelistStatus(ctx context.Context, req *pb.CheckWhitelistStatusRequest) (*pb.CheckWhitelistStatusResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.CheckWhitelistStatusResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "CheckWhitelistStatus called",
+		"address", req.Address)
+
+	isApprover := s.multisigFaucetSvc.IsApprover(req.Address)
+	isProposer := s.multisigFaucetSvc.IsProposer(req.Address)
+
+	return &pb.CheckWhitelistStatusResponse{
+		Success:    true,
+		Message:    "Whitelist status retrieved",
+		IsApprover: isApprover,
+		IsProposer: isProposer,
 	}, nil
 }

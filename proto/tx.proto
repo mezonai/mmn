@@ -119,4 +119,115 @@ service TxService {
   
   // Get all pending transactions from mempool
   rpc GetPendingTransactions(GetPendingTransactionsRequest) returns (GetPendingTransactionsResponse);
+  
+  // Multisig Faucet Methods
+  rpc CreateFaucetRequest(CreateFaucetRequestRequest) returns (CreateFaucetRequestResponse);
+  rpc AddSignature(AddSignatureRequest) returns (AddSignatureResponse);
+  rpc GetMultisigTransactionStatus(GetMultisigTransactionStatusRequest) returns (GetMultisigTransactionStatusResponse);
+  rpc AddToApproverWhitelist(AddToApproverWhitelistRequest) returns (AddToApproverWhitelistResponse);
+  rpc AddToProposerWhitelist(AddToProposerWhitelistRequest) returns (AddToProposerWhitelistResponse);
+  rpc RemoveFromApproverWhitelist(RemoveFromApproverWhitelistRequest) returns (RemoveFromApproverWhitelistResponse);
+  rpc RemoveFromProposerWhitelist(RemoveFromProposerWhitelistRequest) returns (RemoveFromProposerWhitelistResponse);
+  rpc CheckWhitelistStatus(CheckWhitelistStatusRequest) returns (CheckWhitelistStatusResponse);
+}
+
+// Multisig Faucet Messages
+
+// Create Faucet Request
+message CreateFaucetRequestRequest {
+  string multisig_address = 1;
+  string recipient = 2;
+  string amount = 3;
+  string text_data = 4;
+  string signer_pubkey = 5;
+  string signature = 6; // Hex encoded signature
+}
+
+message CreateFaucetRequestResponse {
+  bool success = 1;
+  string message = 2;
+  string tx_hash = 3;
+}
+
+// Add Signature
+message AddSignatureRequest {
+  string tx_hash = 1;
+  string signer_pubkey = 2;
+  string signature = 3; // Hex encoded signature
+}
+
+message AddSignatureResponse {
+  bool success = 1;
+  string message = 2;
+  int32 signature_count = 3;
+}
+
+// Get Multisig Transaction Status
+message GetMultisigTransactionStatusRequest {
+  string tx_hash = 1;
+}
+
+message GetMultisigTransactionStatusResponse {
+  bool success = 1;
+  string message = 2;
+  string status = 3; // pending, executed, failed
+  int32 signature_count = 4;
+  int32 required_signatures = 5;
+}
+
+// Whitelist Management
+message AddToApproverWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3; // Hex encoded signature
+}
+
+message AddToApproverWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message AddToProposerWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3; // Hex encoded signature
+}
+
+message AddToProposerWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RemoveFromApproverWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3; // Hex encoded signature
+}
+
+message RemoveFromApproverWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RemoveFromProposerWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3; // Hex encoded signature
+}
+
+message RemoveFromProposerWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Check Whitelist Status
+message CheckWhitelistStatusRequest {
+  string address = 1;
+}
+
+message CheckWhitelistStatusResponse {
+  bool success = 1;
+  string message = 2;
+  bool is_approver = 3;
+  bool is_proposer = 4;
 }

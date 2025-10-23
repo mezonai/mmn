@@ -23,6 +23,7 @@ import (
 	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -232,9 +233,14 @@ func runNode() {
 		libP2pClient.OnStartValidator = func() { val.Run() }
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
-	initializeMultisigFaucet(multisigStore, multisigAddresses)
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
+	// Initialize multisig faucet service if addresses provided
+	var multisigService *faucet.MultisigFaucetService
+	if len(multisigAddresses) > 0 {
+		multisigService = initializeMultisigFaucet(multisigStore, multisigAddresses, as)
+	}
+
+	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, multisigService)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -249,10 +255,10 @@ func runNode() {
 
 }
 
-func initializeMultisigFaucet(multisigStore interface{}, addresses []string) {
+func initializeMultisigFaucet(multisigStore interface{}, addresses []string, accountStore store.AccountStore) *faucet.MultisigFaucetService {
 	if len(addresses) < 2 {
 		logx.Error("MULTISIG_FAUCET", "At least 2 addresses required for multisig, got:", len(addresses))
-		return
+		return nil
 	}
 
 	threshold := (len(addresses) * 2) / 3
@@ -267,32 +273,48 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string) {
 	store, ok := multisigStore.(faucet.MultisigFaucetStoreInterface)
 	if !ok {
 		logx.Error("MULTISIG_FAUCET", "Failed to cast multisig store to interface")
-		return
+		return nil
 	}
 
-	maxAmount := uint256.NewInt(1000000) // 1M tokens max per request
-	cooldown := 1 * time.Hour            // 1 hour cooldown
+	maxAmount := uint256.NewInt(1000000) // TODO: research max amount for multisig faucet
+	cooldown := 1 * time.Hour            // TODO: research cooldown for multisig faucet
 	multisigService := faucet.NewMultisigFaucetService(store, maxAmount, cooldown)
 
 	// Create multisig configuration
 	config, err := faucet.CreateMultisigConfig(threshold, addresses)
 	if err != nil {
 		logx.Error("MULTISIG_FAUCET", "Failed to create multisig config:", err)
-		return
+		return nil
+	}
+
+	// Create faucet wallet account
+	faucetAccount := &types.Account{
+		Address: config.Address,
+		Balance: uint256.NewInt(1000000000), // TODO: research initial faucet balance
+		Nonce:   0,
+	}
+
+	// Store faucet account in account store
+	if err := accountStore.Store(faucetAccount); err != nil {
+		logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
+		return nil
 	}
 
 	// Register multisig configuration
 	if err := multisigService.RegisterMultisigConfig(config); err != nil {
 		logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
-		return
+		return nil
 	}
 
 	logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized successfully",
-		"multisig_address", config.Address,
+		"faucet_address", config.Address,
+		"faucet_balance", faucetAccount.Balance.String(),
 		"signers", len(config.Signers),
 		"threshold", config.Threshold,
 		"max_amount", maxAmount.String(),
 		"cooldown", cooldown)
+
+	return multisigService
 }
 
 // loadConfiguration loads all configuration files
@@ -305,7 +327,7 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 }
 
 // initializeDBStore initializes the block storage backend using the factory pattern
-func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, interface{}, error) {
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, store.MultisigFaucetStore, error) {
 	// Create data folder if not exist
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create db store directory:", err.Error())
@@ -325,7 +347,11 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 	}
 
 	// Use the factory pattern to create the store
-	return store.CreateStore(storeCfg, eventRouter)
+	accountStore, txStore, txMetaStore, blockStore, multisigStore, err := store.CreateStore(storeCfg, eventRouter)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	return accountStore, txStore, txMetaStore, blockStore, multisigStore.(store.MultisigFaucetStore), nil
 }
 
 // initializePoH initializes Proof of History components
@@ -421,7 +447,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
-	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, multisigService *faucet.MultisigFaucetService) {
 
 	// Load private key for gRPC server
 	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
@@ -443,6 +469,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 		mp,
 		eventRouter,
 		txTracker,
+		multisigService,
 	)
 	_ = grpcSrv // Keep server running
 
