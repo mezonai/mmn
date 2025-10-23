@@ -134,7 +134,7 @@ func getPublicKeyFromLeaderID(leaderID string) (ed25519.PublicKey, error) {
 
 	pubKeyBytes, err := common.DecodeBase58ToBytes(leaderID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode leader ID: %w", err)
+		return nil, errors.Wrap(err, "failed to decode leader ID")
 	}
 
 	if len(pubKeyBytes) != ed25519.PublicKeySize {
