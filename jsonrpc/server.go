@@ -101,21 +101,6 @@ type getTxByHashResponse struct {
 	Decimals uint32  `json:"decimals"`
 }
 
-type getTxStatusRequest struct {
-	TxHash string `json:"tx_hash"`
-}
-
-type txStatusInfo struct {
-	TxHash        string `json:"tx_hash"`
-	Status        int32  `json:"status"`
-	BlockSlot     uint64 `json:"block_slot"`
-	BlockHash     string `json:"block_hash"`
-	Confirmations uint64 `json:"confirmations"`
-	ErrorMessage  string `json:"error_message"`
-	Timestamp     uint64 `json:"timestamp"`
-	ExtraInfo     string `json:"extra_info"`
-}
-
 type getPendingTxsResponse struct {
 	TotalCount uint64            `json:"total_count"`
 	PendingTxs []transactionData `json:"pending_txs"`
