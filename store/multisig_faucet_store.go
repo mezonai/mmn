@@ -4,29 +4,29 @@ import (
 	"fmt"
 
 	"github.com/mezonai/mmn/db"
-	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/types"
 )
 
 // MultisigFaucetStore is the interface for multisig faucet store
 type MultisigFaucetStore interface {
 	// Multisig Config operations
-	StoreMultisigConfig(config *faucet.MultisigConfig) error
-	GetMultisigConfig(address string) (*faucet.MultisigConfig, error)
-	ListMultisigConfigs() ([]*faucet.MultisigConfig, error)
+	StoreMultisigConfig(config *types.MultisigConfig) error
+	GetMultisigConfig(address string) (*types.MultisigConfig, error)
+	ListMultisigConfigs() ([]*types.MultisigConfig, error)
 	DeleteMultisigConfig(address string) error
 
 	// Multisig Transaction operations
-	StoreMultisigTx(tx *faucet.MultisigTx) error
-	GetMultisigTx(txHash string) (*faucet.MultisigTx, error)
-	ListMultisigTxs() ([]*faucet.MultisigTx, error)
+	StoreMultisigTx(tx *types.MultisigTx) error
+	GetMultisigTx(txHash string) (*types.MultisigTx, error)
+	ListMultisigTxs() ([]*types.MultisigTx, error)
 	DeleteMultisigTx(txHash string) error
-	UpdateMultisigTx(tx *faucet.MultisigTx) error
+	UpdateMultisigTx(tx *types.MultisigTx) error
 
 	// Signature operations
-	AddSignature(txHash string, sig *faucet.MultisigSignature) error
-	GetSignatures(txHash string) ([]faucet.MultisigSignature, error)
+	AddSignature(txHash string, sig *types.MultisigSignature) error
+	GetSignatures(txHash string) ([]types.MultisigSignature, error)
 
 	// Cleanup operations
 	CleanupExpiredTxs(maxAge int64) error
@@ -52,7 +52,7 @@ func NewGenericMultisigFaucetStore(dbProvider db.DatabaseProvider) (*GenericMult
 }
 
 // StoreMultisigConfig stores a multisig configuration
-func (s *GenericMultisigFaucetStore) StoreMultisigConfig(config *faucet.MultisigConfig) error {
+func (s *GenericMultisigFaucetStore) StoreMultisigConfig(config *types.MultisigConfig) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
 	}
@@ -72,7 +72,7 @@ func (s *GenericMultisigFaucetStore) StoreMultisigConfig(config *faucet.Multisig
 }
 
 // GetMultisigConfig retrieves a multisig configuration by address
-func (s *GenericMultisigFaucetStore) GetMultisigConfig(address string) (*faucet.MultisigConfig, error) {
+func (s *GenericMultisigFaucetStore) GetMultisigConfig(address string) (*types.MultisigConfig, error) {
 	key := s.getMultisigConfigKey(address)
 	data, err := s.dbProvider.Get(key)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *GenericMultisigFaucetStore) GetMultisigConfig(address string) (*faucet.
 		return nil, fmt.Errorf("multisig config not found for address: %s", address)
 	}
 
-	var config faucet.MultisigConfig
+	var config types.MultisigConfig
 	if err := jsonx.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal multisig config: %w", err)
 	}
@@ -92,7 +92,7 @@ func (s *GenericMultisigFaucetStore) GetMultisigConfig(address string) (*faucet.
 }
 
 // ListMultisigConfigs retrieves all multisig configurations
-func (s *GenericMultisigFaucetStore) ListMultisigConfigs() ([]*faucet.MultisigConfig, error) {
+func (s *GenericMultisigFaucetStore) ListMultisigConfigs() ([]*types.MultisigConfig, error) {
 	// This is a simplified implementation
 	// In production, you might want to use a more efficient approach
 	// like maintaining a separate index or using database-specific features
@@ -102,7 +102,7 @@ func (s *GenericMultisigFaucetStore) ListMultisigConfigs() ([]*faucet.MultisigCo
 	// For now, we'll return empty list
 	logx.Warn("MULTISIG_STORE", "ListMultisigConfigs not fully implemented - requires database-specific scanning")
 
-	return []*faucet.MultisigConfig{}, nil
+	return []*types.MultisigConfig{}, nil
 }
 
 // DeleteMultisigConfig deletes a multisig configuration
@@ -117,7 +117,7 @@ func (s *GenericMultisigFaucetStore) DeleteMultisigConfig(address string) error 
 }
 
 // StoreMultisigTx stores a multisig transaction
-func (s *GenericMultisigFaucetStore) StoreMultisigTx(tx *faucet.MultisigTx) error {
+func (s *GenericMultisigFaucetStore) StoreMultisigTx(tx *types.MultisigTx) error {
 	if tx == nil {
 		return fmt.Errorf("transaction cannot be nil")
 	}
@@ -137,7 +137,7 @@ func (s *GenericMultisigFaucetStore) StoreMultisigTx(tx *faucet.MultisigTx) erro
 }
 
 // GetMultisigTx retrieves a multisig transaction by hash
-func (s *GenericMultisigFaucetStore) GetMultisigTx(txHash string) (*faucet.MultisigTx, error) {
+func (s *GenericMultisigFaucetStore) GetMultisigTx(txHash string) (*types.MultisigTx, error) {
 	key := s.getMultisigTxKey(txHash)
 	data, err := s.dbProvider.Get(key)
 	if err != nil {
@@ -148,7 +148,7 @@ func (s *GenericMultisigFaucetStore) GetMultisigTx(txHash string) (*faucet.Multi
 		return nil, fmt.Errorf("multisig transaction not found: %s", txHash)
 	}
 
-	var tx faucet.MultisigTx
+	var tx types.MultisigTx
 	if err := jsonx.Unmarshal(data, &tx); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal multisig transaction: %w", err)
 	}
@@ -157,12 +157,12 @@ func (s *GenericMultisigFaucetStore) GetMultisigTx(txHash string) (*faucet.Multi
 }
 
 // ListMultisigTxs retrieves all multisig transactions
-func (s *GenericMultisigFaucetStore) ListMultisigTxs() ([]*faucet.MultisigTx, error) {
+func (s *GenericMultisigFaucetStore) ListMultisigTxs() ([]*types.MultisigTx, error) {
 	// Similar to ListMultisigConfigs, this is a placeholder
 	// Real implementation would require database-specific scanning
 	logx.Warn("MULTISIG_STORE", "ListMultisigTxs not fully implemented - requires database-specific scanning")
 
-	return []*faucet.MultisigTx{}, nil
+	return []*types.MultisigTx{}, nil
 }
 
 // DeleteMultisigTx deletes a multisig transaction
@@ -177,12 +177,12 @@ func (s *GenericMultisigFaucetStore) DeleteMultisigTx(txHash string) error {
 }
 
 // UpdateMultisigTx updates a multisig transaction
-func (s *GenericMultisigFaucetStore) UpdateMultisigTx(tx *faucet.MultisigTx) error {
+func (s *GenericMultisigFaucetStore) UpdateMultisigTx(tx *types.MultisigTx) error {
 	return s.StoreMultisigTx(tx) // Same as store for now
 }
 
 // AddSignature adds a signature to a multisig transaction
-func (s *GenericMultisigFaucetStore) AddSignature(txHash string, sig *faucet.MultisigSignature) error {
+func (s *GenericMultisigFaucetStore) AddSignature(txHash string, sig *types.MultisigSignature) error {
 	// Get the current transaction
 	tx, err := s.GetMultisigTx(txHash)
 	if err != nil {
@@ -190,16 +190,14 @@ func (s *GenericMultisigFaucetStore) AddSignature(txHash string, sig *faucet.Mul
 	}
 
 	// Add signature to transaction
-	if err := faucet.AddSignature(tx, sig); err != nil {
-		return fmt.Errorf("failed to add signature: %w", err)
-	}
+	tx.Signatures = append(tx.Signatures, *sig)
 
 	// Update the transaction in storage
 	return s.UpdateMultisigTx(tx)
 }
 
 // GetSignatures retrieves all signatures for a transaction
-func (s *GenericMultisigFaucetStore) GetSignatures(txHash string) ([]faucet.MultisigSignature, error) {
+func (s *GenericMultisigFaucetStore) GetSignatures(txHash string) ([]types.MultisigSignature, error) {
 	tx, err := s.GetMultisigTx(txHash)
 	if err != nil {
 		return nil, err
@@ -248,15 +246,15 @@ func NewMultisigFaucetAdapter(store MultisigFaucetStore) *MultisigFaucetAdapter 
 
 // Implement faucet.MultisigFaucetStoreInterface
 
-func (a *MultisigFaucetAdapter) StoreMultisigConfig(config *faucet.MultisigConfig) error {
+func (a *MultisigFaucetAdapter) StoreMultisigConfig(config *types.MultisigConfig) error {
 	return a.store.StoreMultisigConfig(config)
 }
 
-func (a *MultisigFaucetAdapter) GetMultisigConfig(address string) (*faucet.MultisigConfig, error) {
+func (a *MultisigFaucetAdapter) GetMultisigConfig(address string) (*types.MultisigConfig, error) {
 	return a.store.GetMultisigConfig(address)
 }
 
-func (a *MultisigFaucetAdapter) ListMultisigConfigs() ([]*faucet.MultisigConfig, error) {
+func (a *MultisigFaucetAdapter) ListMultisigConfigs() ([]*types.MultisigConfig, error) {
 	return a.store.ListMultisigConfigs()
 }
 
@@ -264,15 +262,15 @@ func (a *MultisigFaucetAdapter) DeleteMultisigConfig(address string) error {
 	return a.store.DeleteMultisigConfig(address)
 }
 
-func (a *MultisigFaucetAdapter) StoreMultisigTx(tx *faucet.MultisigTx) error {
+func (a *MultisigFaucetAdapter) StoreMultisigTx(tx *types.MultisigTx) error {
 	return a.store.StoreMultisigTx(tx)
 }
 
-func (a *MultisigFaucetAdapter) GetMultisigTx(txHash string) (*faucet.MultisigTx, error) {
+func (a *MultisigFaucetAdapter) GetMultisigTx(txHash string) (*types.MultisigTx, error) {
 	return a.store.GetMultisigTx(txHash)
 }
 
-func (a *MultisigFaucetAdapter) ListMultisigTxs() ([]*faucet.MultisigTx, error) {
+func (a *MultisigFaucetAdapter) ListMultisigTxs() ([]*types.MultisigTx, error) {
 	return a.store.ListMultisigTxs()
 }
 
@@ -280,15 +278,15 @@ func (a *MultisigFaucetAdapter) DeleteMultisigTx(txHash string) error {
 	return a.store.DeleteMultisigTx(txHash)
 }
 
-func (a *MultisigFaucetAdapter) UpdateMultisigTx(tx *faucet.MultisigTx) error {
+func (a *MultisigFaucetAdapter) UpdateMultisigTx(tx *types.MultisigTx) error {
 	return a.store.UpdateMultisigTx(tx)
 }
 
-func (a *MultisigFaucetAdapter) AddSignature(txHash string, sig *faucet.MultisigSignature) error {
+func (a *MultisigFaucetAdapter) AddSignature(txHash string, sig *types.MultisigSignature) error {
 	return a.store.AddSignature(txHash, sig)
 }
 
-func (a *MultisigFaucetAdapter) GetSignatures(txHash string) ([]faucet.MultisigSignature, error) {
+func (a *MultisigFaucetAdapter) GetSignatures(txHash string) ([]types.MultisigSignature, error) {
 	return a.store.GetSignatures(txHash)
 }
 

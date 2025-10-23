@@ -3,7 +3,6 @@ package faucet
 import (
 	"crypto/ed25519"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,38 +10,41 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/types"
 	"github.com/mr-tron/base58"
 )
 
 type MultisigFaucetService struct {
 	store               MultisigFaucetStoreInterface
-	accountStore        interface{}     // AccountStore interface to avoid import cycle
+	accountStore        store.AccountStore
 	approverWhitelist   map[string]bool // Whitelist A: wallets that can approve/reject
 	proposerWhitelist   map[string]bool // Whitelist B: wallets that can request faucet
-	configs             map[string]*MultisigConfig
-	pendingTxs          map[string]*MultisigTx
-	pendingWhitelistTxs map[string]*MultisigTx // Whitelist management transactions
+	configs             map[string]*types.MultisigConfig
+	pendingTxs          map[string]*types.MultisigTx
+	pendingWhitelistTxs map[string]*types.MultisigTx
 	mu                  sync.RWMutex
 	maxAmount           *uint256.Int
 	cooldown            time.Duration
 	lastRequest         map[string]time.Time
 }
 
-func NewMultisigFaucetService(store MultisigFaucetStoreInterface, maxAmount *uint256.Int, cooldown time.Duration) *MultisigFaucetService {
+func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore store.AccountStore, maxAmount *uint256.Int, cooldown time.Duration) *MultisigFaucetService {
 	return &MultisigFaucetService{
 		store:               store,
+		accountStore:        accountStore,
 		approverWhitelist:   make(map[string]bool), // Whitelist A: Approvers
 		proposerWhitelist:   make(map[string]bool), // Whitelist B: Proposers
-		configs:             make(map[string]*MultisigConfig),
-		pendingTxs:          make(map[string]*MultisigTx),
-		pendingWhitelistTxs: make(map[string]*MultisigTx),
+		configs:             make(map[string]*types.MultisigConfig),
+		pendingTxs:          make(map[string]*types.MultisigTx),
+		pendingWhitelistTxs: make(map[string]*types.MultisigTx),
 		maxAmount:           maxAmount,
 		cooldown:            cooldown,
 		lastRequest:         make(map[string]time.Time),
 	}
 }
 
-func (s *MultisigFaucetService) RegisterMultisigConfig(config *MultisigConfig) error {
+func (s *MultisigFaucetService) RegisterMultisigConfig(config *types.MultisigConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -60,6 +62,12 @@ func (s *MultisigFaucetService) RegisterMultisigConfig(config *MultisigConfig) e
 
 	s.configs[config.Address] = config
 
+	// Auto-add all signers to approver whitelist
+	for _, signer := range config.Signers {
+		s.approverWhitelist[signer] = true
+		logx.Info("MultisigFaucetService", "auto-added signer to approver whitelist", "signer", signer)
+	}
+
 	logx.Info("MultisigFaucetService", "registered multisig config",
 		"address", config.Address,
 		"threshold", config.Threshold,
@@ -68,7 +76,7 @@ func (s *MultisigFaucetService) RegisterMultisigConfig(config *MultisigConfig) e
 	return nil
 }
 
-func (s *MultisigFaucetService) GetMultisigConfig(address string) (*MultisigConfig, error) {
+func (s *MultisigFaucetService) GetMultisigConfig(address string) (*types.MultisigConfig, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -87,22 +95,19 @@ func (s *MultisigFaucetService) GetMultisigConfig(address string) (*MultisigConf
 
 func (s *MultisigFaucetService) CreateFaucetRequest(
 	multisigAddress string,
-	recipient string,
 	amount *uint256.Int,
 	textData string,
-	signerPubKey string, // Public key của người gọi function
-	signature []byte, // Signature của message
-) (*MultisigTx, error) {
+	signerPubKey string,
+	signature []byte,
+) (*types.MultisigTx, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
 	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "create_faucet_request")
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in proposer whitelist
 	if !s.proposerWhitelist[callerAddress] {
 		return nil, fmt.Errorf("caller %s is not authorized to create faucet requests", callerAddress)
 	}
@@ -122,16 +127,16 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 
 	// Check cooldown
 	if s.cooldown > 0 {
-		if lastTime, exists := s.lastRequest[recipient]; exists {
+		if lastTime, exists := s.lastRequest[callerAddress]; exists {
 			if time.Since(lastTime) < s.cooldown {
-				return nil, fmt.Errorf("recipient %s must wait %v before next request", recipient, s.cooldown)
+				return nil, fmt.Errorf("caller %s must wait %v before next request", callerAddress, s.cooldown)
 			}
 		}
 	}
 
-	nonce := uint64(time.Now().UnixNano())
+	nonce := uint64(time.Now().Unix())
 
-	tx := CreateMultisigFaucetTx(config, recipient, amount, nonce, uint64(time.Now().Unix()), textData)
+	tx := CreateMultisigFaucetTx(config, callerAddress, amount, nonce, uint64(time.Now().Unix()), textData)
 
 	txHash := tx.Hash()
 	if err := s.store.StoreMultisigTx(tx); err != nil {
@@ -140,12 +145,12 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 
 	s.pendingTxs[txHash] = tx
 
-	s.lastRequest[recipient] = time.Now()
+	s.lastRequest[callerAddress] = time.Now()
 
 	logx.Info("MultisigFaucetService", "created faucet request",
 		"txHash", txHash,
 		"multisigAddress", multisigAddress,
-		"recipient", recipient,
+		"recipient", callerAddress,
 		"amount", amount.String())
 
 	return tx, nil
@@ -154,7 +159,13 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 // verifyCallerSignature verifies the caller's signature and returns the caller address
 func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signature []byte, action string) (string, error) {
 	// Create a message to verify (same format as client signed)
-	message := fmt.Sprintf("faucet_action:%s:%d", action, time.Now().Unix())
+	message := fmt.Sprintf("faucet_action:%s", action)
+
+	// Debug: print message and signature
+	logx.Info("MULTISIG_FAUCET", "Debug verifyCallerSignature",
+		"message", message,
+		"signature_hex", hex.EncodeToString(signature),
+		"signer_pubkey", signerPubKey)
 
 	// Verify the signature
 	verified, err := s.verifySignature(message, signature, signerPubKey)
@@ -168,13 +179,6 @@ func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signa
 
 	// Return the public key as the caller address (or derive address from pubkey)
 	return signerPubKey, nil
-}
-
-// signMessage signs a message with private key
-func (s *MultisigFaucetService) signMessage(message string, privKey []byte) ([]byte, error) {
-	// Use ed25519 to sign the message
-	signature := ed25519.Sign(ed25519.PrivateKey(privKey), []byte(message))
-	return signature, nil
 }
 
 // verifySignature verifies a signature
@@ -281,7 +285,7 @@ func (s *MultisigFaucetService) IsProposer(address string) bool {
 }
 
 // GetMultisigTx retrieves a multisig transaction by hash
-func (s *MultisigFaucetService) GetMultisigTx(txHash string) (*MultisigTx, error) {
+func (s *MultisigFaucetService) GetMultisigTx(txHash string) (*types.MultisigTx, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -304,7 +308,7 @@ func (s *MultisigFaucetService) GetMultisigTx(txHash string) (*MultisigTx, error
 }
 
 // GetPendingTxs returns the pending transactions map (for status checking)
-func (s *MultisigFaucetService) GetPendingTxs() map[string]*MultisigTx {
+func (s *MultisigFaucetService) GetPendingTxs() map[string]*types.MultisigTx {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.pendingTxs
@@ -329,7 +333,7 @@ func (s *MultisigFaucetService) CreateWhitelistManagementTx(
 	action string, // "add_approver", "remove_approver", "add_proposer", "remove_proposer"
 	targetAddress string,
 	proposerAddress string,
-) (*MultisigTx, error) {
+) (*types.MultisigTx, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -456,8 +460,14 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		s.pendingTxs[txHash] = tx
 	}
 
+	for _, existingSig := range tx.Signatures {
+		if existingSig.Signer == callerAddress {
+			return fmt.Errorf("signature from %s already exists", callerAddress)
+		}
+	}
+
 	// Create signature object
-	sig := MultisigSignature{
+	sig := types.MultisigSignature{
 		Signer:    callerAddress,
 		Signature: hex.EncodeToString(signature),
 	}
@@ -485,37 +495,65 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		// Execute the transaction automatically
 		if err := s.executeTransaction(tx); err != nil {
 			logx.Error("MultisigFaucetService", "failed to execute transaction automatically", err)
-			return fmt.Errorf("failed to execute transaction automatically: %w", err)
+		} else {
+			logx.Info("MultisigFaucetService", "transaction executed successfully", "txHash", txHash)
 		}
 
 		// Remove from pending transactions
 		delete(s.pendingTxs, txHash)
-		logx.Info("MultisigFaucetService", "transaction executed and removed from pending",
-			"txHash", txHash)
 	}
 
 	return nil
 }
 
 // executeTransaction executes a verified multisig transaction
-func (s *MultisigFaucetService) executeTransaction(tx *MultisigTx) error {
-	logx.Info("MultisigFaucetService", "executing multisig transaction",
-		"txHash", tx.Hash(),
-		"sender", tx.Sender,
-		"recipient", tx.Recipient,
-		"amount", tx.Amount.String())
+func (s *MultisigFaucetService) executeTransaction(tx *types.MultisigTx) error {
 
 	// Verify the transaction before execution
 	if err := VerifyMultisigTx(tx); err != nil {
 		return fmt.Errorf("transaction verification failed: %w", err)
 	}
 
-	// Execute the actual transaction
-	logx.Info("MultisigFaucetService", "transaction executed successfully",
+	// Get faucet account (sender)
+	faucetAccount, err := s.accountStore.GetByAddr(tx.Sender)
+	if err != nil {
+		return fmt.Errorf("failed to get faucet account: %w", err)
+	}
+
+	// Check if faucet has enough balance
+	if faucetAccount.Balance.Cmp(tx.Amount) < 0 {
+		return fmt.Errorf("insufficient faucet balance: %s < %s", faucetAccount.Balance.String(), tx.Amount.String())
+	}
+
+	recipientAccount, err := s.accountStore.GetByAddr(tx.Recipient)
+	if err != nil {
+		// Create new account if doesn't exist
+		recipientAccount = &types.Account{
+			Address: tx.Recipient,
+			Balance: uint256.NewInt(0),
+			Nonce:   0,
+		}
+	}
+
+	// Transfer tokens
+	faucetAccount.Balance.Sub(faucetAccount.Balance, tx.Amount)
+	recipientAccount.Balance.Add(recipientAccount.Balance, tx.Amount)
+
+	// Update accounts
+	if err := s.accountStore.Store(faucetAccount); err != nil {
+		return fmt.Errorf("failed to update faucet account: %w", err)
+	}
+	if err := s.accountStore.Store(recipientAccount); err != nil {
+		return fmt.Errorf("failed to update recipient account: %w", err)
+	}
+
+	logx.Info("MultisigFaucetService", "tokens transferred successfully",
 		"txHash", tx.Hash(),
 		"sender", tx.Sender,
 		"recipient", tx.Recipient,
 		"amount", tx.Amount.String(),
+		"faucetBalance", faucetAccount.Balance.String(),
+		"recipientBalance", recipientAccount.Balance.String(),
 		"signatureCount", len(tx.Signatures))
 
 	// Mark transaction as executed in store
@@ -529,7 +567,7 @@ func (s *MultisigFaucetService) executeTransaction(tx *MultisigTx) error {
 	return nil
 }
 
-func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*MultisigTx, error) {
+func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*types.MultisigTx, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -546,11 +584,11 @@ func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*MultisigT
 	return tx, nil
 }
 
-func (s *MultisigFaucetService) ListPendingTransactions() []*MultisigTx {
+func (s *MultisigFaucetService) ListPendingTransactions() []*types.MultisigTx {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	transactions := make([]*MultisigTx, 0, len(s.pendingTxs))
+	transactions := make([]*types.MultisigTx, 0, len(s.pendingTxs))
 	for _, tx := range s.pendingTxs {
 		transactions = append(transactions, tx)
 	}
@@ -558,7 +596,7 @@ func (s *MultisigFaucetService) ListPendingTransactions() []*MultisigTx {
 	return transactions
 }
 
-func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*TransactionStatus, error) {
+func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*types.TransactionStatus, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -573,11 +611,11 @@ func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*Transactio
 		s.pendingTxs[txHash] = tx
 	}
 
-	status := &TransactionStatus{
+	status := &types.TransactionStatus{
 		TxHash:         txHash,
-		IsComplete:     tx.IsComplete(),
-		SignatureCount: tx.GetSignatureCount(),
-		RequiredCount:  tx.GetRequiredSignatureCount(),
+		IsComplete:     len(tx.Signatures) >= tx.Config.Threshold,
+		SignatureCount: len(tx.Signatures),
+		RequiredCount:  tx.Config.Threshold,
 		Recipient:      tx.Recipient,
 		Amount:         tx.Amount,
 		CreatedAt:      time.Unix(int64(tx.Timestamp), 0),
@@ -585,46 +623,6 @@ func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*Transactio
 	}
 
 	return status, nil
-}
-
-type TransactionStatus struct {
-	TxHash         string              `json:"tx_hash"`
-	IsComplete     bool                `json:"is_complete"`
-	SignatureCount int                 `json:"signature_count"`
-	RequiredCount  int                 `json:"required_count"`
-	Recipient      string              `json:"recipient"`
-	Amount         *uint256.Int        `json:"amount"`
-	CreatedAt      time.Time           `json:"created_at"`
-	Signatures     []MultisigSignature `json:"signatures"`
-}
-
-func (tx *MultisigTx) Hash() string {
-	hashData := struct {
-		Type        int    `json:"type"`
-		Sender      string `json:"sender"`
-		Recipient   string `json:"recipient"`
-		Amount      string `json:"amount"`
-		Timestamp   uint64 `json:"timestamp"`
-		TextData    string `json:"text_data"`
-		Nonce       uint64 `json:"nonce"`
-		ExtraInfo   string `json:"extra_info"`
-		Threshold   int    `json:"threshold"`
-		SignerCount int    `json:"signer_count"`
-	}{
-		Type:        tx.Type,
-		Sender:      tx.Sender,
-		Recipient:   tx.Recipient,
-		Amount:      tx.Amount.String(),
-		Timestamp:   tx.Timestamp,
-		TextData:    tx.TextData,
-		Nonce:       tx.Nonce,
-		ExtraInfo:   tx.ExtraInfo,
-		Threshold:   tx.Config.Threshold,
-		SignerCount: len(tx.Config.Signers),
-	}
-
-	jsonData, _ := json.Marshal(hashData)
-	return fmt.Sprintf("%x", jsonData)
 }
 
 func (s *MultisigFaucetService) CleanupExpiredTransactions(maxAge time.Duration) {
@@ -646,21 +644,14 @@ func (s *MultisigFaucetService) CleanupExpiredTransactions(maxAge time.Duration)
 	}
 }
 
-func (s *MultisigFaucetService) GetServiceStats() *ServiceStats {
+func (s *MultisigFaucetService) GetServiceStats() *types.ServiceStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return &ServiceStats{
+	return &types.ServiceStats{
 		RegisteredConfigs:   len(s.configs),
 		PendingTransactions: len(s.pendingTxs),
 		MaxAmount:           s.maxAmount,
 		Cooldown:            s.cooldown,
 	}
-}
-
-type ServiceStats struct {
-	RegisteredConfigs   int           `json:"registered_configs"`
-	PendingTransactions int           `json:"pending_transactions"`
-	MaxAmount           *uint256.Int  `json:"max_amount"`
-	Cooldown            time.Duration `json:"cooldown"`
 }

@@ -587,7 +587,6 @@ func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRe
 	// Create faucet request
 	tx, err := s.multisigFaucetSvc.CreateFaucetRequest(
 		req.MultisigAddress,
-		req.Recipient,
 		amount,
 		req.TextData,
 		req.SignerPubkey,

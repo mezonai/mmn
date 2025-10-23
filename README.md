@@ -153,6 +153,61 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 - Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
 - Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs
 
+# Multisig Faucet Testing
+
+## Prerequisites
+- Docker containers running with multisig addresses configured
+- Genesis file updated with all node addresses in alloc section
+
+## Test Commands
+
+### 1. Get Multisig Address
+```bash
+./mmn multisig get-multisig-address
+```
+
+### 2. Add Proposer to Whitelist
+```bash
+./mmn multisig add-proposer --address "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" --private-key-file "config/key2.txt"
+```
+
+### 3. Create Faucet Proposal
+```bash
+./mmn multisig create-proposal --multisig-addr "8jvHAsCg6juFAJ2sEdQTbqnryTM1eTuL4VfCy2nnCazQ" --amount "40000" --message "Test faucet request" --private-key-file "config/key1.txt"
+```
+
+### 4. Approve Proposal (First Signature)
+```bash
+./mmn multisig approve --tx-hash "TRANSACTION_HASH" --private-key-file "config/key2.txt"
+```
+
+### 5. Approve Proposal (Second Signature)
+```bash
+./mmn multisig approve --tx-hash "TRANSACTION_HASH" --private-key-file "config/key3.txt"
+```
+
+### 6. Check Proposal Status
+```bash
+./mmn multisig status --tx-hash "TRANSACTION_HASH" --private-key-file "config/key1.txt"
+```
+
+### 7. Get All Proposals
+```bash
+./mmn multisig get-proposals --private-key-file "config/key2.txt"
+```
+
+## Expected Flow
+1. **Create proposal** → Status: `pending`, Signatures: `0/2`
+2. **First approve** → Status: `pending`, Signatures: `1/2`
+3. **Second approve** → Status: `executed`, Signatures: `2/2`
+4. **Token transfer** → Faucet balance decreases, recipient balance increases
+
+## Troubleshooting
+- If "Multisig faucet service not initialized" → Check Docker containers are running with `--multisig-addresses` flags
+- If "caller not authorized" → Add proposer to whitelist first
+- If "amount exceeds maximum" → Use smaller amount (max: 1000000)
+- If EOF errors → Check genesis file has all node addresses in alloc section
+
 # Deploy
 ## bootstrap address
 ```

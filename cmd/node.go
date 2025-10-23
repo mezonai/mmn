@@ -256,6 +256,7 @@ func runNode() {
 }
 
 func initializeMultisigFaucet(multisigStore interface{}, addresses []string, accountStore store.AccountStore) *faucet.MultisigFaucetService {
+	logx.Info("MULTISIG_FAUCET", "Debug: received addresses", "count", len(addresses), "addresses", addresses)
 	if len(addresses) < 2 {
 		logx.Error("MULTISIG_FAUCET", "At least 2 addresses required for multisig, got:", len(addresses))
 		return nil
@@ -278,7 +279,7 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 
 	maxAmount := uint256.NewInt(1000000) // TODO: research max amount for multisig faucet
 	cooldown := 1 * time.Hour            // TODO: research cooldown for multisig faucet
-	multisigService := faucet.NewMultisigFaucetService(store, maxAmount, cooldown)
+	multisigService := faucet.NewMultisigFaucetService(store, accountStore, maxAmount, cooldown)
 
 	// Create multisig configuration
 	config, err := faucet.CreateMultisigConfig(threshold, addresses)
@@ -317,7 +318,6 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 	return multisigService
 }
 
-// loadConfiguration loads all configuration files
 func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	cfg, err := config.LoadGenesisConfig(genesisPath)
 	if err != nil {

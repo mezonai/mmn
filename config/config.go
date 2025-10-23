@@ -169,3 +169,42 @@ func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 
 	return common.EncodeBytesToBase58(pubKey), nil
 }
+
+func LoadEd25519PrivKeyFromString(privKeyStr string) (ed25519.PrivateKey, error) {
+	keyHex := strings.TrimSpace(privKeyStr)
+	privBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(privBytes) == 0 {
+		return nil, fmt.Errorf("failed to decode private key: %v", err)
+	}
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return nil, fmt.Errorf("invalid ed25519 private key length: %d, expected %d (seed) or %d (full key)", len(privBytes), ed25519.SeedSize, ed25519.PrivateKeySize)
+	}
+
+	return privKey, nil
+}
+
+func LoadPubKeyFromPrivString(privKeyStr string) (string, error) {
+	keyHex := strings.TrimSpace(privKeyStr)
+	privBytes, err := common.DecodeBase58ToBytes(keyHex)
+	if err != nil || len(privBytes) == 0 {
+		return "", fmt.Errorf("failed to decode private key: %v", err)
+	}
+
+	var privKey ed25519.PrivateKey
+	if len(privBytes) == ed25519.SeedSize {
+		privKey = ed25519.NewKeyFromSeed(privBytes)
+	} else if len(privBytes) == ed25519.PrivateKeySize {
+		privKey = ed25519.PrivateKey(privBytes)
+	} else {
+		return "", fmt.Errorf("invalid ed25519 private key length: %d", len(privBytes))
+	}
+
+	pubKey := privKey.Public().(ed25519.PublicKey)
+	return common.EncodeBytesToBase58(pubKey), nil
+}

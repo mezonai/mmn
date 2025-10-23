@@ -7,6 +7,8 @@ config:
     addresses: 
       - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
         amount: 100000000000000000
+      - address: "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8"
+        amount: 100000000000000000
   poh:
     hashes_per_tick: 10
     ticks_per_slot: 4

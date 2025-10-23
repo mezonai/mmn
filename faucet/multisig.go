@@ -3,11 +3,13 @@ package faucet
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/types"
 	"github.com/mr-tron/base58"
 )
 
@@ -24,32 +26,7 @@ var (
 	ErrRecipientAlreadyExists  = errors.New("whitelist: recipient already exists")
 )
 
-type MultisigConfig struct {
-	Threshold int      `json:"threshold"`
-	Signers   []string `json:"signers"`
-	Address   string   `json:"address"`
-}
-
-type MultisigSignature struct {
-	Signer    string `json:"signer"`
-	Signature string `json:"signature"`
-}
-
-type MultisigTx struct {
-	Type       int                 `json:"type"`
-	Sender     string              `json:"sender"`
-	Recipient  string              `json:"recipient"`
-	Amount     *uint256.Int        `json:"amount"`
-	Timestamp  uint64              `json:"timestamp"`
-	TextData   string              `json:"text_data"`
-	Nonce      uint64              `json:"nonce"`
-	ExtraInfo  string              `json:"extra_info"`
-	Signatures []MultisigSignature `json:"signatures"`
-	Config     MultisigConfig      `json:"config"`
-	Status     string              `json:"status"` // pending, executed, failed
-}
-
-func CreateMultisigConfig(threshold int, signers []string) (*MultisigConfig, error) {
+func CreateMultisigConfig(threshold int, signers []string) (*types.MultisigConfig, error) {
 	if len(signers) < 2 {
 		return nil, ErrInvalidSigners
 	}
@@ -80,7 +57,7 @@ func CreateMultisigConfig(threshold int, signers []string) (*MultisigConfig, err
 		return nil, fmt.Errorf("failed to generate multisig address: %w", err)
 	}
 
-	return &MultisigConfig{
+	return &types.MultisigConfig{
 		Threshold: threshold,
 		Signers:   uniqueSigners,
 		Address:   address,
@@ -110,7 +87,7 @@ func validatePublicKey(pubKeyStr string) error {
 	return nil
 }
 
-func SignMultisigTx(tx *MultisigTx, signerPubKey string, privKey []byte) (*MultisigSignature, error) {
+func SignMultisigTx(tx *types.MultisigTx, signerPubKey string, privKey []byte) (*types.MultisigSignature, error) {
 	if !isAuthorizedSigner(&tx.Config, signerPubKey) {
 		return nil, ErrInvalidSigner
 	}
@@ -129,13 +106,13 @@ func SignMultisigTx(tx *MultisigTx, signerPubKey string, privKey []byte) (*Multi
 
 	signature := ed25519.Sign(ed25519PrivKey, txData)
 
-	return &MultisigSignature{
+	return &types.MultisigSignature{
 		Signer:    signerPubKey,
 		Signature: base58.Encode(signature),
 	}, nil
 }
 
-func AddSignature(tx *MultisigTx, sig *MultisigSignature) error {
+func AddSignature(tx *types.MultisigTx, sig *types.MultisigSignature) error {
 	for _, existingSig := range tx.Signatures {
 		if existingSig.Signer == sig.Signer {
 			return fmt.Errorf("signature from %s already exists", sig.Signer)
@@ -154,7 +131,7 @@ func AddSignature(tx *MultisigTx, sig *MultisigSignature) error {
 	return nil
 }
 
-func VerifyMultisigTx(tx *MultisigTx) error {
+func VerifyMultisigTx(tx *types.MultisigTx) error {
 	if len(tx.Signatures) < tx.Config.Threshold {
 		return ErrInsufficientSignatures
 	}
@@ -173,23 +150,24 @@ func VerifyMultisigTx(tx *MultisigTx) error {
 	return nil
 }
 
-func verifyMultisigSignature(tx *MultisigTx, sig *MultisigSignature) bool {
+func verifyMultisigSignature(tx *types.MultisigTx, sig *types.MultisigSignature) bool {
 	pubKeyBytes, err := base58.Decode(sig.Signer)
 	if err != nil {
 		return false
 	}
 
-	sigBytes, err := base58.Decode(sig.Signature)
+	sigBytes, err := hex.DecodeString(sig.Signature)
 	if err != nil {
 		return false
 	}
 
-	txData := serializeMultisigTx(tx)
+	// Use the same message format as client signing
+	message := "faucet_action:add_signature"
 
-	return ed25519.Verify(ed25519.PublicKey(pubKeyBytes), txData, sigBytes)
+	return ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(message), sigBytes)
 }
 
-func isAuthorizedSigner(config *MultisigConfig, pubKey string) bool {
+func isAuthorizedSigner(config *types.MultisigConfig, pubKey string) bool {
 	for _, signer := range config.Signers {
 		if signer == pubKey {
 			return true
@@ -198,7 +176,7 @@ func isAuthorizedSigner(config *MultisigConfig, pubKey string) bool {
 	return false
 }
 
-func serializeMultisigTx(tx *MultisigTx) []byte {
+func serializeMultisigTx(tx *types.MultisigTx) []byte {
 	amountStr := "0"
 	if tx.Amount != nil {
 		amountStr = tx.Amount.String()
@@ -220,8 +198,8 @@ func serializeMultisigTx(tx *MultisigTx) []byte {
 	return []byte(metadata)
 }
 
-func CreateMultisigFaucetTx(config *MultisigConfig, recipient string, amount *uint256.Int, nonce uint64, timestamp uint64, textData string) *MultisigTx {
-	return &MultisigTx{
+func CreateMultisigFaucetTx(config *types.MultisigConfig, recipient string, amount *uint256.Int, nonce uint64, timestamp uint64, textData string) *types.MultisigTx {
+	return &types.MultisigTx{
 		Type:       1, // TxTypeFaucet
 		Sender:     config.Address,
 		Recipient:  recipient,
@@ -230,31 +208,7 @@ func CreateMultisigFaucetTx(config *MultisigConfig, recipient string, amount *ui
 		TextData:   textData,
 		Nonce:      nonce,
 		ExtraInfo:  "",
-		Signatures: make([]MultisigSignature, 0),
+		Signatures: make([]types.MultisigSignature, 0),
 		Config:     *config,
 	}
-}
-
-func (config *MultisigConfig) GetMultisigAddress() string {
-	return config.Address
-}
-
-func (config *MultisigConfig) GetSigners() []string {
-	return config.Signers
-}
-
-func (config *MultisigConfig) GetThreshold() int {
-	return config.Threshold
-}
-
-func (tx *MultisigTx) IsComplete() bool {
-	return len(tx.Signatures) >= tx.Config.Threshold
-}
-
-func (tx *MultisigTx) GetSignatureCount() int {
-	return len(tx.Signatures)
-}
-
-func (tx *MultisigTx) GetRequiredSignatureCount() int {
-	return tx.Config.Threshold
 }
