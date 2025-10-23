@@ -63,9 +63,7 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *val
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
 	}
-	streamInterceptors := []grpc.StreamServerInterceptor{
-		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
-	}
+	streamInterceptors := []grpc.StreamServerInterceptor{}
 
 	if enableRateLimit {
 		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
@@ -145,25 +143,6 @@ func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnarySer
 	}
 }
 
-func defaultDeadlineStreamInterceptor(defaultTimeout time.Duration) grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if deadline, ok := ss.Context().Deadline(); !ok || time.Until(deadline) <= 0 {
-			ctx, cancel := context.WithTimeout(ss.Context(), defaultTimeout)
-			defer cancel()
-			wrapped := &serverStreamWithContext{ServerStream: ss, ctx: ctx}
-			return handler(srv, wrapped)
-		}
-		return handler(srv, ss)
-	}
-}
-
-type serverStreamWithContext struct {
-	grpc.ServerStream
-	ctx context.Context
-}
-
-func (w *serverStreamWithContext) Context() context.Context { return w.ctx }
-
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	return s.txSvc.AddTx(ctx, in)
 }
@@ -178,10 +157,6 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
 	return s.txSvc.GetTxByHash(ctx, in)
-}
-
-func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
-	return s.txSvc.GetTransactionStatus(ctx, in)
 }
 
 func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {

@@ -55,82 +55,83 @@ func (s *TxServiceImpl) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddT
 }
 
 func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(in.TxHash)
-	if errTx != nil || errTxMeta != nil {
-		logx.Error("GRPC GET TX", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
-		return &pb.GetTxByHashResponse{Error: errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound).Error()}, nil
-	}
-	amount := utils.Uint256ToString(tx.Amount)
-
-	txInfo := &pb.TxInfo{
-		Sender:    tx.Sender,
-		Recipient: tx.Recipient,
-		Amount:    amount,
-		Timestamp: tx.Timestamp,
-		TextData:  tx.TextData,
-		Nonce:     tx.Nonce,
-		Slot:      txMeta.Slot,
-		Blockhash: txMeta.BlockHash,
-		Status:    txMeta.Status,
-		ErrMsg:    txMeta.Error,
-		ExtraInfo: tx.ExtraInfo,
-	}
-	return &pb.GetTxByHashResponse{
-		Tx:       txInfo,
-		Decimals: uint32(config.GetDecimalsFactor()),
-	}, nil
-}
-
-func (s *TxServiceImpl) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
 	txHash := in.TxHash
+	decimalConfig := uint32(config.GetDecimalsFactor())
 
-	// 1) Check mempool
+	// 1) Check from mempool O(1) lookup
 	if s.mempool != nil {
 		if data, ok := s.mempool.GetTransaction(txHash); ok {
 			tx, err := utils.ParseTx(data)
-			if err == nil && tx.Hash() == txHash {
-				return &pb.TransactionStatusInfo{
-					TxHash:        txHash,
-					Status:        pb.TransactionStatus_PENDING,
-					Confirmations: 0, // No confirmations for mempool transactions
-					Timestamp:     uint64(time.Now().Unix()),
-					ExtraInfo:     tx.ExtraInfo,
-					Amount:        utils.Uint256ToString(tx.Amount),
-					TextData:      tx.TextData,
-				}, nil
+			if err == nil {
+				txInfo := &pb.TxInfo{
+					Sender:    tx.Sender,
+					Recipient: tx.Recipient,
+					Amount:    utils.Uint256ToString(tx.Amount),
+					Timestamp: tx.Timestamp,
+					TextData:  tx.TextData,
+					Nonce:     tx.Nonce,
+					Slot:      0,
+					Blockhash: "",
+					Status:    pb.TransactionStatus_PENDING,
+					ErrMsg:    "",
+					ExtraInfo: tx.ExtraInfo,
+					TxHash:    txHash,
+				}
+				return &pb.GetTxByHashResponse{Tx: txInfo, Decimals: decimalConfig}, nil
 			}
 		}
 	}
 
-	// 2) Search in stored blocks
-	if s.blockStore != nil {
-		slot, blk, _, found := s.blockStore.GetTransactionBlockInfo(txHash)
-		if found {
-			confirmations := s.blockStore.GetConfirmations(slot)
-			status := pb.TransactionStatus_CONFIRMED
-			if confirmations > 1 {
-				status = pb.TransactionStatus_FINALIZED
+	// 2) Check from tracker O(1) lookup
+	if s.tracker != nil {
+		tx, err := s.tracker.GetTransaction(txHash)
+		if err == nil {
+			txInfo := &pb.TxInfo{
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    utils.Uint256ToString(tx.Amount),
+				Timestamp: tx.Timestamp,
+				TextData:  tx.TextData,
+				Nonce:     tx.Nonce,
+				Slot:      0,
+				Blockhash: "",
+				Status:    pb.TransactionStatus_PENDING,
+				ErrMsg:    "",
+				ExtraInfo: tx.ExtraInfo,
+				TxHash:    txHash,
 			}
-			tx, _, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
-			if errTx != nil || errTxMeta != nil {
-				logx.Error("GRPC GET TX STATUS", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
-				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
+			return &pb.GetTxByHashResponse{Tx: txInfo, Decimals: decimalConfig}, nil
+		}
+	}
+
+	if s.ledger != nil {
+		tx, txMeta, errTx, errTxMeta := s.ledger.GetTxByHash(txHash)
+		if errTx != nil || errTxMeta != nil {
+			logx.Error("GRPC GET TX STATUS", "Ledger error", fmt.Sprintf("errTx: %v, errTxMeta: %v", errTx, errTxMeta))
+		} else {
+			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
+			txInfo := &pb.TxInfo{
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    utils.Uint256ToString(tx.Amount),
+				Timestamp: tx.Timestamp,
+				TextData:  tx.TextData,
+				Nonce:     tx.Nonce,
+				Slot:      txMeta.Slot,
+				Blockhash: txMeta.BlockHash,
+				Status:    txStatus,
+				ErrMsg:    txMeta.Error,
+				ExtraInfo: tx.ExtraInfo,
+				TxHash:    txHash,
 			}
-			return &pb.TransactionStatusInfo{
-				TxHash:        txHash,
-				Status:        status,
-				BlockSlot:     slot,
-				BlockHash:     blk.HashString(),
-				Confirmations: confirmations,
-				Timestamp:     uint64(time.Now().Unix()),
-				ExtraInfo:     tx.ExtraInfo,
-				Amount:        utils.Uint256ToString(tx.Amount),
-				TextData:      tx.TextData,
+			return &pb.GetTxByHashResponse{
+				Tx:       txInfo,
+				Decimals: decimalConfig,
 			}, nil
 		}
 	}
 
-	// 3) Transaction not found anywhere -> return nil and error
+	// 4) Transaction not found anywhere -> return nil and error
 	return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 }
 
