@@ -77,9 +77,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
 	}
-	streamInterceptors := []grpc.StreamServerInterceptor{
-		defaultDeadlineStreamInterceptor(GRPCDefaultDeadline),
-	}
+	streamInterceptors := []grpc.StreamServerInterceptor{}
 
 	if enableRateLimit {
 		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
@@ -158,25 +156,6 @@ func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnarySer
 		return handler(ctx, req)
 	}
 }
-
-func defaultDeadlineStreamInterceptor(defaultTimeout time.Duration) grpc.StreamServerInterceptor {
-	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if deadline, ok := ss.Context().Deadline(); !ok || time.Until(deadline) <= 0 {
-			ctx, cancel := context.WithTimeout(ss.Context(), defaultTimeout)
-			defer cancel()
-			wrapped := &serverStreamWithContext{ServerStream: ss, ctx: ctx}
-			return handler(srv, wrapped)
-		}
-		return handler(srv, ss)
-	}
-}
-
-type serverStreamWithContext struct {
-	grpc.ServerStream
-	ctx context.Context
-}
-
-func (w *serverStreamWithContext) Context() context.Context { return w.ctx }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	return s.txSvc.AddTx(ctx, in)
