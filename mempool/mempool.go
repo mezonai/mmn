@@ -9,6 +9,7 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
@@ -79,7 +80,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.mu.RLock()
 	if _, exists := mp.txsBuf[txHash]; exists {
 		mp.mu.RUnlock()
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", utils.ShortenLog(string(txHash))))
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 	}
@@ -99,7 +100,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Double-check after acquiring write lock (for race conditions)
 	if _, exists := mp.txsBuf[txHash]; exists {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", utils.ShortenLog(string(txHash))))
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 	}
@@ -112,7 +113,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Validate transaction INSIDE the write lock
 	if err := mp.validateTransaction(tx); err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", utils.ShortenLog(string(txHash)), err))
 		return "", err
 	}
 
@@ -320,7 +321,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// 8. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", utils.ShortenLog(string(tx.Hash())), err.Error()))
 		return err
 	}
 

@@ -11,7 +11,6 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/utils"
-
 )
 
 type AccountServiceImpl struct {
@@ -65,7 +64,7 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 	// Get account from ledger
 	acc, err := s.ledger.GetAccount(addr)
 	if err != nil {
-		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
+		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", utils.ShortenLog(string(addr)), err))
 		return &pb.GetCurrentNonceResponse{
 			Address: addr,
 			Nonce:   0,
@@ -106,4 +105,3 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		Tag:     tag,
 	}, nil
 }
-

@@ -15,6 +15,7 @@ import (
 	"github.com/holiman/uint256"
 	clt "github.com/mezonai/mmn/client"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/mr-tron/base58"
 )
@@ -102,7 +103,7 @@ func CreateAndFundSenderWallet(client *clt.MmnClient, faucetPrivateKeyHex string
 		}
 
 		if i < maxRetries-1 { // Don't sleep on last attempt
-			logx.Warn("WALLET", fmt.Sprintf("Attempt %d/%d failed to get blockchain account for %s: %v. Retrying in %v...", i+1, maxRetries, walletAddress, err, retryDelay))
+			logx.Warn("WALLET", fmt.Sprintf("Attempt %d/%d failed to get blockchain account for %s: %v. Retrying in %v...", i+1, maxRetries, utils.ShortenLog(walletAddress), err, retryDelay))
 			time.Sleep(retryDelay)
 		}
 	}

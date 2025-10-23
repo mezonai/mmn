@@ -6,6 +6,7 @@ import (
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/transaction"
 )
@@ -113,7 +114,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 		data, exists := dataMap[string(key)]
 
 		if !exists {
-			logx.Warn("TX_STORE", fmt.Sprintf("Transaction %s not found in batch result", txHash))
+			logx.Warn("TX_STORE", fmt.Sprintf("Transaction %s not found in batch result", utils.ShortenLog(txHash)))
 			continue
 		}
 
@@ -121,7 +122,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 		var tx transaction.Transaction
 		err = jsonx.Unmarshal(data, &tx)
 		if err != nil {
-			logx.Warn("TX_STORE", fmt.Sprintf("Failed to unmarshal transaction %s: %s", txHash, err.Error()))
+			logx.Warn("TX_STORE", fmt.Sprintf("Failed to unmarshal transaction %s: %s", utils.ShortenLog(txHash), err.Error()))
 			continue
 		}
 

@@ -101,7 +101,7 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", addr, err))
+		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", utils.ShortenLog(string(addr)), err))
 		return nil
 	}
 	exception.SafeGo("Grpc Server", func() {
@@ -378,7 +378,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			txMeta, metaExists := txMetaMap[txHash]
 
 			if !txExists || !metaExists {
-				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", txHash))
+				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", utils.ShortenLog(string(txHash))))
 				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 			}
 
@@ -499,8 +499,8 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 			txMeta, metaExists := txMetas[txHash]
 
 			if !txExists || !metaExists {
-				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
-				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", utils.ShortenLog(string(txHash)), slot))
+				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", utils.ShortenLog(string(txHash)), slot))
 				continue
 			}
 

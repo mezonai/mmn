@@ -9,6 +9,7 @@ import (
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 )
 
 type AccountStore interface {
@@ -80,7 +81,7 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	data, err := as.dbProvider.Get(as.getDbKey(addr))
 	if err != nil {
-		logx.Error("ACCOUNT_STORE", fmt.Sprintf("could not get account %s from db: %v", addr, err))
+		logx.Error("ACCOUNT_STORE", fmt.Sprintf("could not get account %s from db: %v", utils.ShortenLog(string(addr)), err))
 		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
@@ -93,7 +94,7 @@ func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
 	var acc types.Account
 	err = jsonx.Unmarshal(data, &acc)
 	if err != nil {
-		logx.Error("ACCOUNT_STORE", fmt.Sprintf("failed to unmarshal account %s: %v", addr, err))
+		logx.Error("ACCOUNT_STORE", fmt.Sprintf("failed to unmarshal account %s: %v", utils.ShortenLog(string(addr)), err))
 		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
 	}
 
@@ -129,7 +130,7 @@ func (as *GenericAccountStore) GetBatch(addrs []string) (map[string]*types.Accou
 		var acc types.Account
 		err = jsonx.Unmarshal(data, &acc)
 		if err != nil {
-			logx.Warn("ACCOUNT_STORE", fmt.Sprintf("Failed to unmarshal account %s: %s", addr, err.Error()))
+			logx.Warn("ACCOUNT_STORE", fmt.Sprintf("Failed to unmarshal account %s: %s", utils.ShortenLog(string(addr)), err.Error()))
 			continue
 		}
 

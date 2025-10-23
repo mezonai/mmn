@@ -15,6 +15,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/utils"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -553,11 +554,11 @@ func (ln *Libp2pNetwork) verifyBlockTransactions(blk *block.BroadcastedBlock) er
 				continue
 			}
 			if !tx.Verify(ln.zkVerify) {
-				logx.Error("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verification failed at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, tx.Hash()))
+				logx.Error("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verification failed at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, utils.ShortenLog(string(tx.Hash()))))
 				return fmt.Errorf("transaction verification failed for tx hash: %s", tx.Hash())
 			}
 
-			logx.Debug("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verified successfully at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, tx.Hash()))
+			logx.Debug("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verified successfully at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, utils.ShortenLog(string(tx.Hash()))))
 		}
 	}
 
