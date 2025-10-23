@@ -20,7 +20,7 @@ func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrIn
 
 	logx.Info("NETWORK CONNECTED AND REQUEST NODE INFO TO JOIN", bootstrapPeer)
 
-	if len(ln.host.Network().Peers()) < int(ln.maxPeers) {
+	if len(ln.host.Network().Peers()) < ln.maxPeers {
 		if err := ln.host.Connect(ctx, *info); err != nil {
 			logx.Error("NETWORK:SETUP", "connect bootstrap", err.Error())
 		}
@@ -32,7 +32,7 @@ func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrIn
 func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Context, h host.Host) {
 	func() {
 		for {
-			peerChan, err := discovery.FindPeers(ctx, AdvertiseName, int(ln.maxPeers))
+			peerChan, err := discovery.FindPeers(ctx, AdvertiseName, ln.maxPeers)
 			if err != nil {
 				logx.Error("DISCOVERY", "Failed to find peers:", err)
 				time.Sleep(10 * time.Second)
@@ -44,7 +44,7 @@ func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Co
 					continue
 				}
 
-				if len(h.Network().Peers()) >= int(ln.maxPeers) {
+				if len(h.Network().Peers()) >= ln.maxPeers {
 					break
 				}
 

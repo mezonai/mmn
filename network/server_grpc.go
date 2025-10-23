@@ -45,7 +45,6 @@ type server struct {
 }
 
 func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
-
 	s := &server{
 		ledger:      ld,
 		selfID:      selfID,

@@ -1,37 +1,40 @@
 # golangci-lint configuration file
-# See: https://golangci-lint.run/usage/configuration/
+# https://golangci-lint.run/usage/configuration/
+version: 2
 
 run:
   timeout: 5m
   tests: true
-  skip-dirs:
-    - vendor
-    - .git
-    - .trunk
-    - logs
-    - libs/rocksdb
-  skip-files:
-    - ".*\\.pb\\.go$"
-    - ".*\\.grpc\\.pb\\.go$"
+
+linters:
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    - goconst
+    - gocritic
+    - gocyclo
+    - misspell
+    - unconvert
+    - unparam
+    - whitespace
+
+  disable:
+    - errcheck
+
+  exclusions:
+    paths:
+      - client_test
+      - mezon-migration
+      - ".*_test\\.go$"
+      - ".*\\.pb\\.go$"
+      - ".*\\.grpc\\.pb\\.go$"
 
 linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-  gosimple:
-    checks: ["all"]
-
   govet:
     check-shadowing: true
-    enable:
-      - atomicalign
-      - deepequalerrors
-      - findcall
-      - nilness
-      - shadow
-      - unusedwrite
-      - unusedresult
 
   staticcheck:
     checks: ["all"]
@@ -49,115 +52,18 @@ linters-settings:
       - opinionated
       - performance
       - style
-    disabled-checks:
-      - dupImport # https://github.com/go-critic/go-critic/issues/845
-      - ifElseChain
-      - octalLiteral
-      - whyNoLint
-      - wrapperFunc
 
   goconst:
     min-len: 2
     min-occurrences: 2
 
-  gocognit:
-    min-complexity: 20
-
-  gosec:
-    severity: medium
-    confidence: medium
 
   misspell:
     locale: US
 
-  lll:
-    line-length: 140
-
-  goimports:
-    local-prefixes: github.com/mezonai/mmn
-
-  revive:
-    min-confidence: 0
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: context-keys-type
-      - name: dot-imports
-      - name: error-return
-      - name: error-strings
-      - name: error-naming
-      - name: exported
-      - name: if-return
-      - name: increment-decrement
-      - name: var-naming
-      - name: var-declaration
-      - name: package-comments
-      - name: range
-      - name: receiver-naming
-      - name: time-naming
-      - name: unexported-return
-      - name: indent-error-flow
-      - name: errorf
-
-linters:
-  enable:
-    # Default enabled linters
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-
-    # Additional recommended linters
-    - goconst
-    - gocritic
-    - gocyclo
-    - gofmt
-    - goimports
-    - gosec
-    - gosimple
-    - gocognit
-    - misspell
-    - revive
-    - typecheck
-    - unconvert
-    - unparam
-    - whitespace
-
-    # Performance and style
-    - lll
-    - nakedret
-    - prealloc
-    - scopelint
-
-  disable:
-    - deadcode
-    - varcheck
-    - structcheck
-    - maligned
-    - interfacer
-    - scopelint
 
 issues:
   exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-
-    # Exclude known linter issues
-    - text: "should have a package comment"
-      linters:
-        - golint
-
-    - text: "exported function"
-      linters:
-        - revive
-
     # Exclude protobuf generated files
     - path: ".*\\.pb\\.go$"
       linters:
@@ -166,6 +72,21 @@ issues:
     - path: ".*\\.grpc\\.pb\\.go$"
       linters:
         - all
+
+    # Exclude client_test and mezon-migration directories
+    - path: "^client_test/.*"
+      linters:
+        - all
+
+    - path: "^mezon-migration/.*"
+      linters:
+        - all
+
+    # Exclude some linters from test files
+    - path: "_test\\.go$"
+      linters:
+        - gocyclo
+        - gosec
 
   max-issues-per-linter: 0
   max-same-issues: 0

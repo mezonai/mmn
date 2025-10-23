@@ -247,10 +247,7 @@ func (s *Server) SetCORSConfig(config CORSConfig) {
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
 		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			res, err := s.rpcAddTx(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
+			res := s.rpcAddTx(p)
 			if res == nil {
 				return nil, nil
 			}
@@ -313,7 +310,7 @@ func (s *Server) buildMethodMap() handler.Map {
 
 // --- Implementations ---
 
-func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
+func (s *Server) rpcAddTx(p signedTxParams) interface{} {
 	pbSigned := &pb.SignedTxMsg{
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
@@ -331,9 +328,9 @@ func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
 	}
 	resp, err := s.txSvc.AddTx(context.Background(), pbSigned)
 	if err != nil {
-		return &addTxResponse{Ok: false, Error: err.Error()}, nil
+		return &addTxResponse{Ok: false, Error: err.Error()}
 	}
-	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}, nil
+	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}
 }
 
 func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {

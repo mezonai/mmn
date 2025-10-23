@@ -100,7 +100,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 			}
 
 			ln.sendBlocksOverStream(req, msg.ReceivedFrom)
-
 		}
 	}
 }
@@ -142,7 +141,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		var blocks []*block.BroadcastedBlock
 		if err := decoder.Decode(&blocks); err != nil {
 			if errors.Is(err, io.EOF) {
-
 				break
 			}
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
@@ -166,7 +164,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 			processedBlocks++
 			batchCount++
-
 		}
 
 		// clean blocks array reference
@@ -182,7 +179,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 	ln.syncTrackerMu.Unlock()
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks, "processed:", processedBlocks)
-
 }
 
 func (ln *Libp2pNetwork) convertBlockToBroadcastedBlock(blk *block.Block) *block.BroadcastedBlock {
@@ -463,7 +459,6 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 		logx.Error("NETWORK:LATEST SLOT", "Failed to write latest slot response:", err)
 		return
 	}
-
 }
 
 func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
@@ -512,7 +507,6 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 }
 
 func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error {
-
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
 		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
 		return err

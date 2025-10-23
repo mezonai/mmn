@@ -192,7 +192,6 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	// When we are at the last tick of the slot, assemble block for lastSlot if we were leader
 	if v.Recorder.IsLastTickOfSlot() && v.IsLeader(lastSlot) &&
 		lastEntry.Tick && len(v.collectedEntries) > 0 {
-
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
 		copyCollectedEntries := make([]poh.Entry, len(v.collectedEntries))

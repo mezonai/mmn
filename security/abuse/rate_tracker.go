@@ -75,7 +75,6 @@ func (rt *RateTracker) trackRequest(rates map[string]*RateData, key string) {
 	data.minuteCount++
 	data.hourCount++
 	data.dayCount++
-
 }
 
 func (rt *RateTracker) GetIPRate(ip string, window time.Duration) int {

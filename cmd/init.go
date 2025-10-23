@@ -250,7 +250,6 @@ func initializeNode() {
 
 // initializeBlockchainWithGenesis initializes blockchain with genesis block using AssembleBlock
 func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
-
 	// Create genesis PoH entry with alloc transaction
 	// For genesis, we create a simple entry with the alloc initialization
 	var genesisHash [32]byte                         // Zero hash for genesis

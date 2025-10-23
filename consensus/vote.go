@@ -44,7 +44,7 @@ func getPublicKeyFromVoterID(voterID string) (ed25519.PublicKey, error) {
 
 	pubKeyBytes, err := common.DecodeBase58ToBytes(voterID)
 	if err != nil {
-		return nil, errors.Errorf("failed to decode voter ID: %w", err)
+		return nil, fmt.Errorf("failed to decode voter ID: %w", err)
 	}
 
 	if len(pubKeyBytes) != ed25519.PublicKeySize {

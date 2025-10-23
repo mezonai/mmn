@@ -42,7 +42,6 @@ func NewNetWork(
 	pohCfg *config.PohConfig,
 	isListener bool,
 ) (*Libp2pNetwork, error) {
-
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ed25519 private key: %w", err)
@@ -377,16 +376,16 @@ func (ln *Libp2pNetwork) setNodeReady() {
 }
 
 // startCoreServices starts PoH and Validator (if callbacks provided), sets up pubsub topics, and marks node ready
-func (ln *Libp2pNetwork) startCoreServices(ctx context.Context, withPubsub bool) {
+func (ln *Libp2pNetwork) startCoreServices(ctx context.Context) {
 	if ln.OnStartPoh != nil {
 		ln.OnStartPoh()
 	}
 	if ln.OnStartValidator != nil {
 		ln.OnStartValidator()
 	}
-	if withPubsub {
-		ln.SetupPubSubTopics(ctx)
-	}
+
+	ln.SetupPubSubTopics(ctx)
+
 	ln.setNodeReady()
 }
 

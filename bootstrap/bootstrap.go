@@ -183,7 +183,8 @@ func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, local
 		}
 	}
 
-	combined := append(relayAddrs, addrStrings(baseAddrs)...)
+	relayAddrs = append(relayAddrs, addrStrings(baseAddrs)...)
+	combined := relayAddrs
 
 	info := map[string]interface{}{
 		"new_peer_id": peerToAnnounce.String(),

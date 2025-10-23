@@ -186,3 +186,26 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 ```
   --bootstrap-addresses \"/ip4/BOOTNODE_EXTERNAL_IP/udp/9000/quic-v1/p2p/BOOTNODE_PEER_ID\"
 ```
+
+## Linting (golangci-lint)
+
+Install:
+
+Documentation: https://golangci-lint.run/docs/welcome/install/
+
+
+Run lint (project root):
+
+```
+golangci-lint run
+```
+
+Quick fix where supported:
+
+```
+golangci-lint run --fix
+```
+
+Notes:
+- Config file: `.golangci.yaml` (version: 2)
+- Some linters can’t auto-fix 

@@ -82,7 +82,6 @@ func init() {
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
-
 }
 
 func runNode() {
@@ -183,19 +182,22 @@ func runNode() {
 	latestSlot := bs.GetLatestFinalizedSlot()
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
-		log.Fatalf("Failed to initialize PoH: %v", err)
+		log.Printf("Failed to initialize PoH: %v", err)
+		return
 	}
 
 	// Load private key
 	privKey, err := config.LoadEd25519PrivKey(privKeyPath)
 	if err != nil {
-		log.Fatalf("load private key: %v", err)
+		log.Printf("load private key: %v", err)
+		return
 	}
 
 	// Initialize network
 	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
-		log.Fatalf("Failed to initialize network: %v", err)
+		log.Printf("Failed to initialize network: %v", err)
+		return
 	}
 
 	// Initialize zk verify
@@ -204,7 +206,8 @@ func runNode() {
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
 	if err != nil {
-		log.Fatalf("Failed to initialize mempool: %v", err)
+		log.Printf("Failed to initialize mempool: %v", err)
+		return
 	}
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
@@ -214,7 +217,8 @@ func runNode() {
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
 	if err != nil {
-		log.Fatalf("Failed to initialize validator: %v", err)
+		log.Printf("Failed to initialize validator: %v", err)
+		return
 	}
 
 	// In listen mode, do not start PoH or Validator
@@ -236,7 +240,6 @@ func runNode() {
 
 	//  block until cancel
 	<-ctx.Done()
-
 }
 
 // loadConfiguration loads all configuration files
@@ -332,7 +335,6 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, ld *ledger.Ledger, collector *consensus.Collector) (*validator.Validator, error) {
-
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load validator config: %w", err)
@@ -366,7 +368,6 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 // startServices starts all network and API services
 func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
-
 	abuseConfig := abuse.DefaultAbuseConfig()
 	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
 
