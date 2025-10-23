@@ -13,7 +13,6 @@ import (
 
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -291,10 +290,6 @@ func (v *Validator) Run() {
 	exception.SafeGoWithPanic("leaderBatchLoop", func() {
 		v.leaderBatchLoop()
 	})
-
-	exception.SafeGoWithPanic("mempoolCleanupLoop", func() {
-		v.mempoolCleanupLoop()
-	})
 }
 
 func (v *Validator) leaderBatchLoop() {
@@ -317,20 +312,13 @@ func (v *Validator) leaderBatchLoop() {
 			}
 
 			logx.Info("LEADER", fmt.Sprintf("Pulling batch for slot %d", slot))
-			batch := v.Mempool.PullBatch(v.BatchSize)
+			batch := v.Mempool.PullBatch(slot, v.BatchSize)
 			if len(batch) == 0 && len(v.pendingTxs) == 0 {
 				logx.Debug("LEADER", fmt.Sprintf("No batch for slot %d", slot))
 				continue
 			}
 
-			for _, r := range batch {
-				tx, err := utils.ParseTx(r)
-				if err != nil {
-					logx.Error("LEADER", fmt.Sprintf("Failed to parse transaction: %v", err))
-					continue
-				}
-				v.pendingTxs = append(v.pendingTxs, tx)
-			}
+			v.pendingTxs = append(v.pendingTxs, batch...)
 
 			recordTxs := v.peekPendingTxs(v.BatchSize)
 			if recordTxs == nil {
@@ -369,21 +357,6 @@ func (v *Validator) roleMonitorLoop() {
 					v.onLeaderSlotEnd()
 				}
 			}
-		}
-	}
-}
-
-func (v *Validator) mempoolCleanupLoop() {
-	cleanupTicker := time.NewTicker(1 * time.Minute)
-	defer cleanupTicker.Stop()
-
-	for {
-		select {
-		case <-v.stopCh:
-			return
-		case <-cleanupTicker.C:
-			logx.Info("VALIDATOR", "Running periodic mempool cleanup")
-			v.Mempool.PeriodicCleanup()
 		}
 	}
 }

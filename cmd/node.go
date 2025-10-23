@@ -203,8 +203,11 @@ func runNode() {
 	// Initialize zk verify
 	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
 
+	// Initialize dedup service
+	dedupService := mempool.NewDedupService()
+
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify)
 	if err != nil {
 		log.Fatalf("Failed to initialize mempool: %v", err)
 	}
@@ -223,6 +226,43 @@ func runNode() {
 	if nodeConfig.Mode != LISTEN_MODE {
 		libP2pClient.OnStartPoh = func() { pohService.Start() }
 		libP2pClient.OnStartValidator = func() { val.Run() }
+		libP2pClient.OnStartLoadTxHashes = func() {
+			latestSlot := bs.GetLatestFinalizedSlot()
+			if latestSlot < 1 {
+				return
+			}
+
+			startSlot := uint64(1)
+			if latestSlot > mempool.DEDUP_SLOT_GAP {
+				startSlot = latestSlot - mempool.DEDUP_SLOT_GAP + 1
+			}
+
+			loadSlots := make([]uint64, 0, latestSlot-startSlot+1)
+			for i := startSlot; i <= latestSlot; i++ {
+				loadSlots = append(loadSlots, i)
+			}
+
+			mapSlotBlock, err := bs.GetBatch(loadSlots)
+			if err != nil {
+				return
+			}
+
+			for slot, block := range mapSlotBlock {
+				var txDedupHashes []string
+				for _, entry := range block.Entries {
+					txs, err := ts.GetBatch(entry.TxHashes)
+					if err != nil {
+						continue
+					}
+					for _, tx := range txs {
+						txDedupHashes = append(txDedupHashes, tx.DedupHash())
+					}
+				}
+				dedupService.Add(slot, txDedupHashes)
+			}
+
+			mp.SetCurrentSlot(latestSlot)
+		}
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
@@ -320,14 +360,14 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string,
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, dedupService *mempool.DedupService,
 	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker, zkVerify)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, dedupService, eventRouter, txTracker, zkVerify)
 	return mp, nil
 }
 

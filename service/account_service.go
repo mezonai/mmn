@@ -11,7 +11,6 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/utils"
-
 )
 
 type AccountServiceImpl struct {
@@ -90,14 +89,7 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
 	} else { // tag == "pending"
 		// For "pending", return the largest nonce among ready transactions, processing transactions, current ledger nonce, and consecutive pending nonce
-		ledgerNonce := acc.Nonce
-		largestReadyNonce := s.mempool.GetLargestReadyTransactionNonce(addr)
-		largestProcessingNonce := s.tracker.GetLargestProcessingNonce(addr)
-		currentNonce = max(largestProcessingNonce, max(largestReadyNonce, ledgerNonce))
-
-		currentNonce = s.mempool.GetLargestConsecutivePendingNonce(addr, currentNonce)
-		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
-			addr, ledgerNonce, largestReadyNonce, largestProcessingNonce, currentNonce))
+		currentNonce = s.mempool.GetCurrentSlot()
 	}
 
 	return &pb.GetCurrentNonceResponse{
@@ -106,4 +98,3 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		Tag:     tag,
 	}, nil
 }
-

@@ -91,8 +91,9 @@ type Libp2pNetwork struct {
 	nextExpectedSlot   uint64
 	blockOrderingMu    sync.RWMutex
 
-	OnStartPoh       func()
-	OnStartValidator func()
+	OnStartPoh          func()
+	OnStartValidator    func()
+	OnStartLoadTxHashes func()
 
 	// PoH config
 	pohCfg     *config.PohConfig

@@ -66,6 +66,27 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				}
 			}
 
+			// Validate nonce and duplicate transactions for block
+			var txs []*transaction.Transaction
+			var txHashSet = make(map[string]struct{})
+			var txDedupHashes []string
+			for _, entry := range blk.Entries {
+				for _, tx := range entry.Transactions {
+					txs = append(txs, tx)
+					txHashSet[tx.Hash()] = struct{}{}
+					txDedupHashes = append(txDedupHashes, tx.DedupHash())
+				}
+
+			}
+			if err := mp.ValidateNonce(txs); err != nil {
+				logx.Error("BLOCK", "Nonce transaction validation failed for block at slot ", blk.Slot, ": ", err)
+				return err
+			}
+			if err := mp.ValidateDuplicateTxs(txs); err != nil {
+				logx.Error("BLOCK", "Duplicate transaction validation failed for block at slot ", blk.Slot, ": ", err)
+				return err
+			}
+
 			if err := bs.AddBlockPending(blk); err != nil {
 				logx.Error("BLOCK", "Failed to store block: ", err)
 				return err
@@ -76,8 +97,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			}
 
 			// Remove transactions in block from mempool and add tx tracker if node is follower
-			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-				mp.BlockCleanup(blk)
+			if self.PubKey != blk.LeaderID {
+				mp.GetDedupService().Add(blk.Slot, txDedupHashes)
+
+				if !blk.InvalidPoH {
+					mp.BlockCleanup(blk.Slot, txHashSet)
+				}
 			}
 
 			vote := &consensus.Vote{
@@ -208,6 +233,8 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 	if err := bs.MarkFinalized(vote.Slot); err != nil {
 		return fmt.Errorf("mark block as finalized error: %w", err)
 	}
+
+	mp.SetCurrentSlot(vote.Slot)
 
 	if err := ld.ApplyBlock(block, ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
