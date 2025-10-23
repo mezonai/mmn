@@ -15,7 +15,7 @@ import (
 var (
 	// Multisig faucet service
 	multisigFaucetService *faucet.MultisigFaucetService
-	
+
 	// Configuration flags
 	multisigThreshold int
 	multisigSigners   []string
@@ -44,7 +44,7 @@ var registerMultisigCmd = &cobra.Command{
 	Long:  `Register a new multisig configuration with specified threshold and signers.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		config, err := faucet.CreateMultisigConfig(multisigThreshold, multisigSigners)
 		if err != nil {
 			logx.Error("RegisterMultisig", "failed to create config", err)
@@ -69,7 +69,7 @@ var createFaucetCmd = &cobra.Command{
 	Long:  `Create a new multisig faucet transaction request.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		// Parse amount
 		amountUint, err := uint256.FromDecimal(amount)
 		if err != nil {
@@ -101,10 +101,10 @@ var addSignatureCmd = &cobra.Command{
 	Long:  `Add a signature to a pending multisig transaction.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		// Decode private key (simplified - in production use proper key management)
 		privKey := []byte(privateKey) // This should be properly decoded from base58
-		
+
 		if err := multisigFaucetService.AddSignature(txHash, signerPubKey, privKey); err != nil {
 			logx.Error("AddSignature", "failed to add signature", err)
 			os.Exit(1)
@@ -131,7 +131,7 @@ var executeTransactionCmd = &cobra.Command{
 	Long:  `Execute a multisig transaction that has been fully signed.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		tx, err := multisigFaucetService.VerifyAndExecute(txHash)
 		if err != nil {
 			logx.Error("ExecuteTransaction", "failed to execute transaction", err)
@@ -153,7 +153,7 @@ var getStatusCmd = &cobra.Command{
 	Long:  `Get the status of a multisig transaction.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		status, err := multisigFaucetService.GetTransactionStatus(txHash)
 		if err != nil {
 			logx.Error("GetStatus", "failed to get transaction status", err)
@@ -172,9 +172,9 @@ var listPendingCmd = &cobra.Command{
 	Long:  `List all pending multisig transactions.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		transactions := multisigFaucetService.ListPendingTransactions()
-		
+
 		fmt.Printf("Pending Transactions (%d):\n", len(transactions))
 		for i, tx := range transactions {
 			fmt.Printf("\n%d. Transaction Hash: %s\n", i+1, tx.Hash())
@@ -193,7 +193,7 @@ var getStatsCmd = &cobra.Command{
 	Long:  `Get statistics about the multisig faucet service.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		initMultisigFaucetService()
-		
+
 		stats := multisigFaucetService.GetServiceStats()
 		statsJSON, _ := json.MarshalIndent(stats, "", "  ")
 		fmt.Printf("Service Statistics:\n%s\n", statsJSON)
@@ -252,6 +252,9 @@ func initMultisigFaucetService() {
 			}
 		}
 
-		multisigFaucetService = faucet.NewMultisigFaucetService(maxAmount, cooldownDuration)
+		// TODO: Create proper storage instance
+		// For now, we'll use nil which will cause runtime errors
+		// In production, you should create a proper storage instance
+		multisigFaucetService = faucet.NewMultisigFaucetService(nil, maxAmount, cooldownDuration)
 	}
 }

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/zkverify"
 
@@ -57,6 +59,9 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
+
+	// multisig faucet flags
+	multisigAddresses []string
 )
 
 var runCmd = &cobra.Command{
@@ -81,6 +86,7 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().StringArrayVar(&multisigAddresses, "multisig-addresses", []string{}, "List of multisig signer addresses")
 
 }
 
@@ -144,7 +150,7 @@ func runNode() {
 	eventRouter := events.NewEventRouter(eventBus)
 
 	// Initialize db store inside directory
-	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
+	as, ts, tms, bs, multisigStore, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -153,6 +159,11 @@ func runNode() {
 	defer ts.MustClose()
 	defer tms.MustClose()
 	defer as.MustClose()
+	if multisigStore != nil {
+		if store, ok := multisigStore.(interface{ MustClose() }); ok {
+			defer store.MustClose()
+		}
+	}
 
 	// Load genesis configuration from file
 	cfg, err := loadConfiguration(genesisPath)
@@ -221,6 +232,7 @@ func runNode() {
 		libP2pClient.OnStartValidator = func() { val.Run() }
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
+	initializeMultisigFaucet(multisigStore, multisigAddresses)
 
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker)
 
@@ -237,6 +249,52 @@ func runNode() {
 
 }
 
+func initializeMultisigFaucet(multisigStore interface{}, addresses []string) {
+	if len(addresses) < 2 {
+		logx.Error("MULTISIG_FAUCET", "At least 2 addresses required for multisig, got:", len(addresses))
+		return
+	}
+
+	threshold := (len(addresses) * 2) / 3
+	if threshold < 2 {
+		threshold = 2
+	}
+
+	logx.Info("MULTISIG_FAUCET", "Initializing multisig faucet",
+		"addresses", len(addresses),
+		"threshold", threshold)
+
+	store, ok := multisigStore.(faucet.MultisigFaucetStoreInterface)
+	if !ok {
+		logx.Error("MULTISIG_FAUCET", "Failed to cast multisig store to interface")
+		return
+	}
+
+	maxAmount := uint256.NewInt(1000000) // 1M tokens max per request
+	cooldown := 1 * time.Hour            // 1 hour cooldown
+	multisigService := faucet.NewMultisigFaucetService(store, maxAmount, cooldown)
+
+	// Create multisig configuration
+	config, err := faucet.CreateMultisigConfig(threshold, addresses)
+	if err != nil {
+		logx.Error("MULTISIG_FAUCET", "Failed to create multisig config:", err)
+		return
+	}
+
+	// Register multisig configuration
+	if err := multisigService.RegisterMultisigConfig(config); err != nil {
+		logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
+		return
+	}
+
+	logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized successfully",
+		"multisig_address", config.Address,
+		"signers", len(config.Signers),
+		"threshold", config.Threshold,
+		"max_amount", maxAmount.String(),
+		"cooldown", cooldown)
+}
+
 // loadConfiguration loads all configuration files
 func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	cfg, err := config.LoadGenesisConfig(genesisPath)
@@ -247,11 +305,11 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 }
 
 // initializeDBStore initializes the block storage backend using the factory pattern
-func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, interface{}, error) {
 	// Create data folder if not exist
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create db store directory:", err.Error())
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// Create store configuration with StoreType
@@ -263,7 +321,7 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 
 	// Validate the configuration (this will check if the backend is supported)
 	if err := storeCfg.Validate(); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
 	}
 
 	// Use the factory pattern to create the store
