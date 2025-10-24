@@ -18,33 +18,35 @@ import (
 )
 
 type MultisigFaucetService struct {
-	store               MultisigFaucetStoreInterface
-	accountStore        store.AccountStore
-	mempool             *mempool.Mempool
-	approverWhitelist   map[string]bool
-	proposerWhitelist   map[string]bool
-	configs             map[string]*types.MultisigConfig
-	pendingTxs          map[string]*types.MultisigTx
-	pendingWhitelistTxs map[string]*types.MultisigTx
-	mu                  sync.RWMutex
-	maxAmount           *uint256.Int
-	cooldown            time.Duration
-	lastRequest         map[string]time.Time
+	store                   MultisigFaucetStoreInterface
+	accountStore            store.AccountStore
+	mempool                 *mempool.Mempool
+	approverWhitelist       map[string]bool
+	proposerWhitelist       map[string]bool
+	configs                 map[string]*types.MultisigConfig
+	pendingTxs              map[string]*types.MultisigTx
+	pendingWhitelistTxs     map[string]*types.MultisigTx
+	pendingApproverRequests map[string]*types.ApproverManagementRequest
+	mu                      sync.RWMutex
+	maxAmount               *uint256.Int
+	cooldown                time.Duration
+	lastRequest             map[string]time.Time
 }
 
 func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore store.AccountStore, mempool *mempool.Mempool, maxAmount *uint256.Int, cooldown time.Duration) *MultisigFaucetService {
 	return &MultisigFaucetService{
-		store:               store,
-		accountStore:        accountStore,
-		mempool:             mempool,
-		approverWhitelist:   make(map[string]bool),
-		proposerWhitelist:   make(map[string]bool),
-		configs:             make(map[string]*types.MultisigConfig),
-		pendingTxs:          make(map[string]*types.MultisigTx),
-		pendingWhitelistTxs: make(map[string]*types.MultisigTx),
-		maxAmount:           maxAmount,
-		cooldown:            cooldown,
-		lastRequest:         make(map[string]time.Time),
+		store:                   store,
+		accountStore:            accountStore,
+		mempool:                 mempool,
+		approverWhitelist:       make(map[string]bool),
+		proposerWhitelist:       make(map[string]bool),
+		configs:                 make(map[string]*types.MultisigConfig),
+		pendingTxs:              make(map[string]*types.MultisigTx),
+		pendingWhitelistTxs:     make(map[string]*types.MultisigTx),
+		pendingApproverRequests: make(map[string]*types.ApproverManagementRequest),
+		maxAmount:               maxAmount,
+		cooldown:                cooldown,
+		lastRequest:             make(map[string]time.Time),
 	}
 }
 
@@ -222,7 +224,45 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 		return fmt.Errorf("caller %s is not authorized to manage approver whitelist", callerAddress)
 	}
 
-	s.approverWhitelist[address] = true
+	// For management operations, we need to collect signatures from multiple approvers
+	// This is different from faucet transactions which go to mempool
+
+	// Check if this is a new request or adding signature to existing request
+	requestKey := fmt.Sprintf("add_approver:%s", address)
+
+	// Get existing request or create new one
+	request, exists := s.pendingApproverRequests[requestKey]
+	if !exists {
+		// Create new request
+		request = &types.ApproverManagementRequest{
+			Action:     ADD_APPROVER,
+			TargetAddr: address,
+			Signatures: make(map[string]string),
+			CreatedAt:  time.Now(),
+		}
+		s.pendingApproverRequests[requestKey] = request
+	}
+
+	// Add signature
+	request.Signatures[callerAddress] = hex.EncodeToString(signature)
+
+	// Check if we have enough signatures
+	configs := s.getAllMultisigConfigs()
+	if len(configs) == 0 {
+		return fmt.Errorf("no multisig config found")
+	}
+	config := configs[0]
+
+	if len(request.Signatures) >= config.Threshold {
+		// Execute the management operation
+		s.approverWhitelist[address] = true
+		delete(s.pendingApproverRequests, requestKey)
+		logx.Info("MultisigFaucetService", "Approver added successfully", "address", address)
+	} else {
+		logx.Info("MultisigFaucetService", "Approver add request pending",
+			"address", address, "signatures", len(request.Signatures), "required", config.Threshold)
+	}
+
 	return nil
 }
 
@@ -239,8 +279,52 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 		return fmt.Errorf("caller %s is not authorized to manage approver whitelist", callerAddress)
 	}
 
-	delete(s.approverWhitelist, address)
+	// Check if this is a new request or adding signature to existing request
+	requestKey := fmt.Sprintf("remove_approver:%s", address)
+
+	// Get existing request or create new one
+	request, exists := s.pendingApproverRequests[requestKey]
+	if !exists {
+		// Create new request
+		request = &types.ApproverManagementRequest{
+			Action:     REMOVE_APPROVER,
+			TargetAddr: address,
+			Signatures: make(map[string]string),
+			CreatedAt:  time.Now(),
+		}
+		s.pendingApproverRequests[requestKey] = request
+	}
+
+	// Add signature
+	request.Signatures[callerAddress] = hex.EncodeToString(signature)
+
+	// Check if we have enough signatures
+	configs := s.getAllMultisigConfigs()
+	if len(configs) == 0 {
+		return fmt.Errorf("no multisig config found")
+	}
+	config := configs[0]
+
+	if len(request.Signatures) >= config.Threshold {
+		// Execute the management operation
+		delete(s.approverWhitelist, address)
+		delete(s.pendingApproverRequests, requestKey)
+		logx.Info("MultisigFaucetService", "Approver removed successfully", "address", address)
+	} else {
+		logx.Info("MultisigFaucetService", "Approver remove request pending",
+			"address", address, "signatures", len(request.Signatures), "required", config.Threshold)
+	}
+
 	return nil
+}
+
+// getAllMultisigConfigs returns all multisig configurations
+func (s *MultisigFaucetService) getAllMultisigConfigs() []*types.MultisigConfig {
+	var configs []*types.MultisigConfig
+	for _, config := range s.configs {
+		configs = append(configs, config)
+	}
+	return configs
 }
 
 func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPubKey string, signature []byte) error {

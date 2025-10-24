@@ -82,3 +82,10 @@ type ServiceStats struct {
 	MaxAmount           *uint256.Int  `json:"max_amount"`
 	Cooldown            time.Duration `json:"cooldown"`
 }
+
+type ApproverManagementRequest struct {
+	Action     string            `json:"action"`
+	TargetAddr string            `json:"target_addr"`
+	Signatures map[string]string `json:"signatures"`
+	CreatedAt  time.Time         `json:"created_at"`
+}

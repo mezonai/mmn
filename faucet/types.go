@@ -4,6 +4,8 @@ import (
 	"github.com/mezonai/mmn/types"
 )
 
+
+
 type MultisigFaucetStoreInterface interface {
 	StoreMultisigConfig(config *types.MultisigConfig) error
 	GetMultisigConfig(address string) (*types.MultisigConfig, error)
@@ -43,4 +45,6 @@ var (
 
 var (
 	STATUS_EXECUTED = "EXECUTED"
+	STATUS_PENDING  = "PENDING"
+	STATUS_FAILED   = "FAILED"
 )

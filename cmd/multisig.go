@@ -3,13 +3,10 @@ package cmd
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/logx"
@@ -118,16 +115,6 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-var getMultisigAddressCmd = &cobra.Command{
-	Use:   "get-multisig-address",
-	Short: "Get multisig address from signers",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := getMultisigAddress(); err != nil {
-			logx.Error("MULTISIG CLI", err)
-		}
-	},
-}
-
 func init() {
 	rootCmd.AddCommand(multisigCmd)
 	multisigCmd.AddCommand(addProposerCmd)
@@ -137,8 +124,6 @@ func init() {
 	multisigCmd.AddCommand(approveCmd)
 	multisigCmd.AddCommand(rejectCmd)
 	multisigCmd.AddCommand(statusCmd)
-	multisigCmd.AddCommand(getMultisigAddressCmd)
-
 	multisigCmd.PersistentFlags().StringVarP(&multisigConfig.PrivateKeyFile, "private-key-file", "f", "", "private key file")
 	multisigCmd.PersistentFlags().StringVarP(&multisigConfig.PrivateKey, "private-key", "p", "", "private key in hex")
 	multisigCmd.PersistentFlags().StringVarP(&multisigConfig.NodeURL, "node-url", "u", "localhost:9001", "blockchain node URL")
@@ -358,14 +343,7 @@ func approveProposal(config MultisigConfig) error {
 	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.ADD_SIGNATURE)
 	signature := signMessage(message, privKey)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if config.Verbose {
-		fmt.Printf("🔄 Sending approval request for tx: %s\n", config.TxHash)
-		fmt.Printf("   Signer: %s\n", pubKeyStr)
-	}
-
+	ctx := context.Background()
 	resp, err := client.AddSignature(ctx, &pb.AddSignatureRequest{
 		TxHash:       config.TxHash,
 		SignerPubkey: pubKeyStr,
@@ -412,33 +390,6 @@ func checkStatus(config MultisigConfig) error {
 	fmt.Printf("  Status: %s\n", resp.Status)
 	fmt.Printf("  Signatures: %d/%d\n", resp.SignatureCount, resp.RequiredSignatures)
 	fmt.Printf("  Message: %s\n", resp.Message)
-
-	return nil
-}
-
-func getMultisigAddress() error {
-	// Use the same signers as in docker-compose.yml
-	signers := []string{
-		"89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8",
-		"7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV",
-		"S5MrFRhc92vmczcrDpNG8CLoDPh2jZH8f6Na11bFyDt",
-	}
-
-	// Sort signers like in CreateMultisigConfig
-	sort.Strings(signers)
-
-	// Generate multisig address using same logic as faucet/multisig.go
-	configData := fmt.Sprintf("multisig:2:%s", signers[0])
-	for i := 1; i < len(signers); i++ {
-		configData += ":" + signers[i]
-	}
-
-	hash := sha256.Sum256([]byte(configData))
-	address := base58.Encode(hash[:])
-
-	fmt.Printf("🔑 Multisig Address: %s\n", address)
-	fmt.Printf("📋 Signers: %v\n", signers)
-	fmt.Printf("🔢 Threshold: 2\n")
 
 	return nil
 }
