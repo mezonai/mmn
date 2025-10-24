@@ -24,15 +24,15 @@ const (
 )
 
 type Mempool struct {
-	mu               sync.RWMutex // Changed to RWMutex for better concurrency
-	txsBuf           map[string]*transaction.Transaction
-	txOrder          []string                       // Maintain FIFO order
-	setDedupTxHashes map[string]struct{}            // Set for deduplication
-	mapSenderTxs     map[string]map[string]struct{} // sender -> txHash
-	max              int
-	netCurrentSlot   uint64
-	broadcaster      interfaces.Broadcaster
-	ledger           interfaces.Ledger
+	mu             sync.RWMutex // Changed to RWMutex for better concurrency
+	txs            map[string]*transaction.Transaction
+	txOrder        []string                       // Maintain FIFO order
+	dedupTxHashSet map[string]struct{}            // Set for deduplication
+	mapSenderTxs   map[string]map[string]struct{} // sender -> txHash
+	max            int
+	netCurrentSlot uint64
+	broadcaster    interfaces.Broadcaster
+	ledger         interfaces.Ledger
 
 	dedupService *DedupService
 	eventRouter  *events.EventRouter                    // Event router for transaction status updates
@@ -43,14 +43,14 @@ type Mempool struct {
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
 	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
 	return &Mempool{
-		txsBuf:           make(map[string]*transaction.Transaction, max),
-		txOrder:          make([]string, 0, max),
-		setDedupTxHashes: make(map[string]struct{}),
-		mapSenderTxs:     make(map[string]map[string]struct{}),
-		max:              max,
-		netCurrentSlot:   0,
-		broadcaster:      broadcaster,
-		ledger:           ledger,
+		txs:            make(map[string]*transaction.Transaction, max),
+		txOrder:        make([]string, 0, max),
+		dedupTxHashSet: make(map[string]struct{}),
+		mapSenderTxs:   make(map[string]map[string]struct{}),
+		max:            max,
+		netCurrentSlot: 0,
+		broadcaster:    broadcaster,
+		ledger:         ledger,
 
 		dedupService: dedupService,
 		eventRouter:  eventRouter,
@@ -67,7 +67,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Quick check for duplicate using read lock
 	mp.mu.RLock()
-	if _, exists := mp.setDedupTxHashes[txDedupHash]; exists {
+	if _, exists := mp.dedupTxHashSet[txDedupHash]; exists {
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
@@ -75,7 +75,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	}
 
 	// Check if mempool is full
-	if len(mp.txsBuf) >= mp.max {
+	if len(mp.txs) >= mp.max {
 		mp.mu.RUnlock()
 		logx.Error("MEMPOOL", "Dropping full mempool")
 		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
@@ -88,13 +88,13 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	defer mp.mu.Unlock()
 
 	// Double-check after acquiring write lock (for race conditions)
-	if _, exists := mp.setDedupTxHashes[txDedupHash]; exists {
+	if _, exists := mp.dedupTxHashSet[txDedupHash]; exists {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 	}
 
-	if len(mp.txsBuf) >= mp.max {
+	if len(mp.txs) >= mp.max {
 		logx.Error("MEMPOOL", "Dropping full mempool (double-check)")
 		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
 		return "", errors.NewError(errors.ErrCodeMempoolFull, errors.ErrMsgMempoolFull)
@@ -108,11 +108,11 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	logx.Info("MEMPOOL", fmt.Sprintf("Adding tx %+v", tx))
 
-	// Always add to txsBuf and txOrder for compatibility
-	mp.txsBuf[txHash] = tx
+	// Always add to txs and txOrder for compatibility
+	mp.txs[txHash] = tx
 	monitoring.SetMempoolSize(mp.Size())
 	mp.txOrder = append(mp.txOrder, txHash)
-	mp.setDedupTxHashes[txDedupHash] = struct{}{}
+	mp.dedupTxHashSet[txDedupHash] = struct{}{}
 
 	// Add to mapSenderTxs
 	sender := tx.Sender
@@ -172,7 +172,7 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	// Subtract amounts from existing mempool transactions from the same sender
 	if txHashes, exists := mp.mapSenderTxs[tx.Sender]; exists {
 		for txHash := range txHashes {
-			if tx, exists := mp.txsBuf[txHash]; exists {
+			if tx, exists := mp.txs[txHash]; exists {
 				availableBalance.Sub(availableBalance, tx.Amount)
 			}
 		}
@@ -185,12 +185,12 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	return nil
 }
 
-func (mp *Mempool) ValidateNonce(txs []*transaction.Transaction) error {
+func (mp *Mempool) validateNonce(txs []*transaction.Transaction) error {
+	minNonce := uint64(1)
+	if mp.netCurrentSlot > NONCE_WINDOW {
+		minNonce = mp.netCurrentSlot - NONCE_WINDOW
+	}
 	for _, tx := range txs {
-		minNonce := uint64(1)
-		if mp.netCurrentSlot > NONCE_WINDOW {
-			minNonce = mp.netCurrentSlot - NONCE_WINDOW
-		}
 		if tx.Nonce < minNonce {
 			return errors.NewError(errors.ErrCodeNonceTooLow, errors.ErrMsgNonceTooLow)
 		}
@@ -201,7 +201,7 @@ func (mp *Mempool) ValidateNonce(txs []*transaction.Transaction) error {
 	return nil
 }
 
-func (mp *Mempool) ValidateDuplicateTxs(txs []*transaction.Transaction) error {
+func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	for _, tx := range txs {
 		if mp.dedupService.IsDuplicate(tx.DedupHash()) {
 			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
@@ -246,12 +246,12 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	}
 
 	// 4. Check nonce
-	if err := mp.ValidateNonce([]*transaction.Transaction{tx}); err != nil {
+	if err := mp.validateNonce([]*transaction.Transaction{tx}); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return err
 	}
 	// 5. Check duplicate transaction
-	if err := mp.ValidateDuplicateTxs([]*transaction.Transaction{tx}); err != nil {
+	if err := mp.validateDuplicateTxs([]*transaction.Transaction{tx}); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return err
 	}
@@ -270,10 +270,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transaction {
 	mp.mu.Lock()
 
-	n := batchSize
-	if len(mp.txOrder) < n {
-		n = len(mp.txOrder)
-	}
+	n := min(batchSize, len(mp.txOrder))
 
 	selected := mp.txOrder[:n]
 	mp.txOrder = mp.txOrder[n:]
@@ -282,7 +279,7 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 	dedupTxHashes := make([]string, 0, n)
 
 	for _, txHash := range selected {
-		tx, exists := mp.txsBuf[txHash]
+		tx, exists := mp.txs[txHash]
 		if !exists {
 			continue
 		}
@@ -291,8 +288,8 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 		dedupTxHashes = append(dedupTxHashes, tx.DedupHash())
 
 		// Remove from main buffer + dedup set
-		delete(mp.txsBuf, txHash)
-		delete(mp.setDedupTxHashes, tx.DedupHash())
+		delete(mp.txs, txHash)
+		delete(mp.dedupTxHashSet, tx.DedupHash())
 
 		// Remove from mapSenderTxs
 		if senderMap, ok := mp.mapSenderTxs[tx.Sender]; ok {
@@ -301,13 +298,6 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 				delete(mp.mapSenderTxs, tx.Sender)
 			}
 		}
-	}
-
-	// Optional: trim slice if capacity >> length
-	if cap(mp.txOrder) > 2*len(mp.txOrder) {
-		newOrder := make([]string, len(mp.txOrder))
-		copy(newOrder, mp.txOrder)
-		mp.txOrder = newOrder
 	}
 
 	monitoring.SetMempoolSize(mp.Size())
@@ -327,7 +317,7 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 
 // Size returns current size of mempool without locking
 func (mp *Mempool) Size() int {
-	return len(mp.txsBuf)
+	return len(mp.txs)
 }
 
 // New method: GetTransactionCount - read-only operation
@@ -337,7 +327,7 @@ func (mp *Mempool) GetTransactionCount() int {
 
 // New method: GetTransaction - retrieve transaction data (read-only)
 func (mp *Mempool) GetTransaction(txHash string) (*transaction.Transaction, bool) {
-	data, exists := mp.txsBuf[txHash]
+	data, exists := mp.txs[txHash]
 	return data, exists
 }
 
@@ -347,10 +337,6 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 	result := make([]string, len(mp.txOrder))
 	copy(result, mp.txOrder)
 	return result
-}
-
-func (mp *Mempool) GetDedupService() *DedupService {
-	return mp.dedupService
 }
 
 func (mp *Mempool) GetCurrentSlot() uint64 {
@@ -365,14 +351,26 @@ func (mp *Mempool) SetCurrentSlot(slot uint64) {
 	mp.netCurrentSlot = slot
 }
 
+func (mp *Mempool) VerifyBlockTransactions(txs []*transaction.Transaction) error {
+	if err := mp.validateNonce(txs); err != nil {
+		return err
+	}
+
+	if err := mp.validateDuplicateTxs(txs); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (mp *Mempool) BlockCleanup(slot uint64, txHashSet map[string]struct{}) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 
 	for txHash := range txHashSet {
-		if tx, exists := mp.txsBuf[txHash]; exists {
-			delete(mp.setDedupTxHashes, tx.DedupHash())
-			delete(mp.txsBuf, txHash)
+		if tx, exists := mp.txs[txHash]; exists {
+			delete(mp.dedupTxHashSet, tx.DedupHash())
+			delete(mp.txs, txHash)
 		}
 	}
 

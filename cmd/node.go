@@ -204,7 +204,7 @@ func runNode() {
 	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
 
 	// Initialize dedup service
-	dedupService := mempool.NewDedupService()
+	dedupService := mempool.NewDedupService(bs, ts)
 
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify)
@@ -214,7 +214,7 @@ func runNode() {
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, zkVerify)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, dedupService, recorder, zkVerify)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
@@ -228,39 +228,7 @@ func runNode() {
 		libP2pClient.OnStartValidator = func() { val.Run() }
 		libP2pClient.OnStartLoadTxHashes = func() {
 			latestSlot := bs.GetLatestFinalizedSlot()
-			if latestSlot < 1 {
-				return
-			}
-
-			startSlot := uint64(1)
-			if latestSlot > mempool.DEDUP_SLOT_GAP {
-				startSlot = latestSlot - mempool.DEDUP_SLOT_GAP + 1
-			}
-
-			loadSlots := make([]uint64, 0, latestSlot-startSlot+1)
-			for i := startSlot; i <= latestSlot; i++ {
-				loadSlots = append(loadSlots, i)
-			}
-
-			mapSlotBlock, err := bs.GetBatch(loadSlots)
-			if err != nil {
-				return
-			}
-
-			for slot, block := range mapSlotBlock {
-				var txDedupHashes []string
-				for _, entry := range block.Entries {
-					txs, err := ts.GetBatch(entry.TxHashes)
-					if err != nil {
-						continue
-					}
-					for _, tx := range txs {
-						txDedupHashes = append(txDedupHashes, tx.DedupHash())
-					}
-				}
-				dedupService.Add(slot, txDedupHashes)
-			}
-
+			dedupService.LoadTxHashes(latestSlot)
 			mp.SetCurrentSlot(latestSlot)
 		}
 	}
@@ -424,7 +392,7 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *c
 
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
 	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
-	acctSvc := service.NewAccountService(ld, mp, txTracker)
+	acctSvc := service.NewAccountService(ld, bs, txTracker)
 	healthSvc := service.NewHealthService(ld, bs, mp, val, nodeConfig.PubKey)
 
 	// Start gRPC server

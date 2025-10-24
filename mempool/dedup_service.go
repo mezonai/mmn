@@ -2,6 +2,8 @@ package mempool
 
 import (
 	"sync"
+
+	"github.com/mezonai/mmn/store"
 )
 
 const (
@@ -10,25 +12,69 @@ const (
 
 type DedupService struct {
 	mu                   sync.RWMutex
-	setTxDedupHashes     map[string]struct{}
+	txDedupHashSet       map[string]struct{}
 	mapSlotTxDedupHashes map[uint64]map[string]struct{}
+
+	bs store.BlockStore
+	ts store.TxStore
 }
 
-func NewDedupService() *DedupService {
+func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
 	return &DedupService{
-		setTxDedupHashes:     make(map[string]struct{}),
+		txDedupHashSet:       make(map[string]struct{}),
 		mapSlotTxDedupHashes: make(map[uint64]map[string]struct{}),
+		bs:                   bs,
+		ts:                   ts,
+	}
+}
+
+func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
+	if latestSlot < 1 {
+		return
+	}
+
+	startSlot := uint64(1)
+	if latestSlot > DEDUP_SLOT_GAP {
+		startSlot = latestSlot - DEDUP_SLOT_GAP + 1
+	}
+
+	loadSlots := make([]uint64, 0, latestSlot-startSlot+1)
+	for i := startSlot; i <= latestSlot; i++ {
+		loadSlots = append(loadSlots, i)
+	}
+
+	mapSlotBlock, err := ds.bs.GetBatch(loadSlots)
+	if err != nil {
+		return
+	}
+
+	for slot, block := range mapSlotBlock {
+		var txDedupHashes []string
+		var txHashes []string
+		for _, entry := range block.Entries {
+			txHashes = append(txHashes, entry.TxHashes...)
+		}
+
+		txs, err := ds.ts.GetBatch(txHashes)
+		if err != nil {
+			continue
+		}
+		for _, tx := range txs {
+			txDedupHashes = append(txDedupHashes, tx.DedupHash())
+		}
+
+		ds.Add(slot, txDedupHashes)
 	}
 }
 
 func (ds *DedupService) IsDuplicate(txDedupHash string) bool {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
-	_, exists := ds.setTxDedupHashes[txDedupHash]
+	_, exists := ds.txDedupHashSet[txDedupHash]
 	return exists
 }
 
-func (ds *DedupService) Add(slot uint64, TxDedupHashes []string) {
+func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
@@ -37,15 +83,15 @@ func (ds *DedupService) Add(slot uint64, TxDedupHashes []string) {
 		oldSlot := slot - DEDUP_SLOT_GAP
 		if oldTxDedupHashes, exists := ds.mapSlotTxDedupHashes[oldSlot]; exists {
 			for oldTxDedupHash := range oldTxDedupHashes {
-				delete(ds.setTxDedupHashes, oldTxDedupHash)
+				delete(ds.txDedupHashSet, oldTxDedupHash)
 			}
 			delete(ds.mapSlotTxDedupHashes, oldSlot)
 		}
 	}
 
 	// Add new tx hashes
-	for _, txDedupHash := range TxDedupHashes {
-		ds.setTxDedupHashes[txDedupHash] = struct{}{}
+	for _, txDedupHash := range txDedupHashes {
+		ds.txDedupHashSet[txDedupHash] = struct{}{}
 		if _, exists := ds.mapSlotTxDedupHashes[slot]; !exists {
 			ds.mapSlotTxDedupHashes[slot] = make(map[string]struct{})
 		}
