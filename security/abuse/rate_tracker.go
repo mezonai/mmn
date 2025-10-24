@@ -2,6 +2,8 @@ package abuse
 
 import (
 	"time"
+
+	"github.com/mezonai/mmn/exception"
 )
 
 func DefaultRateConfig() *RateConfig {
@@ -24,7 +26,9 @@ func NewRateTracker(config *RateConfig) *RateTracker {
 		config:      config,
 	}
 
-	go rt.cleanupRoutine()
+	exception.SafeGo("RateTrackerCleanup", func() {
+		rt.cleanupRoutine()
+	})
 
 	return rt
 }
