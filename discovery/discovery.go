@@ -10,6 +10,7 @@ import (
 	libp2p_host "github.com/libp2p/go-libp2p/core/host"
 	libp2p_peer "github.com/libp2p/go-libp2p/core/peer"
 	libp2p_dis "github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	"github.com/mezonai/mmn/logx"
 )
 
 // Discovery is the interface for the underlying peer discovery protocol.
@@ -54,9 +55,12 @@ func (d *dhtDiscovery) Start() error {
 
 // Stop stop the dhtDiscovery service
 func (d *dhtDiscovery) Close() error {
-	d.dht.Close()
+	err := d.dht.Close()
+	if err != nil {
+		logx.Error("DHTDISCOVERY", "Failed to close dht:", err)
+	}
 	d.cancel()
-	return nil
+	return err
 }
 
 // Advertise advertises a service

@@ -89,7 +89,12 @@ func transferToken(transferConfig TransferConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to create grpc client: %w", err)
 	}
-	defer grpcClient.Close()
+	defer func() {
+		err := grpcClient.Close()
+		if err != nil {
+			logx.Error("TRANSFER CLI", "Failed to close grpc client: ", err)
+		}
+	}()
 
 	// Get sender account info to get current nonce
 	ctx := context.Background()

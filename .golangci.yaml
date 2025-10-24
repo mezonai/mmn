@@ -21,8 +21,14 @@ linters:
     - unparam
     - whitespace
 
-  disable:
-    - errcheck
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*db.DatabaseBatch).Close
+      # Display function signature instead of selector.
+      verbose: true
 
   exclusions:
     paths:

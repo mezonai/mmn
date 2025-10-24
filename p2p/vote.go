@@ -40,7 +40,11 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 			}
 
 			if ln.onVoteReceived != nil {
-				ln.onVoteReceived(&vote)
+				err := ln.onVoteReceived(&vote)
+				if err != nil {
+					logx.Error("NETWORK:VOTE", "Failed to process vote: ", err)
+					continue
+				}
 			}
 		}
 	}
@@ -53,7 +57,7 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 	}
 
 	if ln.topicVotes != nil {
-		ln.topicVotes.Publish(ctx, data)
+		return ln.topicVotes.Publish(ctx, data)
 	}
 	return nil
 }

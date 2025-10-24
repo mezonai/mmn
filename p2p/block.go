@@ -49,7 +49,11 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 
 			if blk != nil && ln.onBlockReceived != nil {
 				logx.Info("NETWORK:BLOCK", "Received block from peer:", msg.ReceivedFrom.String(), "slot:", blk.Slot)
-				ln.onBlockReceived(blk)
+				err := ln.onBlockReceived(blk)
+				if err != nil {
+					logx.Error("NETWORK:BLOCK", "Failed to process block:", err)
+					continue
+				}
 			}
 		}
 	}

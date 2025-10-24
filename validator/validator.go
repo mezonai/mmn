@@ -250,10 +250,9 @@ func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) err
 	return nil
 }
 
-func (v *Validator) ForceResetPoh(seedHash [32]byte, slot uint64) error {
+func (v *Validator) ForceResetPoh(seedHash [32]byte, slot uint64) {
 	logx.Info("VALIDATOR", fmt.Sprintf("Force reset POH to latest slot %d", slot))
 	v.Recorder.Reset(seedHash, slot)
-	return nil
 }
 
 func (v *Validator) peekPendingTxs(size int) []*transaction.Transaction {

@@ -83,7 +83,10 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 		}
 
 		data, _ := jsonx.Marshal(info)
-		s.Write(data)
+		_, err = s.Write(data)
+		if err != nil {
+			logx.Error("BOOTSTRAP NODE", "Failed to write node info to stream:", err)
+		}
 	})
 
 	// Track which bootstrap local addr a peer dialed so we can craft relay addrs
@@ -160,7 +163,10 @@ func openSteam(peerID peer.ID, h host.Host) {
 		"addrs":       addrStrings(h.Addrs()),
 	}
 	data, _ := jsonx.Marshal(info)
-	stream.Write(data)
+	_, err = stream.Write(data)
+	if err != nil {
+		logx.Error("BOOTSTRAP NODE", "Failed to write node info to stream:", err)
+	}
 }
 
 func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, localBootstrapAddr ma.Multiaddr) {

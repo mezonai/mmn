@@ -104,6 +104,9 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 	toSlot := fromSlot + SyncBlocksBatchSize - 1
 
 	requestID := GenerateSyncRequestID()
+	if requestID == "" {
+		return fmt.Errorf("failed to generate sync request ID")
+	}
 
 	// new track
 	tracker := NewSyncRequestTracker(requestID, fromSlot, toSlot)
@@ -139,6 +142,9 @@ func (ln *Libp2pNetwork) RequestBlockSync(ctx context.Context, fromSlot uint64) 
 
 func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64) error {
 	requestID := GenerateSyncRequestID()
+	if requestID == "" {
+		return fmt.Errorf("failed to generate sync request ID")
+	}
 	tracker := NewSyncRequestTracker(requestID, slot, slot)
 	ln.syncTrackerMu.Lock()
 	ln.syncRequests[requestID] = tracker
@@ -163,7 +169,10 @@ func (ln *Libp2pNetwork) RequestSingleBlockSync(ctx context.Context, slot uint64
 }
 
 func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
-	ln.RequestLatestSlotFromPeers(ctx)
+	_, err := ln.RequestLatestSlotFromPeers(ctx)
+	if err != nil {
+		logx.Error("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
+	}
 	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
 	return ln.RequestBlockSync(ctx, localLatestSlot+1)
 }

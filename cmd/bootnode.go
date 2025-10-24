@@ -73,7 +73,10 @@ func runBootstrap() {
 		Bootstrap:  true, // set false if you don't want to bootstrap
 	}
 
-	bootstrap.CreateNode(ctx, cfg, bootstrapP2pPort)
+	_, _, err = bootstrap.CreateNode(ctx, cfg, bootstrapP2pPort)
+	if err != nil {
+		logx.Error("BOOTSTRAP NODE", "Failed to create bootstrap node:", err)
+	}
 
 	select {}
 }

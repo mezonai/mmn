@@ -235,7 +235,13 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 func (s *Server) Start() {
 	h := s.BuildHTTPHandler()
 	http.Handle("/", h)
-	go http.ListenAndServe(s.addr, nil)
+	exception.SafeGoWithPanic("StartJSONRPCServer", func() {
+		err := http.ListenAndServe(s.addr, nil)
+		if err != nil {
+			logx.Error("JSONRPC SERVER", fmt.Sprintf("Failed to serve JSON-RPC server: %v", err))
+			panic(err)
+		}
+	})
 }
 
 // SetCORSConfig allows configuring CORS settings

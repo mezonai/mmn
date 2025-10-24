@@ -107,7 +107,10 @@ func NewNetWork(
 		return nil, fmt.Errorf("failed to create custom discovery: %w", err)
 	}
 
-	customDiscovery.Advertise(ctx, AdvertiseName)
+	_, err = customDiscovery.Advertise(ctx, AdvertiseName)
+	if err != nil {
+		logx.Warn("NETWORK:SETUP", "Failed to advertise:", err)
+	}
 
 	ps, err := pubsub.NewGossipSub(ctx, h,
 		pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()),
@@ -149,7 +152,10 @@ func NewNetWork(
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
 		cancel()
-		h.Close()
+		closeErr := h.Close()
+		if closeErr != nil {
+			logx.Error("NETWORK:SETUP", "Failed to close host:", closeErr)
+		}
 		return nil, fmt.Errorf("failed to setup handlers: %w", err)
 	}
 
@@ -204,7 +210,10 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		ln.bootstrapPeerIDs[info.ID] = struct{}{}
 		ln.reserveViaPeer(ctx, info)
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
-			ln.RequestNodeInfo(bootstrapPeer, &info)
+			err := ln.RequestNodeInfo(bootstrapPeer, &info)
+			if err != nil {
+				logx.Error("NETWORK:REQUEST NODE INFO", "Failed to request node info:", err)
+			}
 		})
 
 		break
@@ -285,7 +294,10 @@ func createPublicAddresses(p2pPort string, publicIP string) (ma.Multiaddr, ma.Mu
 // this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {
 	ln.cancel()
-	ln.host.Close()
+	err := ln.host.Close()
+	if err != nil {
+		logx.Error("NETWORK:CLOSE", "Failed to close host: ", err)
+	}
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
@@ -393,7 +405,10 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 	// Request latest slot after a delay to allow peers to connect
 	exception.SafeGo("LatestSlotRequest(Initial)", func() {
 		time.Sleep(3 * time.Second) // Wait for peers to connect
-		ln.RequestLatestSlotFromPeers(ln.ctx)
+		_, err := ln.RequestLatestSlotFromPeers(ln.ctx)
+		if err != nil {
+			logx.Error("NETWORK:LATEST SLOT", "Failed to request latest slot from peers: ", err)
+		}
 	})
 
 	// Periodic latest slot request every 30 seconds
@@ -403,7 +418,10 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 		for {
 			select {
 			case <-ticker.C:
-				ln.RequestLatestSlotFromPeers(ln.ctx)
+				_, err := ln.RequestLatestSlotFromPeers(ln.ctx)
+				if err != nil {
+					logx.Error("NETWORK:LATEST SLOT", "Failed to request latest slot from peers: ", err)
+				}
 			case <-ln.ctx.Done():
 				return
 			}

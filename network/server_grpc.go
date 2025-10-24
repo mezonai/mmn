@@ -89,8 +89,12 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *val
 		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", addr, err))
 		return nil
 	}
-	exception.SafeGo("Grpc Server", func() {
-		grpcSrv.Serve(lis)
+	exception.SafeGoWithPanic("Grpc Server", func() {
+		err = grpcSrv.Serve(lis)
+		if err != nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("Failed to serve gRPC server: %v", err))
+			panic(err)
+		}
 	})
 	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
