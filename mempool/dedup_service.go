@@ -3,6 +3,7 @@ package mempool
 import (
 	"sync"
 
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 )
 
@@ -45,6 +46,7 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 
 	mapSlotBlock, err := ds.bs.GetBatch(loadSlots)
 	if err != nil {
+		logx.Error("DEDUP SERVICE:LOAD TX HASHES", "Error: ", err)
 		return
 	}
 
@@ -57,6 +59,7 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 
 		txs, err := ds.ts.GetBatch(txHashes)
 		if err != nil {
+			logx.Error("DEDUP SERVICE:LOAD TX HASHES", "Error: ", err)
 			continue
 		}
 		for _, tx := range txs {
@@ -78,17 +81,6 @@ func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
 
-	// Clean up old slot tx hashes
-	if slot > DEDUP_SLOT_GAP {
-		oldSlot := slot - DEDUP_SLOT_GAP
-		if oldTxDedupHashes, exists := ds.slotTxDedupHashSet[oldSlot]; exists {
-			for oldTxDedupHash := range oldTxDedupHashes {
-				delete(ds.txDedupHashSet, oldTxDedupHash)
-			}
-			delete(ds.slotTxDedupHashSet, oldSlot)
-		}
-	}
-
 	// Add new tx hashes
 	for _, txDedupHash := range txDedupHashes {
 		ds.txDedupHashSet[txDedupHash] = struct{}{}
@@ -96,5 +88,23 @@ func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 			ds.slotTxDedupHashSet[slot] = make(map[string]struct{})
 		}
 		ds.slotTxDedupHashSet[slot][txDedupHash] = struct{}{}
+	}
+}
+
+func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
+	if slot <= DEDUP_SLOT_GAP {
+		return
+	}
+
+	// Clean up old slot tx hashes
+	oldSlot := slot - DEDUP_SLOT_GAP
+	if oldTxDedupHashes, exists := ds.slotTxDedupHashSet[oldSlot]; exists {
+		for oldTxDedupHash := range oldTxDedupHashes {
+			delete(ds.txDedupHashSet, oldTxDedupHash)
+		}
+		delete(ds.slotTxDedupHashSet, oldSlot)
 	}
 }

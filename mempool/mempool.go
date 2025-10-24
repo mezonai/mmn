@@ -24,15 +24,15 @@ const (
 )
 
 type Mempool struct {
-	mu             sync.RWMutex // Changed to RWMutex for better concurrency
-	txs            map[string]*transaction.Transaction
-	txOrder        []string                       // Maintain FIFO order
-	dedupTxHashSet map[string]struct{}            // Set for deduplication
-	mapSenderTxs   map[string]map[string]struct{} // sender -> txHash
-	max            int
-	netCurrentSlot uint64
-	broadcaster    interfaces.Broadcaster
-	ledger         interfaces.Ledger
+	mu              sync.RWMutex // Changed to RWMutex for better concurrency
+	txs             map[string]*transaction.Transaction
+	txOrder         []string                       // Maintain FIFO order
+	dedupTxHashSet  map[string]struct{}            // Set for deduplication
+	senderTxHashSet map[string]map[string]struct{} // sender -> txHash
+	max             int
+	netCurrentSlot  uint64
+	broadcaster     interfaces.Broadcaster
+	ledger          interfaces.Ledger
 
 	dedupService *DedupService
 	eventRouter  *events.EventRouter                    // Event router for transaction status updates
@@ -43,14 +43,14 @@ type Mempool struct {
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
 	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
 	return &Mempool{
-		txs:            make(map[string]*transaction.Transaction, max),
-		txOrder:        make([]string, 0, max),
-		dedupTxHashSet: make(map[string]struct{}),
-		mapSenderTxs:   make(map[string]map[string]struct{}),
-		max:            max,
-		netCurrentSlot: 0,
-		broadcaster:    broadcaster,
-		ledger:         ledger,
+		txs:             make(map[string]*transaction.Transaction, max),
+		txOrder:         make([]string, 0, max),
+		dedupTxHashSet:  make(map[string]struct{}),
+		senderTxHashSet: make(map[string]map[string]struct{}),
+		max:             max,
+		netCurrentSlot:  0,
+		broadcaster:     broadcaster,
+		ledger:          ledger,
 
 		dedupService: dedupService,
 		eventRouter:  eventRouter,
@@ -116,10 +116,10 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Add to mapSenderTxs
 	sender := tx.Sender
-	if _, exists := mp.mapSenderTxs[sender]; !exists {
-		mp.mapSenderTxs[sender] = make(map[string]struct{})
+	if _, exists := mp.senderTxHashSet[sender]; !exists {
+		mp.senderTxHashSet[sender] = make(map[string]struct{})
 	}
-	mp.mapSenderTxs[sender][txHash] = struct{}{}
+	mp.senderTxHashSet[sender][txHash] = struct{}{}
 
 	// Publish event for transaction status tracking
 	if mp.eventRouter != nil {
@@ -170,7 +170,7 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	availableBalance := new(uint256.Int).Set(senderAccount.Balance)
 
 	// Subtract amounts from existing mempool transactions from the same sender
-	if txHashes, exists := mp.mapSenderTxs[tx.Sender]; exists {
+	if txHashes, exists := mp.senderTxHashSet[tx.Sender]; exists {
 		for txHash := range txHashes {
 			if tx, exists := mp.txs[txHash]; exists {
 				availableBalance.Sub(availableBalance, tx.Amount)
@@ -212,7 +212,7 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 
 // Stateless validation, simple for tx
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
-	// 1. Verify signature (skip for testing if signature is "test_signature")
+	// 1. Verify signature
 	if !tx.Verify(mp.zkVerify) {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
 		return errors.NewError(errors.ErrCodeInvalidSignature, errors.ErrMsgInvalidSignature)
@@ -224,24 +224,15 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
-	// 2.1. Check memo length (max 64 characters)
+	// 3. Check memo length (max 64 characters)
 	if len(tx.TextData) > MAX_MEMO_CHARACTORS {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTORS, len(tx.TextData))
 	}
 
-	// 3. Check sender account exists and get current state
-	if mp.ledger == nil {
-		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
-	}
-
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
-	if err != nil {
+	if err != nil || senderAccount == nil {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
-	}
-	if senderAccount == nil {
-		monitoring.RecordRejectedTx(monitoring.TxSenderNotExist)
 		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 
@@ -292,10 +283,10 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 		delete(mp.dedupTxHashSet, tx.DedupHash())
 
 		// Remove from mapSenderTxs
-		if senderMap, ok := mp.mapSenderTxs[tx.Sender]; ok {
+		if senderMap, ok := mp.senderTxHashSet[tx.Sender]; ok {
 			delete(senderMap, txHash)
 			if len(senderMap) == 0 {
-				delete(mp.mapSenderTxs, tx.Sender)
+				delete(mp.senderTxHashSet, tx.Sender)
 			}
 		}
 	}
@@ -384,7 +375,7 @@ func (mp *Mempool) BlockCleanup(slot uint64, txHashSet map[string]struct{}) {
 	mp.txOrder = newTxOrder
 
 	removedCount := 0
-	for sender, txSet := range mp.mapSenderTxs {
+	for sender, txSet := range mp.senderTxHashSet {
 		if removedCount >= len(txSet) {
 			break
 		}
@@ -396,7 +387,7 @@ func (mp *Mempool) BlockCleanup(slot uint64, txHashSet map[string]struct{}) {
 			}
 		}
 		if len(txSet) == 0 {
-			delete(mp.mapSenderTxs, sender)
+			delete(mp.senderTxHashSet, sender)
 		}
 	}
 
