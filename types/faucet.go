@@ -34,7 +34,6 @@ type MultisigTx struct {
 	Status     string              `json:"status"` // pending, executed, failed
 }
 
-// Hash returns the hash of the multisig transaction
 func (tx *MultisigTx) Hash() string {
 	hashData := struct {
 		Type        int    `json:"type"`
@@ -83,9 +82,9 @@ type ServiceStats struct {
 	Cooldown            time.Duration `json:"cooldown"`
 }
 
-type ApproverManagementRequest struct {
-	Action     string            `json:"action"`
-	TargetAddr string            `json:"target_addr"`
-	Signatures map[string]string `json:"signatures"`
+type WhitelistManagementRequest struct {
+	Action     string            `json:"action"`      // ADD_APPROVER, REMOVE_APPROVER, ADD_PROPOSER, REMOVE_PROPOSER
+	TargetAddr string            `json:"target_addr"` // add/remove
+	Signatures map[string]string `json:"signatures"`  // signer_address -> signature
 	CreatedAt  time.Time         `json:"created_at"`
 }

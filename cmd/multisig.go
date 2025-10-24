@@ -60,6 +60,28 @@ var addApproverCmd = &cobra.Command{
 	},
 }
 
+var removeApproverCmd = &cobra.Command{
+	Use:   "remove-approver",
+	Short: "Remove address from approver whitelist",
+	Long:  `Remove an address from the approver whitelist. Only existing approvers can remove approvers.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := removeApprover(multisigConfig); err != nil {
+			logx.Error("MULTISIG CLI", err)
+		}
+	},
+}
+
+var removeProposerCmd = &cobra.Command{
+	Use:   "remove-proposer",
+	Short: "Remove address from proposer whitelist",
+	Long:  `Remove an address from the proposer whitelist. Only existing approvers can remove proposers.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := removeProposer(multisigConfig); err != nil {
+			logx.Error("MULTISIG CLI", err)
+		}
+	},
+}
+
 var createProposalCmd = &cobra.Command{
 	Use:   "create-proposal",
 	Short: "Create a new faucet proposal",
@@ -119,6 +141,8 @@ func init() {
 	rootCmd.AddCommand(multisigCmd)
 	multisigCmd.AddCommand(addProposerCmd)
 	multisigCmd.AddCommand(addApproverCmd)
+	multisigCmd.AddCommand(removeApproverCmd)
+	multisigCmd.AddCommand(removeProposerCmd)
 	multisigCmd.AddCommand(createProposalCmd)
 	multisigCmd.AddCommand(getProposalsCmd)
 	multisigCmd.AddCommand(approveCmd)
@@ -131,6 +155,8 @@ func init() {
 
 	addProposerCmd.Flags().StringVarP(&multisigConfig.Address, "address", "a", "", "address to add to proposer whitelist")
 	addApproverCmd.Flags().StringVarP(&multisigConfig.Address, "address", "a", "", "address to add to approver whitelist")
+	removeApproverCmd.Flags().StringVarP(&multisigConfig.Address, "address", "a", "", "address to remove from approver whitelist")
+	removeProposerCmd.Flags().StringVarP(&multisigConfig.Address, "address", "a", "", "address to remove from proposer whitelist")
 
 	createProposalCmd.Flags().StringVarP(&multisigConfig.MultisigAddr, "multisig-addr", "m", "", "multisig address")
 	createProposalCmd.Flags().StringVarP(&multisigConfig.Amount, "amount", "a", "", "amount to transfer")
@@ -257,6 +283,82 @@ func addApprover(config MultisigConfig) error {
 		fmt.Printf("✅ Successfully added %s to approver whitelist\n", config.Address)
 	} else {
 		return fmt.Errorf("failed to add approver: %s", resp.Message)
+	}
+
+	return nil
+}
+
+func removeApprover(config MultisigConfig) error {
+	if config.Address == "" {
+		return fmt.Errorf("--address is required")
+	}
+
+	client, err := createMultisigClient()
+	if err != nil {
+		return err
+	}
+
+	privKey, pubKeyStr, err := loadPrivateKey()
+	if err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.REMOVE_APPROVER)
+	signature := signMessage(message, privKey)
+
+	ctx := context.Background()
+	resp, err := client.RemoveFromApproverWhitelist(ctx, &pb.RemoveFromApproverWhitelistRequest{
+		Address:      config.Address,
+		SignerPubkey: pubKeyStr,
+		Signature:    signature,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to remove approver: %w", err)
+	}
+
+	if resp.Success {
+		fmt.Printf("✅ Successfully removed %s from approver whitelist\n", config.Address)
+	} else {
+		return fmt.Errorf("failed to remove approver: %s", resp.Message)
+	}
+
+	return nil
+}
+
+func removeProposer(config MultisigConfig) error {
+	if config.Address == "" {
+		return fmt.Errorf("--address is required")
+	}
+
+	client, err := createMultisigClient()
+	if err != nil {
+		return err
+	}
+
+	privKey, pubKeyStr, err := loadPrivateKey()
+	if err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.REMOVE_PROPOSER)
+	signature := signMessage(message, privKey)
+
+	ctx := context.Background()
+	resp, err := client.RemoveFromProposerWhitelist(ctx, &pb.RemoveFromProposerWhitelistRequest{
+		Address:      config.Address,
+		SignerPubkey: pubKeyStr,
+		Signature:    signature,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to remove proposer: %w", err)
+	}
+
+	if resp.Success {
+		fmt.Printf("✅ Successfully removed %s from proposer whitelist\n", config.Address)
+	} else {
+		return fmt.Errorf("failed to remove proposer: %s", resp.Message)
 	}
 
 	return nil

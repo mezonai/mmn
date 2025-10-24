@@ -5,7 +5,6 @@ import (
 )
 
 
-
 type MultisigFaucetStoreInterface interface {
 	StoreMultisigConfig(config *types.MultisigConfig) error
 	GetMultisigConfig(address string) (*types.MultisigConfig, error)
@@ -48,3 +47,12 @@ var (
 	STATUS_PENDING  = "PENDING"
 	STATUS_FAILED   = "FAILED"
 )
+
+
+// # Proposer management (cần multisig approval)
+// ./mmn multisig add-proposer --address "ADDRESS" --private-key-file "key.txt"
+// ./mmn multisig remove-proposer --address "ADDRESS" --private-key-file "key.txt"
+
+// # Approver management (cần multisig approval)  
+// ./mmn multisig add-approver --address "ADDRESS" --private-key-file "key.txt"
+// ./mmn multisig remove-approver --address "ADDRESS" --private-key-file "key.txt"

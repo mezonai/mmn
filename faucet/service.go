@@ -26,7 +26,8 @@ type MultisigFaucetService struct {
 	configs                 map[string]*types.MultisigConfig
 	pendingTxs              map[string]*types.MultisigTx
 	pendingWhitelistTxs     map[string]*types.MultisigTx
-	pendingApproverRequests map[string]*types.ApproverManagementRequest
+	pendingApproverRequests map[string]*types.WhitelistManagementRequest
+	pendingProposerRequests map[string]*types.WhitelistManagementRequest
 	mu                      sync.RWMutex
 	maxAmount               *uint256.Int
 	cooldown                time.Duration
@@ -43,7 +44,8 @@ func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore s
 		configs:                 make(map[string]*types.MultisigConfig),
 		pendingTxs:              make(map[string]*types.MultisigTx),
 		pendingWhitelistTxs:     make(map[string]*types.MultisigTx),
-		pendingApproverRequests: make(map[string]*types.ApproverManagementRequest),
+		pendingApproverRequests: make(map[string]*types.WhitelistManagementRequest),
+		pendingProposerRequests: make(map[string]*types.WhitelistManagementRequest),
 		maxAmount:               maxAmount,
 		cooldown:                cooldown,
 		lastRequest:             make(map[string]time.Time),
@@ -228,7 +230,7 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 
 	request, exists := s.pendingApproverRequests[requestKey]
 	if !exists {
-		request = &types.ApproverManagementRequest{
+		request = &types.WhitelistManagementRequest{
 			Action:     ADD_APPROVER,
 			TargetAddr: address,
 			Signatures: make(map[string]string),
@@ -270,7 +272,7 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 
 	request, exists := s.pendingApproverRequests[requestKey]
 	if !exists {
-		request = &types.ApproverManagementRequest{
+		request = &types.WhitelistManagementRequest{
 			Action:     REMOVE_APPROVER,
 			TargetAddr: address,
 			Signatures: make(map[string]string),
@@ -317,7 +319,32 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 		return fmt.Errorf("caller %s is not authorized to manage proposer whitelist", callerAddress)
 	}
 
-	s.proposerWhitelist[address] = true
+	requestKey := fmt.Sprintf("add_proposer:%s", address)
+
+	request, exists := s.pendingProposerRequests[requestKey]
+	if !exists {
+		request = &types.WhitelistManagementRequest{
+			Action:     ADD_PROPOSER,
+			TargetAddr: address,
+			Signatures: make(map[string]string),
+			CreatedAt:  time.Now(),
+		}
+		s.pendingProposerRequests[requestKey] = request
+	}
+
+	request.Signatures[callerAddress] = hex.EncodeToString(signature)
+
+	configs := s.getAllMultisigConfigs()
+	if len(configs) == 0 {
+		return fmt.Errorf("no multisig config found")
+	}
+	config := configs[0]
+
+	if len(request.Signatures) >= config.Threshold {
+		s.proposerWhitelist[address] = true
+		delete(s.pendingProposerRequests, requestKey)
+	}
+
 	return nil
 }
 
@@ -325,7 +352,7 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_APPROVER)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_PROPOSER)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -334,7 +361,32 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 		return fmt.Errorf("caller %s is not authorized to manage proposer whitelist", callerAddress)
 	}
 
-	delete(s.proposerWhitelist, address)
+	requestKey := fmt.Sprintf("remove_proposer:%s", address)
+
+	request, exists := s.pendingProposerRequests[requestKey]
+	if !exists {
+		request = &types.WhitelistManagementRequest{
+			Action:     REMOVE_PROPOSER,
+			TargetAddr: address,
+			Signatures: make(map[string]string),
+			CreatedAt:  time.Now(),
+		}
+		s.pendingProposerRequests[requestKey] = request
+	}
+
+	request.Signatures[callerAddress] = hex.EncodeToString(signature)
+
+	configs := s.getAllMultisigConfigs()
+	if len(configs) == 0 {
+		return fmt.Errorf("no multisig config found")
+	}
+	config := configs[0]
+
+	if len(request.Signatures) >= config.Threshold {
+		delete(s.proposerWhitelist, address)
+		delete(s.pendingProposerRequests, requestKey)
+	} 
+
 	return nil
 }
 
