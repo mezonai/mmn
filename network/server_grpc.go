@@ -50,7 +50,7 @@ type server struct {
 	txTracker         interfaces.TransactionTrackerInterface // Transaction state tracker
 	txSvc             interfaces.TxService
 	acctSvc           interfaces.AccountService
-	multisigFaucetSvc *faucet.MultisigFaucetService // Multisig faucet service
+	multisigFaucetSvc *faucet.MultisigFaucetService 
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
@@ -614,11 +614,6 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 			Message: "Multisig faucet service not initialized",
 		}, nil
 	}
-
-	logx.Info("MultisigFaucetGRPC", "AddSignature called",
-		"txHash", req.TxHash,
-		"signerPubkey", req.SignerPubkey)
-
 	// Decode signature
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
@@ -679,7 +674,7 @@ func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMu
 	if status == "" {
 		status = "pending"
 	}
-	
+
 	// Override status based on signature count if not executed
 	if status != "executed" && status != "failed" {
 		if len(tx.Signatures) >= tx.Config.Threshold {

@@ -4,62 +4,30 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"sort"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/types"
 	"github.com/mr-tron/base58"
 )
 
-var (
-	ErrInvalidThreshold        = errors.New("multisig: threshold must be > 0 and <= number of signers")
-	ErrInvalidSigners          = errors.New("multisig: must have at least 2 signers")
-	ErrDuplicateSigner         = errors.New("multisig: duplicate signer public key")
-	ErrInvalidSignature        = errors.New("multisig: invalid signature")
-	ErrInsufficientSignatures  = errors.New("multisig: insufficient signatures")
-	ErrInvalidSigner           = errors.New("multisig: signer not authorized")
-	ErrInvalidMultisigTx       = errors.New("multisig: invalid multisig transaction")
-	ErrInvalidAddress          = errors.New("whitelist: invalid address")
-	ErrRecipientNotInWhitelist = errors.New("whitelist: recipient not in whitelist")
-	ErrRecipientAlreadyExists  = errors.New("whitelist: recipient already exists")
-)
-
 func CreateMultisigConfig(threshold int, signers []string) (*types.MultisigConfig, error) {
 	if len(signers) < 2 {
-		return nil, ErrInvalidSigners
+		return nil, fmt.Errorf("invalid signers: %d", len(signers))
 	}
 
 	if threshold <= 0 || threshold > len(signers) {
-		return nil, ErrInvalidThreshold
+		return nil, fmt.Errorf("invalid threshold: %d", threshold)
 	}
 
-	uniqueSigners := make([]string, 0, len(signers))
-	seen := make(map[string]bool)
-
-	for _, signer := range signers {
-		if err := validatePublicKey(signer); err != nil {
-			return nil, fmt.Errorf("invalid signer public key %s: %w", signer, err)
-		}
-
-		if seen[signer] {
-			return nil, ErrDuplicateSigner
-		}
-		seen[signer] = true
-		uniqueSigners = append(uniqueSigners, signer)
-	}
-
-	sort.Strings(uniqueSigners)
-
-	address, err := generateMultisigAddress(threshold, uniqueSigners)
+	address, err := generateMultisigAddress(threshold, signers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate multisig address: %w", err)
 	}
 
 	return &types.MultisigConfig{
 		Threshold: threshold,
-		Signers:   uniqueSigners,
+		Signers:   signers,
 		Address:   address,
 	}, nil
 }
@@ -74,22 +42,9 @@ func generateMultisigAddress(threshold int, signers []string) (string, error) {
 	return base58.Encode(hash[:]), nil
 }
 
-func validatePublicKey(pubKeyStr string) error {
-	decoded, err := base58.Decode(pubKeyStr)
-	if err != nil {
-		return fmt.Errorf("invalid base58: %w", err)
-	}
-
-	if len(decoded) != ed25519.PublicKeySize {
-		return fmt.Errorf("invalid public key length: expected %d, got %d", ed25519.PublicKeySize, len(decoded))
-	}
-
-	return nil
-}
-
 func SignMultisigTx(tx *types.MultisigTx, signerPubKey string, privKey []byte) (*types.MultisigSignature, error) {
 	if !isAuthorizedSigner(&tx.Config, signerPubKey) {
-		return nil, ErrInvalidSigner
+		return nil, fmt.Errorf("signer %s is not authorized", signerPubKey)
 	}
 
 	var ed25519PrivKey ed25519.PrivateKey
@@ -120,11 +75,11 @@ func AddSignature(tx *types.MultisigTx, sig *types.MultisigSignature) error {
 	}
 
 	if !isAuthorizedSigner(&tx.Config, sig.Signer) {
-		return ErrInvalidSigner
+		return fmt.Errorf("signer %s is not authorized", sig.Signer)
 	}
 
-	if !verifyMultisigSignature(tx, sig) {
-		return ErrInvalidSignature
+	if !verifyMultisigSignature(sig) {
+		return fmt.Errorf("invalid signature from %s", sig.Signer)
 	}
 
 	tx.Signatures = append(tx.Signatures, *sig)
@@ -133,24 +88,24 @@ func AddSignature(tx *types.MultisigTx, sig *types.MultisigSignature) error {
 
 func VerifyMultisigTx(tx *types.MultisigTx) error {
 	if len(tx.Signatures) < tx.Config.Threshold {
-		return ErrInsufficientSignatures
+		return fmt.Errorf("insufficient signatures: %d < %d", len(tx.Signatures), tx.Config.Threshold)
 	}
 
 	validSignatures := 0
 	for _, sig := range tx.Signatures {
-		if verifyMultisigSignature(tx, &sig) {
+		if verifyMultisigSignature(&sig) {
 			validSignatures++
 		}
 	}
 
 	if validSignatures < tx.Config.Threshold {
-		return ErrInsufficientSignatures
+		return fmt.Errorf("insufficient signatures: %d < %d", validSignatures, tx.Config.Threshold)
 	}
 
 	return nil
 }
 
-func verifyMultisigSignature(tx *types.MultisigTx, sig *types.MultisigSignature) bool {
+func verifyMultisigSignature(sig *types.MultisigSignature) bool {
 	pubKeyBytes, err := base58.Decode(sig.Signer)
 	if err != nil {
 		return false
@@ -161,10 +116,10 @@ func verifyMultisigSignature(tx *types.MultisigTx, sig *types.MultisigSignature)
 		return false
 	}
 
-	// Use the same message format as client signing
-	message := "faucet_action:add_signature"
+	message := fmt.Sprintf("%s:%s", FAUCET_ACTION, ADD_SIGNATURE)
+	result := ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(message), sigBytes)
 
-	return ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(message), sigBytes)
+	return result
 }
 
 func isAuthorizedSigner(config *types.MultisigConfig, pubKey string) bool {

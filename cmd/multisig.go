@@ -9,7 +9,9 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mr-tron/base58"
@@ -77,7 +79,7 @@ var getProposalsCmd = &cobra.Command{
 	Short: "Get list of pending proposals",
 	Long:  `Get list of all pending multisig proposals.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := getProposals(multisigConfig); err != nil {
+		if err := getProposals(); err != nil {
 			logx.Error("MULTISIG CLI", err)
 		}
 	},
@@ -99,7 +101,7 @@ var rejectCmd = &cobra.Command{
 	Short: "Reject a proposal",
 	Long:  `Reject a multisig proposal.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := rejectProposal(multisigConfig); err != nil {
+		if err := rejectProposal(); err != nil {
 			logx.Error("MULTISIG CLI", err)
 		}
 	},
@@ -120,7 +122,7 @@ var getMultisigAddressCmd = &cobra.Command{
 	Use:   "get-multisig-address",
 	Short: "Get multisig address from signers",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := getMultisigAddress(multisigConfig); err != nil {
+		if err := getMultisigAddress(); err != nil {
 			logx.Error("MULTISIG CLI", err)
 		}
 	},
@@ -214,7 +216,7 @@ func addProposer(config MultisigConfig) error {
 		return err
 	}
 
-	message := fmt.Sprintf("faucet_action:add_proposer")
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.ADD_PROPOSER)
 	signature := signMessage(message, privKey)
 
 	ctx := context.Background()
@@ -252,7 +254,7 @@ func addApprover(config MultisigConfig) error {
 		return err
 	}
 
-	message := fmt.Sprintf("faucet_action:add_approver")
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.ADD_APPROVER)
 	signature := signMessage(message, privKey)
 
 	ctx := context.Background()
@@ -293,7 +295,7 @@ func createProposal(config MultisigConfig) error {
 		return err
 	}
 
-	message := fmt.Sprintf("faucet_action:create_faucet_request")
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.CREATE_FAUCET)
 	signature := signMessage(message, privKey)
 
 	ctx := context.Background()
@@ -318,7 +320,7 @@ func createProposal(config MultisigConfig) error {
 	return nil
 }
 
-func getProposals(config MultisigConfig) error {
+func getProposals() error {
 	client, err := createMultisigClient()
 	if err != nil {
 		return err
@@ -353,10 +355,17 @@ func approveProposal(config MultisigConfig) error {
 		return err
 	}
 
-	message := fmt.Sprintf("faucet_action:add_signature")
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.ADD_SIGNATURE)
 	signature := signMessage(message, privKey)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if config.Verbose {
+		fmt.Printf("🔄 Sending approval request for tx: %s\n", config.TxHash)
+		fmt.Printf("   Signer: %s\n", pubKeyStr)
+	}
+
 	resp, err := client.AddSignature(ctx, &pb.AddSignatureRequest{
 		TxHash:       config.TxHash,
 		SignerPubkey: pubKeyStr,
@@ -376,7 +385,7 @@ func approveProposal(config MultisigConfig) error {
 	return nil
 }
 
-func rejectProposal(config MultisigConfig) error {
+func rejectProposal() error {
 	return fmt.Errorf("reject functionality not implemented yet")
 }
 
@@ -407,7 +416,7 @@ func checkStatus(config MultisigConfig) error {
 	return nil
 }
 
-func getMultisigAddress(config MultisigConfig) error {
+func getMultisigAddress() error {
 	// Use the same signers as in docker-compose.yml
 	signers := []string{
 		"89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8",

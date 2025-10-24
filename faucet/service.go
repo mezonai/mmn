@@ -10,7 +10,9 @@ import (
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 	"github.com/mr-tron/base58"
 )
@@ -18,8 +20,9 @@ import (
 type MultisigFaucetService struct {
 	store               MultisigFaucetStoreInterface
 	accountStore        store.AccountStore
-	approverWhitelist   map[string]bool // Whitelist A: wallets that can approve/reject
-	proposerWhitelist   map[string]bool // Whitelist B: wallets that can request faucet
+	mempool             *mempool.Mempool
+	approverWhitelist   map[string]bool
+	proposerWhitelist   map[string]bool
 	configs             map[string]*types.MultisigConfig
 	pendingTxs          map[string]*types.MultisigTx
 	pendingWhitelistTxs map[string]*types.MultisigTx
@@ -29,12 +32,13 @@ type MultisigFaucetService struct {
 	lastRequest         map[string]time.Time
 }
 
-func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore store.AccountStore, maxAmount *uint256.Int, cooldown time.Duration) *MultisigFaucetService {
+func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore store.AccountStore, mempool *mempool.Mempool, maxAmount *uint256.Int, cooldown time.Duration) *MultisigFaucetService {
 	return &MultisigFaucetService{
 		store:               store,
 		accountStore:        accountStore,
-		approverWhitelist:   make(map[string]bool), // Whitelist A: Approvers
-		proposerWhitelist:   make(map[string]bool), // Whitelist B: Proposers
+		mempool:             mempool,
+		approverWhitelist:   make(map[string]bool),
+		proposerWhitelist:   make(map[string]bool),
 		configs:             make(map[string]*types.MultisigConfig),
 		pendingTxs:          make(map[string]*types.MultisigTx),
 		pendingWhitelistTxs: make(map[string]*types.MultisigTx),
@@ -49,11 +53,11 @@ func (s *MultisigFaucetService) RegisterMultisigConfig(config *types.MultisigCon
 	defer s.mu.Unlock()
 
 	if config.Threshold <= 0 || config.Threshold > len(config.Signers) {
-		return ErrInvalidThreshold
+		return fmt.Errorf("invalid threshold: %d", config.Threshold)
 	}
 
 	if len(config.Signers) < 2 {
-		return ErrInvalidSigners
+		return fmt.Errorf("invalid signers: %d", len(config.Signers))
 	}
 
 	if err := s.store.StoreMultisigConfig(config); err != nil {
@@ -62,24 +66,14 @@ func (s *MultisigFaucetService) RegisterMultisigConfig(config *types.MultisigCon
 
 	s.configs[config.Address] = config
 
-	// Auto-add all signers to approver whitelist
 	for _, signer := range config.Signers {
 		s.approverWhitelist[signer] = true
-		logx.Info("MultisigFaucetService", "auto-added signer to approver whitelist", "signer", signer)
 	}
-
-	logx.Info("MultisigFaucetService", "registered multisig config",
-		"address", config.Address,
-		"threshold", config.Threshold,
-		"signers", len(config.Signers))
 
 	return nil
 }
 
 func (s *MultisigFaucetService) GetMultisigConfig(address string) (*types.MultisigConfig, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	if config, exists := s.configs[address]; exists {
 		return config, nil
 	}
@@ -93,6 +87,47 @@ func (s *MultisigFaucetService) GetMultisigConfig(address string) (*types.Multis
 	return config, nil
 }
 
+func (s *MultisigFaucetService) IsMultisigWallet(address string) bool {
+	_, err := s.GetMultisigConfig(address)
+	return err == nil
+}
+
+func (s *MultisigFaucetService) GetMultisigWalletInfo(address string) (*types.MultisigConfig, error) {
+	if !s.IsMultisigWallet(address) {
+		return nil, fmt.Errorf("address %s is not a multisig wallet", address)
+	}
+	return s.GetMultisigConfig(address)
+}
+
+func (s *MultisigFaucetService) GetMultisigWalletStats(address string) (map[string]interface{}, error) {
+	if !s.IsMultisigWallet(address) {
+		return nil, fmt.Errorf("address %s is not a multisig wallet", address)
+	}
+
+	config, err := s.GetMultisigConfig(address)
+	if err != nil {
+		return nil, err
+	}
+
+	pendingCount := 0
+	s.mu.RLock()
+	for _, tx := range s.pendingTxs {
+		if tx.Sender == address {
+			pendingCount++
+		}
+	}
+	s.mu.RUnlock()
+
+	return map[string]interface{}{
+		"address":       address,
+		"threshold":     config.Threshold,
+		"signers_count": len(config.Signers),
+		"signers":       config.Signers,
+		"pending_txs":   pendingCount,
+		"is_multisig":   true,
+	}, nil
+}
+
 func (s *MultisigFaucetService) CreateFaucetRequest(
 	multisigAddress string,
 	amount *uint256.Int,
@@ -103,7 +138,7 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "create_faucet_request")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, CREATE_FAUCET)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -125,7 +160,6 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 		return nil, fmt.Errorf("amount exceeds maximum allowed: %s", s.maxAmount.String())
 	}
 
-	// Check cooldown
 	if s.cooldown > 0 {
 		if lastTime, exists := s.lastRequest[callerAddress]; exists {
 			if time.Since(lastTime) < s.cooldown {
@@ -147,27 +181,12 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 
 	s.lastRequest[callerAddress] = time.Now()
 
-	logx.Info("MultisigFaucetService", "created faucet request",
-		"txHash", txHash,
-		"multisigAddress", multisigAddress,
-		"recipient", callerAddress,
-		"amount", amount.String())
-
 	return tx, nil
 }
 
-// verifyCallerSignature verifies the caller's signature and returns the caller address
 func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signature []byte, action string) (string, error) {
-	// Create a message to verify (same format as client signed)
-	message := fmt.Sprintf("faucet_action:%s", action)
+	message := fmt.Sprintf("%s:%s", FAUCET_ACTION, action)
 
-	// Debug: print message and signature
-	logx.Info("MULTISIG_FAUCET", "Debug verifyCallerSignature",
-		"message", message,
-		"signature_hex", hex.EncodeToString(signature),
-		"signer_pubkey", signerPubKey)
-
-	// Verify the signature
 	verified, err := s.verifySignature(message, signature, signerPubKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to verify signature: %w", err)
@@ -177,19 +196,15 @@ func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signa
 		return "", fmt.Errorf("invalid signature")
 	}
 
-	// Return the public key as the caller address (or derive address from pubkey)
 	return signerPubKey, nil
 }
 
-// verifySignature verifies a signature
 func (s *MultisigFaucetService) verifySignature(message string, signature []byte, pubKey string) (bool, error) {
-	// Decode public key from base58
 	pubKeyBytes, err := base58.Decode(pubKey)
 	if err != nil {
 		return false, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
-	// Verify signature using ed25519
 	verified := ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(message), signature)
 	return verified, nil
 }
@@ -198,13 +213,11 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "add_approver")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_APPROVER)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in approver whitelist
 	if !s.approverWhitelist[callerAddress] {
 		return fmt.Errorf("caller %s is not authorized to manage approver whitelist", callerAddress)
 	}
@@ -217,13 +230,11 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "remove_approver")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_APPROVER)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in approver whitelist
 	if !s.approverWhitelist[callerAddress] {
 		return fmt.Errorf("caller %s is not authorized to manage approver whitelist", callerAddress)
 	}
@@ -236,13 +247,11 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "add_proposer")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_PROPOSER)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in approver whitelist
 	if !s.approverWhitelist[callerAddress] {
 		return fmt.Errorf("caller %s is not authorized to manage proposer whitelist", callerAddress)
 	}
@@ -255,13 +264,11 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "remove_proposer")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_APPROVER)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in approver whitelist
 	if !s.approverWhitelist[callerAddress] {
 		return fmt.Errorf("caller %s is not authorized to manage proposer whitelist", callerAddress)
 	}
@@ -284,22 +291,18 @@ func (s *MultisigFaucetService) IsProposer(address string) bool {
 	return s.proposerWhitelist[address]
 }
 
-// GetMultisigTx retrieves a multisig transaction by hash
 func (s *MultisigFaucetService) GetMultisigTx(txHash string) (*types.MultisigTx, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Check pending transactions first
 	if tx, exists := s.pendingTxs[txHash]; exists {
 		return tx, nil
 	}
 
-	// Check pending whitelist transactions
 	if tx, exists := s.pendingWhitelistTxs[txHash]; exists {
 		return tx, nil
 	}
 
-	// Try to get from store
 	if s.store != nil {
 		return s.store.GetMultisigTx(txHash)
 	}
@@ -307,7 +310,6 @@ func (s *MultisigFaucetService) GetMultisigTx(txHash string) (*types.MultisigTx,
 	return nil, fmt.Errorf("transaction not found: %s", txHash)
 }
 
-// GetPendingTxs returns the pending transactions map (for status checking)
 func (s *MultisigFaucetService) GetPendingTxs() map[string]*types.MultisigTx {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -330,7 +332,7 @@ func (s *MultisigFaucetService) GetProposerWhitelistCount() int {
 
 func (s *MultisigFaucetService) CreateWhitelistManagementTx(
 	multisigAddress string,
-	action string, // "add_approver", "remove_approver", "add_proposer", "remove_proposer"
+	action string,
 	targetAddress string,
 	proposerAddress string,
 ) (*types.MultisigTx, error) {
@@ -358,12 +360,6 @@ func (s *MultisigFaucetService) CreateWhitelistManagementTx(
 
 	s.pendingWhitelistTxs[txHash] = tx
 
-	logx.Info("MultisigFaucetService", "created whitelist management transaction",
-		"txHash", txHash,
-		"action", action,
-		"targetAddress", targetAddress,
-		"proposerAddress", proposerAddress)
-
 	return tx, nil
 }
 
@@ -371,13 +367,11 @@ func (s *MultisigFaucetService) ExecuteWhitelistManagementTx(txHash string, sign
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "execute_whitelist_management")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, EXECUTE_WHITELIST_MANAGEMENT)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in approver whitelist
 	if !s.approverWhitelist[callerAddress] {
 		return fmt.Errorf("caller %s is not authorized to execute whitelist management transactions", callerAddress)
 	}
@@ -395,9 +389,8 @@ func (s *MultisigFaucetService) ExecuteWhitelistManagementTx(txHash string, sign
 		return fmt.Errorf("whitelist management transaction verification failed: %w", err)
 	}
 
-	// Parse action from textData
 	textData := tx.TextData
-	if !strings.HasPrefix(textData, "whitelist_management:") {
+	if !strings.HasPrefix(textData, WHITELIST_MANAGEMENT_PREFIX) {
 		return fmt.Errorf("invalid whitelist management transaction")
 	}
 
@@ -410,13 +403,13 @@ func (s *MultisigFaucetService) ExecuteWhitelistManagementTx(txHash string, sign
 	targetAddress := parts[2]
 
 	switch action {
-	case "add_approver":
+	case ADD_APPROVER:
 		s.approverWhitelist[targetAddress] = true
-	case "remove_approver":
+	case REMOVE_APPROVER:
 		delete(s.approverWhitelist, targetAddress)
-	case "add_proposer":
+	case ADD_PROPOSER:
 		s.proposerWhitelist[targetAddress] = true
-	case "remove_proposer":
+	case REMOVE_PROPOSER:
 		delete(s.proposerWhitelist, targetAddress)
 	default:
 		return fmt.Errorf("unknown whitelist management action: %s", action)
@@ -427,11 +420,6 @@ func (s *MultisigFaucetService) ExecuteWhitelistManagementTx(txHash string, sign
 		logx.Warn("MultisigFaucetService", "failed to delete whitelist management transaction", "error", err)
 	}
 
-	logx.Info("MultisigFaucetService", "executed whitelist management transaction",
-		"txHash", txHash,
-		"action", action,
-		"targetAddress", targetAddress)
-
 	return nil
 }
 
@@ -439,13 +427,11 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Verify signature to get caller address
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, "add_signature")
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_SIGNATURE)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
 
-	// Check if caller is in approver whitelist
 	if !s.approverWhitelist[callerAddress] {
 		return fmt.Errorf("caller %s is not authorized to add signatures", callerAddress)
 	}
@@ -466,105 +452,96 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		}
 	}
 
-	// Create signature object
 	sig := types.MultisigSignature{
 		Signer:    callerAddress,
 		Signature: hex.EncodeToString(signature),
 	}
 
-	// Add the signature to the transaction
 	tx.Signatures = append(tx.Signatures, sig)
 
 	if err := s.store.UpdateMultisigTx(tx); err != nil {
 		return fmt.Errorf("failed to update transaction in storage: %w", err)
 	}
 
-	logx.Info("MultisigFaucetService", "added signature",
-		"txHash", txHash,
-		"signer", signerPubKey,
-		"signatureCount", len(tx.Signatures),
-		"requiredCount", tx.Config.Threshold)
-
-	// Check if we have enough signatures to execute automatically
 	if len(tx.Signatures) >= tx.Config.Threshold {
-		logx.Info("MultisigFaucetService", "sufficient signatures collected, executing transaction automatically",
-			"txHash", txHash,
-			"signatureCount", len(tx.Signatures),
-			"requiredCount", tx.Config.Threshold)
-
-		// Execute the transaction automatically
 		if err := s.executeTransaction(tx); err != nil {
 			logx.Error("MultisigFaucetService", "failed to execute transaction automatically", err)
-		} else {
-			logx.Info("MultisigFaucetService", "transaction executed successfully", "txHash", txHash)
 		}
 
-		// Remove from pending transactions
 		delete(s.pendingTxs, txHash)
 	}
 
 	return nil
 }
 
-// executeTransaction executes a verified multisig transaction
 func (s *MultisigFaucetService) executeTransaction(tx *types.MultisigTx) error {
 
-	// Verify the transaction before execution
 	if err := VerifyMultisigTx(tx); err != nil {
 		return fmt.Errorf("transaction verification failed: %w", err)
 	}
 
-	// Get faucet account (sender)
 	faucetAccount, err := s.accountStore.GetByAddr(tx.Sender)
 	if err != nil {
 		return fmt.Errorf("failed to get faucet account: %w", err)
 	}
 
-	// Check if faucet has enough balance
 	if faucetAccount.Balance.Cmp(tx.Amount) < 0 {
 		return fmt.Errorf("insufficient faucet balance: %s < %s", faucetAccount.Balance.String(), tx.Amount.String())
 	}
 
-	recipientAccount, err := s.accountStore.GetByAddr(tx.Recipient)
-	if err != nil {
-		// Create new account if doesn't exist
-		recipientAccount = &types.Account{
-			Address: tx.Recipient,
-			Balance: uint256.NewInt(0),
-			Nonce:   0,
+	faucetTx := s.createFaucetTransaction(tx)
+	if faucetTx == nil {
+		return fmt.Errorf("failed to create faucet transaction")
+	}
+
+	if s.mempool != nil {
+		txHash, err := s.mempool.AddTx(faucetTx, true)
+		if err != nil {
+			return fmt.Errorf("failed to add transaction to mempool: %w", err)
 		}
+		logx.Info("MultisigFaucetService", "faucet transaction added to mempool", "txHash", txHash)
 	}
 
-	// Transfer tokens
-	faucetAccount.Balance.Sub(faucetAccount.Balance, tx.Amount)
-	recipientAccount.Balance.Add(recipientAccount.Balance, tx.Amount)
-
-	// Update accounts
-	if err := s.accountStore.Store(faucetAccount); err != nil {
-		return fmt.Errorf("failed to update faucet account: %w", err)
-	}
-	if err := s.accountStore.Store(recipientAccount); err != nil {
-		return fmt.Errorf("failed to update recipient account: %w", err)
-	}
-
-	logx.Info("MultisigFaucetService", "tokens transferred successfully",
-		"txHash", tx.Hash(),
-		"sender", tx.Sender,
-		"recipient", tx.Recipient,
-		"amount", tx.Amount.String(),
-		"faucetBalance", faucetAccount.Balance.String(),
-		"recipientBalance", recipientAccount.Balance.String(),
-		"signatureCount", len(tx.Signatures))
-
-	// Mark transaction as executed in store
 	if s.store != nil {
-		tx.Status = "executed"
+		tx.Status = STATUS_EXECUTED
 		if err := s.store.UpdateMultisigTx(tx); err != nil {
 			logx.Error("MultisigFaucetService", "failed to update transaction status", err)
 		}
 	}
 
 	return nil
+}
+
+func (s *MultisigFaucetService) createFaucetTransaction(tx *types.MultisigTx) *transaction.Transaction {
+	if !s.IsMultisigWallet(tx.Sender) {
+		logx.Error("MultisigFaucetService", "sender is not a multisig wallet", "sender", tx.Sender)
+		return nil
+	}
+
+	faucetAccount, err := s.accountStore.GetByAddr(tx.Sender)
+	if err != nil {
+		logx.Error("MultisigFaucetService", "failed to get faucet account for nonce", err)
+		return nil
+	}
+
+	config, err := s.GetMultisigConfig(tx.Sender)
+	if err != nil {
+		logx.Error("MultisigFaucetService", "failed to get multisig config", err)
+		return nil
+	}
+
+	faucetTx := &transaction.Transaction{
+		Type:      transaction.TxTypeFaucet,
+		Sender:    tx.Sender,
+		Recipient: tx.Recipient,
+		Amount:    tx.Amount,
+		Timestamp: uint64(time.Now().UnixNano() / int64(time.Millisecond)),
+		TextData:  tx.TextData,
+		Nonce:     faucetAccount.Nonce + 1,
+		ExtraInfo: fmt.Sprintf("multisig_tx:%s:threshold:%d:signers:%d", tx.Hash(), config.Threshold, len(config.Signers)),
+	}
+
+	return faucetTx
 }
 
 func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*types.MultisigTx, error) {
@@ -638,8 +615,6 @@ func (s *MultisigFaucetService) CleanupExpiredTransactions(maxAge time.Duration)
 			if err := s.store.DeleteMultisigTx(txHash); err != nil {
 				logx.Warn("MultisigFaucetService", "failed to delete expired transaction from storage", "txHash", txHash, "error", err)
 			}
-
-			logx.Info("MultisigFaucetService", "cleaned up expired transaction", "txHash", txHash)
 		}
 	}
 }

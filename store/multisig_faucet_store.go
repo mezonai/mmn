@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/jsonx"
@@ -9,38 +10,34 @@ import (
 	"github.com/mezonai/mmn/types"
 )
 
-// MultisigFaucetStore is the interface for multisig faucet store
 type MultisigFaucetStore interface {
-	// Multisig Config operations
 	StoreMultisigConfig(config *types.MultisigConfig) error
 	GetMultisigConfig(address string) (*types.MultisigConfig, error)
 	ListMultisigConfigs() ([]*types.MultisigConfig, error)
 	DeleteMultisigConfig(address string) error
 
-	// Multisig Transaction operations
 	StoreMultisigTx(tx *types.MultisigTx) error
 	GetMultisigTx(txHash string) (*types.MultisigTx, error)
 	ListMultisigTxs() ([]*types.MultisigTx, error)
 	DeleteMultisigTx(txHash string) error
 	UpdateMultisigTx(tx *types.MultisigTx) error
 
-	// Signature operations
 	AddSignature(txHash string, sig *types.MultisigSignature) error
 	GetSignatures(txHash string) ([]types.MultisigSignature, error)
 
-	// Cleanup operations
 	CleanupExpiredTxs(maxAge int64) error
 
-	// Close operations
+	GetMultisigTxsByStatus(status string) ([]*types.MultisigTx, error)
+	GetMultisigTxsBySigner(signer string) ([]*types.MultisigTx, error)
+	IsTransactionExecutable(txHash string) (bool, error)
+
 	MustClose()
 }
 
-// GenericMultisigFaucetStore provides multisig faucet storage operations
 type GenericMultisigFaucetStore struct {
 	dbProvider db.DatabaseProvider
 }
 
-// NewGenericMultisigFaucetStore creates a new multisig faucet store
 func NewGenericMultisigFaucetStore(dbProvider db.DatabaseProvider) (*GenericMultisigFaucetStore, error) {
 	if dbProvider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
@@ -51,7 +48,6 @@ func NewGenericMultisigFaucetStore(dbProvider db.DatabaseProvider) (*GenericMult
 	}, nil
 }
 
-// StoreMultisigConfig stores a multisig configuration
 func (s *GenericMultisigFaucetStore) StoreMultisigConfig(config *types.MultisigConfig) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
@@ -67,11 +63,9 @@ func (s *GenericMultisigFaucetStore) StoreMultisigConfig(config *types.MultisigC
 		return fmt.Errorf("failed to store multisig config: %w", err)
 	}
 
-	logx.Info("MULTISIG_STORE", "stored multisig config", "address", config.Address)
 	return nil
 }
 
-// GetMultisigConfig retrieves a multisig configuration by address
 func (s *GenericMultisigFaucetStore) GetMultisigConfig(address string) (*types.MultisigConfig, error) {
 	key := s.getMultisigConfigKey(address)
 	data, err := s.dbProvider.Get(key)
@@ -91,21 +85,32 @@ func (s *GenericMultisigFaucetStore) GetMultisigConfig(address string) (*types.M
 	return &config, nil
 }
 
-// ListMultisigConfigs retrieves all multisig configurations
 func (s *GenericMultisigFaucetStore) ListMultisigConfigs() ([]*types.MultisigConfig, error) {
-	// This is a simplified implementation
-	// In production, you might want to use a more efficient approach
-	// like maintaining a separate index or using database-specific features
+	iterableProvider, ok := s.dbProvider.(db.IterableProvider)
+	if !ok {
+		return nil, fmt.Errorf("database provider does not support iteration")
+	}
 
-	// Note: This is a placeholder implementation
-	// Real implementation would require database-specific scanning
-	// For now, we'll return empty list
-	logx.Warn("MULTISIG_STORE", "ListMultisigConfigs not fully implemented - requires database-specific scanning")
+	var configs []*types.MultisigConfig
+	prefix := []byte(PrefixMultisigConfig)
 
-	return []*types.MultisigConfig{}, nil
+	err := iterableProvider.IteratePrefix(prefix, func(key, value []byte) bool {
+		var config types.MultisigConfig
+		if err := jsonx.Unmarshal(value, &config); err != nil {
+			logx.Error("MULTISIG_STORE", "failed to unmarshal multisig config", "error", err)
+			return true
+		}
+		configs = append(configs, &config)
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate multisig configs: %w", err)
+	}
+
+	return configs, nil
 }
 
-// DeleteMultisigConfig deletes a multisig configuration
 func (s *GenericMultisigFaucetStore) DeleteMultisigConfig(address string) error {
 	key := s.getMultisigConfigKey(address)
 	if err := s.dbProvider.Delete(key); err != nil {
@@ -116,7 +121,6 @@ func (s *GenericMultisigFaucetStore) DeleteMultisigConfig(address string) error 
 	return nil
 }
 
-// StoreMultisigTx stores a multisig transaction
 func (s *GenericMultisigFaucetStore) StoreMultisigTx(tx *types.MultisigTx) error {
 	if tx == nil {
 		return fmt.Errorf("transaction cannot be nil")
@@ -136,7 +140,6 @@ func (s *GenericMultisigFaucetStore) StoreMultisigTx(tx *types.MultisigTx) error
 	return nil
 }
 
-// GetMultisigTx retrieves a multisig transaction by hash
 func (s *GenericMultisigFaucetStore) GetMultisigTx(txHash string) (*types.MultisigTx, error) {
 	key := s.getMultisigTxKey(txHash)
 	data, err := s.dbProvider.Get(key)
@@ -156,47 +159,90 @@ func (s *GenericMultisigFaucetStore) GetMultisigTx(txHash string) (*types.Multis
 	return &tx, nil
 }
 
-// ListMultisigTxs retrieves all multisig transactions
 func (s *GenericMultisigFaucetStore) ListMultisigTxs() ([]*types.MultisigTx, error) {
-	// Similar to ListMultisigConfigs, this is a placeholder
-	// Real implementation would require database-specific scanning
-	logx.Warn("MULTISIG_STORE", "ListMultisigTxs not fully implemented - requires database-specific scanning")
+	iterableProvider, ok := s.dbProvider.(db.IterableProvider)
+	if !ok {
+		return nil, fmt.Errorf("database provider does not support iteration")
+	}
 
-	return []*types.MultisigTx{}, nil
+	var txs []*types.MultisigTx
+	prefix := []byte(PrefixMultisigTx)
+
+	err := iterableProvider.IteratePrefix(prefix, func(key, value []byte) bool {
+		var tx types.MultisigTx
+		if err := jsonx.Unmarshal(value, &tx); err != nil {
+			logx.Error("MULTISIG_STORE", "failed to unmarshal multisig transaction", "error", err)
+			return true
+		}
+		txs = append(txs, &tx)
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate multisig transactions: %w", err)
+	}
+
+	return txs, nil
 }
 
-// DeleteMultisigTx deletes a multisig transaction
 func (s *GenericMultisigFaucetStore) DeleteMultisigTx(txHash string) error {
 	key := s.getMultisigTxKey(txHash)
 	if err := s.dbProvider.Delete(key); err != nil {
 		return fmt.Errorf("failed to delete multisig transaction: %w", err)
 	}
 
-	logx.Info("MULTISIG_STORE", "deleted multisig transaction", "txHash", txHash)
 	return nil
 }
 
-// UpdateMultisigTx updates a multisig transaction
 func (s *GenericMultisigFaucetStore) UpdateMultisigTx(tx *types.MultisigTx) error {
-	return s.StoreMultisigTx(tx) // Same as store for now
+	return s.StoreMultisigTx(tx)
 }
 
-// AddSignature adds a signature to a multisig transaction
 func (s *GenericMultisigFaucetStore) AddSignature(txHash string, sig *types.MultisigSignature) error {
-	// Get the current transaction
+	if sig == nil {
+		return fmt.Errorf("signature cannot be nil")
+	}
+
+	if sig.Signer == "" {
+		return fmt.Errorf("signer cannot be empty")
+	}
+
+	if sig.Signature == "" {
+		return fmt.Errorf("signature data cannot be empty")
+	}
+
 	tx, err := s.GetMultisigTx(txHash)
 	if err != nil {
 		return fmt.Errorf("failed to get transaction for signature: %w", err)
 	}
 
-	// Add signature to transaction
+	authorized := false
+	for _, authorizedSigner := range tx.Config.Signers {
+		if authorizedSigner == sig.Signer {
+			authorized = true
+			break
+		}
+	}
+
+	if !authorized {
+		return fmt.Errorf("signer %s is not authorized for this multisig transaction", sig.Signer)
+	}
+
+	for _, existingSig := range tx.Signatures {
+		if existingSig.Signer == sig.Signer {
+			return fmt.Errorf("signature from signer %s already exists", sig.Signer)
+		}
+	}
+
 	tx.Signatures = append(tx.Signatures, *sig)
 
-	// Update the transaction in storage
-	return s.UpdateMultisigTx(tx)
+	if err := s.UpdateMultisigTx(tx); err != nil {
+		return fmt.Errorf("failed to update transaction with new signature: %w", err)
+	}
+
+	return nil
 }
 
-// GetSignatures retrieves all signatures for a transaction
 func (s *GenericMultisigFaucetStore) GetSignatures(txHash string) ([]types.MultisigSignature, error) {
 	tx, err := s.GetMultisigTx(txHash)
 	if err != nil {
@@ -206,16 +252,118 @@ func (s *GenericMultisigFaucetStore) GetSignatures(txHash string) ([]types.Multi
 	return tx.Signatures, nil
 }
 
-// CleanupExpiredTxs removes expired transactions
 func (s *GenericMultisigFaucetStore) CleanupExpiredTxs(maxAge int64) error {
-	// This is a placeholder implementation
-	// Real implementation would require scanning and filtering by timestamp
-	logx.Warn("MULTISIG_STORE", "CleanupExpiredTxs not fully implemented - requires database-specific scanning")
+	iterableProvider, ok := s.dbProvider.(db.IterableProvider)
+	if !ok {
+		return fmt.Errorf("database provider does not support iteration")
+	}
+
+	currentTime := time.Now().Unix()
+	cutoffTime := currentTime - maxAge
+	var expiredKeys [][]byte
+	prefix := []byte(PrefixMultisigTx)
+
+	err := iterableProvider.IteratePrefix(prefix, func(key, value []byte) bool {
+		var tx types.MultisigTx
+		if err := jsonx.Unmarshal(value, &tx); err != nil {
+			logx.Error("MULTISIG_STORE", "failed to unmarshal multisig transaction during cleanup", "error", err)
+			return true
+		}
+
+		if int64(tx.Timestamp) < cutoffTime {
+			expiredKeys = append(expiredKeys, key)
+		}
+		return true
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to iterate multisig transactions during cleanup: %w", err)
+	}
+
+	deletedCount := 0
+	for _, key := range expiredKeys {
+		if err := s.dbProvider.Delete(key); err != nil {
+			logx.Error("MULTISIG_STORE", "failed to delete expired transaction", "key", string(key), "error", err)
+			continue
+		}
+		deletedCount++
+	}
 
 	return nil
 }
 
-// MustClose closes the store
+func (s *GenericMultisigFaucetStore) GetMultisigTxsByStatus(status string) ([]*types.MultisigTx, error) {
+	iterableProvider, ok := s.dbProvider.(db.IterableProvider)
+	if !ok {
+		return nil, fmt.Errorf("database provider does not support iteration")
+	}
+
+	var txs []*types.MultisigTx
+	prefix := []byte(PrefixMultisigTx)
+
+	err := iterableProvider.IteratePrefix(prefix, func(key, value []byte) bool {
+		var tx types.MultisigTx
+		if err := jsonx.Unmarshal(value, &tx); err != nil {
+			logx.Error("MULTISIG_STORE", "failed to unmarshal multisig transaction during status filter", "error", err)
+			return true
+		}
+
+		if tx.Status == status {
+			txs = append(txs, &tx)
+		}
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate multisig transactions by status: %w", err)
+	}
+
+	return txs, nil
+}
+
+func (s *GenericMultisigFaucetStore) GetMultisigTxsBySigner(signer string) ([]*types.MultisigTx, error) {
+	iterableProvider, ok := s.dbProvider.(db.IterableProvider)
+	if !ok {
+		return nil, fmt.Errorf("database provider does not support iteration")
+	}
+
+	var txs []*types.MultisigTx
+	prefix := []byte(PrefixMultisigTx)
+
+	err := iterableProvider.IteratePrefix(prefix, func(key, value []byte) bool {
+		var tx types.MultisigTx
+		if err := jsonx.Unmarshal(value, &tx); err != nil {
+			logx.Error("MULTISIG_STORE", "failed to unmarshal multisig transaction during signer filter", "error", err)
+			return true
+		}
+
+		for _, sig := range tx.Signatures {
+			if sig.Signer == signer {
+				txs = append(txs, &tx)
+				break
+			}
+		}
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate multisig transactions by signer: %w", err)
+	}
+
+	return txs, nil
+}
+
+func (s *GenericMultisigFaucetStore) IsTransactionExecutable(txHash string) (bool, error) {
+	tx, err := s.GetMultisigTx(txHash)
+	if err != nil {
+		return false, fmt.Errorf("failed to get transaction: %w", err)
+	}
+	signatureCount := len(tx.Signatures)
+	requiredCount := tx.Config.Threshold
+	isExecutable := signatureCount >= requiredCount
+	return isExecutable, nil
+}
+
 func (s *GenericMultisigFaucetStore) MustClose() {
 	err := s.dbProvider.Close()
 	if err != nil {
@@ -223,7 +371,6 @@ func (s *GenericMultisigFaucetStore) MustClose() {
 	}
 }
 
-// Helper methods for key generation
 func (s *GenericMultisigFaucetStore) getMultisigConfigKey(address string) []byte {
 	return []byte(PrefixMultisigConfig + address)
 }
@@ -232,19 +379,15 @@ func (s *GenericMultisigFaucetStore) getMultisigTxKey(txHash string) []byte {
 	return []byte(PrefixMultisigTx + txHash)
 }
 
-// MultisigFaucetAdapter adapts store.MultisigFaucetStore to faucet.MultisigFaucetStoreInterface
 type MultisigFaucetAdapter struct {
 	store MultisigFaucetStore
 }
 
-// NewMultisigFaucetAdapter creates a new adapter
 func NewMultisigFaucetAdapter(store MultisigFaucetStore) *MultisigFaucetAdapter {
 	return &MultisigFaucetAdapter{
 		store: store,
 	}
 }
-
-// Implement faucet.MultisigFaucetStoreInterface
 
 func (a *MultisigFaucetAdapter) StoreMultisigConfig(config *types.MultisigConfig) error {
 	return a.store.StoreMultisigConfig(config)
@@ -292,6 +435,18 @@ func (a *MultisigFaucetAdapter) GetSignatures(txHash string) ([]types.MultisigSi
 
 func (a *MultisigFaucetAdapter) CleanupExpiredTxs(maxAge int64) error {
 	return a.store.CleanupExpiredTxs(maxAge)
+}
+
+func (a *MultisigFaucetAdapter) GetMultisigTxsByStatus(status string) ([]*types.MultisigTx, error) {
+	return a.store.GetMultisigTxsByStatus(status)
+}
+
+func (a *MultisigFaucetAdapter) GetMultisigTxsBySigner(signer string) ([]*types.MultisigTx, error) {
+	return a.store.GetMultisigTxsBySigner(signer)
+}
+
+func (a *MultisigFaucetAdapter) IsTransactionExecutable(txHash string) (bool, error) {
+	return a.store.IsTransactionExecutable(txHash)
 }
 
 func (a *MultisigFaucetAdapter) MustClose() {
