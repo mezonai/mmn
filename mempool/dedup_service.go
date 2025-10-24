@@ -11,9 +11,9 @@ const (
 )
 
 type DedupService struct {
-	mu                   sync.RWMutex
-	txDedupHashSet       map[string]struct{}
-	mapSlotTxDedupHashes map[uint64]map[string]struct{}
+	mu                 sync.RWMutex
+	txDedupHashSet     map[string]struct{}
+	slotTxDedupHashSet map[uint64]map[string]struct{}
 
 	bs store.BlockStore
 	ts store.TxStore
@@ -21,10 +21,10 @@ type DedupService struct {
 
 func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
 	return &DedupService{
-		txDedupHashSet:       make(map[string]struct{}),
-		mapSlotTxDedupHashes: make(map[uint64]map[string]struct{}),
-		bs:                   bs,
-		ts:                   ts,
+		txDedupHashSet:     make(map[string]struct{}),
+		slotTxDedupHashSet: make(map[uint64]map[string]struct{}),
+		bs:                 bs,
+		ts:                 ts,
 	}
 }
 
@@ -81,20 +81,20 @@ func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 	// Clean up old slot tx hashes
 	if slot > DEDUP_SLOT_GAP {
 		oldSlot := slot - DEDUP_SLOT_GAP
-		if oldTxDedupHashes, exists := ds.mapSlotTxDedupHashes[oldSlot]; exists {
+		if oldTxDedupHashes, exists := ds.slotTxDedupHashSet[oldSlot]; exists {
 			for oldTxDedupHash := range oldTxDedupHashes {
 				delete(ds.txDedupHashSet, oldTxDedupHash)
 			}
-			delete(ds.mapSlotTxDedupHashes, oldSlot)
+			delete(ds.slotTxDedupHashSet, oldSlot)
 		}
 	}
 
 	// Add new tx hashes
 	for _, txDedupHash := range txDedupHashes {
 		ds.txDedupHashSet[txDedupHash] = struct{}{}
-		if _, exists := ds.mapSlotTxDedupHashes[slot]; !exists {
-			ds.mapSlotTxDedupHashes[slot] = make(map[string]struct{})
+		if _, exists := ds.slotTxDedupHashSet[slot]; !exists {
+			ds.slotTxDedupHashSet[slot] = make(map[string]struct{})
 		}
-		ds.mapSlotTxDedupHashes[slot][txDedupHash] = struct{}{}
+		ds.slotTxDedupHashSet[slot][txDedupHash] = struct{}{}
 	}
 }
