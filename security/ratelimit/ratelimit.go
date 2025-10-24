@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/security/abuse"
 )
@@ -51,7 +52,9 @@ func NewRateLimiter(config *RateLimiterConfig) *RateLimiter {
 		stopCleanup: make(chan struct{}),
 	}
 
-	go rl.cleanupExpiredEntries()
+	exception.SafeGo("StartCleanup", func() {
+		rl.cleanupExpiredEntries()
+	})
 
 	return rl
 }

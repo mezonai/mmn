@@ -201,7 +201,9 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	})
 
 	// clean sync request expireds every 1 minute
-	go ln.startCleanupRoutine()
+	exception.SafeGo("StartCleanupRoutine", func() {
+		ln.startCleanupRoutine()
+	})
 }
 
 func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
