@@ -224,16 +224,10 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 		return fmt.Errorf("caller %s is not authorized to manage approver whitelist", callerAddress)
 	}
 
-	// For management operations, we need to collect signatures from multiple approvers
-	// This is different from faucet transactions which go to mempool
-
-	// Check if this is a new request or adding signature to existing request
 	requestKey := fmt.Sprintf("add_approver:%s", address)
 
-	// Get existing request or create new one
 	request, exists := s.pendingApproverRequests[requestKey]
 	if !exists {
-		// Create new request
 		request = &types.ApproverManagementRequest{
 			Action:     ADD_APPROVER,
 			TargetAddr: address,
@@ -243,10 +237,8 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 		s.pendingApproverRequests[requestKey] = request
 	}
 
-	// Add signature
 	request.Signatures[callerAddress] = hex.EncodeToString(signature)
 
-	// Check if we have enough signatures
 	configs := s.getAllMultisigConfigs()
 	if len(configs) == 0 {
 		return fmt.Errorf("no multisig config found")
@@ -254,13 +246,8 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 	config := configs[0]
 
 	if len(request.Signatures) >= config.Threshold {
-		// Execute the management operation
 		s.approverWhitelist[address] = true
 		delete(s.pendingApproverRequests, requestKey)
-		logx.Info("MultisigFaucetService", "Approver added successfully", "address", address)
-	} else {
-		logx.Info("MultisigFaucetService", "Approver add request pending",
-			"address", address, "signatures", len(request.Signatures), "required", config.Threshold)
 	}
 
 	return nil
@@ -279,13 +266,10 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 		return fmt.Errorf("caller %s is not authorized to manage approver whitelist", callerAddress)
 	}
 
-	// Check if this is a new request or adding signature to existing request
 	requestKey := fmt.Sprintf("remove_approver:%s", address)
 
-	// Get existing request or create new one
 	request, exists := s.pendingApproverRequests[requestKey]
 	if !exists {
-		// Create new request
 		request = &types.ApproverManagementRequest{
 			Action:     REMOVE_APPROVER,
 			TargetAddr: address,
@@ -295,10 +279,8 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 		s.pendingApproverRequests[requestKey] = request
 	}
 
-	// Add signature
 	request.Signatures[callerAddress] = hex.EncodeToString(signature)
 
-	// Check if we have enough signatures
 	configs := s.getAllMultisigConfigs()
 	if len(configs) == 0 {
 		return fmt.Errorf("no multisig config found")
@@ -306,13 +288,8 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 	config := configs[0]
 
 	if len(request.Signatures) >= config.Threshold {
-		// Execute the management operation
 		delete(s.approverWhitelist, address)
 		delete(s.pendingApproverRequests, requestKey)
-		logx.Info("MultisigFaucetService", "Approver removed successfully", "address", address)
-	} else {
-		logx.Info("MultisigFaucetService", "Approver remove request pending",
-			"address", address, "signatures", len(request.Signatures), "required", config.Threshold)
 	}
 
 	return nil
