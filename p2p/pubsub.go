@@ -181,7 +181,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 		},
 	})
 
-	// clean sync request expireds every 1 minute
+	// clean sync request expires every 1 minute
 	exception.SafeGo("StartCleanupRoutine", func() {
 		ln.startCleanupRoutine()
 	})
