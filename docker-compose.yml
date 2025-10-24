@@ -157,48 +157,7 @@ services:
     networks:
       - mezon
     restart: unless-stopped
-
-  stress-test:
-    build:
-      context: .
-      args:
-        DB_VENDOR: ${DB_VENDOR:-rocksdb}
-      target: builder 
-    image: mmn-stresstest:${DB_VENDOR:-rocksdb}
-    container_name: stress-test
-    working_dir: /app/client_test/stress-test 
-    command: >
-      sh -c '
-        go run . \
-          -server $${SERVER} \
-          -accounts $${ACCOUNTS} \
-          -rate $${RATE} \
-          -switch $${SWITCH} \
-          -fund $${FUND} \
-          -amount $${AMOUNT} \
-          -duration $${DURATION}s \
-          -workers $${WORKERS} \
-          -minutes $${MINUTES} \
-      '
-    environment:
-      SERVER: ${STRESS_TEST_SERVER:-node1:9001}
-      ACCOUNTS: ${STRESS_TEST_ACCOUNTS:-100}
-      RATE: ${STRESS_TEST_RATE:-100}
-      SWITCH: ${STRESS_TEST_SWITCH:-10}
-      FUND: ${STRESS_TEST_FUND:-10000000}
-      AMOUNT: ${STRESS_TEST_AMOUNT:-100}
-      DURATION: ${STRESS_TEST_DURATION:-0}
-      WORKERS: ${STRESS_TEST_WORKER:-100}
-      MINUTES: ${STRESS_TEST_MINUTES:-0}
-    volumes:
-      - ./client_test/stress-test:/app/client_test/stress-test
-    networks:
-      - mezon
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "500m"
-
+    
 networks:
   mezon:
 
