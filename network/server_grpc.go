@@ -50,7 +50,7 @@ type server struct {
 	txTracker         interfaces.TransactionTrackerInterface // Transaction state tracker
 	txSvc             interfaces.TxService
 	acctSvc           interfaces.AccountService
-	multisigFaucetSvc *faucet.MultisigFaucetService 
+	multisigFaucetSvc *faucet.MultisigFaucetService
 }
 
 func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
@@ -606,6 +606,29 @@ func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRe
 	}, nil
 }
 
+// CheckWhitelistStatus checks if an address is in whitelist
+func (s *server) CheckWhitelistStatus(ctx context.Context, req *pb.CheckWhitelistStatusRequest) (*pb.CheckWhitelistStatusResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.CheckWhitelistStatusResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "CheckWhitelistStatus called",
+		"address", req.Address)
+
+	isApprover := s.multisigFaucetSvc.IsApprover(req.Address)
+	isProposer := s.multisigFaucetSvc.IsProposer(req.Address)
+
+	return &pb.CheckWhitelistStatusResponse{
+		Success:    true,
+		Message:    "Whitelist status retrieved",
+		IsApprover: isApprover,
+		IsProposer: isProposer,
+	}, nil
+}
+
 // AddSignature adds a signature to a multisig transaction
 func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) (*pb.AddSignatureResponse, error) {
 	if s.multisigFaucetSvc == nil {
@@ -645,6 +668,42 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 		Success:        true,
 		Message:        "Signature added successfully",
 		SignatureCount: int32(len(tx.Signatures)),
+	}, nil
+}
+
+// RejectProposal rejects a multisig transaction proposal
+func (s *server) RejectProposal(ctx context.Context, req *pb.RejectProposalRequest) (*pb.RejectProposalResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.RejectProposalResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "RejectProposal called",
+		"txHash", req.TxHash)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.RejectProposalResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Reject proposal
+	err = s.multisigFaucetSvc.RejectProposal(req.TxHash, req.SignerPubkey, signature)
+	if err != nil {
+		return &pb.RejectProposalResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to reject proposal: %v", err),
+		}, nil
+	}
+
+	return &pb.RejectProposalResponse{
+		Success: true,
+		Message: "Proposal rejected successfully",
 	}, nil
 }
 
@@ -846,25 +905,44 @@ func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.Remove
 	}, nil
 }
 
-// CheckWhitelistStatus checks if an address is in whitelist
-func (s *server) CheckWhitelistStatus(ctx context.Context, req *pb.CheckWhitelistStatusRequest) (*pb.CheckWhitelistStatusResponse, error) {
+// GetApproverWhitelist gets the list of approver whitelist
+func (s *server) GetApproverWhitelist(ctx context.Context, req *pb.GetApproverWhitelistRequest) (*pb.GetApproverWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
-		return &pb.CheckWhitelistStatusResponse{
+		return &pb.GetApproverWhitelistResponse{
 			Success: false,
 			Message: "Multisig faucet service not initialized",
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "CheckWhitelistStatus called",
-		"address", req.Address)
+	logx.Info("MultisigFaucetGRPC", "GetApproverWhitelist called")
 
-	isApprover := s.multisigFaucetSvc.IsApprover(req.Address)
-	isProposer := s.multisigFaucetSvc.IsProposer(req.Address)
+	// Get approver whitelist
+	addresses := s.multisigFaucetSvc.GetApproverWhitelist()
 
-	return &pb.CheckWhitelistStatusResponse{
-		Success:    true,
-		Message:    "Whitelist status retrieved",
-		IsApprover: isApprover,
-		IsProposer: isProposer,
+	return &pb.GetApproverWhitelistResponse{
+		Success:   true,
+		Message:   "Approver whitelist retrieved successfully",
+		Addresses: addresses,
+	}, nil
+}
+
+// GetProposerWhitelist gets the list of proposer whitelist
+func (s *server) GetProposerWhitelist(ctx context.Context, req *pb.GetProposerWhitelistRequest) (*pb.GetProposerWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.GetProposerWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "GetProposerWhitelist called")
+
+	// Get proposer whitelist
+	addresses := s.multisigFaucetSvc.GetProposerWhitelist()
+
+	return &pb.GetProposerWhitelistResponse{
+		Success:   true,
+		Message:   "Proposer whitelist retrieved successfully",
+		Addresses: addresses,
 	}, nil
 }

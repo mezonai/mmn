@@ -123,12 +123,15 @@ service TxService {
   // Multisig Faucet Methods
   rpc CreateFaucetRequest(CreateFaucetRequestRequest) returns (CreateFaucetRequestResponse);
   rpc AddSignature(AddSignatureRequest) returns (AddSignatureResponse);
+  rpc RejectProposal(RejectProposalRequest) returns (RejectProposalResponse);
   rpc GetMultisigTransactionStatus(GetMultisigTransactionStatusRequest) returns (GetMultisigTransactionStatusResponse);
   rpc AddToApproverWhitelist(AddToApproverWhitelistRequest) returns (AddToApproverWhitelistResponse);
   rpc AddToProposerWhitelist(AddToProposerWhitelistRequest) returns (AddToProposerWhitelistResponse);
   rpc RemoveFromApproverWhitelist(RemoveFromApproverWhitelistRequest) returns (RemoveFromApproverWhitelistResponse);
   rpc RemoveFromProposerWhitelist(RemoveFromProposerWhitelistRequest) returns (RemoveFromProposerWhitelistResponse);
   rpc CheckWhitelistStatus(CheckWhitelistStatusRequest) returns (CheckWhitelistStatusResponse);
+  rpc GetApproverWhitelist(GetApproverWhitelistRequest) returns (GetApproverWhitelistResponse);
+  rpc GetProposerWhitelist(GetProposerWhitelistRequest) returns (GetProposerWhitelistResponse);
 }
 
 // Multisig Faucet Messages
@@ -160,6 +163,18 @@ message AddSignatureResponse {
   bool success = 1;
   string message = 2;
   int32 signature_count = 3;
+}
+
+// Reject Proposal
+message RejectProposalRequest {
+  string tx_hash = 1;
+  string signer_pubkey = 2;
+  string signature = 3; // Hex encoded signature
+}
+
+message RejectProposalResponse {
+  bool success = 1;
+  string message = 2;
 }
 
 // Get Multisig Transaction Status
@@ -230,4 +245,26 @@ message CheckWhitelistStatusResponse {
   string message = 2;
   bool is_approver = 3;
   bool is_proposer = 4;
+}
+
+// Get Approver Whitelist
+message GetApproverWhitelistRequest {
+  // Empty request
+}
+
+message GetApproverWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string addresses = 3;
+}
+
+// Get Proposer Whitelist
+message GetProposerWhitelistRequest {
+  // Empty request
+}
+
+message GetProposerWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string addresses = 3;
 }

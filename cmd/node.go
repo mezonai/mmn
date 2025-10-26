@@ -289,31 +289,55 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 		return nil
 	}
 
-	faucetAccount := &types.Account{
-		Address: config.Address,
-		Balance: uint256.NewInt(1000000000), // TODO: research initial faucet balance
-		Nonce:   0,
+	// Check if faucet account already exists
+	existingAccount, err := accountStore.GetByAddr(config.Address)
+	if err != nil || existingAccount == nil {
+		faucetAccount := &types.Account{
+			Address: config.Address,
+			Balance: uint256.NewInt(1000000000), // TODO: research initial faucet balance
+			Nonce:   0,
+		}
+
+		// Store faucet account in account store
+		if err := accountStore.Store(faucetAccount); err != nil {
+			logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
+			return nil
+		}
+		logx.Info("MULTISIG_FAUCET", "Created new faucet account", "address", config.Address, "balance", faucetAccount.Balance.String())
+	} else {
+		if existingAccount != nil {
+			logx.Info("MULTISIG_FAUCET", "Faucet account already exists", "address", config.Address, "balance", existingAccount.Balance.String(), "nonce", existingAccount.Nonce)
+		} else {
+			logx.Warn("MULTISIG_FAUCET", "Faucet account exists but is nil", "address", config.Address)
+		}
 	}
 
-	// Store faucet account in account store
-	if err := accountStore.Store(faucetAccount); err != nil {
-		logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
-		return nil
+	// Check if multisig config already exists
+	existingConfig, err := multisigService.GetMultisigConfig(config.Address)
+	if err != nil {
+		// Config doesn't exist, register new one
+		if err := multisigService.RegisterMultisigConfig(config); err != nil {
+			logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
+			return nil
+		}
+		logx.Info("MULTISIG_FAUCET", "Registered new multisig config", "address", config.Address, "threshold", config.Threshold, "signers", len(config.Signers))
+	} else {
+		logx.Info("MULTISIG_FAUCET", "Multisig config already exists", "address", config.Address, "threshold", existingConfig.Threshold, "signers", len(existingConfig.Signers))
 	}
 
-	// Register multisig configuration
-	if err := multisigService.RegisterMultisigConfig(config); err != nil {
-		logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
-		return nil
+	// Get final account info for logging
+	finalAccount, err := accountStore.GetByAddr(config.Address)
+	if err != nil || finalAccount == nil {
+		logx.Warn("MULTISIG_FAUCET", "Failed to get final account info", "address", config.Address, "error", err)
+	} else {
+		logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized successfully",
+			"faucet_address", config.Address,
+			"faucet_balance", finalAccount.Balance.String(),
+			"signers", len(config.Signers),
+			"threshold", config.Threshold,
+			"max_amount", maxAmount.String(),
+			"cooldown", cooldown)
 	}
-
-	logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized successfully",
-		"faucet_address", config.Address,
-		"faucet_balance", faucetAccount.Balance.String(),
-		"signers", len(config.Signers),
-		"threshold", config.Threshold,
-		"max_amount", maxAmount.String(),
-		"cooldown", cooldown)
 
 	return multisigService
 }

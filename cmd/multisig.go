@@ -120,7 +120,7 @@ var rejectCmd = &cobra.Command{
 	Short: "Reject a proposal",
 	Long:  `Reject a multisig proposal.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := rejectProposal(); err != nil {
+		if err := rejectProposal(multisigConfig); err != nil {
 			logx.Error("MULTISIG CLI", err)
 		}
 	},
@@ -137,6 +137,28 @@ var statusCmd = &cobra.Command{
 	},
 }
 
+var listApproversCmd = &cobra.Command{
+	Use:   "list-approvers",
+	Short: "List approver whitelist",
+	Long:  `Get list of all addresses in the approver whitelist.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := listApprovers(); err != nil {
+			logx.Error("MULTISIG CLI", err)
+		}
+	},
+}
+
+var listProposersCmd = &cobra.Command{
+	Use:   "list-proposers",
+	Short: "List proposer whitelist",
+	Long:  `Get list of all addresses in the proposer whitelist.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := listProposers(); err != nil {
+			logx.Error("MULTISIG CLI", err)
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(multisigCmd)
 	multisigCmd.AddCommand(addProposerCmd)
@@ -148,6 +170,8 @@ func init() {
 	multisigCmd.AddCommand(approveCmd)
 	multisigCmd.AddCommand(rejectCmd)
 	multisigCmd.AddCommand(statusCmd)
+	multisigCmd.AddCommand(listApproversCmd)
+	multisigCmd.AddCommand(listProposersCmd)
 	multisigCmd.PersistentFlags().StringVarP(&multisigConfig.PrivateKeyFile, "private-key-file", "f", "", "private key file")
 	multisigCmd.PersistentFlags().StringVarP(&multisigConfig.PrivateKey, "private-key", "p", "", "private key in hex")
 	multisigCmd.PersistentFlags().StringVarP(&multisigConfig.NodeURL, "node-url", "u", "localhost:9001", "blockchain node URL")
@@ -465,8 +489,42 @@ func approveProposal(config MultisigConfig) error {
 	return nil
 }
 
-func rejectProposal() error {
-	return fmt.Errorf("reject functionality not implemented yet")
+func rejectProposal(config MultisigConfig) error {
+	if config.TxHash == "" {
+		return fmt.Errorf("--tx-hash is required")
+	}
+
+	client, err := createMultisigClient()
+	if err != nil {
+		return err
+	}
+
+	privKey, pubKeyStr, err := loadPrivateKey()
+	if err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.REJECT_PROPOSAL)
+	signature := signMessage(message, privKey)
+
+	ctx := context.Background()
+	resp, err := client.RejectProposal(ctx, &pb.RejectProposalRequest{
+		TxHash:       config.TxHash,
+		SignerPubkey: pubKeyStr,
+		Signature:    signature,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to reject proposal: %w", err)
+	}
+
+	if resp.Success {
+		fmt.Printf("✅ Successfully rejected proposal %s\n", config.TxHash)
+	} else {
+		return fmt.Errorf("failed to reject proposal: %s", resp.Message)
+	}
+
+	return nil
 }
 
 func checkStatus(config MultisigConfig) error {
@@ -492,6 +550,54 @@ func checkStatus(config MultisigConfig) error {
 	fmt.Printf("  Status: %s\n", resp.Status)
 	fmt.Printf("  Signatures: %d/%d\n", resp.SignatureCount, resp.RequiredSignatures)
 	fmt.Printf("  Message: %s\n", resp.Message)
+
+	return nil
+}
+
+func listApprovers() error {
+	client, err := createMultisigClient()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	resp, err := client.GetApproverWhitelist(ctx, &pb.GetApproverWhitelistRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get approver whitelist: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("failed to get approver whitelist: %s", resp.Message)
+	}
+
+	fmt.Printf("📋 Approver Whitelist (%d addresses):\n", len(resp.Addresses))
+	for i, addr := range resp.Addresses {
+		fmt.Printf("  %d. %s\n", i+1, addr)
+	}
+
+	return nil
+}
+
+func listProposers() error {
+	client, err := createMultisigClient()
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	resp, err := client.GetProposerWhitelist(ctx, &pb.GetProposerWhitelistRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get proposer whitelist: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("failed to get proposer whitelist: %s", resp.Message)
+	}
+
+	fmt.Printf("📋 Proposer Whitelist (%d addresses):\n", len(resp.Addresses))
+	for i, addr := range resp.Addresses {
+		fmt.Printf("  %d. %s\n", i+1, addr)
+	}
 
 	return nil
 }

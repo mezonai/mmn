@@ -28,7 +28,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2" --multisig-addresses "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" --multisig-addresses "7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV" --multisig-addresses "S5MrFRhc92vmczcrDpNG8CLoDPh2jZH8f6Na11bFyDt"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2" --multisig-addresses "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" --multisig-addresses "7oS1SxgwUTLTfxDqboRMdPYYBVxsc9xSq2Q2nM9VjssV"
       '
     depends_on:
       - bootnode

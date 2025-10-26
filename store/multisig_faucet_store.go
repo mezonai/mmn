@@ -31,6 +31,12 @@ type MultisigFaucetStore interface {
 	GetMultisigTxsBySigner(signer string) ([]*types.MultisigTx, error)
 	IsTransactionExecutable(txHash string) (bool, error)
 
+	// Whitelist management
+	StoreApproverWhitelist(addresses []string) error
+	GetApproverWhitelist() ([]string, error)
+	StoreProposerWhitelist(addresses []string) error
+	GetProposerWhitelist() ([]string, error)
+
 	MustClose()
 }
 
@@ -379,6 +385,75 @@ func (s *GenericMultisigFaucetStore) getMultisigTxKey(txHash string) []byte {
 	return []byte(PrefixMultisigTx + txHash)
 }
 
+// Whitelist management methods
+func (s *GenericMultisigFaucetStore) StoreApproverWhitelist(addresses []string) error {
+	whitelistData, err := jsonx.Marshal(addresses)
+	if err != nil {
+		return fmt.Errorf("failed to marshal approver whitelist: %w", err)
+	}
+
+	key := []byte("whitelist:approver")
+	if err := s.dbProvider.Put(key, whitelistData); err != nil {
+		return fmt.Errorf("failed to store approver whitelist: %w", err)
+	}
+
+	logx.Info("MULTISIG_STORE", "stored approver whitelist", "count", len(addresses))
+	return nil
+}
+
+func (s *GenericMultisigFaucetStore) GetApproverWhitelist() ([]string, error) {
+	key := []byte("whitelist:approver")
+	data, err := s.dbProvider.Get(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get approver whitelist: %w", err)
+	}
+
+	if data == nil {
+		return []string{}, nil // Return empty list if not found
+	}
+
+	var addresses []string
+	if err := jsonx.Unmarshal(data, &addresses); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal approver whitelist: %w", err)
+	}
+
+	return addresses, nil
+}
+
+func (s *GenericMultisigFaucetStore) StoreProposerWhitelist(addresses []string) error {
+	whitelistData, err := jsonx.Marshal(addresses)
+	if err != nil {
+		return fmt.Errorf("failed to marshal proposer whitelist: %w", err)
+	}
+
+	key := []byte("whitelist:proposer")
+	if err := s.dbProvider.Put(key, whitelistData); err != nil {
+		return fmt.Errorf("failed to store proposer whitelist: %w", err)
+	}
+
+	logx.Info("MULTISIG_STORE", "stored proposer whitelist", "count", len(addresses))
+	return nil
+}
+
+func (s *GenericMultisigFaucetStore) GetProposerWhitelist() ([]string, error) {
+	key := []byte("whitelist:proposer")
+	data, err := s.dbProvider.Get(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proposer whitelist: %w", err)
+	}
+
+	if data == nil {
+		return []string{}, nil // Return empty list if not found
+	}
+
+	var addresses []string
+	if err := jsonx.Unmarshal(data, &addresses); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal proposer whitelist: %w", err)
+	}
+
+	return addresses, nil
+}
+
 type MultisigFaucetAdapter struct {
 	store MultisigFaucetStore
 }
@@ -447,6 +522,23 @@ func (a *MultisigFaucetAdapter) GetMultisigTxsBySigner(signer string) ([]*types.
 
 func (a *MultisigFaucetAdapter) IsTransactionExecutable(txHash string) (bool, error) {
 	return a.store.IsTransactionExecutable(txHash)
+}
+
+// Whitelist management adapter methods
+func (a *MultisigFaucetAdapter) StoreApproverWhitelist(addresses []string) error {
+	return a.store.StoreApproverWhitelist(addresses)
+}
+
+func (a *MultisigFaucetAdapter) GetApproverWhitelist() ([]string, error) {
+	return a.store.GetApproverWhitelist()
+}
+
+func (a *MultisigFaucetAdapter) StoreProposerWhitelist(addresses []string) error {
+	return a.store.StoreProposerWhitelist(addresses)
+}
+
+func (a *MultisigFaucetAdapter) GetProposerWhitelist() ([]string, error) {
+	return a.store.GetProposerWhitelist()
 }
 
 func (a *MultisigFaucetAdapter) MustClose() {

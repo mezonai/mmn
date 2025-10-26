@@ -4,7 +4,6 @@ import (
 	"github.com/mezonai/mmn/types"
 )
 
-
 type MultisigFaucetStoreInterface interface {
 	StoreMultisigConfig(config *types.MultisigConfig) error
 	GetMultisigConfig(address string) (*types.MultisigConfig, error)
@@ -27,6 +26,12 @@ type MultisigFaucetStoreInterface interface {
 	GetMultisigTxsBySigner(signer string) ([]*types.MultisigTx, error)
 	IsTransactionExecutable(txHash string) (bool, error)
 
+	// Whitelist management
+	StoreApproverWhitelist(addresses []string) error
+	GetApproverWhitelist() ([]string, error)
+	StoreProposerWhitelist(addresses []string) error
+	GetProposerWhitelist() ([]string, error)
+
 	MustClose()
 }
 
@@ -34,6 +39,7 @@ var (
 	CREATE_FAUCET                = "CREATE_FAUCET"
 	FAUCET_ACTION                = "FAUCET_ACTION"
 	ADD_SIGNATURE                = "ADD_SIGNATURE"
+	REJECT_PROPOSAL              = "REJECT_PROPOSAL"
 	ADD_APPROVER                 = "ADD_APPROVER"
 	REMOVE_APPROVER              = "REMOVE_APPROVER"
 	ADD_PROPOSER                 = "ADD_PROPOSER"
@@ -46,13 +52,13 @@ var (
 	STATUS_EXECUTED = "EXECUTED"
 	STATUS_PENDING  = "PENDING"
 	STATUS_FAILED   = "FAILED"
+	STATUS_REJECTED = "REJECTED"
 )
-
 
 // # Proposer management (cần multisig approval)
 // ./mmn multisig add-proposer --address "ADDRESS" --private-key-file "key.txt"
 // ./mmn multisig remove-proposer --address "ADDRESS" --private-key-file "key.txt"
 
-// # Approver management (cần multisig approval)  
+// # Approver management (cần multisig approval)
 // ./mmn multisig add-approver --address "ADDRESS" --private-key-file "key.txt"
 // ./mmn multisig remove-approver --address "ADDRESS" --private-key-file "key.txt"
