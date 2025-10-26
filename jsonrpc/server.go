@@ -2,6 +2,7 @@ package jsonrpc
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
@@ -12,7 +13,9 @@ import (
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/creachadair/jrpc2/jhttp"
+	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonx"
 	pb "github.com/mezonai/mmn/proto"
@@ -160,13 +163,139 @@ type getAccountByAddressResponse struct {
 	Error   string       `json:"error"`
 }
 
+// Multisig Faucet types
+type createFaucetRequestParams struct {
+	MultisigAddress string `json:"multisig_address"`
+	Recipient       string `json:"recipient"`
+	Amount          string `json:"amount"`
+	TextData        string `json:"text_data"`
+	SignerPubkey    string `json:"signer_pubkey"`
+	Signature       string `json:"signature"`
+}
+
+type createFaucetRequestResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	TxHash  string `json:"tx_hash"`
+}
+
+type addSignatureParams struct {
+	TxHash       string `json:"tx_hash"`
+	SignerPubkey string `json:"signer_pubkey"`
+	Signature    string `json:"signature"`
+}
+
+type addSignatureResponse struct {
+	Success        bool   `json:"success"`
+	Message        string `json:"message"`
+	SignatureCount int32  `json:"signature_count"`
+}
+
+type rejectProposalParams struct {
+	TxHash       string `json:"tx_hash"`
+	SignerPubkey string `json:"signer_pubkey"`
+	Signature    string `json:"signature"`
+}
+
+type rejectProposalResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type getMultisigTxStatusParams struct {
+	TxHash string `json:"tx_hash"`
+}
+
+type getMultisigTxStatusResponse struct {
+	Success            bool   `json:"success"`
+	Message            string `json:"message"`
+	Status             string `json:"status"`
+	SignatureCount     int32  `json:"signature_count"`
+	RequiredSignatures int32  `json:"required_signatures"`
+}
+
+type addToApproverWhitelistParams struct {
+	Address      string `json:"address"`
+	SignerPubkey string `json:"signer_pubkey"`
+	Signature    string `json:"signature"`
+}
+
+type addToApproverWhitelistResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type addToProposerWhitelistParams struct {
+	Address      string `json:"address"`
+	SignerPubkey string `json:"signer_pubkey"`
+	Signature    string `json:"signature"`
+}
+
+type addToProposerWhitelistResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type removeFromApproverWhitelistParams struct {
+	Address      string `json:"address"`
+	SignerPubkey string `json:"signer_pubkey"`
+	Signature    string `json:"signature"`
+}
+
+type removeFromApproverWhitelistResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type removeFromProposerWhitelistParams struct {
+	Address      string `json:"address"`
+	SignerPubkey string `json:"signer_pubkey"`
+	Signature    string `json:"signature"`
+}
+
+type removeFromProposerWhitelistResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+type checkWhitelistStatusParams struct {
+	Address string `json:"address"`
+}
+
+type checkWhitelistStatusResponse struct {
+	Success    bool   `json:"success"`
+	Message    string `json:"message"`
+	IsApprover bool   `json:"is_approver"`
+	IsProposer bool   `json:"is_proposer"`
+}
+
+type getApproverWhitelistResponse struct {
+	Success   bool     `json:"success"`
+	Message   string   `json:"message"`
+	Addresses []string `json:"addresses"`
+}
+
+type getProposerWhitelistResponse struct {
+	Success   bool     `json:"success"`
+	Message   string   `json:"message"`
+	Addresses []string `json:"addresses"`
+}
+
+type getPendingProposalsResponse struct {
+	Success    bool     `json:"success"`
+	Message    string   `json:"message"`
+	TotalCount uint64   `json:"total_count"`
+	PendingTxs []string `json:"pending_txs"`
+}
+
 // --- Server ---
 
 type Server struct {
-	addr       string
-	txSvc      interfaces.TxService
-	acctSvc    interfaces.AccountService
-	corsConfig CORSConfig
+	addr              string
+	txSvc             interfaces.TxService
+	acctSvc           interfaces.AccountService
+	multisigFaucetSvc *faucet.MultisigFaucetService
+	corsConfig        CORSConfig
 }
 
 type CORSConfig struct {
@@ -176,11 +305,12 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService) *Server {
+func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, multisigFaucetSvc *faucet.MultisigFaucetService) *Server {
 	return &Server{
-		addr:    addr,
-		txSvc:   txSvc,
-		acctSvc: acctSvc,
+		addr:              addr,
+		txSvc:             txSvc,
+		acctSvc:           acctSvc,
+		multisigFaucetSvc: multisigFaucetSvc,
 		corsConfig: CORSConfig{
 			AllowedOrigins: []string{},
 			AllowedMethods: []string{},
@@ -274,6 +404,127 @@ func (s *Server) buildMethodMap() handler.Map {
 				return nil, nil
 			}
 			return res.(*getCurrentNonceResponse), nil
+		}),
+		// Multisig Faucet methods
+		"faucet.createproposal": handler.New(func(ctx context.Context, p createFaucetRequestParams) (*createFaucetRequestResponse, error) {
+			res, err := s.rpcCreateFaucetRequest(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*createFaucetRequestResponse), nil
+		}),
+		"faucet.approve": handler.New(func(ctx context.Context, p addSignatureParams) (*addSignatureResponse, error) {
+			res, err := s.rpcAddSignature(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*addSignatureResponse), nil
+		}),
+		"faucet.reject": handler.New(func(ctx context.Context, p rejectProposalParams) (*rejectProposalResponse, error) {
+			res, err := s.rpcRejectProposal(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*rejectProposalResponse), nil
+		}),
+		"faucet.getstatus": handler.New(func(ctx context.Context, p getMultisigTxStatusParams) (*getMultisigTxStatusResponse, error) {
+			res, err := s.rpcGetMultisigTxStatus(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*getMultisigTxStatusResponse), nil
+		}),
+		"faucet.addapprover": handler.New(func(ctx context.Context, p addToApproverWhitelistParams) (*addToApproverWhitelistResponse, error) {
+			res, err := s.rpcAddToApproverWhitelist(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*addToApproverWhitelistResponse), nil
+		}),
+		"faucet.addproposer": handler.New(func(ctx context.Context, p addToProposerWhitelistParams) (*addToProposerWhitelistResponse, error) {
+			res, err := s.rpcAddToProposerWhitelist(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*addToProposerWhitelistResponse), nil
+		}),
+		"faucet.removeapprover": handler.New(func(ctx context.Context, p removeFromApproverWhitelistParams) (*removeFromApproverWhitelistResponse, error) {
+			res, err := s.rpcRemoveFromApproverWhitelist(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*removeFromApproverWhitelistResponse), nil
+		}),
+		"faucet.removeproposer": handler.New(func(ctx context.Context, p removeFromProposerWhitelistParams) (*removeFromProposerWhitelistResponse, error) {
+			res, err := s.rpcRemoveFromProposerWhitelist(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*removeFromProposerWhitelistResponse), nil
+		}),
+		"faucet.checkwhitelist": handler.New(func(ctx context.Context, p checkWhitelistStatusParams) (*checkWhitelistStatusResponse, error) {
+			res, err := s.rpcCheckWhitelistStatus(p)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*checkWhitelistStatusResponse), nil
+		}),
+		"faucet.listapprovers": handler.New(func(ctx context.Context) (*getApproverWhitelistResponse, error) {
+			res, err := s.rpcGetApproverWhitelist()
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*getApproverWhitelistResponse), nil
+		}),
+		"faucet.listproposers": handler.New(func(ctx context.Context) (*getProposerWhitelistResponse, error) {
+			res, err := s.rpcGetProposerWhitelist()
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*getProposerWhitelistResponse), nil
+		}),
+		"faucet.getproposals": handler.New(func(ctx context.Context) (*getPendingProposalsResponse, error) {
+			res, err := s.rpcGetPendingProposals()
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*getPendingProposalsResponse), nil
 		}),
 	}
 }
@@ -387,6 +638,269 @@ func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpc
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
 	return &getCurrentNonceResponse{Address: resp.Address, Nonce: resp.Nonce, Tag: resp.Tag, Error: resp.Error}, nil
+}
+
+// --- Multisig Faucet Implementations ---
+
+func (s *Server) rpcCreateFaucetRequest(p createFaucetRequestParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &createFaucetRequestResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &createFaucetRequestResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	// Parse amount to uint256
+	amount, err := uint256.FromDecimal(p.Amount)
+	if err != nil {
+		return &createFaucetRequestResponse{Success: false, Message: fmt.Sprintf("Invalid amount format: %v", err)}, nil
+	}
+
+	resp, err := s.multisigFaucetSvc.CreateFaucetRequest(
+		p.MultisigAddress,
+		amount,
+		p.TextData,
+		p.SignerPubkey,
+		signature,
+	)
+	if err != nil {
+		return &createFaucetRequestResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &createFaucetRequestResponse{
+		Success: true,
+		Message: "Faucet request created successfully",
+		TxHash:  resp.Hash(),
+	}, nil
+}
+
+func (s *Server) rpcAddSignature(p addSignatureParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &addSignatureResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &addSignatureResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	err = s.multisigFaucetSvc.AddSignature(p.TxHash, p.SignerPubkey, signature)
+	if err != nil {
+		return &addSignatureResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	// Get updated transaction to count signatures
+	tx, err := s.multisigFaucetSvc.GetMultisigTx(p.TxHash)
+	if err != nil {
+		return &addSignatureResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &addSignatureResponse{
+		Success:        true,
+		Message:        "Signature added successfully",
+		SignatureCount: int32(len(tx.Signatures)),
+	}, nil
+}
+
+func (s *Server) rpcRejectProposal(p rejectProposalParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &rejectProposalResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &rejectProposalResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	err = s.multisigFaucetSvc.RejectProposal(p.TxHash, p.SignerPubkey, signature)
+	if err != nil {
+		return &rejectProposalResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &rejectProposalResponse{
+		Success: true,
+		Message: "Proposal rejected successfully",
+	}, nil
+}
+
+func (s *Server) rpcGetMultisigTxStatus(p getMultisigTxStatusParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &getMultisigTxStatusResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	tx, err := s.multisigFaucetSvc.GetMultisigTx(p.TxHash)
+	if err != nil {
+		return &getMultisigTxStatusResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	status := tx.Status
+	if status == "" {
+		status = "pending"
+	}
+
+	return &getMultisigTxStatusResponse{
+		Success:            true,
+		Message:            "Transaction status retrieved",
+		Status:             status,
+		SignatureCount:     int32(len(tx.Signatures)),
+		RequiredSignatures: int32(tx.Config.Threshold),
+	}, nil
+}
+
+func (s *Server) rpcAddToApproverWhitelist(p addToApproverWhitelistParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &addToApproverWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &addToApproverWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	err = s.multisigFaucetSvc.AddToApproverWhitelist(p.Address, p.SignerPubkey, signature)
+	if err != nil {
+		return &addToApproverWhitelistResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &addToApproverWhitelistResponse{
+		Success: true,
+		Message: "Address added to approver whitelist successfully",
+	}, nil
+}
+
+func (s *Server) rpcAddToProposerWhitelist(p addToProposerWhitelistParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &addToProposerWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &addToProposerWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	err = s.multisigFaucetSvc.AddToProposerWhitelist(p.Address, p.SignerPubkey, signature)
+	if err != nil {
+		return &addToProposerWhitelistResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &addToProposerWhitelistResponse{
+		Success: true,
+		Message: "Address added to proposer whitelist successfully",
+	}, nil
+}
+
+func (s *Server) rpcRemoveFromApproverWhitelist(p removeFromApproverWhitelistParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &removeFromApproverWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &removeFromApproverWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(p.Address, p.SignerPubkey, signature)
+	if err != nil {
+		return &removeFromApproverWhitelistResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &removeFromApproverWhitelistResponse{
+		Success: true,
+		Message: "Address removed from approver whitelist successfully",
+	}, nil
+}
+
+func (s *Server) rpcRemoveFromProposerWhitelist(p removeFromProposerWhitelistParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &removeFromProposerWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	// Decode hex signature
+	signature, err := hex.DecodeString(p.Signature)
+	if err != nil {
+		return &removeFromProposerWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
+	}
+
+	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(p.Address, p.SignerPubkey, signature)
+	if err != nil {
+		return &removeFromProposerWhitelistResponse{Success: false, Message: err.Error()}, nil
+	}
+
+	return &removeFromProposerWhitelistResponse{
+		Success: true,
+		Message: "Address removed from proposer whitelist successfully",
+	}, nil
+}
+
+func (s *Server) rpcCheckWhitelistStatus(p checkWhitelistStatusParams) (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &checkWhitelistStatusResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	isApprover := s.multisigFaucetSvc.IsApprover(p.Address)
+	isProposer := s.multisigFaucetSvc.IsProposer(p.Address)
+
+	return &checkWhitelistStatusResponse{
+		Success:    true,
+		Message:    "Whitelist status retrieved",
+		IsApprover: isApprover,
+		IsProposer: isProposer,
+	}, nil
+}
+
+func (s *Server) rpcGetApproverWhitelist() (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &getApproverWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	addresses := s.multisigFaucetSvc.GetApproverWhitelist()
+
+	return &getApproverWhitelistResponse{
+		Success:   true,
+		Message:   "Approver whitelist retrieved successfully",
+		Addresses: addresses,
+	}, nil
+}
+
+func (s *Server) rpcGetProposerWhitelist() (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &getProposerWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	addresses := s.multisigFaucetSvc.GetProposerWhitelist()
+
+	return &getProposerWhitelistResponse{
+		Success:   true,
+		Message:   "Proposer whitelist retrieved successfully",
+		Addresses: addresses,
+	}, nil
+}
+
+func (s *Server) rpcGetPendingProposals() (interface{}, *rpcError) {
+	if s.multisigFaucetSvc == nil {
+		return &getPendingProposalsResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
+	}
+
+	pendingTxs := s.multisigFaucetSvc.GetPendingTxs()
+	var txHashes []string
+	for txHash := range pendingTxs {
+		txHashes = append(txHashes, txHash)
+	}
+
+	return &getPendingProposalsResponse{
+		Success:    true,
+		Message:    "Pending proposals retrieved successfully",
+		TotalCount: uint64(len(txHashes)),
+		PendingTxs: txHashes,
+	}, nil
 }
 
 // --- Helpers ---

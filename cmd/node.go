@@ -500,7 +500,7 @@ func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pC
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services
 	txSvc := service.NewTxService(ld, mp, bs, txTracker)
 	acctSvc := service.NewAccountService(ld, mp, txTracker)
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, multisigService)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
