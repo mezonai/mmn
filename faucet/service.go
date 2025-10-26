@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +15,14 @@ import (
 	"github.com/mezonai/mmn/types"
 	"github.com/mr-tron/base58"
 )
+
+func calculateThreshold(approverCount int) int {
+	threshold := (approverCount * thresholdRatio) / thresholdDivisor
+	if threshold < minThreshold {
+		threshold = minThreshold
+	}
+	return threshold
+}
 
 type MultisigFaucetService struct {
 	store                   MultisigFaucetStoreInterface
@@ -57,28 +64,25 @@ func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore s
 	return service
 }
 
-// loadWhitelistsFromDB loads whitelists from database on startup
 func (s *MultisigFaucetService) loadWhitelistsFromDB() {
-	// Load approver whitelist
 	approverAddresses, err := s.store.GetApproverWhitelist()
 	if err != nil {
-		logx.Warn("MultisigFaucetService", "failed to load approver whitelist from database", "error", err)
-	} else {
-		for _, addr := range approverAddresses {
-			s.approverWhitelist[addr] = true
-		}
-		logx.Info("MultisigFaucetService", "loaded approver whitelist from database", "count", len(approverAddresses))
+		logx.Warn("MultisigFaucetService", "failed to load approver whitelist", "error", err)
+		return
 	}
 
-	// Load proposer whitelist
+	for _, addr := range approverAddresses {
+		s.approverWhitelist[addr] = true
+	}
+
 	proposerAddresses, err := s.store.GetProposerWhitelist()
 	if err != nil {
-		logx.Warn("MultisigFaucetService", "failed to load proposer whitelist from database", "error", err)
-	} else {
-		for _, addr := range proposerAddresses {
-			s.proposerWhitelist[addr] = true
-		}
-		logx.Info("MultisigFaucetService", "loaded proposer whitelist from database", "count", len(proposerAddresses))
+		logx.Warn("MultisigFaucetService", "failed to load proposer whitelist", "error", err)
+		return
+	}
+
+	for _, addr := range proposerAddresses {
+		s.proposerWhitelist[addr] = true
 	}
 }
 
@@ -110,9 +114,7 @@ func (s *MultisigFaucetService) RegisterMultisigConfig(config *types.MultisigCon
 	for addr := range s.approverWhitelist {
 		approverAddresses = append(approverAddresses, addr)
 	}
-	if err := s.store.StoreApproverWhitelist(approverAddresses); err != nil {
-		logx.Warn("MultisigFaucetService", "failed to store initial approver whitelist", "error", err)
-	}
+	s.store.StoreApproverWhitelist(approverAddresses)
 
 	return nil
 }
@@ -134,42 +136,6 @@ func (s *MultisigFaucetService) GetMultisigConfig(address string) (*types.Multis
 func (s *MultisigFaucetService) IsMultisigWallet(address string) bool {
 	_, err := s.GetMultisigConfig(address)
 	return err == nil
-}
-
-func (s *MultisigFaucetService) GetMultisigWalletInfo(address string) (*types.MultisigConfig, error) {
-	if !s.IsMultisigWallet(address) {
-		return nil, fmt.Errorf("address %s is not a multisig wallet", address)
-	}
-	return s.GetMultisigConfig(address)
-}
-
-func (s *MultisigFaucetService) GetMultisigWalletStats(address string) (map[string]interface{}, error) {
-	if !s.IsMultisigWallet(address) {
-		return nil, fmt.Errorf("address %s is not a multisig wallet", address)
-	}
-
-	config, err := s.GetMultisigConfig(address)
-	if err != nil {
-		return nil, err
-	}
-
-	pendingCount := 0
-	s.mu.RLock()
-	for _, tx := range s.pendingTxs {
-		if tx.Sender == address {
-			pendingCount++
-		}
-	}
-	s.mu.RUnlock()
-
-	return map[string]interface{}{
-		"address":       address,
-		"threshold":     config.Threshold,
-		"signers_count": len(config.Signers),
-		"signers":       config.Signers,
-		"pending_txs":   pendingCount,
-		"is_multisig":   true,
-	}, nil
 }
 
 func (s *MultisigFaucetService) CreateFaucetRequest(
@@ -280,7 +246,7 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 		return fmt.Errorf("address %s is already in approver whitelist", address)
 	}
 
-	requestKey := fmt.Sprintf("add_approver:%s", address)
+	requestKey := fmt.Sprintf("%s:%s", ADD_APPROVER, address)
 
 	request, exists := s.pendingApproverRequests[requestKey]
 	if !exists {
@@ -310,13 +276,12 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 		s.approverWhitelist[address] = true
 		delete(s.pendingApproverRequests, requestKey)
 
-		// Store updated whitelist to database
-		approverAddresses := make([]string, 0, len(s.approverWhitelist))
-		for addr := range s.approverWhitelist {
-			approverAddresses = append(approverAddresses, addr)
-		}
-		if err := s.store.StoreApproverWhitelist(approverAddresses); err != nil {
-			logx.Warn("MultisigFaucetService", "failed to store updated approver whitelist", "error", err)
+		s.storeApproverWhitelist()
+
+		newThreshold := calculateThreshold(len(s.approverWhitelist))
+		if newThreshold != config.Threshold {
+			config.Threshold = newThreshold
+			s.store.StoreMultisigConfig(config)
 		}
 	}
 
@@ -341,7 +306,7 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 		return fmt.Errorf("address %s is not in approver whitelist", address)
 	}
 
-	requestKey := fmt.Sprintf("remove_approver:%s", address)
+	requestKey := fmt.Sprintf("%s:%s", REMOVE_APPROVER, address)
 
 	request, exists := s.pendingApproverRequests[requestKey]
 	if !exists {
@@ -370,26 +335,40 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 		delete(s.approverWhitelist, address)
 		delete(s.pendingApproverRequests, requestKey)
 
-		// Store updated whitelist to database
-		approverAddresses := make([]string, 0, len(s.approverWhitelist))
-		for addr := range s.approverWhitelist {
-			approverAddresses = append(approverAddresses, addr)
-		}
-		if err := s.store.StoreApproverWhitelist(approverAddresses); err != nil {
-			logx.Warn("MultisigFaucetService", "failed to store updated approver whitelist", "error", err)
+		s.storeApproverWhitelist()
+
+		newThreshold := calculateThreshold(len(s.approverWhitelist))
+		if newThreshold != config.Threshold {
+			config.Threshold = newThreshold
+			s.store.StoreMultisigConfig(config)
 		}
 	}
 
 	return nil
 }
 
-// getAllMultisigConfigs returns all multisig configurations
 func (s *MultisigFaucetService) getAllMultisigConfigs() []*types.MultisigConfig {
 	var configs []*types.MultisigConfig
 	for _, config := range s.configs {
 		configs = append(configs, config)
 	}
 	return configs
+}
+
+func (s *MultisigFaucetService) storeApproverWhitelist() {
+	approverAddresses := make([]string, 0, len(s.approverWhitelist))
+	for addr := range s.approverWhitelist {
+		approverAddresses = append(approverAddresses, addr)
+	}
+	s.store.StoreApproverWhitelist(approverAddresses)
+}
+
+func (s *MultisigFaucetService) storeProposerWhitelist() {
+	proposerAddresses := make([]string, 0, len(s.proposerWhitelist))
+	for addr := range s.proposerWhitelist {
+		proposerAddresses = append(proposerAddresses, addr)
+	}
+	s.store.StoreProposerWhitelist(proposerAddresses)
 }
 
 func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPubKey string, signature []byte) error {
@@ -410,7 +389,7 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 		return fmt.Errorf("address %s is already in proposer whitelist", address)
 	}
 
-	requestKey := fmt.Sprintf("add_proposer:%s", address)
+	requestKey := fmt.Sprintf("%s:%s", ADD_PROPOSER, address)
 
 	request, exists := s.pendingProposerRequests[requestKey]
 	if !exists {
@@ -440,14 +419,7 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 		s.proposerWhitelist[address] = true
 		delete(s.pendingProposerRequests, requestKey)
 
-		// Store updated whitelist to database
-		proposerAddresses := make([]string, 0, len(s.proposerWhitelist))
-		for addr := range s.proposerWhitelist {
-			proposerAddresses = append(proposerAddresses, addr)
-		}
-		if err := s.store.StoreProposerWhitelist(proposerAddresses); err != nil {
-			logx.Warn("MultisigFaucetService", "failed to store updated proposer whitelist", "error", err)
-		}
+		s.storeProposerWhitelist()
 	}
 
 	return nil
@@ -471,7 +443,7 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 		return fmt.Errorf("address %s is not in proposer whitelist", address)
 	}
 
-	requestKey := fmt.Sprintf("remove_proposer:%s", address)
+	requestKey := fmt.Sprintf("%s:%s", REMOVE_PROPOSER, address)
 
 	request, exists := s.pendingProposerRequests[requestKey]
 	if !exists {
@@ -501,14 +473,7 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 		delete(s.proposerWhitelist, address)
 		delete(s.pendingProposerRequests, requestKey)
 
-		// Store updated whitelist to database
-		proposerAddresses := make([]string, 0, len(s.proposerWhitelist))
-		for addr := range s.proposerWhitelist {
-			proposerAddresses = append(proposerAddresses, addr)
-		}
-		if err := s.store.StoreProposerWhitelist(proposerAddresses); err != nil {
-			logx.Warn("MultisigFaucetService", "failed to store updated proposer whitelist", "error", err)
-		}
+		s.storeProposerWhitelist()
 	}
 
 	return nil
@@ -551,113 +516,6 @@ func (s *MultisigFaucetService) GetPendingTxs() map[string]*types.MultisigTx {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.pendingTxs
-}
-
-func (s *MultisigFaucetService) GetApproverWhitelistCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return len(s.approverWhitelist)
-}
-
-func (s *MultisigFaucetService) GetProposerWhitelistCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return len(s.proposerWhitelist)
-}
-
-func (s *MultisigFaucetService) CreateWhitelistManagementTx(
-	multisigAddress string,
-	action string,
-	targetAddress string,
-	proposerAddress string,
-) (*types.MultisigTx, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.approverWhitelist[proposerAddress] {
-		return nil, fmt.Errorf("only approvers can propose whitelist changes")
-	}
-
-	config, exists := s.configs[multisigAddress]
-	if !exists {
-		return nil, fmt.Errorf("multisig config not found for address: %s", multisigAddress)
-	}
-
-	nonce := uint64(time.Now().UnixNano())
-	textData := fmt.Sprintf("whitelist_management:%s:%s", action, targetAddress)
-
-	tx := CreateMultisigFaucetTx(config, targetAddress, uint256.NewInt(0), nonce, uint64(time.Now().Unix()), textData)
-
-	txHash := tx.Hash()
-	if err := s.store.StoreMultisigTx(tx); err != nil {
-		return nil, fmt.Errorf("failed to store whitelist management transaction: %w", err)
-	}
-
-	s.pendingWhitelistTxs[txHash] = tx
-
-	return tx, nil
-}
-
-func (s *MultisigFaucetService) ExecuteWhitelistManagementTx(txHash string, signerPubKey string, signature []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, EXECUTE_WHITELIST_MANAGEMENT)
-	if err != nil {
-		return fmt.Errorf("failed to verify caller signature: %w", err)
-	}
-
-	if !s.approverWhitelist[callerAddress] {
-		return fmt.Errorf("caller %s is not authorized to execute whitelist management transactions", callerAddress)
-	}
-
-	tx, exists := s.pendingWhitelistTxs[txHash]
-	if !exists {
-		var err error
-		tx, err = s.store.GetMultisigTx(txHash)
-		if err != nil {
-			return fmt.Errorf("whitelist management transaction not found: %s", txHash)
-		}
-	}
-
-	if err := VerifyMultisigTx(tx); err != nil {
-		return fmt.Errorf("whitelist management transaction verification failed: %w", err)
-	}
-
-	textData := tx.TextData
-	if !strings.HasPrefix(textData, WHITELIST_MANAGEMENT_PREFIX) {
-		return fmt.Errorf("invalid whitelist management transaction")
-	}
-
-	parts := strings.Split(textData, ":")
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid whitelist management transaction format")
-	}
-
-	action := parts[1]
-	targetAddress := parts[2]
-
-	switch action {
-	case ADD_APPROVER:
-		s.approverWhitelist[targetAddress] = true
-	case REMOVE_APPROVER:
-		delete(s.approverWhitelist, targetAddress)
-	case ADD_PROPOSER:
-		s.proposerWhitelist[targetAddress] = true
-	case REMOVE_PROPOSER:
-		delete(s.proposerWhitelist, targetAddress)
-	default:
-		return fmt.Errorf("unknown whitelist management action: %s", action)
-	}
-
-	delete(s.pendingWhitelistTxs, txHash)
-	if err := s.store.DeleteMultisigTx(txHash); err != nil {
-		logx.Warn("MultisigFaucetService", "failed to delete whitelist management transaction", "error", err)
-	}
-
-	return nil
 }
 
 func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string, signature []byte) error {
@@ -719,7 +577,6 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 	return nil
 }
 
-// RejectProposal rejects a multisig transaction proposal
 func (s *MultisigFaucetService) RejectProposal(txHash string, signerPubKey string, signature []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -785,11 +642,10 @@ func (s *MultisigFaucetService) executeTransaction(tx *types.MultisigTx) error {
 	}
 
 	if s.mempool != nil {
-		txHash, err := s.mempool.AddTx(faucetTx, true)
+		_, err := s.mempool.AddTx(faucetTx, true)
 		if err != nil {
 			return fmt.Errorf("failed to add transaction to mempool: %w", err)
 		}
-		logx.Info("MultisigFaucetService", "faucet transaction added to mempool", "txHash", txHash)
 	}
 
 	if s.store != nil {
@@ -851,18 +707,6 @@ func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*types.Mul
 	return tx, nil
 }
 
-func (s *MultisigFaucetService) ListPendingTransactions() []*types.MultisigTx {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	transactions := make([]*types.MultisigTx, 0, len(s.pendingTxs))
-	for _, tx := range s.pendingTxs {
-		transactions = append(transactions, tx)
-	}
-
-	return transactions
-}
-
 func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*types.TransactionStatus, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -891,37 +735,6 @@ func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*types.Tran
 
 	return status, nil
 }
-
-func (s *MultisigFaucetService) CleanupExpiredTransactions(maxAge time.Duration) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now()
-	for txHash, tx := range s.pendingTxs {
-		txTime := time.Unix(int64(tx.Timestamp), 0)
-		if now.Sub(txTime) > maxAge {
-			delete(s.pendingTxs, txHash)
-
-			if err := s.store.DeleteMultisigTx(txHash); err != nil {
-				logx.Warn("MultisigFaucetService", "failed to delete expired transaction from storage", "txHash", txHash, "error", err)
-			}
-		}
-	}
-}
-
-func (s *MultisigFaucetService) GetServiceStats() *types.ServiceStats {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return &types.ServiceStats{
-		RegisteredConfigs:   len(s.configs),
-		PendingTransactions: len(s.pendingTxs),
-		MaxAmount:           s.maxAmount,
-		Cooldown:            s.cooldown,
-	}
-}
-
-// GetApproverWhitelist returns the list of approver addresses
 func (s *MultisigFaucetService) GetApproverWhitelist() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -933,7 +746,6 @@ func (s *MultisigFaucetService) GetApproverWhitelist() []string {
 	return addresses
 }
 
-// GetProposerWhitelist returns the list of proposer addresses
 func (s *MultisigFaucetService) GetProposerWhitelist() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

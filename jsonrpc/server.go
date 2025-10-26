@@ -745,7 +745,7 @@ func (s *Server) rpcGetMultisigTxStatus(p getMultisigTxStatusParams) (interface{
 
 	return &getMultisigTxStatusResponse{
 		Success:            true,
-		Message:            "Transaction status retrieved",
+		Message:            tx.TextData,
 		Status:             status,
 		SignatureCount:     int32(len(tx.Signatures)),
 		RequiredSignatures: int32(tx.Config.Threshold),

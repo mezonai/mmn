@@ -750,7 +750,7 @@ func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMu
 
 	return &pb.GetMultisigTransactionStatusResponse{
 		Success:            true,
-		Message:            "Transaction status retrieved",
+		Message:            tx.TextData,
 		Status:             status,
 		SignatureCount:     int32(len(tx.Signatures)),
 		RequiredSignatures: int32(tx.Config.Threshold),

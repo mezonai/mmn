@@ -17,6 +17,43 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	msgSuccessAddedProposer      = "Successfully added %s to proposer whitelist"
+	msgSuccessAddedApprover      = "Successfully added %s to approver whitelist"
+	msgSuccessRemovedApprover    = "Successfully removed %s from approver whitelist"
+	msgSuccessRemovedProposer    = "Successfully removed %s from proposer whitelist"
+	msgSuccessCreatedProposal    = "Successfully created proposal: %s"
+	msgSuccessApprovedProposal   = "Successfully approved proposal. Total signatures: %d"
+	msgSuccessRejectedProposal   = "Successfully rejected proposal %s"
+	msgPendingTransactions       = "Found %d pending transactions:"
+	msgProposalStatus            = "Proposal Status:"
+	msgStatusLabel               = "Status: %s"
+	msgSignaturesLabel           = "Signatures: %d/%d"
+	msgMessageLabel              = "Message: %s"
+	msgApproverWhitelist         = "Approver Whitelist (%d addresses):"
+	msgProposerWhitelist         = "Proposer Whitelist (%d addresses):"
+	msgErrorAddProposer          = "failed to add proposer"
+	msgErrorAddApprover          = "failed to add approver"
+	msgErrorRemoveApprover       = "failed to remove approver"
+	msgErrorRemoveProposer       = "failed to remove proposer"
+	msgErrorCreateProposal       = "failed to create proposal"
+	msgErrorGetProposals         = "failed to get proposals"
+	msgErrorApproveProposal      = "failed to approve proposal"
+	msgErrorRejectProposal       = "failed to reject proposal"
+	msgErrorGetStatus            = "failed to get status"
+	msgErrorGetApproverWhitelist = "failed to get approver whitelist"
+	msgErrorGetProposerWhitelist = "failed to get proposer whitelist"
+	labelHash                    = "Hash: %s"
+	labelStatus                  = "Status: %s"
+	labelAddress                 = "%d. %s"
+
+	// Required field messages
+	msgAddressRequired      = "--address is required"
+	msgMultisigAddrRequired = "--multisig-addr is required"
+	msgAmountRequired       = "--amount is required"
+	msgTxHashRequired       = "--tx-hash is required"
+)
+
 type MultisigConfig struct {
 	PrivateKeyFile string
 	PrivateKey     string
@@ -262,13 +299,13 @@ func addProposer(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to add proposer: %w", err)
+		return fmt.Errorf(msgErrorAddProposer+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully added %s to proposer whitelist\n", config.Address)
+		fmt.Printf(msgSuccessAddedProposer+"\n", config.Address)
 	} else {
-		return fmt.Errorf("failed to add proposer: %s", resp.Message)
+		return fmt.Errorf(msgErrorAddProposer+": %s", resp.Message)
 	}
 
 	return nil
@@ -300,13 +337,13 @@ func addApprover(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to add approver: %w", err)
+		return fmt.Errorf(msgErrorAddApprover+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully added %s to approver whitelist\n", config.Address)
+		fmt.Printf(msgSuccessAddedApprover+"\n", config.Address)
 	} else {
-		return fmt.Errorf("failed to add approver: %s", resp.Message)
+		return fmt.Errorf(msgErrorAddApprover+": %s", resp.Message)
 	}
 
 	return nil
@@ -338,13 +375,13 @@ func removeApprover(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to remove approver: %w", err)
+		return fmt.Errorf(msgErrorRemoveApprover+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully removed %s from approver whitelist\n", config.Address)
+		fmt.Printf(msgSuccessRemovedApprover+"\n", config.Address)
 	} else {
-		return fmt.Errorf("failed to remove approver: %s", resp.Message)
+		return fmt.Errorf(msgErrorRemoveApprover+": %s", resp.Message)
 	}
 
 	return nil
@@ -376,13 +413,13 @@ func removeProposer(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to remove proposer: %w", err)
+		return fmt.Errorf(msgErrorRemoveProposer+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully removed %s from proposer whitelist\n", config.Address)
+		fmt.Printf(msgSuccessRemovedProposer+"\n", config.Address)
 	} else {
-		return fmt.Errorf("failed to remove proposer: %s", resp.Message)
+		return fmt.Errorf(msgErrorRemoveProposer+": %s", resp.Message)
 	}
 
 	return nil
@@ -419,13 +456,13 @@ func createProposal(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to create proposal: %w", err)
+		return fmt.Errorf(msgErrorCreateProposal+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully created proposal: %s\n", resp.TxHash)
+		fmt.Printf(msgSuccessCreatedProposal+"\n", resp.TxHash)
 	} else {
-		return fmt.Errorf("failed to create proposal: %s", resp.Message)
+		return fmt.Errorf(msgErrorCreateProposal+": %s", resp.Message)
 	}
 
 	return nil
@@ -440,12 +477,12 @@ func getProposals() error {
 	ctx := context.Background()
 	resp, err := client.GetPendingTransactions(ctx, &pb.GetPendingTransactionsRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get proposals: %w", err)
+		return fmt.Errorf(msgErrorGetProposals+": %w", err)
 	}
 
-	fmt.Printf("📋 Found %d pending transactions:\n", resp.TotalCount)
-	for i, tx := range resp.PendingTxs {
-		fmt.Printf("  %d. Hash: %s, Status: %s\n", i+1, tx.TxHash, tx.Status.String())
+	fmt.Printf(msgPendingTransactions+"\n", resp.TotalCount)
+	for _, tx := range resp.PendingTxs {
+		fmt.Printf(labelHash+", "+labelStatus+"\n", tx.TxHash, tx.Status.String())
 	}
 
 	return nil
@@ -477,13 +514,13 @@ func approveProposal(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to approve proposal: %w", err)
+		return fmt.Errorf(msgErrorApproveProposal+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully approved proposal. Total signatures: %d\n", resp.SignatureCount)
+		fmt.Printf(msgSuccessApprovedProposal+"\n", resp.SignatureCount)
 	} else {
-		return fmt.Errorf("failed to approve proposal: %s", resp.Message)
+		return fmt.Errorf(msgErrorApproveProposal+": %s", resp.Message)
 	}
 
 	return nil
@@ -515,13 +552,13 @@ func rejectProposal(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to reject proposal: %w", err)
+		return fmt.Errorf(msgErrorRejectProposal+": %w", err)
 	}
 
 	if resp.Success {
-		fmt.Printf("✅ Successfully rejected proposal %s\n", config.TxHash)
+		fmt.Printf(msgSuccessRejectedProposal+"\n", config.TxHash)
 	} else {
-		return fmt.Errorf("failed to reject proposal: %s", resp.Message)
+		return fmt.Errorf(msgErrorRejectProposal+": %s", resp.Message)
 	}
 
 	return nil
@@ -543,13 +580,13 @@ func checkStatus(config MultisigConfig) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to get status: %w", err)
+		return fmt.Errorf(msgErrorGetStatus+": %w", err)
 	}
 
-	fmt.Printf("📊 Proposal Status:\n")
-	fmt.Printf("  Status: %s\n", resp.Status)
-	fmt.Printf("  Signatures: %d/%d\n", resp.SignatureCount, resp.RequiredSignatures)
-	fmt.Printf("  Message: %s\n", resp.Message)
+	fmt.Printf(msgProposalStatus + "\n")
+	fmt.Printf(msgStatusLabel+"\n", resp.Status)
+	fmt.Printf(msgSignaturesLabel+"\n", resp.SignatureCount, resp.RequiredSignatures)
+	fmt.Printf(msgMessageLabel+"\n", resp.Message)
 
 	return nil
 }
@@ -563,16 +600,16 @@ func listApprovers() error {
 	ctx := context.Background()
 	resp, err := client.GetApproverWhitelist(ctx, &pb.GetApproverWhitelistRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get approver whitelist: %w", err)
+		return fmt.Errorf(msgErrorGetApproverWhitelist+": %w", err)
 	}
 
 	if !resp.Success {
-		return fmt.Errorf("failed to get approver whitelist: %s", resp.Message)
+		return fmt.Errorf(msgErrorGetApproverWhitelist+": %s", resp.Message)
 	}
 
-	fmt.Printf("📋 Approver Whitelist (%d addresses):\n", len(resp.Addresses))
+	fmt.Printf(msgApproverWhitelist+"\n", len(resp.Addresses))
 	for i, addr := range resp.Addresses {
-		fmt.Printf("  %d. %s\n", i+1, addr)
+		fmt.Printf(labelAddress+"\n", i+1, addr)
 	}
 
 	return nil
@@ -587,16 +624,16 @@ func listProposers() error {
 	ctx := context.Background()
 	resp, err := client.GetProposerWhitelist(ctx, &pb.GetProposerWhitelistRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get proposer whitelist: %w", err)
+		return fmt.Errorf(msgErrorGetProposerWhitelist+": %w", err)
 	}
 
 	if !resp.Success {
-		return fmt.Errorf("failed to get proposer whitelist: %s", resp.Message)
+		return fmt.Errorf(msgErrorGetProposerWhitelist+": %s", resp.Message)
 	}
 
-	fmt.Printf("📋 Proposer Whitelist (%d addresses):\n", len(resp.Addresses))
+	fmt.Printf(msgProposerWhitelist+"\n", len(resp.Addresses))
 	for i, addr := range resp.Addresses {
-		fmt.Printf("  %d. %s\n", i+1, addr)
+		fmt.Printf(labelAddress+"\n", i+1, addr)
 	}
 
 	return nil

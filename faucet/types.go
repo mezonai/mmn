@@ -48,17 +48,15 @@ var (
 	WHITELIST_MANAGEMENT_PREFIX  = "WHITELIST_MANAGEMENT:"
 )
 
+const (
+	minThreshold     = 2
+	thresholdRatio   = 2
+	thresholdDivisor = 3
+)
+
 var (
 	STATUS_EXECUTED = "EXECUTED"
 	STATUS_PENDING  = "PENDING"
 	STATUS_FAILED   = "FAILED"
 	STATUS_REJECTED = "REJECTED"
 )
-
-// # Proposer management (cần multisig approval)
-// ./mmn multisig add-proposer --address "ADDRESS" --private-key-file "key.txt"
-// ./mmn multisig remove-proposer --address "ADDRESS" --private-key-file "key.txt"
-
-// # Approver management (cần multisig approval)
-// ./mmn multisig add-approver --address "ADDRESS" --private-key-file "key.txt"
-// ./mmn multisig remove-approver --address "ADDRESS" --private-key-file "key.txt"
