@@ -206,7 +206,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	})
 }
 
-func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger) error {
+func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
 	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
