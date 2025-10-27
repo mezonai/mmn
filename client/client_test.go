@@ -25,7 +25,7 @@ func defaultClient() (*MmnClient, error) {
 
 func getFaucetAccount() (string, ed25519.PrivateKey) {
 	fmt.Println("getFaucetAccount")
-	faucetPrivateKeyHex := "16dd86fde63ddfb262693e684a32c906f3d64bbbd82681e883d5e9987f826c8a"
+	faucetPrivateKeyHex := "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 	faucetPrivateKeyDer, err := hex.DecodeString(faucetPrivateKeyHex)
 	if err != nil {
 		fmt.Println("err", err)
@@ -104,7 +104,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey", faucetPublicKey)
-	toAddress := "D5U7ZqkQiRgCDQfiUZgJ2ipgXArKHr6X7dyeSRb3xbpz" // dummy base58 for test
+	toAddress := "8BH3ZXoAptWYbAc69221kKDrrPzvc4RaJ248qdbTs6k5" // dummy base58 for test
 
 	// Get current faucet account to get the next nonce
 	faucetAccount, err := client.GetAccount(ctx, faucetPublicKey)
