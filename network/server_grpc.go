@@ -591,6 +591,8 @@ func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRe
 		req.TextData,
 		req.SignerPubkey,
 		signature,
+		req.ZkProof,
+		req.ZkPub,
 	)
 	if err != nil {
 		return &pb.CreateFaucetRequestResponse{
@@ -644,7 +646,7 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 		}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddSignature(req.TxHash, req.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.AddSignature(req.TxHash, req.SignerPubkey, signature, req.ZkProof, req.ZkPub)
 	if err != nil {
 		return &pb.AddSignatureResponse{
 			Success: false,
@@ -684,7 +686,7 @@ func (s *server) RejectProposal(ctx context.Context, req *pb.RejectProposalReque
 		}, nil
 	}
 
-	err = s.multisigFaucetSvc.RejectProposal(req.TxHash, req.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.RejectProposal(req.TxHash, req.SignerPubkey, signature, req.ZkProof, req.ZkPub)
 	if err != nil {
 		return &pb.RejectProposalResponse{
 			Success: false,
@@ -748,7 +750,6 @@ func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApprov
 		}, nil
 	}
 
-
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
 		return &pb.AddToApproverWhitelistResponse{
@@ -757,7 +758,7 @@ func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApprov
 		}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddToApproverWhitelist(req.Address, req.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.AddToApproverWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub)
 	if err != nil {
 		return &pb.AddToApproverWhitelistResponse{
 			Success: false,
@@ -786,7 +787,7 @@ func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToPropos
 		}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddToProposerWhitelist(req.Address, req.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.AddToProposerWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub)
 	if err != nil {
 		return &pb.AddToProposerWhitelistResponse{
 			Success: false,
@@ -816,7 +817,7 @@ func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.Remove
 		}, nil
 	}
 
-	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(req.Address, req.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub)
 	if err != nil {
 		return &pb.RemoveFromApproverWhitelistResponse{
 			Success: false,
@@ -846,7 +847,7 @@ func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.Remove
 		}, nil
 	}
 
-	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(req.Address, req.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub)
 	if err != nil {
 		return &pb.RemoveFromProposerWhitelistResponse{
 			Success: false,

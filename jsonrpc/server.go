@@ -148,21 +148,6 @@ type getCurrentNonceResponse struct {
 	Error   string `json:"error"`
 }
 
-type getAccountByAddressRequest struct {
-	Address string `json:"address"`
-}
-
-type accountData struct {
-	Address string `json:"address"`
-	Balance string `json:"balance"`
-	Nonce   uint64 `json:"nonce"`
-}
-
-type getAccountByAddressResponse struct {
-	Account *accountData `json:"account"`
-	Error   string       `json:"error"`
-}
-
 // Multisig Faucet types
 type createFaucetRequestParams struct {
 	MultisigAddress string `json:"multisig_address"`
@@ -171,6 +156,8 @@ type createFaucetRequestParams struct {
 	TextData        string `json:"text_data"`
 	SignerPubkey    string `json:"signer_pubkey"`
 	Signature       string `json:"signature"`
+	ZkProof         string `json:"zk_proof,omitempty"`
+	ZkPub           string `json:"zk_pub,omitempty"`
 }
 
 type createFaucetRequestResponse struct {
@@ -183,6 +170,8 @@ type addSignatureParams struct {
 	TxHash       string `json:"tx_hash"`
 	SignerPubkey string `json:"signer_pubkey"`
 	Signature    string `json:"signature"`
+	ZkProof      string `json:"zk_proof,omitempty"`
+	ZkPub        string `json:"zk_pub,omitempty"`
 }
 
 type addSignatureResponse struct {
@@ -195,6 +184,8 @@ type rejectProposalParams struct {
 	TxHash       string `json:"tx_hash"`
 	SignerPubkey string `json:"signer_pubkey"`
 	Signature    string `json:"signature"`
+	ZkProof      string `json:"zk_proof,omitempty"`
+	ZkPub        string `json:"zk_pub,omitempty"`
 }
 
 type rejectProposalResponse struct {
@@ -218,6 +209,8 @@ type addToApproverWhitelistParams struct {
 	Address      string `json:"address"`
 	SignerPubkey string `json:"signer_pubkey"`
 	Signature    string `json:"signature"`
+	ZkProof      string `json:"zk_proof,omitempty"`
+	ZkPub        string `json:"zk_pub,omitempty"`
 }
 
 type addToApproverWhitelistResponse struct {
@@ -229,6 +222,8 @@ type addToProposerWhitelistParams struct {
 	Address      string `json:"address"`
 	SignerPubkey string `json:"signer_pubkey"`
 	Signature    string `json:"signature"`
+	ZkProof      string `json:"zk_proof,omitempty"`
+	ZkPub        string `json:"zk_pub,omitempty"`
 }
 
 type addToProposerWhitelistResponse struct {
@@ -240,6 +235,8 @@ type removeFromApproverWhitelistParams struct {
 	Address      string `json:"address"`
 	SignerPubkey string `json:"signer_pubkey"`
 	Signature    string `json:"signature"`
+	ZkProof      string `json:"zk_proof,omitempty"`
+	ZkPub        string `json:"zk_pub,omitempty"`
 }
 
 type removeFromApproverWhitelistResponse struct {
@@ -251,6 +248,8 @@ type removeFromProposerWhitelistParams struct {
 	Address      string `json:"address"`
 	SignerPubkey string `json:"signer_pubkey"`
 	Signature    string `json:"signature"`
+	ZkProof      string `json:"zk_proof,omitempty"`
+	ZkPub        string `json:"zk_pub,omitempty"`
 }
 
 type removeFromProposerWhitelistResponse struct {
@@ -640,20 +639,16 @@ func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpc
 	return &getCurrentNonceResponse{Address: resp.Address, Nonce: resp.Nonce, Tag: resp.Tag, Error: resp.Error}, nil
 }
 
-// --- Multisig Faucet Implementations ---
-
 func (s *Server) rpcCreateFaucetRequest(p createFaucetRequestParams) (interface{}, *rpcError) {
 	if s.multisigFaucetSvc == nil {
 		return &createFaucetRequestResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &createFaucetRequestResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	// Parse amount to uint256
 	amount, err := uint256.FromDecimal(p.Amount)
 	if err != nil {
 		return &createFaucetRequestResponse{Success: false, Message: fmt.Sprintf("Invalid amount format: %v", err)}, nil
@@ -665,6 +660,8 @@ func (s *Server) rpcCreateFaucetRequest(p createFaucetRequestParams) (interface{
 		p.TextData,
 		p.SignerPubkey,
 		signature,
+		p.ZkProof,
+		p.ZkPub,
 	)
 	if err != nil {
 		return &createFaucetRequestResponse{Success: false, Message: err.Error()}, nil
@@ -682,18 +679,16 @@ func (s *Server) rpcAddSignature(p addSignatureParams) (interface{}, *rpcError) 
 		return &addSignatureResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &addSignatureResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddSignature(p.TxHash, p.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.AddSignature(p.TxHash, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
 	if err != nil {
 		return &addSignatureResponse{Success: false, Message: err.Error()}, nil
 	}
 
-	// Get updated transaction to count signatures
 	tx, err := s.multisigFaucetSvc.GetMultisigTx(p.TxHash)
 	if err != nil {
 		return &addSignatureResponse{Success: false, Message: err.Error()}, nil
@@ -711,13 +706,12 @@ func (s *Server) rpcRejectProposal(p rejectProposalParams) (interface{}, *rpcErr
 		return &rejectProposalResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &rejectProposalResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.RejectProposal(p.TxHash, p.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.RejectProposal(p.TxHash, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
 	if err != nil {
 		return &rejectProposalResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -757,13 +751,12 @@ func (s *Server) rpcAddToApproverWhitelist(p addToApproverWhitelistParams) (inte
 		return &addToApproverWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &addToApproverWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddToApproverWhitelist(p.Address, p.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.AddToApproverWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
 	if err != nil {
 		return &addToApproverWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -779,13 +772,12 @@ func (s *Server) rpcAddToProposerWhitelist(p addToProposerWhitelistParams) (inte
 		return &addToProposerWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &addToProposerWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddToProposerWhitelist(p.Address, p.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.AddToProposerWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
 	if err != nil {
 		return &addToProposerWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -801,13 +793,12 @@ func (s *Server) rpcRemoveFromApproverWhitelist(p removeFromApproverWhitelistPar
 		return &removeFromApproverWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &removeFromApproverWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(p.Address, p.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
 	if err != nil {
 		return &removeFromApproverWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -823,13 +814,12 @@ func (s *Server) rpcRemoveFromProposerWhitelist(p removeFromProposerWhitelistPar
 		return &removeFromProposerWhitelistResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
 	}
 
-	// Decode hex signature
 	signature, err := hex.DecodeString(p.Signature)
 	if err != nil {
 		return &removeFromProposerWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(p.Address, p.SignerPubkey, signature)
+	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
 	if err != nil {
 		return &removeFromProposerWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}

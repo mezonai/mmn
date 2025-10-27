@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.32.0--rc2
-// source: tx.proto
+// source: proto/tx.proto
 
 package proto
 
@@ -49,7 +49,7 @@ type TxServiceClient interface {
 	SubscribeTransactionStatus(ctx context.Context, in *SubscribeTransactionStatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TransactionStatusInfo], error)
 	// Get all pending transactions from mempool
 	GetPendingTransactions(ctx context.Context, in *GetPendingTransactionsRequest, opts ...grpc.CallOption) (*GetPendingTransactionsResponse, error)
-	// Multisig Faucet Methods
+	// Multisig Faucet RPCs
 	CreateFaucetRequest(ctx context.Context, in *CreateFaucetRequestRequest, opts ...grpc.CallOption) (*CreateFaucetRequestResponse, error)
 	AddSignature(ctx context.Context, in *AddSignatureRequest, opts ...grpc.CallOption) (*AddSignatureResponse, error)
 	RejectProposal(ctx context.Context, in *RejectProposalRequest, opts ...grpc.CallOption) (*RejectProposalResponse, error)
@@ -252,7 +252,7 @@ type TxServiceServer interface {
 	SubscribeTransactionStatus(*SubscribeTransactionStatusRequest, grpc.ServerStreamingServer[TransactionStatusInfo]) error
 	// Get all pending transactions from mempool
 	GetPendingTransactions(context.Context, *GetPendingTransactionsRequest) (*GetPendingTransactionsResponse, error)
-	// Multisig Faucet Methods
+	// Multisig Faucet RPCs
 	CreateFaucetRequest(context.Context, *CreateFaucetRequestRequest) (*CreateFaucetRequestResponse, error)
 	AddSignature(context.Context, *AddSignatureRequest) (*AddSignatureResponse, error)
 	RejectProposal(context.Context, *RejectProposalRequest) (*RejectProposalResponse, error)
@@ -699,5 +699,5 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "tx.proto",
+	Metadata: "proto/tx.proto",
 }

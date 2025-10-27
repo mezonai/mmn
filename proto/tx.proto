@@ -119,8 +119,8 @@ service TxService {
   
   // Get all pending transactions from mempool
   rpc GetPendingTransactions(GetPendingTransactionsRequest) returns (GetPendingTransactionsResponse);
-  
-  // Multisig Faucet Methods
+
+  // Multisig Faucet RPCs
   rpc CreateFaucetRequest(CreateFaucetRequestRequest) returns (CreateFaucetRequestResponse);
   rpc AddSignature(AddSignatureRequest) returns (AddSignatureResponse);
   rpc RejectProposal(RejectProposalRequest) returns (RejectProposalResponse);
@@ -135,15 +135,15 @@ service TxService {
 }
 
 // Multisig Faucet Messages
-
-// Create Faucet Request
 message CreateFaucetRequestRequest {
   string multisig_address = 1;
   string recipient = 2;
   string amount = 3;
   string text_data = 4;
   string signer_pubkey = 5;
-  string signature = 6; // Hex encoded signature
+  string signature = 6;
+  string zk_proof = 7;
+  string zk_pub = 8;
 }
 
 message CreateFaucetRequestResponse {
@@ -152,11 +152,12 @@ message CreateFaucetRequestResponse {
   string tx_hash = 3;
 }
 
-// Add Signature
 message AddSignatureRequest {
   string tx_hash = 1;
   string signer_pubkey = 2;
-  string signature = 3; // Hex encoded signature
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
 }
 
 message AddSignatureResponse {
@@ -165,11 +166,12 @@ message AddSignatureResponse {
   int32 signature_count = 3;
 }
 
-// Reject Proposal
 message RejectProposalRequest {
   string tx_hash = 1;
   string signer_pubkey = 2;
-  string signature = 3; // Hex encoded signature
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
 }
 
 message RejectProposalResponse {
@@ -177,7 +179,6 @@ message RejectProposalResponse {
   string message = 2;
 }
 
-// Get Multisig Transaction Status
 message GetMultisigTransactionStatusRequest {
   string tx_hash = 1;
 }
@@ -185,16 +186,17 @@ message GetMultisigTransactionStatusRequest {
 message GetMultisigTransactionStatusResponse {
   bool success = 1;
   string message = 2;
-  string status = 3; // pending, executed, failed
+  string status = 3;
   int32 signature_count = 4;
   int32 required_signatures = 5;
 }
 
-// Whitelist Management
 message AddToApproverWhitelistRequest {
   string address = 1;
   string signer_pubkey = 2;
-  string signature = 3; // Hex encoded signature
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
 }
 
 message AddToApproverWhitelistResponse {
@@ -205,7 +207,9 @@ message AddToApproverWhitelistResponse {
 message AddToProposerWhitelistRequest {
   string address = 1;
   string signer_pubkey = 2;
-  string signature = 3; // Hex encoded signature
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
 }
 
 message AddToProposerWhitelistResponse {
@@ -216,7 +220,9 @@ message AddToProposerWhitelistResponse {
 message RemoveFromApproverWhitelistRequest {
   string address = 1;
   string signer_pubkey = 2;
-  string signature = 3; // Hex encoded signature
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
 }
 
 message RemoveFromApproverWhitelistResponse {
@@ -227,7 +233,9 @@ message RemoveFromApproverWhitelistResponse {
 message RemoveFromProposerWhitelistRequest {
   string address = 1;
   string signer_pubkey = 2;
-  string signature = 3; // Hex encoded signature
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
 }
 
 message RemoveFromProposerWhitelistResponse {
@@ -235,7 +243,6 @@ message RemoveFromProposerWhitelistResponse {
   string message = 2;
 }
 
-// Check Whitelist Status
 message CheckWhitelistStatusRequest {
   string address = 1;
 }
@@ -247,9 +254,7 @@ message CheckWhitelistStatusResponse {
   bool is_proposer = 4;
 }
 
-// Get Approver Whitelist
 message GetApproverWhitelistRequest {
-  // Empty request
 }
 
 message GetApproverWhitelistResponse {
@@ -258,9 +263,7 @@ message GetApproverWhitelistResponse {
   repeated string addresses = 3;
 }
 
-// Get Proposer Whitelist
 message GetProposerWhitelistRequest {
-  // Empty request
 }
 
 message GetProposerWhitelistResponse {

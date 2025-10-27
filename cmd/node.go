@@ -237,7 +237,7 @@ func runNode() {
 	// Initialize multisig faucet service if addresses provided
 	var multisigService *faucet.MultisigFaucetService
 	if len(multisigAddresses) > 0 {
-		multisigService = initializeMultisigFaucet(multisigStore, multisigAddresses, as, mp)
+		multisigService = initializeMultisigFaucet(multisigStore, multisigAddresses, as, mp, zkVerify)
 	}
 
 	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, multisigService)
@@ -255,7 +255,7 @@ func runNode() {
 
 }
 
-func initializeMultisigFaucet(multisigStore interface{}, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool) *faucet.MultisigFaucetService {
+func initializeMultisigFaucet(multisigStore interface{}, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool, zkVerify *zkverify.ZkVerify) *faucet.MultisigFaucetService {
 	if len(addresses) < 2 {
 		logx.Error("MULTISIG_FAUCET", "At least 2 addresses required for multisig, got:", len(addresses))
 		return nil
@@ -274,7 +274,7 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 
 	maxAmount := uint256.NewInt(1000000) // TODO: research max amount for multisig faucet
 	cooldown := 1 * time.Hour            // TODO: research cooldown for multisig faucet
-	multisigService := faucet.NewMultisigFaucetService(store, accountStore, mp, maxAmount, cooldown)
+	multisigService := faucet.NewMultisigFaucetService(store, accountStore, mp, maxAmount, cooldown, zkVerify)
 	mp.SetIsMultisigWallet(multisigService.IsMultisigWallet)
 
 	// Create multisig configuration

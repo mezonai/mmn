@@ -18,6 +18,8 @@ type MultisigConfig struct {
 type MultisigSignature struct {
 	Signer    string `json:"signer"`
 	Signature string `json:"signature"`
+	ZkProof   string `json:"zk_proof,omitempty"`
+	ZkPub     string `json:"zk_pub,omitempty"`
 }
 
 type MultisigTx struct {

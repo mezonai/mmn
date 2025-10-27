@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/zkverify"
 	"github.com/mr-tron/base58"
 )
 
@@ -28,6 +30,7 @@ type MultisigFaucetService struct {
 	store                   MultisigFaucetStoreInterface
 	accountStore            store.AccountStore
 	mempool                 *mempool.Mempool
+	zkVerify                *zkverify.ZkVerify
 	approverWhitelist       map[string]bool
 	proposerWhitelist       map[string]bool
 	configs                 map[string]*types.MultisigConfig
@@ -41,11 +44,12 @@ type MultisigFaucetService struct {
 	lastRequest             map[string]time.Time
 }
 
-func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore store.AccountStore, mempool *mempool.Mempool, maxAmount *uint256.Int, cooldown time.Duration) *MultisigFaucetService {
+func NewMultisigFaucetService(store MultisigFaucetStoreInterface, accountStore store.AccountStore, mempool *mempool.Mempool, maxAmount *uint256.Int, cooldown time.Duration, zkVerify *zkverify.ZkVerify) *MultisigFaucetService {
 	service := &MultisigFaucetService{
 		store:                   store,
 		accountStore:            accountStore,
 		mempool:                 mempool,
+		zkVerify:                zkVerify,
 		approverWhitelist:       make(map[string]bool),
 		proposerWhitelist:       make(map[string]bool),
 		configs:                 make(map[string]*types.MultisigConfig),
@@ -144,11 +148,13 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 	textData string,
 	signerPubKey string,
 	signature []byte,
+	zkProof string,
+	zkPub string,
 ) (*types.MultisigTx, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, CREATE_FAUCET)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, CREATE_FAUCET, zkProof, zkPub)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -203,10 +209,10 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 	return tx, nil
 }
 
-func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signature []byte, action string) (string, error) {
+func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signature []byte, action string, zkProof string, zkPub string) (string, error) {
 	message := fmt.Sprintf("%s:%s", FAUCET_ACTION, action)
 
-	verified, err := s.verifySignature(message, signature, signerPubKey)
+	verified, err := s.verifySignature(message, signature, signerPubKey, zkProof, zkPub)
 	if err != nil {
 		return "", fmt.Errorf("failed to verify signature: %w", err)
 	}
@@ -218,7 +224,37 @@ func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signa
 	return signerPubKey, nil
 }
 
-func (s *MultisigFaucetService) verifySignature(message string, signature []byte, pubKey string) (bool, error) {
+func (s *MultisigFaucetService) verifySignature(message string, signature []byte, pubKey string, zkProof string, zkPub string) (bool, error) {
+	// If zkproof is provided, use zk verification
+	if zkProof != "" && zkPub != "" && s.zkVerify != nil {
+		type UserSig struct {
+			PubKey []byte `json:"pub_key"`
+			Sig    []byte `json:"sig"`
+		}
+
+		var userSig UserSig
+		if err := jsonx.Unmarshal(signature, &userSig); err != nil {
+			return false, fmt.Errorf("failed to unmarshal signature: %w", err)
+		}
+
+		if len(userSig.PubKey) == 0 || len(userSig.Sig) == 0 {
+			return false, fmt.Errorf("invalid user signature structure")
+		}
+
+		if len(userSig.PubKey) != ed25519.PublicKeySize {
+			return false, fmt.Errorf("bad public key length: %d", len(userSig.PubKey))
+		}
+
+		ed25519Valid := ed25519.Verify(userSig.PubKey, []byte(message), userSig.Sig)
+		if !ed25519Valid {
+			return false, fmt.Errorf("ed25519 verification failed")
+		}
+
+		// Verify zkproof
+		encodedPubKey := base58.Encode(userSig.PubKey)
+		return s.zkVerify.Verify(pubKey, encodedPubKey, zkProof, zkPub), nil
+	}
+
 	pubKeyBytes, err := base58.Decode(pubKey)
 	if err != nil {
 		return false, fmt.Errorf("failed to decode public key: %w", err)
@@ -228,11 +264,11 @@ func (s *MultisigFaucetService) verifySignature(message string, signature []byte
 	return verified, nil
 }
 
-func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPubKey string, signature []byte) error {
+func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_APPROVER)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_APPROVER, zkProof, zkPub)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -288,11 +324,11 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 	return nil
 }
 
-func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, signerPubKey string, signature []byte) error {
+func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_APPROVER)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_APPROVER, zkProof, zkPub)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -371,11 +407,11 @@ func (s *MultisigFaucetService) storeProposerWhitelist() {
 	s.store.StoreProposerWhitelist(proposerAddresses)
 }
 
-func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPubKey string, signature []byte) error {
+func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_PROPOSER)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_PROPOSER, zkProof, zkPub)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -425,11 +461,11 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 	return nil
 }
 
-func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, signerPubKey string, signature []byte) error {
+func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_PROPOSER)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REMOVE_PROPOSER, zkProof, zkPub)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -518,11 +554,11 @@ func (s *MultisigFaucetService) GetPendingTxs() map[string]*types.MultisigTx {
 	return s.pendingTxs
 }
 
-func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string, signature []byte) error {
+func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_SIGNATURE)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_SIGNATURE, zkProof, zkPub)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -558,6 +594,8 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 	sig := types.MultisigSignature{
 		Signer:    callerAddress,
 		Signature: hex.EncodeToString(signature),
+		ZkProof:   zkProof,
+		ZkPub:     zkPub,
 	}
 
 	tx.Signatures = append(tx.Signatures, sig)
@@ -577,11 +615,11 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 	return nil
 }
 
-func (s *MultisigFaucetService) RejectProposal(txHash string, signerPubKey string, signature []byte) error {
+func (s *MultisigFaucetService) RejectProposal(txHash string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REJECT_PROPOSAL)
+	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, REJECT_PROPOSAL, zkProof, zkPub)
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}

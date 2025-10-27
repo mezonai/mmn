@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v6.32.0--rc2
-// source: tx.proto
+// source: proto/tx.proto
 
 package proto
 
@@ -58,11 +58,11 @@ func (x TransactionStatus) String() string {
 }
 
 func (TransactionStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_tx_proto_enumTypes[0].Descriptor()
+	return file_proto_tx_proto_enumTypes[0].Descriptor()
 }
 
 func (TransactionStatus) Type() protoreflect.EnumType {
-	return &file_tx_proto_enumTypes[0]
+	return &file_proto_tx_proto_enumTypes[0]
 }
 
 func (x TransactionStatus) Number() protoreflect.EnumNumber {
@@ -71,7 +71,7 @@ func (x TransactionStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TransactionStatus.Descriptor instead.
 func (TransactionStatus) EnumDescriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{0}
+	return file_proto_tx_proto_rawDescGZIP(), []int{0}
 }
 
 // Transaction data structure for transactions
@@ -92,7 +92,7 @@ type TransactionData struct {
 
 func (x *TransactionData) Reset() {
 	*x = TransactionData{}
-	mi := &file_tx_proto_msgTypes[0]
+	mi := &file_proto_tx_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -104,7 +104,7 @@ func (x *TransactionData) String() string {
 func (*TransactionData) ProtoMessage() {}
 
 func (x *TransactionData) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[0]
+	mi := &file_proto_tx_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -117,7 +117,7 @@ func (x *TransactionData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionData.ProtoReflect.Descriptor instead.
 func (*TransactionData) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{0}
+	return file_proto_tx_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *TransactionData) GetTxHash() string {
@@ -201,7 +201,7 @@ type TxMsg struct {
 
 func (x *TxMsg) Reset() {
 	*x = TxMsg{}
-	mi := &file_tx_proto_msgTypes[1]
+	mi := &file_proto_tx_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -213,7 +213,7 @@ func (x *TxMsg) String() string {
 func (*TxMsg) ProtoMessage() {}
 
 func (x *TxMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[1]
+	mi := &file_proto_tx_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -226,7 +226,7 @@ func (x *TxMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxMsg.ProtoReflect.Descriptor instead.
 func (*TxMsg) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{1}
+	return file_proto_tx_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TxMsg) GetType() int32 {
@@ -309,7 +309,7 @@ type SignedTxMsg struct {
 
 func (x *SignedTxMsg) Reset() {
 	*x = SignedTxMsg{}
-	mi := &file_tx_proto_msgTypes[2]
+	mi := &file_proto_tx_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -321,7 +321,7 @@ func (x *SignedTxMsg) String() string {
 func (*SignedTxMsg) ProtoMessage() {}
 
 func (x *SignedTxMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[2]
+	mi := &file_proto_tx_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -334,7 +334,7 @@ func (x *SignedTxMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignedTxMsg.ProtoReflect.Descriptor instead.
 func (*SignedTxMsg) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{2}
+	return file_proto_tx_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *SignedTxMsg) GetTxMsg() *TxMsg {
@@ -362,7 +362,7 @@ type AddTxResponse struct {
 
 func (x *AddTxResponse) Reset() {
 	*x = AddTxResponse{}
-	mi := &file_tx_proto_msgTypes[3]
+	mi := &file_proto_tx_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -374,7 +374,7 @@ func (x *AddTxResponse) String() string {
 func (*AddTxResponse) ProtoMessage() {}
 
 func (x *AddTxResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[3]
+	mi := &file_proto_tx_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -387,7 +387,7 @@ func (x *AddTxResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddTxResponse.ProtoReflect.Descriptor instead.
 func (*AddTxResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{3}
+	return file_proto_tx_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *AddTxResponse) GetOk() bool {
@@ -420,7 +420,7 @@ type GetTxByHashRequest struct {
 
 func (x *GetTxByHashRequest) Reset() {
 	*x = GetTxByHashRequest{}
-	mi := &file_tx_proto_msgTypes[4]
+	mi := &file_proto_tx_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +432,7 @@ func (x *GetTxByHashRequest) String() string {
 func (*GetTxByHashRequest) ProtoMessage() {}
 
 func (x *GetTxByHashRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[4]
+	mi := &file_proto_tx_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +445,7 @@ func (x *GetTxByHashRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTxByHashRequest.ProtoReflect.Descriptor instead.
 func (*GetTxByHashRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{4}
+	return file_proto_tx_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetTxByHashRequest) GetTxHash() string {
@@ -474,7 +474,7 @@ type TxInfo struct {
 
 func (x *TxInfo) Reset() {
 	*x = TxInfo{}
-	mi := &file_tx_proto_msgTypes[5]
+	mi := &file_proto_tx_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -486,7 +486,7 @@ func (x *TxInfo) String() string {
 func (*TxInfo) ProtoMessage() {}
 
 func (x *TxInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[5]
+	mi := &file_proto_tx_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -499,7 +499,7 @@ func (x *TxInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxInfo.ProtoReflect.Descriptor instead.
 func (*TxInfo) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{5}
+	return file_proto_tx_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TxInfo) GetSender() string {
@@ -590,7 +590,7 @@ type GetTxByHashResponse struct {
 
 func (x *GetTxByHashResponse) Reset() {
 	*x = GetTxByHashResponse{}
-	mi := &file_tx_proto_msgTypes[6]
+	mi := &file_proto_tx_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -602,7 +602,7 @@ func (x *GetTxByHashResponse) String() string {
 func (*GetTxByHashResponse) ProtoMessage() {}
 
 func (x *GetTxByHashResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[6]
+	mi := &file_proto_tx_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -615,7 +615,7 @@ func (x *GetTxByHashResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTxByHashResponse.ProtoReflect.Descriptor instead.
 func (*GetTxByHashResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{6}
+	return file_proto_tx_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetTxByHashResponse) GetError() string {
@@ -649,7 +649,7 @@ type GetTransactionStatusRequest struct {
 
 func (x *GetTransactionStatusRequest) Reset() {
 	*x = GetTransactionStatusRequest{}
-	mi := &file_tx_proto_msgTypes[7]
+	mi := &file_proto_tx_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -661,7 +661,7 @@ func (x *GetTransactionStatusRequest) String() string {
 func (*GetTransactionStatusRequest) ProtoMessage() {}
 
 func (x *GetTransactionStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[7]
+	mi := &file_proto_tx_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -674,7 +674,7 @@ func (x *GetTransactionStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetTransactionStatusRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{7}
+	return file_proto_tx_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetTransactionStatusRequest) GetTxHash() string {
@@ -704,7 +704,7 @@ type TransactionStatusInfo struct {
 
 func (x *TransactionStatusInfo) Reset() {
 	*x = TransactionStatusInfo{}
-	mi := &file_tx_proto_msgTypes[8]
+	mi := &file_proto_tx_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +716,7 @@ func (x *TransactionStatusInfo) String() string {
 func (*TransactionStatusInfo) ProtoMessage() {}
 
 func (x *TransactionStatusInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[8]
+	mi := &file_proto_tx_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +729,7 @@ func (x *TransactionStatusInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionStatusInfo.ProtoReflect.Descriptor instead.
 func (*TransactionStatusInfo) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{8}
+	return file_proto_tx_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TransactionStatusInfo) GetTxHash() string {
@@ -811,7 +811,7 @@ type SubscribeTransactionStatusRequest struct {
 
 func (x *SubscribeTransactionStatusRequest) Reset() {
 	*x = SubscribeTransactionStatusRequest{}
-	mi := &file_tx_proto_msgTypes[9]
+	mi := &file_proto_tx_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -823,7 +823,7 @@ func (x *SubscribeTransactionStatusRequest) String() string {
 func (*SubscribeTransactionStatusRequest) ProtoMessage() {}
 
 func (x *SubscribeTransactionStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[9]
+	mi := &file_proto_tx_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -836,7 +836,7 @@ func (x *SubscribeTransactionStatusRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use SubscribeTransactionStatusRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeTransactionStatusRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{9}
+	return file_proto_tx_proto_rawDescGZIP(), []int{9}
 }
 
 // Request to get all pending transactions
@@ -848,7 +848,7 @@ type GetPendingTransactionsRequest struct {
 
 func (x *GetPendingTransactionsRequest) Reset() {
 	*x = GetPendingTransactionsRequest{}
-	mi := &file_tx_proto_msgTypes[10]
+	mi := &file_proto_tx_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +860,7 @@ func (x *GetPendingTransactionsRequest) String() string {
 func (*GetPendingTransactionsRequest) ProtoMessage() {}
 
 func (x *GetPendingTransactionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[10]
+	mi := &file_proto_tx_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +873,7 @@ func (x *GetPendingTransactionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPendingTransactionsRequest.ProtoReflect.Descriptor instead.
 func (*GetPendingTransactionsRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{10}
+	return file_proto_tx_proto_rawDescGZIP(), []int{10}
 }
 
 // Response containing pending transactions information
@@ -888,7 +888,7 @@ type GetPendingTransactionsResponse struct {
 
 func (x *GetPendingTransactionsResponse) Reset() {
 	*x = GetPendingTransactionsResponse{}
-	mi := &file_tx_proto_msgTypes[11]
+	mi := &file_proto_tx_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -900,7 +900,7 @@ func (x *GetPendingTransactionsResponse) String() string {
 func (*GetPendingTransactionsResponse) ProtoMessage() {}
 
 func (x *GetPendingTransactionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[11]
+	mi := &file_proto_tx_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -913,7 +913,7 @@ func (x *GetPendingTransactionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPendingTransactionsResponse.ProtoReflect.Descriptor instead.
 func (*GetPendingTransactionsResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{11}
+	return file_proto_tx_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetPendingTransactionsResponse) GetTotalCount() uint64 {
@@ -937,7 +937,7 @@ func (x *GetPendingTransactionsResponse) GetError() string {
 	return ""
 }
 
-// Create Faucet Request
+// Multisig Faucet Messages
 type CreateFaucetRequestRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	MultisigAddress string                 `protobuf:"bytes,1,opt,name=multisig_address,json=multisigAddress,proto3" json:"multisig_address,omitempty"`
@@ -945,14 +945,16 @@ type CreateFaucetRequestRequest struct {
 	Amount          string                 `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
 	TextData        string                 `protobuf:"bytes,4,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`
 	SignerPubkey    string                 `protobuf:"bytes,5,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature       string                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature       string                 `protobuf:"bytes,6,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof         string                 `protobuf:"bytes,7,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub           string                 `protobuf:"bytes,8,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CreateFaucetRequestRequest) Reset() {
 	*x = CreateFaucetRequestRequest{}
-	mi := &file_tx_proto_msgTypes[12]
+	mi := &file_proto_tx_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -964,7 +966,7 @@ func (x *CreateFaucetRequestRequest) String() string {
 func (*CreateFaucetRequestRequest) ProtoMessage() {}
 
 func (x *CreateFaucetRequestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[12]
+	mi := &file_proto_tx_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -977,7 +979,7 @@ func (x *CreateFaucetRequestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFaucetRequestRequest.ProtoReflect.Descriptor instead.
 func (*CreateFaucetRequestRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{12}
+	return file_proto_tx_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateFaucetRequestRequest) GetMultisigAddress() string {
@@ -1022,6 +1024,20 @@ func (x *CreateFaucetRequestRequest) GetSignature() string {
 	return ""
 }
 
+func (x *CreateFaucetRequestRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *CreateFaucetRequestRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type CreateFaucetRequestResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1033,7 +1049,7 @@ type CreateFaucetRequestResponse struct {
 
 func (x *CreateFaucetRequestResponse) Reset() {
 	*x = CreateFaucetRequestResponse{}
-	mi := &file_tx_proto_msgTypes[13]
+	mi := &file_proto_tx_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1045,7 +1061,7 @@ func (x *CreateFaucetRequestResponse) String() string {
 func (*CreateFaucetRequestResponse) ProtoMessage() {}
 
 func (x *CreateFaucetRequestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[13]
+	mi := &file_proto_tx_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1058,7 +1074,7 @@ func (x *CreateFaucetRequestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFaucetRequestResponse.ProtoReflect.Descriptor instead.
 func (*CreateFaucetRequestResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{13}
+	return file_proto_tx_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CreateFaucetRequestResponse) GetSuccess() bool {
@@ -1082,19 +1098,20 @@ func (x *CreateFaucetRequestResponse) GetTxHash() string {
 	return ""
 }
 
-// Add Signature
 type AddSignatureRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	SignerPubkey  string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,4,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,5,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AddSignatureRequest) Reset() {
 	*x = AddSignatureRequest{}
-	mi := &file_tx_proto_msgTypes[14]
+	mi := &file_proto_tx_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1106,7 +1123,7 @@ func (x *AddSignatureRequest) String() string {
 func (*AddSignatureRequest) ProtoMessage() {}
 
 func (x *AddSignatureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[14]
+	mi := &file_proto_tx_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1119,7 +1136,7 @@ func (x *AddSignatureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddSignatureRequest.ProtoReflect.Descriptor instead.
 func (*AddSignatureRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{14}
+	return file_proto_tx_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AddSignatureRequest) GetTxHash() string {
@@ -1143,6 +1160,20 @@ func (x *AddSignatureRequest) GetSignature() string {
 	return ""
 }
 
+func (x *AddSignatureRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *AddSignatureRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type AddSignatureResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Success        bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1154,7 +1185,7 @@ type AddSignatureResponse struct {
 
 func (x *AddSignatureResponse) Reset() {
 	*x = AddSignatureResponse{}
-	mi := &file_tx_proto_msgTypes[15]
+	mi := &file_proto_tx_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1166,7 +1197,7 @@ func (x *AddSignatureResponse) String() string {
 func (*AddSignatureResponse) ProtoMessage() {}
 
 func (x *AddSignatureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[15]
+	mi := &file_proto_tx_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1179,7 +1210,7 @@ func (x *AddSignatureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddSignatureResponse.ProtoReflect.Descriptor instead.
 func (*AddSignatureResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{15}
+	return file_proto_tx_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AddSignatureResponse) GetSuccess() bool {
@@ -1203,19 +1234,20 @@ func (x *AddSignatureResponse) GetSignatureCount() int32 {
 	return 0
 }
 
-// Reject Proposal
 type RejectProposalRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	SignerPubkey  string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,4,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,5,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RejectProposalRequest) Reset() {
 	*x = RejectProposalRequest{}
-	mi := &file_tx_proto_msgTypes[16]
+	mi := &file_proto_tx_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1227,7 +1259,7 @@ func (x *RejectProposalRequest) String() string {
 func (*RejectProposalRequest) ProtoMessage() {}
 
 func (x *RejectProposalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[16]
+	mi := &file_proto_tx_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1240,7 +1272,7 @@ func (x *RejectProposalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RejectProposalRequest.ProtoReflect.Descriptor instead.
 func (*RejectProposalRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{16}
+	return file_proto_tx_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RejectProposalRequest) GetTxHash() string {
@@ -1264,6 +1296,20 @@ func (x *RejectProposalRequest) GetSignature() string {
 	return ""
 }
 
+func (x *RejectProposalRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *RejectProposalRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type RejectProposalResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1274,7 +1320,7 @@ type RejectProposalResponse struct {
 
 func (x *RejectProposalResponse) Reset() {
 	*x = RejectProposalResponse{}
-	mi := &file_tx_proto_msgTypes[17]
+	mi := &file_proto_tx_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1286,7 +1332,7 @@ func (x *RejectProposalResponse) String() string {
 func (*RejectProposalResponse) ProtoMessage() {}
 
 func (x *RejectProposalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[17]
+	mi := &file_proto_tx_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1299,7 +1345,7 @@ func (x *RejectProposalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RejectProposalResponse.ProtoReflect.Descriptor instead.
 func (*RejectProposalResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{17}
+	return file_proto_tx_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RejectProposalResponse) GetSuccess() bool {
@@ -1316,7 +1362,6 @@ func (x *RejectProposalResponse) GetMessage() string {
 	return ""
 }
 
-// Get Multisig Transaction Status
 type GetMultisigTransactionStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
@@ -1326,7 +1371,7 @@ type GetMultisigTransactionStatusRequest struct {
 
 func (x *GetMultisigTransactionStatusRequest) Reset() {
 	*x = GetMultisigTransactionStatusRequest{}
-	mi := &file_tx_proto_msgTypes[18]
+	mi := &file_proto_tx_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1383,7 @@ func (x *GetMultisigTransactionStatusRequest) String() string {
 func (*GetMultisigTransactionStatusRequest) ProtoMessage() {}
 
 func (x *GetMultisigTransactionStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[18]
+	mi := &file_proto_tx_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,7 +1396,7 @@ func (x *GetMultisigTransactionStatusRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use GetMultisigTransactionStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetMultisigTransactionStatusRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{18}
+	return file_proto_tx_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetMultisigTransactionStatusRequest) GetTxHash() string {
@@ -1365,7 +1410,7 @@ type GetMultisigTransactionStatusResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Success            bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Message            string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"` // pending, executed, failed
+	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	SignatureCount     int32                  `protobuf:"varint,4,opt,name=signature_count,json=signatureCount,proto3" json:"signature_count,omitempty"`
 	RequiredSignatures int32                  `protobuf:"varint,5,opt,name=required_signatures,json=requiredSignatures,proto3" json:"required_signatures,omitempty"`
 	unknownFields      protoimpl.UnknownFields
@@ -1374,7 +1419,7 @@ type GetMultisigTransactionStatusResponse struct {
 
 func (x *GetMultisigTransactionStatusResponse) Reset() {
 	*x = GetMultisigTransactionStatusResponse{}
-	mi := &file_tx_proto_msgTypes[19]
+	mi := &file_proto_tx_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1386,7 +1431,7 @@ func (x *GetMultisigTransactionStatusResponse) String() string {
 func (*GetMultisigTransactionStatusResponse) ProtoMessage() {}
 
 func (x *GetMultisigTransactionStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[19]
+	mi := &file_proto_tx_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1399,7 +1444,7 @@ func (x *GetMultisigTransactionStatusResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use GetMultisigTransactionStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetMultisigTransactionStatusResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{19}
+	return file_proto_tx_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetMultisigTransactionStatusResponse) GetSuccess() bool {
@@ -1437,19 +1482,20 @@ func (x *GetMultisigTransactionStatusResponse) GetRequiredSignatures() int32 {
 	return 0
 }
 
-// Whitelist Management
 type AddToApproverWhitelistRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	SignerPubkey  string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,4,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,5,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AddToApproverWhitelistRequest) Reset() {
 	*x = AddToApproverWhitelistRequest{}
-	mi := &file_tx_proto_msgTypes[20]
+	mi := &file_proto_tx_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1461,7 +1507,7 @@ func (x *AddToApproverWhitelistRequest) String() string {
 func (*AddToApproverWhitelistRequest) ProtoMessage() {}
 
 func (x *AddToApproverWhitelistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[20]
+	mi := &file_proto_tx_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1474,7 +1520,7 @@ func (x *AddToApproverWhitelistRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddToApproverWhitelistRequest.ProtoReflect.Descriptor instead.
 func (*AddToApproverWhitelistRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{20}
+	return file_proto_tx_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AddToApproverWhitelistRequest) GetAddress() string {
@@ -1498,6 +1544,20 @@ func (x *AddToApproverWhitelistRequest) GetSignature() string {
 	return ""
 }
 
+func (x *AddToApproverWhitelistRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *AddToApproverWhitelistRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type AddToApproverWhitelistResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1508,7 +1568,7 @@ type AddToApproverWhitelistResponse struct {
 
 func (x *AddToApproverWhitelistResponse) Reset() {
 	*x = AddToApproverWhitelistResponse{}
-	mi := &file_tx_proto_msgTypes[21]
+	mi := &file_proto_tx_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1520,7 +1580,7 @@ func (x *AddToApproverWhitelistResponse) String() string {
 func (*AddToApproverWhitelistResponse) ProtoMessage() {}
 
 func (x *AddToApproverWhitelistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[21]
+	mi := &file_proto_tx_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1533,7 +1593,7 @@ func (x *AddToApproverWhitelistResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddToApproverWhitelistResponse.ProtoReflect.Descriptor instead.
 func (*AddToApproverWhitelistResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{21}
+	return file_proto_tx_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *AddToApproverWhitelistResponse) GetSuccess() bool {
@@ -1554,14 +1614,16 @@ type AddToProposerWhitelistRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	SignerPubkey  string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,4,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,5,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AddToProposerWhitelistRequest) Reset() {
 	*x = AddToProposerWhitelistRequest{}
-	mi := &file_tx_proto_msgTypes[22]
+	mi := &file_proto_tx_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1573,7 +1635,7 @@ func (x *AddToProposerWhitelistRequest) String() string {
 func (*AddToProposerWhitelistRequest) ProtoMessage() {}
 
 func (x *AddToProposerWhitelistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[22]
+	mi := &file_proto_tx_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1586,7 +1648,7 @@ func (x *AddToProposerWhitelistRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddToProposerWhitelistRequest.ProtoReflect.Descriptor instead.
 func (*AddToProposerWhitelistRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{22}
+	return file_proto_tx_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AddToProposerWhitelistRequest) GetAddress() string {
@@ -1610,6 +1672,20 @@ func (x *AddToProposerWhitelistRequest) GetSignature() string {
 	return ""
 }
 
+func (x *AddToProposerWhitelistRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *AddToProposerWhitelistRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type AddToProposerWhitelistResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1620,7 +1696,7 @@ type AddToProposerWhitelistResponse struct {
 
 func (x *AddToProposerWhitelistResponse) Reset() {
 	*x = AddToProposerWhitelistResponse{}
-	mi := &file_tx_proto_msgTypes[23]
+	mi := &file_proto_tx_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1632,7 +1708,7 @@ func (x *AddToProposerWhitelistResponse) String() string {
 func (*AddToProposerWhitelistResponse) ProtoMessage() {}
 
 func (x *AddToProposerWhitelistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[23]
+	mi := &file_proto_tx_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1645,7 +1721,7 @@ func (x *AddToProposerWhitelistResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddToProposerWhitelistResponse.ProtoReflect.Descriptor instead.
 func (*AddToProposerWhitelistResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{23}
+	return file_proto_tx_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AddToProposerWhitelistResponse) GetSuccess() bool {
@@ -1666,14 +1742,16 @@ type RemoveFromApproverWhitelistRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	SignerPubkey  string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,4,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,5,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RemoveFromApproverWhitelistRequest) Reset() {
 	*x = RemoveFromApproverWhitelistRequest{}
-	mi := &file_tx_proto_msgTypes[24]
+	mi := &file_proto_tx_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1685,7 +1763,7 @@ func (x *RemoveFromApproverWhitelistRequest) String() string {
 func (*RemoveFromApproverWhitelistRequest) ProtoMessage() {}
 
 func (x *RemoveFromApproverWhitelistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[24]
+	mi := &file_proto_tx_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1698,7 +1776,7 @@ func (x *RemoveFromApproverWhitelistRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use RemoveFromApproverWhitelistRequest.ProtoReflect.Descriptor instead.
 func (*RemoveFromApproverWhitelistRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{24}
+	return file_proto_tx_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RemoveFromApproverWhitelistRequest) GetAddress() string {
@@ -1722,6 +1800,20 @@ func (x *RemoveFromApproverWhitelistRequest) GetSignature() string {
 	return ""
 }
 
+func (x *RemoveFromApproverWhitelistRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *RemoveFromApproverWhitelistRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type RemoveFromApproverWhitelistResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1732,7 +1824,7 @@ type RemoveFromApproverWhitelistResponse struct {
 
 func (x *RemoveFromApproverWhitelistResponse) Reset() {
 	*x = RemoveFromApproverWhitelistResponse{}
-	mi := &file_tx_proto_msgTypes[25]
+	mi := &file_proto_tx_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1744,7 +1836,7 @@ func (x *RemoveFromApproverWhitelistResponse) String() string {
 func (*RemoveFromApproverWhitelistResponse) ProtoMessage() {}
 
 func (x *RemoveFromApproverWhitelistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[25]
+	mi := &file_proto_tx_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1757,7 +1849,7 @@ func (x *RemoveFromApproverWhitelistResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use RemoveFromApproverWhitelistResponse.ProtoReflect.Descriptor instead.
 func (*RemoveFromApproverWhitelistResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{25}
+	return file_proto_tx_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *RemoveFromApproverWhitelistResponse) GetSuccess() bool {
@@ -1778,14 +1870,16 @@ type RemoveFromProposerWhitelistRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	SignerPubkey  string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"` // Hex encoded signature
+	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	ZkProof       string                 `protobuf:"bytes,4,opt,name=zk_proof,json=zkProof,proto3" json:"zk_proof,omitempty"`
+	ZkPub         string                 `protobuf:"bytes,5,opt,name=zk_pub,json=zkPub,proto3" json:"zk_pub,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RemoveFromProposerWhitelistRequest) Reset() {
 	*x = RemoveFromProposerWhitelistRequest{}
-	mi := &file_tx_proto_msgTypes[26]
+	mi := &file_proto_tx_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1797,7 +1891,7 @@ func (x *RemoveFromProposerWhitelistRequest) String() string {
 func (*RemoveFromProposerWhitelistRequest) ProtoMessage() {}
 
 func (x *RemoveFromProposerWhitelistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[26]
+	mi := &file_proto_tx_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1810,7 +1904,7 @@ func (x *RemoveFromProposerWhitelistRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use RemoveFromProposerWhitelistRequest.ProtoReflect.Descriptor instead.
 func (*RemoveFromProposerWhitelistRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{26}
+	return file_proto_tx_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *RemoveFromProposerWhitelistRequest) GetAddress() string {
@@ -1834,6 +1928,20 @@ func (x *RemoveFromProposerWhitelistRequest) GetSignature() string {
 	return ""
 }
 
+func (x *RemoveFromProposerWhitelistRequest) GetZkProof() string {
+	if x != nil {
+		return x.ZkProof
+	}
+	return ""
+}
+
+func (x *RemoveFromProposerWhitelistRequest) GetZkPub() string {
+	if x != nil {
+		return x.ZkPub
+	}
+	return ""
+}
+
 type RemoveFromProposerWhitelistResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1844,7 +1952,7 @@ type RemoveFromProposerWhitelistResponse struct {
 
 func (x *RemoveFromProposerWhitelistResponse) Reset() {
 	*x = RemoveFromProposerWhitelistResponse{}
-	mi := &file_tx_proto_msgTypes[27]
+	mi := &file_proto_tx_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1856,7 +1964,7 @@ func (x *RemoveFromProposerWhitelistResponse) String() string {
 func (*RemoveFromProposerWhitelistResponse) ProtoMessage() {}
 
 func (x *RemoveFromProposerWhitelistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[27]
+	mi := &file_proto_tx_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1869,7 +1977,7 @@ func (x *RemoveFromProposerWhitelistResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use RemoveFromProposerWhitelistResponse.ProtoReflect.Descriptor instead.
 func (*RemoveFromProposerWhitelistResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{27}
+	return file_proto_tx_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *RemoveFromProposerWhitelistResponse) GetSuccess() bool {
@@ -1886,7 +1994,6 @@ func (x *RemoveFromProposerWhitelistResponse) GetMessage() string {
 	return ""
 }
 
-// Check Whitelist Status
 type CheckWhitelistStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
@@ -1896,7 +2003,7 @@ type CheckWhitelistStatusRequest struct {
 
 func (x *CheckWhitelistStatusRequest) Reset() {
 	*x = CheckWhitelistStatusRequest{}
-	mi := &file_tx_proto_msgTypes[28]
+	mi := &file_proto_tx_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1908,7 +2015,7 @@ func (x *CheckWhitelistStatusRequest) String() string {
 func (*CheckWhitelistStatusRequest) ProtoMessage() {}
 
 func (x *CheckWhitelistStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[28]
+	mi := &file_proto_tx_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1921,7 +2028,7 @@ func (x *CheckWhitelistStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckWhitelistStatusRequest.ProtoReflect.Descriptor instead.
 func (*CheckWhitelistStatusRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{28}
+	return file_proto_tx_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CheckWhitelistStatusRequest) GetAddress() string {
@@ -1943,7 +2050,7 @@ type CheckWhitelistStatusResponse struct {
 
 func (x *CheckWhitelistStatusResponse) Reset() {
 	*x = CheckWhitelistStatusResponse{}
-	mi := &file_tx_proto_msgTypes[29]
+	mi := &file_proto_tx_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1955,7 +2062,7 @@ func (x *CheckWhitelistStatusResponse) String() string {
 func (*CheckWhitelistStatusResponse) ProtoMessage() {}
 
 func (x *CheckWhitelistStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[29]
+	mi := &file_proto_tx_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1968,7 +2075,7 @@ func (x *CheckWhitelistStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckWhitelistStatusResponse.ProtoReflect.Descriptor instead.
 func (*CheckWhitelistStatusResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{29}
+	return file_proto_tx_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CheckWhitelistStatusResponse) GetSuccess() bool {
@@ -1999,7 +2106,6 @@ func (x *CheckWhitelistStatusResponse) GetIsProposer() bool {
 	return false
 }
 
-// Get Approver Whitelist
 type GetApproverWhitelistRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2008,7 +2114,7 @@ type GetApproverWhitelistRequest struct {
 
 func (x *GetApproverWhitelistRequest) Reset() {
 	*x = GetApproverWhitelistRequest{}
-	mi := &file_tx_proto_msgTypes[30]
+	mi := &file_proto_tx_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2020,7 +2126,7 @@ func (x *GetApproverWhitelistRequest) String() string {
 func (*GetApproverWhitelistRequest) ProtoMessage() {}
 
 func (x *GetApproverWhitelistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[30]
+	mi := &file_proto_tx_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2033,7 +2139,7 @@ func (x *GetApproverWhitelistRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetApproverWhitelistRequest.ProtoReflect.Descriptor instead.
 func (*GetApproverWhitelistRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{30}
+	return file_proto_tx_proto_rawDescGZIP(), []int{30}
 }
 
 type GetApproverWhitelistResponse struct {
@@ -2047,7 +2153,7 @@ type GetApproverWhitelistResponse struct {
 
 func (x *GetApproverWhitelistResponse) Reset() {
 	*x = GetApproverWhitelistResponse{}
-	mi := &file_tx_proto_msgTypes[31]
+	mi := &file_proto_tx_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2059,7 +2165,7 @@ func (x *GetApproverWhitelistResponse) String() string {
 func (*GetApproverWhitelistResponse) ProtoMessage() {}
 
 func (x *GetApproverWhitelistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[31]
+	mi := &file_proto_tx_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2072,7 +2178,7 @@ func (x *GetApproverWhitelistResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetApproverWhitelistResponse.ProtoReflect.Descriptor instead.
 func (*GetApproverWhitelistResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{31}
+	return file_proto_tx_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetApproverWhitelistResponse) GetSuccess() bool {
@@ -2096,7 +2202,6 @@ func (x *GetApproverWhitelistResponse) GetAddresses() []string {
 	return nil
 }
 
-// Get Proposer Whitelist
 type GetProposerWhitelistRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2105,7 +2210,7 @@ type GetProposerWhitelistRequest struct {
 
 func (x *GetProposerWhitelistRequest) Reset() {
 	*x = GetProposerWhitelistRequest{}
-	mi := &file_tx_proto_msgTypes[32]
+	mi := &file_proto_tx_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2117,7 +2222,7 @@ func (x *GetProposerWhitelistRequest) String() string {
 func (*GetProposerWhitelistRequest) ProtoMessage() {}
 
 func (x *GetProposerWhitelistRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[32]
+	mi := &file_proto_tx_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2130,7 +2235,7 @@ func (x *GetProposerWhitelistRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProposerWhitelistRequest.ProtoReflect.Descriptor instead.
 func (*GetProposerWhitelistRequest) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{32}
+	return file_proto_tx_proto_rawDescGZIP(), []int{32}
 }
 
 type GetProposerWhitelistResponse struct {
@@ -2144,7 +2249,7 @@ type GetProposerWhitelistResponse struct {
 
 func (x *GetProposerWhitelistResponse) Reset() {
 	*x = GetProposerWhitelistResponse{}
-	mi := &file_tx_proto_msgTypes[33]
+	mi := &file_proto_tx_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2156,7 +2261,7 @@ func (x *GetProposerWhitelistResponse) String() string {
 func (*GetProposerWhitelistResponse) ProtoMessage() {}
 
 func (x *GetProposerWhitelistResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tx_proto_msgTypes[33]
+	mi := &file_proto_tx_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2169,7 +2274,7 @@ func (x *GetProposerWhitelistResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProposerWhitelistResponse.ProtoReflect.Descriptor instead.
 func (*GetProposerWhitelistResponse) Descriptor() ([]byte, []int) {
-	return file_tx_proto_rawDescGZIP(), []int{33}
+	return file_proto_tx_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetProposerWhitelistResponse) GetSuccess() bool {
@@ -2193,11 +2298,11 @@ func (x *GetProposerWhitelistResponse) GetAddresses() []string {
 	return nil
 }
 
-var File_tx_proto protoreflect.FileDescriptor
+var File_proto_tx_proto protoreflect.FileDescriptor
 
-const file_tx_proto_rawDesc = "" +
+const file_proto_tx_proto_rawDesc = "" +
 	"\n" +
-	"\btx.proto\x12\x03mmn\"\x98\x02\n" +
+	"\x0eproto/tx.proto\x12\x03mmn\"\x98\x02\n" +
 	"\x0fTransactionData\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x16\n" +
 	"\x06sender\x18\x02 \x01(\tR\x06sender\x12\x1c\n" +
@@ -2274,30 +2379,36 @@ const file_tx_proto_rawDesc = "" +
 	"totalCount\x125\n" +
 	"\vpending_txs\x18\x02 \x03(\v2\x14.mmn.TransactionDataR\n" +
 	"pendingTxs\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xdd\x01\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x8f\x02\n" +
 	"\x1aCreateFaucetRequestRequest\x12)\n" +
 	"\x10multisig_address\x18\x01 \x01(\tR\x0fmultisigAddress\x12\x1c\n" +
 	"\trecipient\x18\x02 \x01(\tR\trecipient\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\tR\x06amount\x12\x1b\n" +
 	"\ttext_data\x18\x04 \x01(\tR\btextData\x12#\n" +
 	"\rsigner_pubkey\x18\x05 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x06 \x01(\tR\tsignature\"j\n" +
+	"\tsignature\x18\x06 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\a \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\b \x01(\tR\x05zkPub\"j\n" +
 	"\x1bCreateFaucetRequestResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x17\n" +
-	"\atx_hash\x18\x03 \x01(\tR\x06txHash\"q\n" +
+	"\atx_hash\x18\x03 \x01(\tR\x06txHash\"\xa3\x01\n" +
 	"\x13AddSignatureRequest\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"s\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\x04 \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\x05 \x01(\tR\x05zkPub\"s\n" +
 	"\x14AddSignatureResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12'\n" +
-	"\x0fsignature_count\x18\x03 \x01(\x05R\x0esignatureCount\"s\n" +
+	"\x0fsignature_count\x18\x03 \x01(\x05R\x0esignatureCount\"\xa5\x01\n" +
 	"\x15RejectProposalRequest\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"L\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\x04 \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\x05 \x01(\tR\x05zkPub\"L\n" +
 	"\x16RejectProposalResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\">\n" +
@@ -2308,32 +2419,40 @@ const file_tx_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12'\n" +
 	"\x0fsignature_count\x18\x04 \x01(\x05R\x0esignatureCount\x12/\n" +
-	"\x13required_signatures\x18\x05 \x01(\x05R\x12requiredSignatures\"|\n" +
+	"\x13required_signatures\x18\x05 \x01(\x05R\x12requiredSignatures\"\xae\x01\n" +
 	"\x1dAddToApproverWhitelistRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"T\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\x04 \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\x05 \x01(\tR\x05zkPub\"T\n" +
 	"\x1eAddToApproverWhitelistResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"|\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xae\x01\n" +
 	"\x1dAddToProposerWhitelistRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"T\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\x04 \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\x05 \x01(\tR\x05zkPub\"T\n" +
 	"\x1eAddToProposerWhitelistResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x81\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb3\x01\n" +
 	"\"RemoveFromApproverWhitelistRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"Y\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\x04 \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\x05 \x01(\tR\x05zkPub\"Y\n" +
 	"#RemoveFromApproverWhitelistResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x81\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb3\x01\n" +
 	"\"RemoveFromProposerWhitelistRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"Y\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12\x19\n" +
+	"\bzk_proof\x18\x04 \x01(\tR\azkProof\x12\x15\n" +
+	"\x06zk_pub\x18\x05 \x01(\tR\x05zkPub\"Y\n" +
 	"#RemoveFromProposerWhitelistResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"7\n" +
@@ -2381,20 +2500,20 @@ const file_tx_proto_rawDesc = "" +
 	"\x14GetProposerWhitelist\x12 .mmn.GetProposerWhitelistRequest\x1a!.mmn.GetProposerWhitelistResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
 
 var (
-	file_tx_proto_rawDescOnce sync.Once
-	file_tx_proto_rawDescData []byte
+	file_proto_tx_proto_rawDescOnce sync.Once
+	file_proto_tx_proto_rawDescData []byte
 )
 
-func file_tx_proto_rawDescGZIP() []byte {
-	file_tx_proto_rawDescOnce.Do(func() {
-		file_tx_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tx_proto_rawDesc), len(file_tx_proto_rawDesc)))
+func file_proto_tx_proto_rawDescGZIP() []byte {
+	file_proto_tx_proto_rawDescOnce.Do(func() {
+		file_proto_tx_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_tx_proto_rawDesc), len(file_proto_tx_proto_rawDesc)))
 	})
-	return file_tx_proto_rawDescData
+	return file_proto_tx_proto_rawDescData
 }
 
-var file_tx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
-var file_tx_proto_goTypes = []any{
+var file_proto_tx_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_proto_tx_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_proto_tx_proto_goTypes = []any{
 	(TransactionStatus)(0),                       // 0: mmn.TransactionStatus
 	(*TransactionData)(nil),                      // 1: mmn.TransactionData
 	(*TxMsg)(nil),                                // 2: mmn.TxMsg
@@ -2431,7 +2550,7 @@ var file_tx_proto_goTypes = []any{
 	(*GetProposerWhitelistRequest)(nil),          // 33: mmn.GetProposerWhitelistRequest
 	(*GetProposerWhitelistResponse)(nil),         // 34: mmn.GetProposerWhitelistResponse
 }
-var file_tx_proto_depIdxs = []int32{
+var file_proto_tx_proto_depIdxs = []int32{
 	0,  // 0: mmn.TransactionData.status:type_name -> mmn.TransactionStatus
 	2,  // 1: mmn.SignedTxMsg.tx_msg:type_name -> mmn.TxMsg
 	6,  // 2: mmn.GetTxByHashResponse.tx:type_name -> mmn.TxInfo
@@ -2476,27 +2595,27 @@ var file_tx_proto_depIdxs = []int32{
 	0,  // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_tx_proto_init() }
-func file_tx_proto_init() {
-	if File_tx_proto != nil {
+func init() { file_proto_tx_proto_init() }
+func file_proto_tx_proto_init() {
+	if File_proto_tx_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tx_proto_rawDesc), len(file_tx_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_tx_proto_rawDesc), len(file_proto_tx_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_tx_proto_goTypes,
-		DependencyIndexes: file_tx_proto_depIdxs,
-		EnumInfos:         file_tx_proto_enumTypes,
-		MessageInfos:      file_tx_proto_msgTypes,
+		GoTypes:           file_proto_tx_proto_goTypes,
+		DependencyIndexes: file_proto_tx_proto_depIdxs,
+		EnumInfos:         file_proto_tx_proto_enumTypes,
+		MessageInfos:      file_proto_tx_proto_msgTypes,
 	}.Build()
-	File_tx_proto = out.File
-	file_tx_proto_goTypes = nil
-	file_tx_proto_depIdxs = nil
+	File_proto_tx_proto = out.File
+	file_proto_tx_proto_goTypes = nil
+	file_proto_tx_proto_depIdxs = nil
 }
