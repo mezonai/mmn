@@ -1,10 +1,10 @@
 services:
   stress-test:
     build:
-      context: ../../
+      context: ../..  
+      dockerfile: client_test/stress-test/Dockerfile
       args:
         DB_VENDOR: ${DB_VENDOR:-rocksdb}
-      target: builder 
     image: mmn-stresstest:${DB_VENDOR:-rocksdb}
     container_name: stress-test
     working_dir: /app/client_test/stress-test 
@@ -33,7 +33,7 @@ services:
       WORKERS: ${STRESS_TEST_WORKER:-100}
       MINUTES: ${STRESS_TEST_MINUTES:-0}
     volumes:
-      - ./:/app/client_test/stress-test
+      - ../../:/app
     logging:
       driver: "json-file"
       options:
