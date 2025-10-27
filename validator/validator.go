@@ -51,10 +51,11 @@ type Validator struct {
 	stopCh            chan struct{}
 
 	// Additional dependencies for block processing
-	ledger    *ledger.Ledger
-	collector *consensus.Collector
+	ledger       *ledger.Ledger
+	collector    *consensus.Collector
+	dedupService *mempool.DedupService
 
-	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector) error
+	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, dedupService *mempool.DedupService) error
 }
 
 // NewValidator constructs a Validator with dependencies, including blockStore.
@@ -74,6 +75,7 @@ func NewValidator(
 	blockStore store.BlockStore,
 	ledger *ledger.Ledger,
 	collector *consensus.Collector,
+	dedupService *mempool.DedupService,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -92,6 +94,7 @@ func NewValidator(
 		blockStore:                blockStore,
 		ledger:                    ledger,
 		collector:                 collector,
+		dedupService:              dedupService,
 		leaderStartAtSlot:         NoSlot,
 		collectedEntries:          make([]poh.Entry, 0),
 		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
@@ -222,7 +225,7 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 
 			exception.SafeGo("onBroadcastBlock", func() {
-				if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector); err != nil {
+				if err := v.onBroadcastBlock(context.Background(), blk, v.ledger, v.Mempool, v.collector, v.dedupService); err != nil {
 					logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
 				}
 			})

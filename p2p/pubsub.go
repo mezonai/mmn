@@ -95,6 +95,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			// Remove transactions in block from mempool and add tx tracker if block is valid
 			if !blk.InvalidPoH {
 				dedupService.Add(blk.Slot, txDedupHashes)
+				dedupService.CleanUpOldSlotTxHashes(blk.Slot)
 				mp.BlockCleanup(blk.Slot, txHashSet)
 			}
 
