@@ -1,4 +1,5 @@
 package events
+
 import "github.com/mezonai/mmn/exception"
 
 // EventRouter handles complex event routing logic

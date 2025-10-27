@@ -17,13 +17,14 @@ const defaultRemovalThreshold = 10 * time.Minute
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
 // Only tracks transactions after they are pulled from mempool until they are applied to ledger
 type TransactionTracker struct {
+	processingCount int64
+
 	// processingTxs maps transaction hash to transaction
 	processingTxs sync.Map
 
 	historyList sync.Map
 
-	processingCount int64
-	stopCh          chan struct{}
+	stopCh chan struct{}
 }
 
 // NewTransactionTracker creates a new transaction tracker instance

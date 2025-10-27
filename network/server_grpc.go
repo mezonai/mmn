@@ -2,13 +2,11 @@ package network
 
 import (
 	"context"
-	"crypto/ed25519"
 	"fmt"
 	"net"
 	"time"
 
 	"github.com/mezonai/mmn/config"
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
@@ -34,43 +32,30 @@ type server struct {
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
-	pubKeys       map[string]ed25519.PublicKey
-	blockDir      string
-	ledger        *ledger.Ledger
-	voteCollector *consensus.Collector
-	selfID        string
-	privKey       ed25519.PrivateKey
-	validator     *validator.Validator
-	blockStore    store.BlockStore
-	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter                    // Event router for complex event logic
-	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
-	rateLimiter   *ratelimit.GlobalRateLimiter           // Rate limiter for transaction submission protection
-	txSvc         interfaces.TxService
-	acctSvc       interfaces.AccountService
-	healthSvc     interfaces.HealthService
+	ledger      *ledger.Ledger
+	selfID      string
+	validator   *validator.Validator
+	blockStore  store.BlockStore
+	mempool     *mempool.Mempool
+	eventRouter *events.EventRouter          // Event router for complex event logic
+	rateLimiter *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
+	txSvc       interfaces.TxService
+	acctSvc     interfaces.AccountService
+	healthSvc   interfaces.HealthService
 }
 
-func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
-	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
-
+func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
 	s := &server{
-		pubKeys:       pubKeys,
-		blockDir:      blockDir,
-		ledger:        ld,
-		voteCollector: collector,
-		selfID:        selfID,
-		privKey:       priv,
-		blockStore:    blockStore,
-		validator:     validator,
-		mempool:       mempool,
-		eventRouter:   eventRouter,
-		txTracker:     txTracker,
-		rateLimiter:   rateLimiter,
-		txSvc:         txSvc,
-		acctSvc:       acctSvc,
-		healthSvc:     healthSvc,
+		ledger:      ld,
+		selfID:      selfID,
+		blockStore:  blockStore,
+		validator:   validator,
+		mempool:     mempool,
+		eventRouter: eventRouter,
+		rateLimiter: rateLimiter,
+		txSvc:       txSvc,
+		acctSvc:     acctSvc,
+		healthSvc:   healthSvc,
 	}
 
 	// Initialize shared services
@@ -81,11 +66,11 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 
 	if enableRateLimit {
 		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
-			securityUnaryInterceptor(rateLimiter),
+			securityUnaryInterceptor(s.rateLimiter),
 		}, unaryInterceptors...)
 
 		streamInterceptors = append([]grpc.StreamServerInterceptor{
-			securityStreamInterceptor(rateLimiter),
+			securityStreamInterceptor(s.rateLimiter),
 		}, streamInterceptors...)
 	}
 
@@ -104,8 +89,12 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", addr, err))
 		return nil
 	}
-	exception.SafeGo("Grpc Server", func() {
-		grpcSrv.Serve(lis)
+	exception.SafeGoWithPanic("Grpc Server", func() {
+		err = grpcSrv.Serve(lis)
+		if err != nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("Failed to serve gRPC server: %v", err))
+			panic(err)
+		}
 	})
 	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv

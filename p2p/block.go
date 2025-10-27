@@ -49,7 +49,11 @@ func (ln *Libp2pNetwork) HandleBlockTopic(ctx context.Context, sub *pubsub.Subsc
 
 			if blk != nil && ln.onBlockReceived != nil {
 				logx.Info("NETWORK:BLOCK", "Received block from peer:", msg.ReceivedFrom.String(), "slot:", blk.Slot)
-				ln.onBlockReceived(blk)
+				err := ln.onBlockReceived(blk)
+				if err != nil {
+					logx.Error("NETWORK:BLOCK", "Failed to process block:", err)
+					continue
+				}
 			}
 		}
 	}
@@ -100,7 +104,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestTopic(ctx context.Context, sub *p
 			}
 
 			ln.sendBlocksOverStream(req, msg.ReceivedFrom)
-
 		}
 	}
 }
@@ -142,7 +145,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 		var blocks []*block.BroadcastedBlock
 		if err := decoder.Decode(&blocks); err != nil {
 			if errors.Is(err, io.EOF) {
-
 				break
 			}
 			logx.Error("NETWORK:SYNC BLOCK", "Failed to decode blocks array: ", err.Error())
@@ -166,7 +168,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 
 			processedBlocks++
 			batchCount++
-
 		}
 
 		// clean blocks array reference
@@ -182,7 +183,6 @@ func (ln *Libp2pNetwork) handleBlockSyncRequestStream(s network.Stream) {
 	ln.syncTrackerMu.Unlock()
 
 	logx.Info("NETWORK:SYNC BLOCK", "Completed stream for request:", syncRequest.RequestID, "total batches:", batchCount, "total blocks:", totalBlocks, "processed:", processedBlocks)
-
 }
 
 func (ln *Libp2pNetwork) convertBlockToBroadcastedBlock(blk *block.Block) *block.BroadcastedBlock {
@@ -361,26 +361,6 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 	logx.Info("NETWORK:SYNC BLOCK", "Completed sync for peer:", targetPeer.String(), "total blocks sent:", totalBlocksSent)
 }
 
-func (ln *Libp2pNetwork) sendSyncRequestToPeer(req SyncRequest, targetPeer peer.ID) error {
-	stream, err := ln.host.NewStream(context.Background(), targetPeer, RequestBlockSyncStream)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-	defer stream.Close()
-
-	data, err := jsonx.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	_, err = stream.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed to write request: %w", err)
-	}
-
-	return nil
-}
-
 func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.Subscription) {
 	logx.Info("NETWORK:LATEST SLOT", "Starting latest slot topic handler")
 
@@ -483,7 +463,6 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 		logx.Error("NETWORK:LATEST SLOT", "Failed to write latest slot response:", err)
 		return
 	}
-
 }
 
 func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {

@@ -108,7 +108,7 @@ jobs:
         run: |
           set -e
           BINARY_TO_INSTALL="${{ inputs.binary_path_from_caller || steps.download_step.outputs.binary_path }}"
-          
+
           if [ -z "$BINARY_TO_INSTALL" ]; then
             echo "::error::Binary path is not available. Aborting."
             exit 1
@@ -117,12 +117,12 @@ jobs:
 
           echo "==> Deploying and restarting mezon-listener..."
           SHA=$(date +%s)
-          
+
           sudo systemctl stop mezon-listener || true
 
           sudo install -m 0755 "$BINARY_TO_INSTALL" /opt/mezon/mmn/bin/mmn-${SHA}
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
-          
+
           if [ ! -f "/etc/mezon/genesis.yml" ]; then
             echo "--> Generating genesis.yml locally for listener..."
             sed \

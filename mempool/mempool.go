@@ -225,9 +225,9 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	}
 
 	// 3. Check memo length (max 64 characters)
-	if len(tx.TextData) > MAX_MEMO_CHARACTORS {
+	if len(tx.TextData) > MAX_MEMO_CHARACTERS {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTORS, len(tx.TextData))
+		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTERS, len(tx.TextData))
 	}
 
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)

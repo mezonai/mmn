@@ -124,12 +124,12 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	}
 
 	toAddr := toAddress
-	amount := uint256.NewInt(10000000000000)
+	amount := uint256.NewInt(1000000000000)
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
 	extraInfo := map[string]string{
-		"type": "unlock_item",
+		"type": "faucet_send_token",
 	}
 
 	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
@@ -252,4 +252,25 @@ func TestClient_SendToken(t *testing.T) {
 	}
 
 	t.Logf("Account %s balance: %s tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
+}
+
+func TestClient_SubscribeTransactionStatus(t *testing.T) {
+	client, err := defaultClient()
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+	stream, err := client.SubscribeTransactionStatus(ctx)
+	if err != nil {
+		t.Fatalf("Failed to subscribe to transaction status: %v", err)
+	}
+
+	for {
+		update, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("Failed to receive transaction status: %v", err)
+		}
+		t.Logf("Transaction hash: %s, status: %s, timestamp: %d, amount: %s, text data: %s", update.TxHash, update.Status, update.Timestamp, update.Amount, update.TextData)
+	}
 }

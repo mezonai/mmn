@@ -101,21 +101,6 @@ type getTxByHashResponse struct {
 	Decimals uint32  `json:"decimals"`
 }
 
-type getTxStatusRequest struct {
-	TxHash string `json:"tx_hash"`
-}
-
-type txStatusInfo struct {
-	TxHash        string `json:"tx_hash"`
-	Status        int32  `json:"status"`
-	BlockSlot     uint64 `json:"block_slot"`
-	BlockHash     string `json:"block_hash"`
-	Confirmations uint64 `json:"confirmations"`
-	ErrorMessage  string `json:"error_message"`
-	Timestamp     uint64 `json:"timestamp"`
-	ExtraInfo     string `json:"extra_info"`
-}
-
 type getPendingTxsResponse struct {
 	TotalCount uint64            `json:"total_count"`
 	PendingTxs []transactionData `json:"pending_txs"`
@@ -155,21 +140,6 @@ type getCurrentNonceResponse struct {
 	Nonce   uint64 `json:"nonce"`
 	Tag     string `json:"tag"`
 	Error   string `json:"error"`
-}
-
-type getAccountByAddressRequest struct {
-	Address string `json:"address"`
-}
-
-type accountData struct {
-	Address string `json:"address"`
-	Balance string `json:"balance"`
-	Nonce   uint64 `json:"nonce"`
-}
-
-type getAccountByAddressResponse struct {
-	Account *accountData `json:"account"`
-	Error   string       `json:"error"`
 }
 
 type HealthCheckResponse struct {
@@ -265,7 +235,13 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 func (s *Server) Start() {
 	h := s.BuildHTTPHandler()
 	http.Handle("/", h)
-	go http.ListenAndServe(s.addr, nil)
+	exception.SafeGoWithPanic("StartJSONRPCServer", func() {
+		err := http.ListenAndServe(s.addr, nil)
+		if err != nil {
+			logx.Error("JSONRPC SERVER", fmt.Sprintf("Failed to serve JSON-RPC server: %v", err))
+			panic(err)
+		}
+	})
 }
 
 // SetCORSConfig allows configuring CORS settings
@@ -277,10 +253,7 @@ func (s *Server) SetCORSConfig(config CORSConfig) {
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
 		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			res, err := s.rpcAddTx(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
+			res := s.rpcAddTx(p)
 			if res == nil {
 				return nil, nil
 			}
@@ -343,7 +316,7 @@ func (s *Server) buildMethodMap() handler.Map {
 
 // --- Implementations ---
 
-func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
+func (s *Server) rpcAddTx(p signedTxParams) interface{} {
 	pbSigned := &pb.SignedTxMsg{
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
@@ -361,9 +334,9 @@ func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
 	}
 	resp, err := s.txSvc.AddTx(context.Background(), pbSigned)
 	if err != nil {
-		return &addTxResponse{Ok: false, Error: err.Error()}, nil
+		return &addTxResponse{Ok: false, Error: err.Error()}
 	}
-	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}, nil
+	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}
 }
 
 func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {

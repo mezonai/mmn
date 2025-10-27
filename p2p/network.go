@@ -42,7 +42,6 @@ func NewNetWork(
 	pohCfg *config.PohConfig,
 	isListener bool,
 ) (*Libp2pNetwork, error) {
-
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ed25519 private key: %w", err)
@@ -108,7 +107,10 @@ func NewNetWork(
 		return nil, fmt.Errorf("failed to create custom discovery: %w", err)
 	}
 
-	customDiscovery.Advertise(ctx, AdvertiseName)
+	_, err = customDiscovery.Advertise(ctx, AdvertiseName)
+	if err != nil {
+		logx.Warn("NETWORK:SETUP", "Failed to advertise:", err)
+	}
 
 	ps, err := pubsub.NewGossipSub(ctx, h,
 		pubsub.WithDiscovery(customDiscovery.GetRawDiscovery()),
@@ -128,33 +130,32 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:                   h,
-		pubsub:                 ps,
-		selfPubKey:             selfPubKey,
-		selfPrivKey:            selfPrivKey,
-		peers:                  make(map[peer.ID]*PeerInfo),
-		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
-		blockStore:             blockStore,
-		txStore:                txStore,
-		maxPeers:               int(MaxPeers),
-		activeSyncRequests:     make(map[string]*SyncRequestInfo),
-		syncRequests:           make(map[string]*SyncRequestTracker),
-		missingBlocksTracker:   make(map[uint64]*MissingBlockInfo),
-		lastScannedSlot:        0,
-		recentlyRequestedSlots: make(map[uint64]time.Time),
-		ctx:                    ctx,
-		cancel:                 cancel,
-		worldLatestSlot:        0,
-		worldLatestPohSlot:     0,
-		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
-		nextExpectedSlot:       0,
-		pohCfg:                 pohCfg,
-		isListener:             isListener,
+		host:               h,
+		pubsub:             ps,
+		selfPubKey:         selfPubKey,
+		selfPrivKey:        selfPrivKey,
+		peers:              make(map[peer.ID]*PeerInfo),
+		bootstrapPeerIDs:   make(map[peer.ID]struct{}),
+		blockStore:         blockStore,
+		txStore:            txStore,
+		maxPeers:           int(MaxPeers),
+		syncRequests:       make(map[string]*SyncRequestTracker),
+		ctx:                ctx,
+		cancel:             cancel,
+		worldLatestSlot:    0,
+		worldLatestPohSlot: 0,
+		blockOrderingQueue: make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlot:   0,
+		pohCfg:             pohCfg,
+		isListener:         isListener,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
 		cancel()
-		h.Close()
+		closeErr := h.Close()
+		if closeErr != nil {
+			logx.Error("NETWORK:SETUP", "Failed to close host:", closeErr)
+		}
 		return nil, fmt.Errorf("failed to setup handlers: %w", err)
 	}
 
@@ -209,7 +210,10 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 		ln.bootstrapPeerIDs[info.ID] = struct{}{}
 		ln.reserveViaPeer(ctx, info)
 		exception.SafeGoWithPanic("RequestNodeInfo", func() {
-			ln.RequestNodeInfo(bootstrapPeer, &info)
+			err := ln.RequestNodeInfo(bootstrapPeer, &info)
+			if err != nil {
+				logx.Error("NETWORK:REQUEST NODE INFO", "Failed to request node info:", err)
+			}
 		})
 
 		break
@@ -290,7 +294,10 @@ func createPublicAddresses(p2pPort string, publicIP string) (ma.Multiaddr, ma.Mu
 // this func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {
 	ln.cancel()
-	ln.host.Close()
+	err := ln.host.Close()
+	if err != nil {
+		logx.Error("NETWORK:CLOSE", "Failed to close host: ", err)
+	}
 }
 
 func (ln *Libp2pNetwork) GetPeersConnected() int {
@@ -381,7 +388,7 @@ func (ln *Libp2pNetwork) setNodeReady() {
 }
 
 // startCoreServices starts PoH and Validator (if callbacks provided), sets up pubsub topics, and marks node ready
-func (ln *Libp2pNetwork) startCoreServices(ctx context.Context, withPubsub bool) {
+func (ln *Libp2pNetwork) startCoreServices(ctx context.Context) {
 	if ln.OnStartPoh != nil {
 		ln.OnStartPoh()
 	}
@@ -391,9 +398,9 @@ func (ln *Libp2pNetwork) startCoreServices(ctx context.Context, withPubsub bool)
 	if ln.OnStartLoadTxHashes != nil {
 		ln.OnStartLoadTxHashes()
 	}
-	if withPubsub {
-		ln.SetupPubSubTopics(ctx)
-	}
+
+	ln.SetupPubSubTopics(ctx)
+
 	ln.setNodeReady()
 }
 
@@ -401,7 +408,10 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 	// Request latest slot after a delay to allow peers to connect
 	exception.SafeGo("LatestSlotRequest(Initial)", func() {
 		time.Sleep(3 * time.Second) // Wait for peers to connect
-		ln.RequestLatestSlotFromPeers(ln.ctx)
+		_, err := ln.RequestLatestSlotFromPeers(ln.ctx)
+		if err != nil {
+			logx.Error("NETWORK:LATEST SLOT", "Failed to request latest slot from peers: ", err)
+		}
 	})
 
 	// Periodic latest slot request every 30 seconds
@@ -411,7 +421,10 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 		for {
 			select {
 			case <-ticker.C:
-				ln.RequestLatestSlotFromPeers(ln.ctx)
+				_, err := ln.RequestLatestSlotFromPeers(ln.ctx)
+				if err != nil {
+					logx.Error("NETWORK:LATEST SLOT", "Failed to request latest slot from peers: ", err)
+				}
 			case <-ln.ctx.Done():
 				return
 			}
