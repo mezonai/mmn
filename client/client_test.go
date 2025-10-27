@@ -14,8 +14,7 @@ import (
 )
 
 func defaultClient() (*MmnClient, error) {
-	// cfg := Config{Endpoint: "dev-mmn.nccsoft.vn", UseTLS: true}
-	cfg := Config{Endpoint: "172.16.100.180:9001"}
+	cfg := Config{Endpoint: "localhost:9001"}
 	client, err := NewClient(cfg)
 	if err != nil {
 		panic(err)
