@@ -225,12 +225,12 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		return fmt.Errorf("block not found for slot %d", vote.Slot)
 	}
 
+	mp.SetCurrentSlot(vote.Slot)
+
 	// Mark block as finalized
 	if err := bs.MarkFinalized(vote.Slot); err != nil {
 		return fmt.Errorf("mark block as finalized error: %w", err)
 	}
-
-	mp.SetCurrentSlot(vote.Slot)
 
 	if err := ld.ApplyBlock(block, ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)

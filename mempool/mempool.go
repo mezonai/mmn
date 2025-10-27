@@ -331,14 +331,10 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 }
 
 func (mp *Mempool) GetCurrentSlot() uint64 {
-	mp.mu.RLock()
-	defer mp.mu.RUnlock()
 	return mp.netCurrentSlot
 }
 
 func (mp *Mempool) SetCurrentSlot(slot uint64) {
-	mp.mu.Lock()
-	defer mp.mu.Unlock()
 	mp.netCurrentSlot = slot
 }
 
