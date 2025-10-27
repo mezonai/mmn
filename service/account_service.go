@@ -61,26 +61,7 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		}, nil
 	}
 
-	// Get account from ledger
-	acc, err := s.ledger.GetAccount(addr)
-	if err != nil {
-		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-			Error:   err.Error(),
-		}, nil
-	}
-	if acc == nil {
-		logx.Info("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-		}, nil
-	}
-
+	// Get account from blockstore, get the latest finalized slot
 	currentNonce := s.blockStore.GetLatestFinalizedSlot()
 
 	return &pb.GetCurrentNonceResponse{
