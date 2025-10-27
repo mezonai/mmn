@@ -14,7 +14,8 @@ import (
 )
 
 func defaultClient() (*MmnClient, error) {
-	cfg := Config{Endpoint: "localhost:9001"}
+	// cfg := Config{Endpoint: "dev-mmn.nccsoft.vn", UseTLS: true}
+	cfg := Config{Endpoint: "172.16.100.180:9001"}
 	client, err := NewClient(cfg)
 	if err != nil {
 		panic(err)
@@ -25,7 +26,7 @@ func defaultClient() (*MmnClient, error) {
 
 func getFaucetAccount() (string, ed25519.PrivateKey) {
 	fmt.Println("getFaucetAccount")
-	faucetPrivateKeyHex := "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
+	faucetPrivateKeyHex := "16dd86fde63ddfb262693e684a32c906f3d64bbbd82681e883d5e9987f826c8a"
 	faucetPrivateKeyDer, err := hex.DecodeString(faucetPrivateKeyHex)
 	if err != nil {
 		fmt.Println("err", err)
@@ -104,7 +105,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 
 	faucetPublicKey, faucetPrivateKey := getFaucetAccount()
 	fmt.Println("faucetPublicKey", faucetPublicKey)
-	toAddress := "8BH3ZXoAptWYbAc69221kKDrrPzvc4RaJ248qdbTs6k5" // dummy base58 for test
+	toAddress := "D5U7ZqkQiRgCDQfiUZgJ2ipgXArKHr6X7dyeSRb3xbpz" // dummy base58 for test
 
 	// Get current faucet account to get the next nonce
 	faucetAccount, err := client.GetAccount(ctx, faucetPublicKey)
@@ -124,12 +125,12 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	}
 
 	toAddr := toAddress
-	amount := uint256.NewInt(10000000000000)
+	amount := uint256.NewInt(1000000000000)
 	nonce := fromAccount.Nonce + 1
 	textData := "Integration test transfer"
 
 	extraInfo := map[string]string{
-		"type": "unlock_item",
+		"type": "faucet_send_token",
 	}
 
 	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
@@ -252,4 +253,25 @@ func TestClient_SendToken(t *testing.T) {
 	}
 
 	t.Logf("Account %s balance: %s tokens, nonce: %d", toAddress, toAccount.Balance, toAccount.Nonce)
+}
+
+func TestClient_SubscribeTransactionStatus(t *testing.T) {
+	client, err := defaultClient()
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+	stream, err := client.SubscribeTransactionStatus(ctx)
+	if err != nil {
+		t.Fatalf("Failed to subscribe to transaction status: %v", err)
+	}
+
+	for {
+		update, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("Failed to receive transaction status: %v", err)
+		}
+		t.Logf("Transaction hash: %s, status: %s, timestamp: %d, amount: %s, text data: %s", update.TxHash, update.Status, update.Timestamp, update.Amount, update.TextData)
+	}
 }
