@@ -43,7 +43,7 @@ func NewPoh(seed []byte, hashesPerTickOpt *uint64, autoHashInterval time.Duratio
 	}
 
 	return &Poh{
-		Hash:             sha256.Sum256(seed), //Poh recorder will reset the hash to the seed
+		Hash:             sha256.Sum256(seed), // Poh recorder will reset the hash to the seed
 		NumHashes:        0,
 		HashesPerTick:    hashesPerTick,
 		RemainingHashes:  hashesPerTick,

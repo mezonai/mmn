@@ -39,7 +39,11 @@ func (ln *Libp2pNetwork) HandleTransactionTopic(ctx context.Context, sub *pubsub
 			}
 
 			if tx != nil && ln.onTransactionReceived != nil {
-				ln.onTransactionReceived(tx)
+				err := ln.onTransactionReceived(tx)
+				if err != nil {
+					logx.Error("NETWORK:TX", "Failed to process transaction: ", err)
+					continue
+				}
 			}
 		}
 	}

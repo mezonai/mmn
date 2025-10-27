@@ -248,7 +248,7 @@ func IncreaseFinalizedTpsCount() {
 }
 
 func IncreaseFailedTpsCount(reason string) {
-    nodeMetrics.failedTpsCounter.With(prometheus.Labels{
-        "reason": reason,
-    }).Inc()
+	nodeMetrics.failedTpsCounter.With(prometheus.Labels{
+		"reason": reason,
+	}).Inc()
 }

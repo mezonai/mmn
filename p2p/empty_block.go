@@ -40,7 +40,11 @@ func (ln *Libp2pNetwork) HandleEmptyBlockTopic(ctx context.Context, sub *pubsub.
 				}
 
 				logx.Info("NETWORK:EMPTY_BLOCK", "Received", len(blocks), "empty blocks from peer:", msg.ReceivedFrom.String())
-				ln.onEmptyBlockReceived(blocks)
+				err := ln.onEmptyBlockReceived(blocks)
+				if err != nil {
+					logx.Error("NETWORK:EMPTY_BLOCK", "Failed to process empty blocks:", err)
+					continue
+				}
 			}
 		}
 	}

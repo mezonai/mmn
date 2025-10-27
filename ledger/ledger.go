@@ -103,7 +103,6 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 		return nil
 	}
 
-
 	for _, entry := range b.Entries {
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
@@ -184,7 +183,11 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 		}
 		if len(txMetas) > 0 {
-			l.txMetaStore.StoreBatch(txMetas)
+			err := l.txMetaStore.StoreBatch(txMetas)
+			if err != nil {
+				logx.Error("LEDGER", fmt.Sprintf("Failed to store tx metas for block=%d, len=%d: %v", b.Slot, len(txMetas), err))
+				return err
+			}
 			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
 		}
 	}

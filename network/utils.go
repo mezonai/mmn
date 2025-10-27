@@ -7,15 +7,17 @@ import (
 	"google.golang.org/grpc/peer"
 )
 
+const unknownIP = "unknown"
+
 func extractClientIP(ctx context.Context) string {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
-		return "unknown"
+		return unknownIP
 	}
 
 	addr := p.Addr.String()
 	if addr == "" {
-		return "unknown"
+		return unknownIP
 	}
 
 	host, _, err := net.SplitHostPort(addr)
@@ -23,7 +25,7 @@ func extractClientIP(ctx context.Context) string {
 		if net.ParseIP(addr) != nil {
 			return addr
 		}
-		return "unknown"
+		return unknownIP
 	}
 
 	if len(host) > 0 && host[0] == '[' && host[len(host)-1] == ']' {

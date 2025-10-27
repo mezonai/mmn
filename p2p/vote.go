@@ -40,7 +40,11 @@ func (ln *Libp2pNetwork) HandleVoteTopic(ctx context.Context, sub *pubsub.Subscr
 			}
 
 			if ln.onVoteReceived != nil {
-				ln.onVoteReceived(&vote)
+				err := ln.onVoteReceived(&vote)
+				if err != nil {
+					logx.Error("NETWORK:VOTE", "Failed to process vote: ", err)
+					continue
+				}
 			}
 		}
 	}
@@ -53,7 +57,7 @@ func (ln *Libp2pNetwork) BroadcastVote(ctx context.Context, vote *consensus.Vote
 	}
 
 	if ln.topicVotes != nil {
-		ln.topicVotes.Publish(ctx, data)
+		return ln.topicVotes.Publish(ctx, data)
 	}
 	return nil
 }
@@ -71,7 +75,7 @@ func (ln *Libp2pNetwork) ProcessVote(bs store.BlockStore, ld *ledger.Ledger, mp 
 
 	if committed && needApply {
 		logx.Info("VOTE", "Committed vote from OnVote Received: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-		err := ln.applyDataToBlock(vote, bs, ld, mp)
+		err := ln.applyDataToBlock(vote, bs, ld)
 		if err != nil {
 			logx.Error("VOTE", "Failed to apply data to block: ", err)
 			return err
