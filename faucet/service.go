@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
@@ -227,11 +228,6 @@ func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signa
 func (s *MultisigFaucetService) verifySignature(message string, signature []byte, pubKey string, zkProof string, zkPub string) (bool, error) {
 	// If zkproof is provided, use zk verification
 	if zkProof != "" && zkPub != "" && s.zkVerify != nil {
-		type UserSig struct {
-			PubKey []byte `json:"pub_key"`
-			Sig    []byte `json:"sig"`
-		}
-
 		var userSig UserSig
 		if err := jsonx.Unmarshal(signature, &userSig); err != nil {
 			return false, fmt.Errorf("failed to unmarshal signature: %w", err)
@@ -250,8 +246,7 @@ func (s *MultisigFaucetService) verifySignature(message string, signature []byte
 			return false, fmt.Errorf("ed25519 verification failed")
 		}
 
-		// Verify zkproof
-		encodedPubKey := base58.Encode(userSig.PubKey)
+		encodedPubKey := common.EncodeBytesToBase58(userSig.PubKey)
 		return s.zkVerify.Verify(pubKey, encodedPubKey, zkProof, zkPub), nil
 	}
 
