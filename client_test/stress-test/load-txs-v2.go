@@ -1,0 +1,698 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	crand "crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"math/rand"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	jwt "github.com/golang-jwt/jwt/v4"
+	"github.com/holiman/uint256"
+	"github.com/mr-tron/base58"
+
+	"github.com/mezonai/mmn/client"
+)
+
+// Configuration
+type Config struct {
+	ServerAddress  string
+	AccountCount   int
+	TxPerSecond    int
+	SwitchAfterTx  int
+	FundAmount     uint64
+	TransferAmount uint64
+	Duration       time.Duration
+	RunMinutes     int // Run for specified minutes, then stop
+	Workers        int // Number of concurrent send workers
+}
+
+// Account represents a test account
+type Account struct {
+	PublicKey  string
+	PrivateKey ed25519.PrivateKey
+	Nonce      uint64
+	Balance    uint64
+	Address    string
+	ZkProof    string
+	ZkPub      string
+}
+
+// LoadTester handles the load testing
+type LoadTester struct {
+	config   Config
+	accounts []Account
+	client   *client.MmnClient
+	ctx      context.Context
+	cancel   context.CancelFunc
+
+	// Statistics
+	totalTxsSent     int64
+	totalTxsSuccess  int64
+	totalTxsFailed   int64
+	fundingStartTime time.Time
+	testStartTime    time.Time
+
+	// System metrics tracking
+	metricsTicker *time.Ticker
+
+	// Logger
+	logger *Logger
+
+	// Faucet account (hardcoded from genesis)
+	faucetPrivateKey ed25519.PrivateKey
+	faucetPublicKey  string
+
+	// Per-account mutexes
+	accountMutexes sync.Map // map[int]*sync.Mutex
+
+	// Global nonce
+	globalNonce uint64
+	nonceMu     sync.RWMutex
+}
+
+type SessionTokenClaims struct {
+	TokenId   string            `json:"tid,omitempty"`
+	UserId    int64             `json:"uid,omitempty"`
+	Username  string            `json:"usn,omitempty"`
+	Vars      map[string]string `json:"vrs,omitempty"`
+	ExpiresAt int64             `json:"exp,omitempty"`
+}
+
+func (stc *SessionTokenClaims) Valid() error {
+	// Verify expiry.
+	if stc.ExpiresAt <= time.Now().UTC().Unix() {
+		vErr := new(jwt.ValidationError)
+		vErr.Inner = errors.New("token is expired")
+		vErr.Errors |= jwt.ValidationErrorExpired
+		return vErr
+	}
+	return nil
+}
+
+type ProveData struct {
+	Proof       string `json:"proof"`
+	PublicInput string `json:"public_input"`
+}
+
+type ProveResponse struct {
+	Success bool      `json:"success"`
+	Data    ProveData `json:"data"`
+	Message string    `json:"message"`
+}
+
+// Faucet private key from genesis (same as in TypeScript tests)
+const (
+	FaucetPrivateKeyHex = "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
+	JwtSecret           = "defaultencryptionkey"
+	ZkVerifyUrl         = "http://172.16.100.180:8282"
+)
+
+// logRealTimeMetrics logs current system metrics and transaction stats
+func (lt *LoadTester) logRealTimeMetrics() {
+	// Get current transaction stats
+	totalTxs := atomic.LoadInt64(&lt.totalTxsSent)
+	successTxs := atomic.LoadInt64(&lt.totalTxsSuccess)
+	failedTxs := atomic.LoadInt64(&lt.totalTxsFailed)
+
+	// Use logger to write real-time metrics
+	lt.logger.LogRealTimeMetrics(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
+}
+
+func main() {
+	config := parseFlags()
+
+	// Create load tester
+	tester, err := NewLoadTester(config)
+	if err != nil {
+		log.Fatalf("Failed to create load tester: %v", err)
+	}
+	defer tester.Close()
+
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start load testing in a goroutine
+	go func() {
+		if err := tester.Run(); err != nil {
+			tester.logger.LogError("Load test error: %v", err)
+		}
+	}()
+
+	// Wait for signal or completion
+	select {
+	case <-sigChan:
+		tester.logger.LogInfo("Received shutdown signal, stopping load test...")
+		tester.Stop()
+	case <-tester.ctx.Done():
+		tester.logger.LogInfo("Load test completed")
+	}
+
+	// Print final statistics
+	tester.PrintStats()
+}
+
+func parseFlags() Config {
+	var config Config
+
+	flag.StringVar(&config.ServerAddress, "server", "127.0.0.1:9001", "gRPC server address")
+	flag.IntVar(&config.AccountCount, "accounts", 100, "Number of accounts to create")
+	flag.IntVar(&config.TxPerSecond, "rate", 50, "Transactions per second")
+	flag.IntVar(&config.SwitchAfterTx, "switch", 10, "Switch account after N transactions")
+	flag.IntVar(&config.Workers, "workers", 100, "Number of concurrent send workers")
+	flag.Uint64Var(&config.FundAmount, "fund", 10000000000, "Amount to fund each account")
+	flag.Uint64Var(&config.TransferAmount, "amount", 100, "Amount per transfer transaction")
+	flag.DurationVar(&config.Duration, "duration", 0, "Test duration (0 = run indefinitely)")
+	flag.IntVar(&config.RunMinutes, "minutes", 0, "Run for specified minutes, then stop (0 = run indefinitely)")
+
+	flag.Parse()
+
+	// If minutes is specified, convert to duration and override duration
+	if config.RunMinutes > 0 {
+		config.Duration = time.Duration(config.RunMinutes) * time.Minute
+	}
+
+	return config
+}
+
+func NewLoadTester(config Config) (*LoadTester, error) {
+	// Parse faucet private key
+	faucetKeyBytes, err := hex.DecodeString(FaucetPrivateKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode faucet private key: %v", err)
+	}
+
+	// Extract the Ed25519 seed (last 32 bytes)
+	faucetSeed := faucetKeyBytes[len(faucetKeyBytes)-32:]
+	faucetPrivateKey := ed25519.NewKeyFromSeed(faucetSeed)
+	faucetPublicKey := base58.Encode(faucetPrivateKey.Public().(ed25519.PublicKey))
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Initialize logger
+	logger, err := NewLogger(config)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create logger: %v", err)
+	}
+
+	tester := &LoadTester{
+		config:           config,
+		ctx:              ctx,
+		cancel:           cancel,
+		logger:           logger,
+		faucetPrivateKey: faucetPrivateKey,
+		faucetPublicKey:  faucetPublicKey,
+		fundingStartTime: time.Now(),
+	}
+
+	// Connect to gRPC server
+	if err := tester.connect(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to connect to server: %v", err)
+	}
+
+	// Generate accounts
+	if err := tester.generateAccounts(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to generate accounts: %v", err)
+	}
+
+	// Fund accounts
+	if err := tester.fundAccounts(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to fund accounts: %v", err)
+	}
+
+	return tester, nil
+}
+
+func (lt *LoadTester) connect() error {
+	cfg := client.Config{Endpoint: lt.config.ServerAddress}
+	client, err := client.NewClient(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create client: %v", err)
+	}
+	lt.client = client
+
+	return nil
+}
+
+func (lt *LoadTester) generateAccounts() error {
+	lt.accounts = make([]Account, lt.config.AccountCount)
+
+	for i := 0; i < lt.config.AccountCount; i++ {
+		publicKey, privateKey, err := ed25519.GenerateKey(crand.Reader)
+		if err != nil {
+			return fmt.Errorf("failed to generate key pair for account %d: %v", i, err)
+		}
+
+		userId := int64(rand.Intn(100000000))
+		address := client.GenerateAddress(strconv.FormatInt(userId, 10))
+		jwt := generateJwt(userId)
+		publicKeyHex := base58.Encode(publicKey)
+		proofRes, err := generateZkProof(strconv.FormatInt(userId, 10), address, publicKeyHex, jwt)
+		if err != nil {
+			return fmt.Errorf("failed to generate zk proof for account %d: %v", i, err)
+		}
+		zkPub := proofRes.Data.PublicInput
+		zkProof := proofRes.Data.Proof
+
+		lt.accounts[i] = Account{
+			PublicKey:  publicKeyHex,
+			PrivateKey: privateKey,
+			Nonce:      0,
+			Balance:    0,
+			Address:    address,
+			ZkProof:    zkProof,
+			ZkPub:      zkPub,
+		}
+	}
+
+	lt.logger.LogInfo("Generated %d accounts", lt.config.AccountCount)
+	return nil
+}
+
+func generateJwt(userID int64) string {
+	exp := time.Now().UTC().Add(time.Duration(24) * time.Hour).Unix()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &SessionTokenClaims{
+		TokenId:   strconv.FormatInt(userID, 10),
+		UserId:    userID,
+		Username:  strconv.FormatInt(userID, 10),
+		ExpiresAt: exp,
+	})
+	signedToken, _ := token.SignedString([]byte(JwtSecret))
+	return signedToken
+}
+
+// generateZkProof generates a ZK proof by calling the external service
+func generateZkProof(userID, address, ephemeralPK, jwt string) (*ProveResponse, error) {
+	url := ZkVerifyUrl + "/prove"
+	// Create request body
+	requestBody := map[string]string{
+		"user_id":      userID,
+		"address":      address,
+		"ephemeral_pk": ephemeralPK,
+		"jwt":          jwt,
+	}
+
+	// Convert to JSON
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %v", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Set headers
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send request
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("prove request failed: %d %s - %s",
+			resp.StatusCode, resp.Status, string(body))
+	}
+
+	// Parse response
+	var proveResp ProveResponse
+	if err := json.NewDecoder(resp.Body).Decode(&proveResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return &proveResp, nil
+}
+
+func (lt *LoadTester) fundAccounts() error {
+	lt.logger.LogInfo("Funding %d accounts with %d tokens each...", lt.config.AccountCount, lt.config.FundAmount)
+	lt.refreshGlobalNonce()
+
+	// Sequential funding to avoid duplicate nonce issues
+	for i := range lt.accounts {
+		lt.logger.LogInfo("Funding account index %d", i)
+		if err := lt.fundAccount(i); err != nil {
+			lt.logger.LogError("Failed to fund account %d: %v", i, err)
+			// Continue with other accounts even if one fails
+		}
+		// Small delay between funding transactions to avoid conflicts
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	lt.logger.LogInfo("Account funding completed")
+	return nil
+}
+
+func (lt *LoadTester) fundAccount(accountIndex int) error {
+	account := &lt.accounts[accountIndex]
+
+	// Retry logic for funding
+	maxRetries := 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		amount := uint256.NewInt(lt.config.FundAmount)
+		textData := fmt.Sprintf("Funding account %d", accountIndex)
+		extraInfo := map[string]string{
+			"type": "funding",
+		}
+		nonce := lt.getGlobalNonce()
+
+		unsigned, err := client.BuildTransferTx(client.TxTypeFaucet, lt.faucetPublicKey, account.Address, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
+		if err != nil {
+			return fmt.Errorf("failed to build transfer tx: %v", err)
+		}
+
+		// Sign transaction
+		signedRaw, err := client.SignTx(unsigned, []byte{}, lt.faucetPrivateKey.Seed())
+		if err != nil {
+			return fmt.Errorf("failed to sign funding transaction: %v", err)
+		}
+
+		if !client.Verify(unsigned, signedRaw.Sig) {
+			return fmt.Errorf("self verify failed")
+		}
+
+		// Send transaction
+		resp, err := lt.client.AddTx(lt.ctx, signedRaw)
+		if err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to send funding transaction after %d attempts: %v", maxRetries, err)
+			}
+			lt.refreshGlobalNonce()
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+			continue
+		}
+
+		if !resp.Ok {
+			// Check if it's a nonce error and retry
+			if attempt < maxRetries && (resp.Error != "" && contains(resp.Error, "nonce")) {
+				lt.refreshGlobalNonce()
+				lt.logger.LogInfo("Nonce conflict for account %d, retrying... (attempt %d/%d)", accountIndex, attempt, maxRetries)
+				time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+				continue
+			}
+			return fmt.Errorf("funding transaction failed: %s", resp.Error)
+		}
+
+		// Wait for funding tx to be confirmed to ensure account exists before any send
+		if resp.TxHash != "" {
+			_ = lt.waitTxConfirmed(resp.TxHash, 1*time.Second)
+		} else {
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// Update local bookkeeping
+		account.Nonce = 0
+		account.Balance = lt.config.FundAmount
+		return nil
+	}
+
+	return fmt.Errorf("failed to fund account %d after %d attempts", accountIndex, maxRetries)
+}
+
+func (lt *LoadTester) refillAccount(accountIndex int, globalNonce uint64) error {
+	account := &lt.accounts[accountIndex]
+	nonce := globalNonce
+	amount := uint256.NewInt(lt.config.FundAmount)
+	textData := fmt.Sprintf("Refilling account %d", accountIndex)
+	extraInfo := map[string]string{
+		"type": "refilling",
+	}
+
+	unsigned, err := client.BuildTransferTx(client.TxTypeFaucet, lt.faucetPublicKey, account.Address, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
+	if err != nil {
+		return fmt.Errorf("failed to build refill transaction: %v", err)
+	}
+
+	// Sign transaction
+	signedRaw, err := client.SignTx(unsigned, []byte{}, lt.faucetPrivateKey.Seed())
+	if err != nil {
+		return fmt.Errorf("failed to sign refill transaction: %v", err)
+	}
+
+	if !client.Verify(unsigned, signedRaw.Sig) {
+		return fmt.Errorf("self verify failed")
+	}
+
+	// Send transaction
+	resp, err := lt.client.AddTx(lt.ctx, signedRaw)
+	if err != nil {
+		return fmt.Errorf("failed to send refill transaction: %v", err)
+	}
+
+	if !resp.Ok {
+		return fmt.Errorf("refill transaction failed: %s", resp.Error)
+	}
+
+	// Wait for transaction to be confirmed to ensure balance available
+	if resp.TxHash != "" {
+		_ = lt.waitTxConfirmed(resp.TxHash, 1*time.Second)
+	} else {
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	lt.logger.LogInfo("Refilled account %d (%s...): %d tokens",
+		accountIndex, account.Address[:8], lt.config.FundAmount)
+
+	return nil
+}
+
+func (lt *LoadTester) Run() error {
+	lt.logger.LogInfo("Starting load test: %d accounts, target %d tx/s", lt.config.AccountCount, lt.config.TxPerSecond)
+	lt.testStartTime = time.Now()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-lt.ctx.Done():
+			lt.logger.LogInfo("Load test stopped")
+			return nil
+
+		case <-ticker.C:
+			// Mỗi tick = 1 nonce mới
+			globalNonce, err := lt.refreshGlobalNonce()
+			lt.logger.LogInfo("Refreshed global nonce: %d", globalNonce)
+			if err != nil {
+				lt.logger.LogError("Failed to refresh global nonce: %v", err)
+				continue
+			}
+
+			go lt.runTickWithNonce(globalNonce)
+		}
+	}
+}
+
+// chạy 1 tick với 1 global nonce duy nhất
+func (lt *LoadTester) runTickWithNonce(nonce uint64) {
+	accountCount := lt.config.AccountCount
+	targetTPS := lt.config.TxPerSecond
+
+	sent := 0
+	offset := 1
+
+	for sent < targetTPS {
+		for i := 0; i < accountCount && sent < targetTPS; i++ {
+			sender := i
+			receiver := (i + offset) % accountCount
+
+			// tạo 1 goroutine riêng, không chờ nhau
+			go lt.sendTransactionGroup(sender, receiver, nonce)
+			sent++
+		}
+		offset++
+		// Nếu nhảy vào trường hợp này mà không refrest lại nonce thì sẽ bị duplicate
+		// Nhưng nếu refresh lại nonce thì sẽ không đồng bộ được nonce giữa các goroutine
+		if offset >= accountCount {
+			offset = 1
+		}
+	}
+
+	lt.logger.LogInfo("Tick done (nonce=%d), sent %d txs", nonce, sent)
+}
+
+func (lt *LoadTester) sendTransactionGroup(senderIdx, receiverIdx int, nonce uint64) {
+	sender := &lt.accounts[senderIdx]
+	receiver := &lt.accounts[receiverIdx]
+	amount := uint256.NewInt(lt.config.TransferAmount)
+
+	textData := fmt.Sprintf("Transfer from account %d to %d", senderIdx, receiverIdx)
+	extraInfo := map[string]string{"type": "transfer"}
+
+	// 🔒 Khóa riêng cho sender
+	mu := lt.getAccountMutex(senderIdx)
+	mu.Lock()
+	balance := sender.Balance
+	if balance < lt.config.TransferAmount {
+		lt.logger.LogInfo("Account %d has low balance (%d), refilling...", senderIdx, balance)
+
+		if err := lt.refillAccount(senderIdx, nonce); err != nil {
+			lt.logger.LogError("Refill failed for account %d: %v", senderIdx, err)
+			atomic.AddInt64(&lt.totalTxsFailed, 1)
+			return
+		}
+		sender.Balance += lt.config.FundAmount
+	}
+	mu.Unlock()
+
+	unsigned, err := client.BuildTransferTx(
+		client.TxTypeTransfer,
+		sender.Address,
+		receiver.Address,
+		amount,
+		nonce,
+		uint64(time.Now().Unix()),
+		textData,
+		extraInfo,
+		sender.ZkProof,
+		sender.ZkPub,
+	)
+	if err != nil {
+		lt.logger.LogError("Build tx failed: %v", err)
+		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		return
+	}
+
+	pubKey, _ := base58.Decode(sender.PublicKey)
+	signedRaw, err := client.SignTx(unsigned, pubKey, sender.PrivateKey.Seed())
+	if err != nil {
+		lt.logger.LogError("Sign tx failed: %v", err)
+		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		return
+	}
+
+	mu.Lock()
+	sender.Balance -= lt.config.TransferAmount
+	mu.Unlock()
+
+	resp, err := lt.client.AddTx(lt.ctx, signedRaw)
+	if err != nil {
+		lt.logger.LogError("Send tx failed: %v", err)
+		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		mu.Lock()
+		sender.Balance += lt.config.TransferAmount
+		mu.Unlock()
+		return
+	}
+
+	if resp.Ok {
+		atomic.AddInt64(&lt.totalTxsSuccess, 1)
+	} else {
+		lt.logger.LogError("Tx failed for %d->%d: %s", senderIdx, receiverIdx, resp.Error)
+		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		mu.Lock()
+		sender.Balance += lt.config.TransferAmount
+		mu.Unlock()
+	}
+}
+
+func (lt *LoadTester) Stop() {
+	lt.cancel()
+}
+
+func (lt *LoadTester) Close() {
+	if lt.client.Conn() != nil {
+		lt.client.Conn().Close()
+	}
+	if lt.logger != nil {
+		lt.logger.Close()
+	}
+}
+
+func (lt *LoadTester) PrintStats() {
+	totalTxs := atomic.LoadInt64(&lt.totalTxsSent)
+	successTxs := atomic.LoadInt64(&lt.totalTxsSuccess)
+	failedTxs := atomic.LoadInt64(&lt.totalTxsFailed)
+
+	// Use logger to write final stats
+	lt.logger.LogFinalStats(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (stringIndex(s, sub) >= 0)
+}
+
+// waitTxConfirmed polls tx status until CONFIRMED/FINALIZED or timeout
+func (lt *LoadTester) waitTxConfirmed(hash string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("waitTxConfirmed timeout for %s", hash)
+		}
+		info, err := lt.client.GetTxByHash(lt.ctx, hash)
+		if err == nil {
+			// 1 = CONFIRMED, 2 = FINALIZED
+			if info.Status == 1 || info.Status == 2 {
+				lt.logger.LogInfo("Transaction %s confirmed", hash)
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func stringIndex(haystack, needle string) int {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return i
+		}
+	}
+	return -1
+}
+
+// Get mutex for each account
+func (lt *LoadTester) getAccountMutex(index int) *sync.Mutex {
+	if m, ok := lt.accountMutexes.Load(index); ok {
+		return m.(*sync.Mutex)
+	}
+	mu := &sync.Mutex{}
+	actual, _ := lt.accountMutexes.LoadOrStore(index, mu)
+	return actual.(*sync.Mutex)
+}
+
+// Get global nonce for account
+func (lt *LoadTester) getGlobalNonce() uint64 {
+	lt.nonceMu.RLock()
+	defer lt.nonceMu.RUnlock()
+	return lt.globalNonce
+}
+
+// Refresh global nonce from node
+func (lt *LoadTester) refreshGlobalNonce() (uint64, error) {
+	lt.nonceMu.Lock()
+	defer lt.nonceMu.Unlock()
+	nonce, err := lt.client.GetCurrentNonce(lt.ctx, lt.faucetPublicKey, "pending")
+	if err != nil {
+		return 0, err
+	}
+	lt.globalNonce = nonce
+	return lt.globalNonce, nil
+}
