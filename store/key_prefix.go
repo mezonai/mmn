@@ -13,8 +13,9 @@ const (
 	PrefixTx     = "tx:"
 	PrefixTxMeta = "tx_meta:"
 
-	// Multisig Faucet prefixes
 	PrefixMultisigConfig = "multisig_config:"
 	PrefixMultisigTx     = "multisig_tx:"
 	PrefixMultisigSig    = "multisig_sig:"
+	PrefixProposer		 = "whitelist:proposer"
+	PrefixApprover		 = "whitelist:approver"
 )

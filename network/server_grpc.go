@@ -606,7 +606,6 @@ func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRe
 	}, nil
 }
 
-// CheckWhitelistStatus checks if an address is in whitelist
 func (s *server) CheckWhitelistStatus(ctx context.Context, req *pb.CheckWhitelistStatusRequest) (*pb.CheckWhitelistStatusResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.CheckWhitelistStatusResponse{
@@ -629,7 +628,6 @@ func (s *server) CheckWhitelistStatus(ctx context.Context, req *pb.CheckWhitelis
 	}, nil
 }
 
-// AddSignature adds a signature to a multisig transaction
 func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) (*pb.AddSignatureResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.AddSignatureResponse{
@@ -637,7 +635,7 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 			Message: "Multisig faucet service not initialized",
 		}, nil
 	}
-	// Decode signature
+
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
 		return &pb.AddSignatureResponse{
@@ -646,7 +644,6 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 		}, nil
 	}
 
-	// Add signature
 	err = s.multisigFaucetSvc.AddSignature(req.TxHash, req.SignerPubkey, signature)
 	if err != nil {
 		return &pb.AddSignatureResponse{
@@ -655,7 +652,6 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 		}, nil
 	}
 
-	// Get updated transaction to count signatures
 	tx, err := s.multisigFaucetSvc.GetMultisigTx(req.TxHash)
 	if err != nil {
 		return &pb.AddSignatureResponse{
@@ -671,7 +667,6 @@ func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) 
 	}, nil
 }
 
-// RejectProposal rejects a multisig transaction proposal
 func (s *server) RejectProposal(ctx context.Context, req *pb.RejectProposalRequest) (*pb.RejectProposalResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.RejectProposalResponse{
@@ -679,9 +674,6 @@ func (s *server) RejectProposal(ctx context.Context, req *pb.RejectProposalReque
 			Message: "Multisig faucet service not initialized",
 		}, nil
 	}
-
-	logx.Info("MultisigFaucetGRPC", "RejectProposal called",
-		"txHash", req.TxHash)
 
 	// Decode signature
 	signature, err := hex.DecodeString(req.Signature)
@@ -692,7 +684,6 @@ func (s *server) RejectProposal(ctx context.Context, req *pb.RejectProposalReque
 		}, nil
 	}
 
-	// Reject proposal
 	err = s.multisigFaucetSvc.RejectProposal(req.TxHash, req.SignerPubkey, signature)
 	if err != nil {
 		return &pb.RejectProposalResponse{
@@ -707,7 +698,6 @@ func (s *server) RejectProposal(ctx context.Context, req *pb.RejectProposalReque
 	}, nil
 }
 
-// GetMultisigTransactionStatus gets the status of a multisig transaction
 func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMultisigTransactionStatusRequest) (*pb.GetMultisigTransactionStatusResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.GetMultisigTransactionStatusResponse{
@@ -716,10 +706,6 @@ func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMu
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "GetMultisigTransactionStatus called",
-		"txHash", req.TxHash)
-
-	// Get transaction
 	tx, err := s.multisigFaucetSvc.GetMultisigTx(req.TxHash)
 	if err != nil {
 		return &pb.GetMultisigTransactionStatusResponse{
@@ -728,16 +714,13 @@ func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMu
 		}, nil
 	}
 
-	// Determine status
 	status := tx.Status
 	if status == "" {
 		status = "pending"
 	}
 
-	// Override status based on signature count if not executed
 	if status != "executed" && status != "failed" {
 		if len(tx.Signatures) >= tx.Config.Threshold {
-			// Check if transaction is still in pending (not executed yet)
 			if _, exists := s.multisigFaucetSvc.GetPendingTxs()[req.TxHash]; exists {
 				status = "ready_to_execute"
 			} else {
@@ -757,7 +740,6 @@ func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMu
 	}, nil
 }
 
-// AddToApproverWhitelist adds an address to approver whitelist
 func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApproverWhitelistRequest) (*pb.AddToApproverWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.AddToApproverWhitelistResponse{
@@ -766,11 +748,7 @@ func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApprov
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "AddToApproverWhitelist called",
-		"address", req.Address,
-		"signerPubkey", req.SignerPubkey)
 
-	// Decode signature
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
 		return &pb.AddToApproverWhitelistResponse{
@@ -779,7 +757,6 @@ func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApprov
 		}, nil
 	}
 
-	// Add to whitelist
 	err = s.multisigFaucetSvc.AddToApproverWhitelist(req.Address, req.SignerPubkey, signature)
 	if err != nil {
 		return &pb.AddToApproverWhitelistResponse{
@@ -794,7 +771,6 @@ func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApprov
 	}, nil
 }
 
-// AddToProposerWhitelist adds an address to proposer whitelist
 func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToProposerWhitelistRequest) (*pb.AddToProposerWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.AddToProposerWhitelistResponse{
@@ -802,12 +778,6 @@ func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToPropos
 			Message: "Multisig faucet service not initialized",
 		}, nil
 	}
-
-	logx.Info("MultisigFaucetGRPC", "AddToProposerWhitelist called",
-		"address", req.Address,
-		"signerPubkey", req.SignerPubkey)
-
-	// Decode signature
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
 		return &pb.AddToProposerWhitelistResponse{
@@ -816,7 +786,6 @@ func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToPropos
 		}, nil
 	}
 
-	// Add to whitelist
 	err = s.multisigFaucetSvc.AddToProposerWhitelist(req.Address, req.SignerPubkey, signature)
 	if err != nil {
 		return &pb.AddToProposerWhitelistResponse{
@@ -831,7 +800,6 @@ func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToPropos
 	}, nil
 }
 
-// RemoveFromApproverWhitelist removes an address from approver whitelist
 func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.RemoveFromApproverWhitelistRequest) (*pb.RemoveFromApproverWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.RemoveFromApproverWhitelistResponse{
@@ -840,11 +808,6 @@ func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.Remove
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "RemoveFromApproverWhitelist called",
-		"address", req.Address,
-		"signerPubkey", req.SignerPubkey)
-
-	// Decode signature
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
 		return &pb.RemoveFromApproverWhitelistResponse{
@@ -853,7 +816,6 @@ func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.Remove
 		}, nil
 	}
 
-	// Remove from whitelist
 	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(req.Address, req.SignerPubkey, signature)
 	if err != nil {
 		return &pb.RemoveFromApproverWhitelistResponse{
@@ -868,7 +830,6 @@ func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.Remove
 	}, nil
 }
 
-// RemoveFromProposerWhitelist removes an address from proposer whitelist
 func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.RemoveFromProposerWhitelistRequest) (*pb.RemoveFromProposerWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.RemoveFromProposerWhitelistResponse{
@@ -877,11 +838,6 @@ func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.Remove
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "RemoveFromProposerWhitelist called",
-		"address", req.Address,
-		"signerPubkey", req.SignerPubkey)
-
-	// Decode signature
 	signature, err := hex.DecodeString(req.Signature)
 	if err != nil {
 		return &pb.RemoveFromProposerWhitelistResponse{
@@ -890,7 +846,6 @@ func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.Remove
 		}, nil
 	}
 
-	// Remove from whitelist
 	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(req.Address, req.SignerPubkey, signature)
 	if err != nil {
 		return &pb.RemoveFromProposerWhitelistResponse{
@@ -905,7 +860,6 @@ func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.Remove
 	}, nil
 }
 
-// GetApproverWhitelist gets the list of approver whitelist
 func (s *server) GetApproverWhitelist(ctx context.Context, req *pb.GetApproverWhitelistRequest) (*pb.GetApproverWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.GetApproverWhitelistResponse{
@@ -914,9 +868,6 @@ func (s *server) GetApproverWhitelist(ctx context.Context, req *pb.GetApproverWh
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "GetApproverWhitelist called")
-
-	// Get approver whitelist
 	addresses := s.multisigFaucetSvc.GetApproverWhitelist()
 
 	return &pb.GetApproverWhitelistResponse{
@@ -926,7 +877,6 @@ func (s *server) GetApproverWhitelist(ctx context.Context, req *pb.GetApproverWh
 	}, nil
 }
 
-// GetProposerWhitelist gets the list of proposer whitelist
 func (s *server) GetProposerWhitelist(ctx context.Context, req *pb.GetProposerWhitelistRequest) (*pb.GetProposerWhitelistResponse, error) {
 	if s.multisigFaucetSvc == nil {
 		return &pb.GetProposerWhitelistResponse{
@@ -935,9 +885,6 @@ func (s *server) GetProposerWhitelist(ctx context.Context, req *pb.GetProposerWh
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "GetProposerWhitelist called")
-
-	// Get proposer whitelist
 	addresses := s.multisigFaucetSvc.GetProposerWhitelist()
 
 	return &pb.GetProposerWhitelistResponse{

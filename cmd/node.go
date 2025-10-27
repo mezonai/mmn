@@ -289,28 +289,24 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 	if err != nil || existingAccount == nil {
 		faucetAccount := &types.Account{
 			Address: config.Address,
-			Balance: uint256.NewInt(1000000000), // TODO: research initial faucet balance
+			Balance: uint256.NewInt(0), // TODO: already have faucet account so we can transfer token from that account to this account
 			Nonce:   0,
 		}
 
-		// Store faucet account in account store
 		if err := accountStore.Store(faucetAccount); err != nil {
 			logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
 			return nil
 		}
 	}
 
-	// Check if multisig config already exists
 	existingConfig, err := multisigService.GetMultisigConfig(config.Address)
 	if err != nil {
-		// Config doesn't exist, register new one
 		if err := multisigService.RegisterMultisigConfig(config); err != nil {
 			logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
 			return nil
 		}
 	}
 
-	// Get final account info for logging
 	finalAccount, err := accountStore.GetByAddr(config.Address)
 	if err != nil || finalAccount == nil {
 		logx.Error("MULTISIG_FAUCET", "Failed to get final account info", "address", config.Address, "error", err)
@@ -368,7 +364,7 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	return accountStore, txStore, txMetaStore, blockStore, multisigStore.(store.MultisigFaucetStore), nil
+	return accountStore, txStore, txMetaStore, blockStore, multisigStore, nil
 }
 
 // initializePoH initializes Proof of History components

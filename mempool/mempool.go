@@ -48,7 +48,7 @@ type Mempool struct {
 	zkVerify    *zkverify.ZkVerify                        // Zk verify for zk transactions
 
 	// Performance optimization: index map to avoid O(n) scans in ready queue
-	readyQueueIndex  map[string]map[uint64]bool // sender -> nonce -> exists (for O(1) duplicate check)
+	readyQueueIndex  map[string]map[uint64]bool
 	isMultisigWallet func(sender string) bool
 }
 

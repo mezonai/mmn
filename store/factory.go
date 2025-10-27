@@ -58,7 +58,7 @@ func NewStoreFactory() *StoreFactory {
 }
 
 // CreateStoreWithProvider creates store instances using the provider pattern
-func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, interface{}, error) {
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, MultisigFaucetStore, error) {
 	if config == nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("config cannot be nil")
 	}
@@ -98,10 +98,8 @@ func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter
 		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create multisig faucet store: %w", err)
 	}
 
-	// Create adapter to convert to faucet interface
-	multisigFaucetAdapter := NewMultisigFaucetAdapter(multisigFaucetStore)
 
-	return accStore, txStore, txMetaStore, blkStore, multisigFaucetAdapter, nil
+	return accStore, txStore, txMetaStore, blkStore, multisigFaucetStore, nil
 }
 
 // CreateProvider creates a database provider based on the configuration
@@ -134,6 +132,6 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider
 var globalFactory = NewStoreFactory()
 
 // CreateStore creates new store instances using the global factory
-func CreateStore(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, interface{}, error) {
+func CreateStore(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, MultisigFaucetStore, error) {
 	return globalFactory.CreateStoreWithProvider(config, eventRouter)
 }

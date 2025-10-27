@@ -385,14 +385,13 @@ func (s *GenericMultisigFaucetStore) getMultisigTxKey(txHash string) []byte {
 	return []byte(PrefixMultisigTx + txHash)
 }
 
-// Whitelist management methods
 func (s *GenericMultisigFaucetStore) StoreApproverWhitelist(addresses []string) error {
 	whitelistData, err := jsonx.Marshal(addresses)
 	if err != nil {
 		return fmt.Errorf("failed to marshal approver whitelist: %w", err)
 	}
 
-	key := []byte("whitelist:approver")
+	key := []byte(PrefixApprover)
 	if err := s.dbProvider.Put(key, whitelistData); err != nil {
 		return fmt.Errorf("failed to store approver whitelist: %w", err)
 	}
@@ -402,14 +401,14 @@ func (s *GenericMultisigFaucetStore) StoreApproverWhitelist(addresses []string) 
 }
 
 func (s *GenericMultisigFaucetStore) GetApproverWhitelist() ([]string, error) {
-	key := []byte("whitelist:approver")
+	key := []byte(PrefixApprover)
 	data, err := s.dbProvider.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get approver whitelist: %w", err)
 	}
 
 	if data == nil {
-		return []string{}, nil // Return empty list if not found
+		return []string{}, nil
 	}
 
 	var addresses []string
@@ -426,7 +425,7 @@ func (s *GenericMultisigFaucetStore) StoreProposerWhitelist(addresses []string) 
 		return fmt.Errorf("failed to marshal proposer whitelist: %w", err)
 	}
 
-	key := []byte("whitelist:proposer")
+	key := []byte(PrefixProposer)
 	if err := s.dbProvider.Put(key, whitelistData); err != nil {
 		return fmt.Errorf("failed to store proposer whitelist: %w", err)
 	}
@@ -436,14 +435,14 @@ func (s *GenericMultisigFaucetStore) StoreProposerWhitelist(addresses []string) 
 }
 
 func (s *GenericMultisigFaucetStore) GetProposerWhitelist() ([]string, error) {
-	key := []byte("whitelist:proposer")
+	key := []byte(PrefixProposer)
 	data, err := s.dbProvider.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get proposer whitelist: %w", err)
 	}
 
 	if data == nil {
-		return []string{}, nil // Return empty list if not found
+		return []string{}, nil
 	}
 
 	var addresses []string
@@ -452,95 +451,4 @@ func (s *GenericMultisigFaucetStore) GetProposerWhitelist() ([]string, error) {
 	}
 
 	return addresses, nil
-}
-
-type MultisigFaucetAdapter struct {
-	store MultisigFaucetStore
-}
-
-func NewMultisigFaucetAdapter(store MultisigFaucetStore) *MultisigFaucetAdapter {
-	return &MultisigFaucetAdapter{
-		store: store,
-	}
-}
-
-func (a *MultisigFaucetAdapter) StoreMultisigConfig(config *types.MultisigConfig) error {
-	return a.store.StoreMultisigConfig(config)
-}
-
-func (a *MultisigFaucetAdapter) GetMultisigConfig(address string) (*types.MultisigConfig, error) {
-	return a.store.GetMultisigConfig(address)
-}
-
-func (a *MultisigFaucetAdapter) ListMultisigConfigs() ([]*types.MultisigConfig, error) {
-	return a.store.ListMultisigConfigs()
-}
-
-func (a *MultisigFaucetAdapter) DeleteMultisigConfig(address string) error {
-	return a.store.DeleteMultisigConfig(address)
-}
-
-func (a *MultisigFaucetAdapter) StoreMultisigTx(tx *types.MultisigTx) error {
-	return a.store.StoreMultisigTx(tx)
-}
-
-func (a *MultisigFaucetAdapter) GetMultisigTx(txHash string) (*types.MultisigTx, error) {
-	return a.store.GetMultisigTx(txHash)
-}
-
-func (a *MultisigFaucetAdapter) ListMultisigTxs() ([]*types.MultisigTx, error) {
-	return a.store.ListMultisigTxs()
-}
-
-func (a *MultisigFaucetAdapter) DeleteMultisigTx(txHash string) error {
-	return a.store.DeleteMultisigTx(txHash)
-}
-
-func (a *MultisigFaucetAdapter) UpdateMultisigTx(tx *types.MultisigTx) error {
-	return a.store.UpdateMultisigTx(tx)
-}
-
-func (a *MultisigFaucetAdapter) AddSignature(txHash string, sig *types.MultisigSignature) error {
-	return a.store.AddSignature(txHash, sig)
-}
-
-func (a *MultisigFaucetAdapter) GetSignatures(txHash string) ([]types.MultisigSignature, error) {
-	return a.store.GetSignatures(txHash)
-}
-
-func (a *MultisigFaucetAdapter) CleanupExpiredTxs(maxAge int64) error {
-	return a.store.CleanupExpiredTxs(maxAge)
-}
-
-func (a *MultisigFaucetAdapter) GetMultisigTxsByStatus(status string) ([]*types.MultisigTx, error) {
-	return a.store.GetMultisigTxsByStatus(status)
-}
-
-func (a *MultisigFaucetAdapter) GetMultisigTxsBySigner(signer string) ([]*types.MultisigTx, error) {
-	return a.store.GetMultisigTxsBySigner(signer)
-}
-
-func (a *MultisigFaucetAdapter) IsTransactionExecutable(txHash string) (bool, error) {
-	return a.store.IsTransactionExecutable(txHash)
-}
-
-// Whitelist management adapter methods
-func (a *MultisigFaucetAdapter) StoreApproverWhitelist(addresses []string) error {
-	return a.store.StoreApproverWhitelist(addresses)
-}
-
-func (a *MultisigFaucetAdapter) GetApproverWhitelist() ([]string, error) {
-	return a.store.GetApproverWhitelist()
-}
-
-func (a *MultisigFaucetAdapter) StoreProposerWhitelist(addresses []string) error {
-	return a.store.StoreProposerWhitelist(addresses)
-}
-
-func (a *MultisigFaucetAdapter) GetProposerWhitelist() ([]string, error) {
-	return a.store.GetProposerWhitelist()
-}
-
-func (a *MultisigFaucetAdapter) MustClose() {
-	a.store.MustClose()
 }
