@@ -45,6 +45,7 @@ Notes:
 - On Windows, run under Git Bash (this repo includes Bash scripts).
 
 ### Run stress test with docker compose
+- Run `cd client_test/stress-test`
 - Run `cp .env.example .env` to create `.env` file in `client_test/stress-test` directory
 - Update data of `server`, `accounts`, `rate`, `switch`, `workers`, `fund`, `amount`, `minutes`, `duration` fields in `.env` file
-- Run `docker compose -f ./docker-compose-stress-test.yml up -d --build` to run stress test with docker compose 
+- Run `docker compose up -d --build` to run stress test with docker compose 
