@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mezonai/mmn/errors"
@@ -30,7 +31,7 @@ type Mempool struct {
 	dedupTxHashSet  map[string]struct{}            // Set for deduplication
 	senderTxHashSet map[string]map[string]struct{} // sender -> txHash
 	max             int
-	netCurrentSlot  uint64
+	netCurrentSlot  atomic.Uint64
 	broadcaster     interfaces.Broadcaster
 	ledger          interfaces.Ledger
 
@@ -48,7 +49,7 @@ func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.L
 		dedupTxHashSet:  make(map[string]struct{}),
 		senderTxHashSet: make(map[string]map[string]struct{}),
 		max:             max,
-		netCurrentSlot:  0,
+		netCurrentSlot:  atomic.Uint64{},
 		broadcaster:     broadcaster,
 		ledger:          ledger,
 
@@ -187,14 +188,15 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 func (mp *Mempool) validateNonce(txs []*transaction.Transaction) error {
 	minNonce := uint64(1)
-	if mp.netCurrentSlot > NONCE_WINDOW {
-		minNonce = mp.netCurrentSlot - NONCE_WINDOW
+	netCurrentSlot := mp.netCurrentSlot.Load()
+	if netCurrentSlot > NONCE_WINDOW {
+		minNonce = netCurrentSlot - NONCE_WINDOW
 	}
 	for _, tx := range txs {
 		if tx.Nonce < minNonce {
 			return errors.NewError(errors.ErrCodeNonceTooLow, errors.ErrMsgNonceTooLow)
 		}
-		if tx.Nonce > mp.netCurrentSlot {
+		if tx.Nonce > netCurrentSlot {
 			return errors.NewError(errors.ErrCodeNonceTooHigh, errors.ErrMsgNonceTooHigh)
 		}
 	}
@@ -330,12 +332,8 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 	return result
 }
 
-func (mp *Mempool) GetCurrentSlot() uint64 {
-	return mp.netCurrentSlot
-}
-
 func (mp *Mempool) SetCurrentSlot(slot uint64) {
-	mp.netCurrentSlot = slot
+	mp.netCurrentSlot.Store(slot)
 }
 
 func (mp *Mempool) VerifyBlockTransactions(txs []*transaction.Transaction) error {
