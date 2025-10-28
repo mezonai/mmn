@@ -92,9 +92,6 @@ func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 }
 
 func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-
 	if slot <= DEDUP_SLOT_GAP {
 		return
 	}

@@ -66,41 +66,14 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	txDedupHash := tx.DedupHash()
 	monitoring.IncreaseReceivedTxCount()
 
-	// Quick check for duplicate using read lock
-	mp.mu.RLock()
-	if _, exists := mp.dedupTxHashSet[txDedupHash]; exists {
-		mp.mu.RUnlock()
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx %s", txHash))
-		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
-		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
+	// Quick validate transaction
+	if err := mp.cheapValidateTransaction(tx); err != nil {
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
+		return "", err
 	}
-
-	// Check if mempool is full
-	if len(mp.txs) >= mp.max {
-		mp.mu.RUnlock()
-		logx.Error("MEMPOOL", "Dropping full mempool")
-		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
-		return "", errors.NewError(errors.ErrCodeMempoolFull, errors.ErrMsgMempoolFull)
-	}
-	mp.mu.RUnlock()
 
 	// Now acquire write lock for validation and insertion
 	mp.mu.Lock()
-	defer mp.mu.Unlock()
-
-	// Double-check after acquiring write lock (for race conditions)
-	if _, exists := mp.dedupTxHashSet[txDedupHash]; exists {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
-		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
-		return "", errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
-	}
-
-	if len(mp.txs) >= mp.max {
-		logx.Error("MEMPOOL", "Dropping full mempool (double-check)")
-		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
-		return "", errors.NewError(errors.ErrCodeMempoolFull, errors.ErrMsgMempoolFull)
-	}
-
 	// Validate transaction INSIDE the write lock
 	if err := mp.validateTransaction(tx); err != nil {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
@@ -111,7 +84,6 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Always add to txs and txOrder for compatibility
 	mp.txs[txHash] = tx
-	monitoring.SetMempoolSize(mp.Size())
 	mp.txOrder = append(mp.txOrder, txHash)
 	mp.dedupTxHashSet[txDedupHash] = struct{}{}
 
@@ -121,7 +93,9 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 		mp.senderTxHashSet[sender] = make(map[string]struct{})
 	}
 	mp.senderTxHashSet[sender][txHash] = struct{}{}
+	mp.mu.Unlock()
 
+	monitoring.SetMempoolSize(mp.Size())
 	// Publish event for transaction status tracking
 	if mp.eventRouter != nil {
 		event := events.NewTransactionAddedToMempool(txHash, tx)
@@ -150,9 +124,6 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 	if tx == nil {
 		return errors.NewError(errors.ErrCodeInvalidTransaction, errors.ErrMsgInvalidTransaction)
 	}
-	if tx.Amount == nil {
-		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
-	}
 
 	if tx.Sender == tx.Recipient {
 		return nil
@@ -160,11 +131,13 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
 	if err != nil || senderAccount == nil {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 
 	// Add nil check for balance
 	if senderAccount.Balance == nil {
+		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
 	}
 
@@ -212,44 +185,60 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	return nil
 }
 
-// Stateless validation, simple for tx
-func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
-	// 1. Verify signature
-	if !tx.Verify(mp.zkVerify) {
-		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
-		return errors.NewError(errors.ErrCodeInvalidSignature, errors.ErrMsgInvalidSignature)
-	}
-
-	// 2. Check for zero amount
+// Cheap validate before aquire write lock
+func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
+	// Validate amount
 	if tx.Amount == nil || tx.Amount.IsZero() {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
-	// 3. Check memo length (max 64 characters)
+	// Validate memo length (max 64 characters)
 	if len(tx.TextData) > MAX_MEMO_CHARACTERS {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTERS, len(tx.TextData))
 	}
 
-	senderAccount, err := mp.ledger.GetAccount(tx.Sender)
-	if err != nil || senderAccount == nil {
-		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return errors.NewError(errors.ErrCodeAccountNotFound, errors.ErrMsgAccountNotFound)
+	// Validate mempool size
+	if len(mp.txs) >= mp.max {
+		logx.Error("MEMPOOL", "Dropping full mempool")
+		monitoring.RecordRejectedTx(monitoring.TxMempoolFull)
+		return errors.NewError(errors.ErrCodeMempoolFull, errors.ErrMsgMempoolFull)
 	}
 
-	// 4. Check nonce
+	// Validate nonce
 	if err := mp.validateNonce([]*transaction.Transaction{tx}); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return err
 	}
-	// 5. Check duplicate transaction
+
+	// Verify signature
+	if !tx.Verify(mp.zkVerify) {
+		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
+		return errors.NewError(errors.ErrCodeInvalidSignature, errors.ErrMsgInvalidSignature)
+	}
+
+	return nil
+}
+
+// Stateless validation, simple for tx
+func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
+	txHash := tx.Hash()
+	txDedupHash := tx.DedupHash()
+
+	if _, exists := mp.dedupTxHashSet[txDedupHash]; exists {
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping duplicate tx (double-check) %s", txHash))
+		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
+		return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
+	}
+
+	// Check duplicate transaction
 	if err := mp.validateDuplicateTxs([]*transaction.Transaction{tx}); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return err
 	}
 
-	// 6. Validate balance accounting
+	// Validate balance accounting
 	if err := mp.validateBalance(tx); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
@@ -292,13 +281,11 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 			}
 		}
 	}
-
-	monitoring.SetMempoolSize(mp.Size())
 	mp.mu.Unlock()
 
+	monitoring.SetMempoolSize(mp.Size())
 	mp.dedupService.Add(slot, dedupTxHashes)
 
-	// Track outside lock
 	if mp.txTracker != nil && len(result) > 0 {
 		for _, tx := range result {
 			mp.txTracker.TrackProcessingTransaction(tx)

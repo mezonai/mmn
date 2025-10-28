@@ -53,12 +53,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("transaction verification failed: %w", err)
 			}
 
-			if err := blk.VerifyPoH(); err != nil {
-				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
-				blk.InvalidPoH = true
-				monitoring.IncreaseInvalidPohCount()
-			}
-
 			var txs []*transaction.Transaction
 			var txHashSet = make(map[string]struct{})
 			var txDedupHashes []string
@@ -74,6 +68,12 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 			if err := mp.VerifyBlockTransactions(txs); err != nil {
 				logx.Error("BLOCK", fmt.Sprintf("Block transaction validation failed at slot %d: %v", blk.Slot, err))
 				return fmt.Errorf("block transaction validation failed: %w", err)
+			}
+
+			if err := blk.VerifyPoH(); err != nil {
+				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
+				blk.InvalidPoH = true
+				monitoring.IncreaseInvalidPohCount()
 			}
 
 			if err := bs.AddBlockPending(blk); err != nil {
