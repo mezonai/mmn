@@ -318,6 +318,10 @@ func (mp *Mempool) GetOrderedTransactions() []string {
 }
 
 func (mp *Mempool) SetCurrentSlot(slot uint64) {
+	currentSlot := mp.netCurrentSlot.Load()
+	if slot <= currentSlot {
+		return
+	}
 	mp.netCurrentSlot.Store(slot)
 }
 
