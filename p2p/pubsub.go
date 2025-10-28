@@ -62,7 +62,6 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 					txHashSet[tx.Hash()] = struct{}{}
 					txDedupHashes = append(txDedupHashes, tx.DedupHash())
 				}
-
 			}
 
 			if err := mp.VerifyBlockTransactions(txs); err != nil {

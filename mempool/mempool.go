@@ -183,7 +183,7 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	return nil
 }
 
-// Cheap validate before aquire write lock
+// Cheap validate before acquire write lock
 func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
 	// Validate amount
 	if tx.Amount == nil || tx.Amount.IsZero() {

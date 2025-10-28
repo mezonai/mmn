@@ -78,15 +78,6 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 		txHash, tx.Sender[:8], tx.Nonce))
 }
 
-func remove(slice []string, item string) ([]string, bool) {
-	for i, v := range slice {
-		if v == item {
-			return append(slice[:i], slice[i+1:]...), true
-		}
-	}
-	return slice, false
-}
-
 // IsApplied checks if txHash was marked applied
 func (t *TransactionTracker) isRemoved(txHash string) bool {
 	_, ok := t.historyList.Load(txHash)
