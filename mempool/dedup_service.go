@@ -96,6 +96,9 @@ func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
 		return
 	}
 
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+
 	// Clean up old slot tx hashes
 	oldSlot := slot - DEDUP_SLOT_GAP
 	if oldTxDedupHashes, exists := ds.slotTxDedupHashSet[oldSlot]; exists {

@@ -77,6 +77,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	// Validate transaction INSIDE the write lock
 	if err := mp.validateTransaction(tx); err != nil {
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", txHash, err))
+		mp.mu.Unlock()
 		return "", err
 	}
 
