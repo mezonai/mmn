@@ -118,7 +118,7 @@ type ProveResponse struct {
 const (
 	FaucetPrivateKeyHex = "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
 	JwtSecret           = "defaultencryptionkey"
-	ZkVerifyUrl         = "http://localhost:8282"
+	ZkVerifyUrl         = "http://172.16.100.180:8282"
 )
 
 // logRealTimeMetrics logs current system metrics and transaction stats
@@ -174,7 +174,7 @@ func parseFlags() Config {
 
 	flag.StringVar(&config.ServerAddress, "server", "127.0.0.1:9001", "gRPC server address")
 	flag.IntVar(&config.AccountCount, "accounts", 100, "Number of accounts to create")
-	flag.IntVar(&config.TxPerSecond, "rate", 50, "Transactions per second")
+	flag.IntVar(&config.TxPerSecond, "rate", 2000, "Transactions per second")
 	flag.Uint64Var(&config.FundAmount, "fund", 10000000000, "Amount to fund each account")
 	flag.Uint64Var(&config.TransferAmount, "amount", 100, "Amount per transfer transaction")
 	flag.DurationVar(&config.Duration, "duration", 0, "Test duration (0 = run indefinitely)")
@@ -523,7 +523,7 @@ func (lt *LoadTester) Run() error {
 				lt.logger.LogError("Failed to refresh global nonce: %v", err)
 				continue
 			}
-
+			lt.logger.LogInfo("Global nonce: %d", globalNonce)
 			go lt.runTickWithNonce(globalNonce)
 		}
 	}
@@ -569,8 +569,8 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	sender := &lt.accounts[senderIdx]
 	receiver := &lt.accounts[receiverIdx]
 	amount := uint256.NewInt(lt.config.TransferAmount)
-
-	textData := fmt.Sprintf("Transfer from account %d to %d", senderIdx, receiverIdx)
+	timestamp := uint64(time.Now().Unix())
+	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, timestamp)
 	extraInfo := map[string]string{"type": "transfer"}
 
 	mu := lt.getAccountMutex(senderIdx)
@@ -595,7 +595,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 		receiver.Address,
 		amount,
 		nonce,
-		uint64(time.Now().Unix()),
+		timestamp,
 		textData,
 		extraInfo,
 		sender.ZkProof,
