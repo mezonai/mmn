@@ -25,15 +25,15 @@ const (
 )
 
 type Mempool struct {
-	mu              sync.RWMutex // Changed to RWMutex for better concurrency
-	txs             map[string]*transaction.Transaction
-	txOrder         []string                       // Maintain FIFO order
-	dedupTxHashSet  map[string]struct{}            // Set for deduplication
-	senderTxHashSet map[string]map[string]struct{} // sender -> txHash
-	max             int
-	netCurrentSlot  atomic.Uint64
-	broadcaster     interfaces.Broadcaster
-	ledger          interfaces.Ledger
+	mu                sync.RWMutex // Changed to RWMutex for better concurrency
+	txs               map[string]*transaction.Transaction
+	txOrder           []string                // Maintain FIFO order
+	dedupTxHashSet    map[string]struct{}     // Set for deduplication
+	senderTotalAmount map[string]*uint256.Int // Track total amount per sender
+	max               int
+	netCurrentSlot    atomic.Uint64
+	broadcaster       interfaces.Broadcaster
+	ledger            interfaces.Ledger
 
 	dedupService *DedupService
 	eventRouter  *events.EventRouter                    // Event router for transaction status updates
@@ -44,14 +44,14 @@ type Mempool struct {
 func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
 	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
 	return &Mempool{
-		txs:             make(map[string]*transaction.Transaction, max),
-		txOrder:         make([]string, 0, max),
-		dedupTxHashSet:  make(map[string]struct{}),
-		senderTxHashSet: make(map[string]map[string]struct{}),
-		max:             max,
-		netCurrentSlot:  atomic.Uint64{},
-		broadcaster:     broadcaster,
-		ledger:          ledger,
+		txs:               make(map[string]*transaction.Transaction, max),
+		txOrder:           make([]string, 0, max),
+		dedupTxHashSet:    make(map[string]struct{}),
+		senderTotalAmount: make(map[string]*uint256.Int),
+		max:               max,
+		netCurrentSlot:    atomic.Uint64{},
+		broadcaster:       broadcaster,
+		ledger:            ledger,
 
 		dedupService: dedupService,
 		eventRouter:  eventRouter,
@@ -87,12 +87,12 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.txOrder = append(mp.txOrder, txHash)
 	mp.dedupTxHashSet[txDedupHash] = struct{}{}
 
-	// Add to mapSenderTxs
+	// Add to sender total amount
 	sender := tx.Sender
-	if _, exists := mp.senderTxHashSet[sender]; !exists {
-		mp.senderTxHashSet[sender] = make(map[string]struct{})
+	if _, exists := mp.senderTotalAmount[sender]; !exists {
+		mp.senderTotalAmount[sender] = new(uint256.Int)
 	}
-	mp.senderTxHashSet[sender][txHash] = struct{}{}
+	mp.senderTotalAmount[sender].Add(mp.senderTotalAmount[sender], tx.Amount)
 	mp.mu.Unlock()
 
 	monitoring.SetMempoolSize(mp.Size())
@@ -143,13 +143,10 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 	availableBalance := new(uint256.Int).Set(senderAccount.Balance)
 
-	// Subtract amounts from existing mempool transactions from the same sender
-	if txHashes, exists := mp.senderTxHashSet[tx.Sender]; exists {
-		for txHash := range txHashes {
-			if tx, exists := mp.txs[txHash]; exists {
-				availableBalance.Sub(availableBalance, tx.Amount)
-			}
-		}
+	// Subtract pending amounts in mempool
+	totalAmount := mp.senderTotalAmount[tx.Sender]
+	if totalAmount != nil {
+		availableBalance.Sub(availableBalance, totalAmount)
 	}
 
 	if availableBalance.Cmp(tx.Amount) < 0 {
@@ -269,17 +266,17 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 		result = append(result, tx)
 		dedupTxHashes = append(dedupTxHashes, tx.DedupHash())
 
+		sender := tx.Sender
+		if totalAmount, exists := mp.senderTotalAmount[sender]; exists {
+			totalAmount.Sub(totalAmount, tx.Amount)
+			if totalAmount.IsZero() {
+				delete(mp.senderTotalAmount, sender)
+			}
+		}
+
 		// Remove from main buffer + dedup set
 		delete(mp.txs, txHash)
 		delete(mp.dedupTxHashSet, tx.DedupHash())
-
-		// Remove from mapSenderTxs
-		if senderMap, ok := mp.senderTxHashSet[tx.Sender]; ok {
-			delete(senderMap, txHash)
-			if len(senderMap) == 0 {
-				delete(mp.senderTxHashSet, tx.Sender)
-			}
-		}
 	}
 	mp.mu.Unlock()
 
@@ -341,36 +338,29 @@ func (mp *Mempool) BlockCleanup(slot uint64, txHashSet map[string]struct{}) {
 
 	for txHash := range txHashSet {
 		if tx, exists := mp.txs[txHash]; exists {
+			sender := tx.Sender
+			if totalAmount, exists := mp.senderTotalAmount[sender]; exists {
+				totalAmount.Sub(totalAmount, tx.Amount)
+				if totalAmount.IsZero() {
+					delete(mp.senderTotalAmount, sender)
+				}
+			}
+
 			delete(mp.dedupTxHashSet, tx.DedupHash())
 			delete(mp.txs, txHash)
 		}
 	}
 
+	removedCount := 0
 	newTxOrder := make([]string, 0, len(mp.txOrder))
 	for _, hash := range mp.txOrder {
 		if _, shouldRemove := txHashSet[hash]; shouldRemove {
+			removedCount++
 			continue
 		}
 		newTxOrder = append(newTxOrder, hash)
 	}
 	mp.txOrder = newTxOrder
-
-	removedCount := 0
-	for sender, txSet := range mp.senderTxHashSet {
-		if removedCount >= len(txSet) {
-			break
-		}
-
-		for txHash := range txSet {
-			if _, shouldRemove := txHashSet[txHash]; shouldRemove {
-				delete(txSet, txHash)
-				removedCount++
-			}
-		}
-		if len(txSet) == 0 {
-			delete(mp.senderTxHashSet, sender)
-		}
-	}
 
 	// Update monitoring
 	if removedCount > 0 {
