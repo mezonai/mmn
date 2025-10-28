@@ -47,7 +47,6 @@ func toJRPC2Error(e *rpcError) error {
 type txMsgParams struct {
 	Type      int32  `json:"type"`
 	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
 	Amount    string `json:"amount"`
 	Timestamp uint64 `json:"timestamp"`
 	TextData  string `json:"text_data"`
@@ -151,7 +150,6 @@ type getCurrentNonceResponse struct {
 // Multisig Faucet types
 type createFaucetRequestParams struct {
 	MultisigAddress string `json:"multisig_address"`
-	Recipient       string `json:"recipient"`
 	Amount          string `json:"amount"`
 	TextData        string `json:"text_data"`
 	SignerPubkey    string `json:"signer_pubkey"`
@@ -537,7 +535,6 @@ func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
 			Sender:    p.TxMsg.Sender,
-			Recipient: p.TxMsg.Recipient,
 			Amount:    p.TxMsg.Amount,
 			Timestamp: p.TxMsg.Timestamp,
 			TextData:  p.TxMsg.TextData,
@@ -568,7 +565,6 @@ func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
 	}
 	info := &txInfo{
 		Sender:    resp.Tx.Sender,
-		Recipient: resp.Tx.Recipient,
 		Amount:    resp.Tx.Amount,
 		Timestamp: resp.Tx.Timestamp,
 		TextData:  resp.Tx.TextData,
@@ -609,7 +605,6 @@ func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
 		out = append(out, transactionData{
 			TxHash:    t.TxHash,
 			Sender:    t.Sender,
-			Recipient: t.Recipient,
 			Amount:    t.Amount,
 			Nonce:     t.Nonce,
 			Timestamp: t.Timestamp,

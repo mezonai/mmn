@@ -137,7 +137,6 @@ service TxService {
 // Multisig Faucet Messages
 message CreateFaucetRequestRequest {
   string multisig_address = 1;
-  string recipient = 2;
   string amount = 3;
   string text_data = 4;
   string signer_pubkey = 5;

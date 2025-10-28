@@ -1,9 +1,9 @@
 package faucet
 
 import (
-	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -212,51 +212,13 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 
 func (s *MultisigFaucetService) verifyCallerSignature(signerPubKey string, signature []byte, action string, zkProof string, zkPub string) (string, error) {
 	message := fmt.Sprintf("%s:%s", FAUCET_ACTION, action)
-
-	verified, err := s.verifySignature(message, signature, signerPubKey, zkProof, zkPub)
-	if err != nil {
-		return "", fmt.Errorf("failed to verify signature: %w", err)
-	}
-
+	sigHex := hex.EncodeToString(signature)
+	verified := VerifySignature(message, sigHex, signerPubKey, s.zkVerify, zkProof, zkPub)
 	if !verified {
 		return "", fmt.Errorf("invalid signature")
 	}
 
 	return signerPubKey, nil
-}
-
-func (s *MultisigFaucetService) verifySignature(message string, signature []byte, pubKey string, zkProof string, zkPub string) (bool, error) {
-	// If zkproof is provided, use zk verification
-	if zkProof != "" && zkPub != "" && s.zkVerify != nil {
-		var userSig UserSig
-		if err := jsonx.Unmarshal(signature, &userSig); err != nil {
-			return false, fmt.Errorf("failed to unmarshal signature: %w", err)
-		}
-
-		if len(userSig.PubKey) == 0 || len(userSig.Sig) == 0 {
-			return false, fmt.Errorf("invalid user signature structure")
-		}
-
-		if len(userSig.PubKey) != ed25519.PublicKeySize {
-			return false, fmt.Errorf("bad public key length: %d", len(userSig.PubKey))
-		}
-
-		ed25519Valid := ed25519.Verify(userSig.PubKey, []byte(message), userSig.Sig)
-		if !ed25519Valid {
-			return false, fmt.Errorf("ed25519 verification failed")
-		}
-
-		encodedPubKey := common.EncodeBytesToBase58(userSig.PubKey)
-		return s.zkVerify.Verify(pubKey, encodedPubKey, zkProof, zkPub), nil
-	}
-
-	pubKeyBytes, err := base58.Decode(pubKey)
-	if err != nil {
-		return false, fmt.Errorf("failed to decode public key: %w", err)
-	}
-
-	verified := ed25519.Verify(ed25519.PublicKey(pubKeyBytes), []byte(message), signature)
-	return verified, nil
 }
 
 func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPubKey string, signature []byte, zkProof string, zkPub string) error {
@@ -554,6 +516,7 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 	defer s.mu.Unlock()
 
 	callerAddress, err := s.verifyCallerSignature(signerPubKey, signature, ADD_SIGNATURE, zkProof, zkPub)
+
 	if err != nil {
 		return fmt.Errorf("failed to verify caller signature: %w", err)
 	}
@@ -563,6 +526,7 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 	}
 
 	tx, exists := s.pendingTxs[txHash]
+
 	if !exists {
 		var err error
 		tx, err = s.store.GetMultisigTx(txHash)
@@ -572,10 +536,10 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		s.pendingTxs[txHash] = tx
 	}
 
-	// Check if transaction is already executed or rejected
 	if tx.Status == STATUS_EXECUTED {
 		return fmt.Errorf("transaction has already been executed")
 	}
+
 	if tx.Status == STATUS_REJECTED {
 		return fmt.Errorf("transaction has already been rejected")
 	}
@@ -656,8 +620,15 @@ func (s *MultisigFaucetService) RejectProposal(txHash string, signerPubKey strin
 
 func (s *MultisigFaucetService) executeTransaction(tx *types.MultisigTx) error {
 
-	if err := VerifyMultisigTx(tx); err != nil {
-		return fmt.Errorf("transaction verification failed: %w", err)
+	message := fmt.Sprintf("%s:%s", FAUCET_ACTION, ADD_SIGNATURE)
+	valid := 0
+	for _, sig := range tx.Signatures {
+		if VerifySignature(message, sig.Signature, sig.Signer, s.zkVerify, sig.ZkProof, sig.ZkPub) {
+			valid++
+		}
+	}
+	if valid < tx.Config.Threshold {
+		return fmt.Errorf("transaction verification failed: insufficient signatures: %d < %d", valid, tx.Config.Threshold)
 	}
 
 	faucetAccount, err := s.accountStore.GetByAddr(tx.Sender)
@@ -720,7 +691,57 @@ func (s *MultisigFaucetService) createFaucetTransaction(tx *types.MultisigTx) *t
 		ExtraInfo: fmt.Sprintf("multisig_tx:%s:threshold:%d:signers:%d", tx.Hash(), config.Threshold, len(config.Signers)),
 	}
 
+	aggregatedSignature := s.aggregateMultisigSignatures(tx)
+	faucetTx.Signature = aggregatedSignature
+
 	return faucetTx
+}
+
+func (s *MultisigFaucetService) aggregateMultisigSignatures(tx *types.MultisigTx) string {
+	var signatures []string
+	for _, sig := range tx.Signatures {
+		if VerifySignature(fmt.Sprintf("%s:%s", FAUCET_ACTION, ADD_SIGNATURE), sig.Signature, sig.Signer, s.zkVerify, sig.ZkProof, sig.ZkPub) {
+			sigBytes, err := hex.DecodeString(sig.Signature)
+			if err != nil {
+				logx.Error("MultisigFaucetService", "failed to decode signature", err)
+				continue
+			}
+
+			var userSigJSON []byte
+			{
+				var incoming UserSig
+				if err := jsonx.Unmarshal(sigBytes, &incoming); err == nil && len(incoming.PubKey) > 0 && len(incoming.Sig) > 0 {
+					// JSON UserSig
+					txUserSig := transaction.UserSig{PubKey: incoming.PubKey, Sig: incoming.Sig}
+					userSigJSON, err = jsonx.Marshal(txUserSig)
+					if err != nil {
+						logx.Error("MultisigFaucetService", "failed to marshal transaction user signature", err)
+						continue
+					}
+				} else {
+					// ed25519
+					if len(sigBytes) != 64 {
+						continue
+					}
+					pubKeyBytes, err := base58.Decode(sig.Signer)
+					if err != nil {
+						logx.Error("MultisigFaucetService", "failed to decode signer public key", err)
+						continue
+					}
+					userSig := transaction.UserSig{PubKey: pubKeyBytes, Sig: sigBytes}
+					userSigJSON, err = jsonx.Marshal(userSig)
+					if err != nil {
+						logx.Error("MultisigFaucetService", "failed to marshal user signature", err)
+						continue
+					}
+				}
+			}
+
+			signatures = append(signatures, common.EncodeBytesToBase58(userSigJSON))
+		}
+	}
+
+	return common.EncodeBytesToBase58([]byte(strings.Join(signatures, "|")))
 }
 
 func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*types.MultisigTx, error) {
@@ -788,4 +809,19 @@ func (s *MultisigFaucetService) GetProposerWhitelist() []string {
 		addresses = append(addresses, addr)
 	}
 	return addresses
+}
+
+func CreateMultisigFaucetTx(config *types.MultisigConfig, recipient string, amount *uint256.Int, nonce uint64, timestamp uint64, textData string) *types.MultisigTx {
+	return &types.MultisigTx{
+		Type:       1, // TxTypeFaucet
+		Sender:     config.Address,
+		Recipient:  recipient,
+		Amount:     amount,
+		Timestamp:  timestamp,
+		TextData:   textData,
+		Nonce:      nonce,
+		ExtraInfo:  "",
+		Signatures: make([]types.MultisigSignature, 0),
+		Config:     *config,
+	}
 }

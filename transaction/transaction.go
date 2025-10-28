@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/common"
@@ -18,6 +19,8 @@ const (
 	TxTypeTransfer = 0
 	TxTypeFaucet   = 1
 )
+
+const ADD_FAUCET_MESSAGE = "FAUCET_ACTION:ADD_SIGNATURE"
 
 type Transaction struct {
 	Type      int32        `json:"type"`
@@ -47,7 +50,7 @@ const (
 )
 
 func (tx *Transaction) Serialize() []byte {
-	amountStr := uint256ToString(tx.Amount)
+	amountStr := tx.Amount.String()
 	metadata := fmt.Sprintf(
 		"%d|%s|%s|%s|%s|%d|%s",
 		tx.Type, tx.Sender, tx.Recipient, amountStr, tx.TextData, tx.Nonce, tx.ExtraInfo,
@@ -81,14 +84,39 @@ func (tx *Transaction) Verify(zkVerify *zkverify.ZkVerify) bool {
 	serialized := tx.Serialize()
 
 	if tx.Type == TxTypeFaucet {
-		pub, err := base58ToEd25519(tx.Sender)
-		if err != nil {
-			logx.Error("TransactionVerify", "failed to decode sender", err)
-			return false
+		sigStr := string(signature)
+		signatures := strings.Split(sigStr, "|")
+		for _, sigStr := range signatures {
+			sigBytes, err := common.DecodeBase58ToBytes(sigStr)
+			if err != nil {
+				logx.Error("TransactionVerify", "failed to decode multisig signature", err)
+				return false
+			}
+
+			userSig := UserSig{}
+			if err := jsonx.Unmarshal(sigBytes, &userSig); err != nil {
+				logx.Error("TransactionVerify", "failed to unmarshal signature", err)
+				return false
+			}
+
+			if len(userSig.PubKey) == 0 || len(userSig.Sig) == 0 {
+				return false
+			}
+
+			if len(userSig.PubKey) != ed25519.PublicKeySize {
+				logx.Error("TransactionVerify", "bad public key length: "+strconv.Itoa(len(userSig.PubKey)))
+				return false
+			}
+
+			if !ed25519.Verify(userSig.PubKey, []byte(ADD_FAUCET_MESSAGE), userSig.Sig) {
+				logx.Error("TransactionVerify", "multisig signature verification failed")
+				return false
+			}
+
 		}
-		return ed25519.Verify(pub, serialized, signature)
+		return true
+
 	} else {
-		// For non-faucet transactions, require ZK verification
 		if zkVerify == nil {
 			logx.Error("TransactionVerify", "zkVerify is nil for non-faucet transaction")
 			return false
@@ -140,20 +168,4 @@ func (tx *Transaction) Bytes() []byte {
 func (tx *Transaction) Hash() string {
 	sum256 := sha256.Sum256(tx.Bytes())
 	return hex.EncodeToString(sum256[:])
-}
-
-func base58ToEd25519(addr string) (ed25519.PublicKey, error) {
-	b, err := common.DecodeBase58ToBytes(addr)
-	if err != nil || len(b) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("invalid pubkey")
-	}
-	return ed25519.PublicKey(b), nil
-}
-
-// uint256ToString converts a *uint256.Int to string, returning "0" if nil
-func uint256ToString(value *uint256.Int) string {
-	if value == nil {
-		return "0"
-	}
-	return value.String()
 }

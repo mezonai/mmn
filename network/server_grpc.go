@@ -567,11 +567,6 @@ func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRe
 		}, nil
 	}
 
-	logx.Info("MultisigFaucetGRPC", "CreateFaucetRequest called",
-		"multisigAddress", req.MultisigAddress,
-		"recipient", req.Recipient,
-		"amount", req.Amount)
-
 	// Parse amount
 	amount := utils.Uint256FromString(req.Amount)
 

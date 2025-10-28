@@ -61,7 +61,6 @@ var (
 	STATUS_REJECTED = "REJECTED"
 )
 
-
 type UserSig struct {
 	PubKey []byte `json:"pub_key"`
 	Sig    []byte `json:"sig"`

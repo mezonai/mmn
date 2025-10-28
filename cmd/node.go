@@ -289,7 +289,7 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 	if err != nil || existingAccount == nil {
 		faucetAccount := &types.Account{
 			Address: config.Address,
-			Balance: uint256.NewInt(0), // TODO: already have faucet account so we can transfer token from that account to this account
+			Balance: uint256.NewInt(100000000000000000), // TODO: already have faucet account so we can transfer token from that account to this account
 			Nonce:   0,
 		}
 
@@ -511,3 +511,5 @@ func serveMetricsApi(listenAddr string) {
 		}
 	})
 }
+
+// HVZMR6CvrVV5mKWhuYW2Ujcd9nRHeg7zCNkkQXeT43Ka

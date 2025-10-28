@@ -247,13 +247,10 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 
 // Stateless validation, simple for tx
 func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
-	// 1. Verify signature (skip for testing if signature is "test_signature")
+
 	if !tx.Verify(mp.zkVerify) {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidSignature)
-		if !mp.isMultisigWallet(tx.Sender) {
-			return errors.NewError(errors.ErrCodeInvalidSignature, errors.ErrMsgInvalidSignature)
-		}
-
+		return errors.NewError(errors.ErrCodeInvalidSignature, errors.ErrMsgInvalidSignature)
 	}
 
 	// 2. Check for zero amount
