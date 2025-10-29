@@ -177,9 +177,8 @@ func (b *RedisBatch) Reset() {
 }
 
 // Close releases batch resources
-func (b *RedisBatch) Close() error {
+func (b *RedisBatch) Close() {
 	b.pipe.Discard()
-	return nil
 }
 
 func (p *RedisProvider) IteratePrefix(prefix []byte, callback func(key, value []byte) bool) error {

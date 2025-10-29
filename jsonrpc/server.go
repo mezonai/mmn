@@ -1,9 +1,12 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -15,13 +18,21 @@ import (
 	"github.com/creachadair/jrpc2/jhttp"
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonx"
+	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/security/ratelimit"
 )
 
 // --- Error type used by handlers ---
+
+type jsonRPCRequest struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
 
 type rpcError struct {
 	Code    int         `json:"code"`
@@ -83,27 +94,13 @@ type txInfo struct {
 	Status    int32  `json:"status"`
 	ErrMsg    string `json:"err_msg"`
 	ExtraInfo string `json:"extra_info"`
+	TxHash    string `json:"tx_hash"`
 }
 
 type getTxByHashResponse struct {
 	Error    string  `json:"error"`
 	Tx       *txInfo `json:"tx"`
 	Decimals uint32  `json:"decimals"`
-}
-
-type getTxStatusRequest struct {
-	TxHash string `json:"tx_hash"`
-}
-
-type txStatusInfo struct {
-	TxHash        string `json:"tx_hash"`
-	Status        int32  `json:"status"`
-	BlockSlot     uint64 `json:"block_slot"`
-	BlockHash     string `json:"block_hash"`
-	Confirmations uint64 `json:"confirmations"`
-	ErrorMessage  string `json:"error_message"`
-	Timestamp     uint64 `json:"timestamp"`
-	ExtraInfo     string `json:"extra_info"`
 }
 
 type getPendingTxsResponse struct {
@@ -285,14 +282,31 @@ type getPendingProposalsResponse struct {
 	PendingTxs []string `json:"pending_txs"`
 }
 
+type HealthCheckResponse struct {
+	Status       int32  `json:"status"`
+	NodeId       string `json:"node_id"`
+	Timestamp    uint64 `json:"timestamp"`
+	CurrentSlot  uint64 `json:"current_slot"`
+	BlockHeight  uint64 `json:"block_height"`
+	MempoolSize  uint64 `json:"mempool_size"`
+	IsLeader     bool   `json:"is_leader"`
+	IsFollower   bool   `json:"is_follower"`
+	Version      string `json:"version"`
+	Uptime       uint64 `json:"uptime"`
+	ErrorMessage string `json:"error_message"`
+}
+
 // --- Server ---
 
 type Server struct {
 	addr              string
 	txSvc             interfaces.TxService
 	acctSvc           interfaces.AccountService
-	multisigFaucetSvc *faucet.MultisigFaucetService
+	healthSvc         interfaces.HealthService
 	corsConfig        CORSConfig
+	enableRateLimit   bool
+	rateLimiter       *ratelimit.GlobalRateLimiter
+	multisigFaucetSvc *faucet.MultisigFaucetService
 }
 
 type CORSConfig struct {
@@ -302,22 +316,25 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, multisigFaucetSvc *faucet.MultisigFaucetService) *Server {
+func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, multisigFaucetSvc *faucet.MultisigFaucetService) *Server {
 	return &Server{
-		addr:              addr,
-		txSvc:             txSvc,
-		acctSvc:           acctSvc,
-		multisigFaucetSvc: multisigFaucetSvc,
+		addr:      addr,
+		txSvc:     txSvc,
+		acctSvc:   acctSvc,
+		healthSvc: healthSvc,
 		corsConfig: CORSConfig{
 			AllowedOrigins: []string{},
 			AllowedMethods: []string{},
 			AllowedHeaders: []string{},
 			MaxAge:         0,
 		},
+		rateLimiter:       rateLimiter,
+		enableRateLimit:   enableRateLimit,
+		multisigFaucetSvc: multisigFaucetSvc,
 	}
 }
 
-func (s *Server) Start() {
+func (s *Server) BuildHTTPHandler() http.Handler {
 	methods := s.buildMethodMap()
 	jh := jhttp.NewBridge(methods, &jhttp.BridgeOptions{Server: &jrpc2.ServerOptions{}})
 
@@ -327,11 +344,46 @@ func (s *Server) Start() {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+			clientIP := extractClientIPFromRequest(r)
+			req := parseJSONRPCRequest(bodyBytes)
+			if req == nil {
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", req.Method)
+			if !s.rateLimiter.IsIPAllowed(clientIP) {
+				logx.Warn("SECURITY", "IP rate limit exceeded:", clientIP, "Method:", req.Method)
+				http.Error(w, "Too many requests", http.StatusTooManyRequests)
+				return
+			}
+			exception.SafeGo("TrackIPRequest", func() {
+				s.rateLimiter.TrackIPRequest(clientIP)
+			})
+		}
 		jh.ServeHTTP(w, r)
 	})
+	return h
+}
 
+func (s *Server) Start() {
+	h := s.BuildHTTPHandler()
 	http.Handle("/", h)
-	go http.ListenAndServe(s.addr, nil)
+	exception.SafeGoWithPanic("StartJSONRPCServer", func() {
+		err := http.ListenAndServe(s.addr, nil)
+		if err != nil {
+			logx.Error("JSONRPC SERVER", fmt.Sprintf("Failed to serve JSON-RPC server: %v", err))
+			panic(err)
+		}
+	})
 }
 
 // SetCORSConfig allows configuring CORS settings
@@ -342,17 +394,14 @@ func (s *Server) SetCORSConfig(config CORSConfig) {
 // Build jrpc2 method map
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
-		"tx.addtx": handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			res, err := s.rpcAddTx(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
+		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
+			res := s.rpcAddTx(p)
 			if res == nil {
 				return nil, nil
 			}
 			return res.(*addTxResponse), nil
 		}),
-		"tx.gettxbyhash": handler.New(func(ctx context.Context, p getTxByHashRequest) (*getTxByHashResponse, error) {
+		MethodTxGetTxByHash: handler.New(func(ctx context.Context, p getTxByHashRequest) (*getTxByHashResponse, error) {
 			res, err := s.rpcGetTxByHash(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -362,17 +411,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getTxByHashResponse), nil
 		}),
-		"tx.gettransactionstatus": handler.New(func(ctx context.Context, p getTxStatusRequest) (*txStatusInfo, error) {
-			res, err := s.rpcGetTransactionStatus(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*txStatusInfo), nil
-		}),
-		"tx.getpendingtransactions": handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
+		MethodTxGetPendingTransactions: handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
 			res, err := s.rpcGetPendingTransactions()
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -382,7 +421,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getPendingTxsResponse), nil
 		}),
-		"account.getaccount": handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
+		MethodAccountGetAccount: handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
 			res, err := s.rpcGetAccount(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -392,7 +431,7 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*getAccountResponse), nil
 		}),
-		"account.getcurrentnonce": handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
+		MethodAccountGetCurrentNonce: handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
 			res, err := s.rpcGetCurrentNonce(p)
 			if err != nil {
 				return nil, toJRPC2Error(err)
@@ -413,6 +452,17 @@ func (s *Server) buildMethodMap() handler.Map {
 			}
 			return res.(*createFaucetRequestResponse), nil
 		}),
+		MethodHealthCheck: handler.New(func(ctx context.Context) (*HealthCheckResponse, error) {
+			res, err := s.rpcHealthCheck(ctx)
+			if err != nil {
+				return nil, toJRPC2Error(err)
+			}
+			if res == nil {
+				return nil, nil
+			}
+			return res.(*HealthCheckResponse), nil
+		}),
+
 		"faucet.approve": handler.New(func(ctx context.Context, p addSignatureParams) (*addSignatureResponse, error) {
 			res, err := s.rpcAddSignature(p)
 			if err != nil {
@@ -530,7 +580,7 @@ func (s *Server) buildMethodMap() handler.Map {
 
 // --- Implementations ---
 
-func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
+func (s *Server) rpcAddTx(p signedTxParams) interface{} {
 	pbSigned := &pb.SignedTxMsg{
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
@@ -547,9 +597,9 @@ func (s *Server) rpcAddTx(p signedTxParams) (interface{}, *rpcError) {
 	}
 	resp, err := s.txSvc.AddTx(context.Background(), pbSigned)
 	if err != nil {
-		return &addTxResponse{Ok: false, Error: err.Error()}, nil
+		return &addTxResponse{Ok: false, Error: err.Error()}
 	}
-	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}, nil
+	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}
 }
 
 func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
@@ -571,28 +621,12 @@ func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
 		Nonce:     resp.Tx.Nonce,
 		Slot:      resp.Tx.Slot,
 		BlockHash: resp.Tx.Blockhash,
-		Status:    resp.Tx.Status,
+		Status:    int32(resp.Tx.Status),
 		ErrMsg:    resp.Tx.ErrMsg,
 		ExtraInfo: resp.Tx.ExtraInfo,
+		TxHash:    resp.Tx.TxHash,
 	}
 	return &getTxByHashResponse{Tx: info, Decimals: resp.Decimals}, nil
-}
-
-func (s *Server) rpcGetTransactionStatus(p getTxStatusRequest) (interface{}, *rpcError) {
-	resp, err := s.txSvc.GetTransactionStatus(context.Background(), &pb.GetTransactionStatusRequest{TxHash: p.TxHash})
-	if err != nil {
-		return nil, &rpcError{Code: -32004, Message: err.Error(), Data: p.TxHash}
-	}
-	return &txStatusInfo{
-		TxHash:        resp.TxHash,
-		Status:        int32(resp.Status),
-		BlockSlot:     resp.BlockSlot,
-		BlockHash:     resp.BlockHash,
-		Confirmations: resp.Confirmations,
-		ErrorMessage:  resp.ErrorMessage,
-		Timestamp:     resp.Timestamp,
-		ExtraInfo:     resp.ExtraInfo,
-	}, nil
 }
 
 func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
@@ -886,6 +920,13 @@ func (s *Server) rpcGetPendingProposals() (interface{}, *rpcError) {
 		TotalCount: uint64(len(txHashes)),
 		PendingTxs: txHashes,
 	}, nil
+}
+func (s *Server) rpcHealthCheck(ctx context.Context) (interface{}, *rpcError) {
+	resp, err := s.healthSvc.Check(ctx)
+	if err != nil {
+		return nil, &rpcError{Code: -32000, Message: err.Error()}
+	}
+	return &HealthCheckResponse{Status: int32(resp.Status), NodeId: resp.NodeId, Timestamp: resp.Timestamp, CurrentSlot: resp.CurrentSlot, BlockHeight: resp.BlockHeight, MempoolSize: resp.MempoolSize, IsLeader: resp.IsLeader, IsFollower: resp.IsFollower, Version: resp.Version, Uptime: resp.Uptime, ErrorMessage: resp.ErrorMessage}, nil
 }
 
 // --- Helpers ---

@@ -259,6 +259,11 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
+	// 2.1. Check memo length (max 64 characters)
+	if len(tx.TextData) > MAX_MEMO_CHARACTERS {
+		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTERS, len(tx.TextData))
+	}
+
 	// 3. Check sender account exists and get current state
 	if mp.ledger == nil {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
@@ -285,7 +290,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeNonceTooLow, errors.ErrMsgNonceTooLow)
 	}
 
-	// Prevent spam with reasonable future nonce limit
+	// 5. Prevent spam with reasonable future nonce limit
 	if tx.Nonce > currentNonce+MaxFutureNonce {
 		monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 		return errors.NewError(errors.ErrCodeNonceTooHigh, errors.ErrMsgNonceTooHigh)
@@ -298,14 +303,14 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 			return errors.NewError(errors.ErrCodeRateLimited, errors.ErrMsgRateLimited)
 		}
 
-		// 7. Check for duplicate nonce in pending transactions
+		// 6.1. Check for duplicate nonce in pending transactions (redundant but safe)
 		if _, nonceExists := pendingNonces[tx.Nonce]; nonceExists {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
 			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 		}
 	}
 
-	// 8. Check for duplicate nonce in ready queue - O(1) with index
+	// 7. Check for duplicate nonce in ready queue - O(1) with index
 	if senderNonces, exists := mp.readyQueueIndex[tx.Sender]; exists {
 		if senderNonces[tx.Nonce] {
 			monitoring.RecordRejectedTx(monitoring.TxInvalidNonce)
@@ -313,7 +318,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		}
 	}
 
-	// 9. Validate balance accounting for existing pending/ready transactions
+	// 8. Validate balance accounting for existing pending/ready transactions
 	if err := mp.validateBalance(tx); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
 		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", tx.Hash(), err.Error()))
@@ -621,7 +626,7 @@ func (mp *Mempool) BlockCleanup(block *block.BroadcastedBlock) {
 	logx.Info("BlockCleanup completed", "removed_transactions", removedCount, "block_slot", block.Slot)
 }
 
-// This should be called periodically by the node to maintain mempool health
+// PeriodicCleanup should be called periodically by the node to maintain mempool health
 func (mp *Mempool) PeriodicCleanup() {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
@@ -632,7 +637,6 @@ func (mp *Mempool) PeriodicCleanup() {
 	mp.cleanupStaleTransactions()
 
 	// Promote any newly ready transactions
-	// Clean up any outdated transactions and promote ready ones
 	mp.cleanupOutdatedTransactions()
 
 	// Log current mempool state

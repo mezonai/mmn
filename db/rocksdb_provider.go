@@ -222,7 +222,6 @@ func (b *RocksDBBatch) Reset() {
 }
 
 // Close releases batch resources
-func (b *RocksDBBatch) Close() error {
+func (b *RocksDBBatch) Close() {
 	b.batch.Destroy()
-	return nil
 }

@@ -9,11 +9,13 @@ import (
 	"github.com/mezonai/mmn/utils"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Config struct {
 	Endpoint string
+	UseTLS   bool
 }
 
 type MmnClient struct {
@@ -25,9 +27,17 @@ type MmnClient struct {
 }
 
 func NewClient(cfg Config) (*MmnClient, error) {
+	var creds credentials.TransportCredentials
+
+	if cfg.UseTLS {
+		creds = credentials.NewTLS(nil)
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
 	conn, err := grpc.NewClient(
 		cfg.Endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(creds),
 	)
 
 	if err != nil {
@@ -104,9 +114,12 @@ func (c *MmnClient) GetTxByHash(ctx context.Context, txHash string) (TxInfo, err
 		Timestamp: res.Tx.Timestamp,
 		TextData:  res.Tx.TextData,
 		Nonce:     res.Tx.Nonce,
-		Status:    res.Tx.Status,
+		Slot:      res.Tx.Slot,
+		Blockhash: res.Tx.Blockhash,
+		Status:    int32(res.Tx.Status),
 		ErrMsg:    res.Tx.ErrMsg,
 		ExtraInfo: res.Tx.ExtraInfo,
+		TxHash:    res.Tx.TxHash,
 	}, nil
 }
 

@@ -151,7 +151,6 @@ func (b *LevelDBBatch) Reset() {
 }
 
 // Close releases batch resources
-func (b *LevelDBBatch) Close() error {
+func (b *LevelDBBatch) Close() {
 	// LevelDB batch doesn't need explicit closing
-	return nil
 }

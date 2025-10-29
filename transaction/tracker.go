@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,9 @@ const defaultRemovalThreshold = 10 * time.Minute
 // TransactionTracker tracks transactions that are "floating" between mempool and ledger
 // Only tracks transactions after they are pulled from mempool until they are applied to ledger
 type TransactionTracker struct {
+	processingCount int64
+	senderCount     int64
+
 	// processingTxs maps transaction hash to transaction
 	processingTxs sync.Map
 
@@ -24,9 +28,7 @@ type TransactionTracker struct {
 
 	historyList sync.Map
 
-	processingCount int64
-	senderCount     int64
-	stopCh          chan struct{}
+	stopCh chan struct{}
 }
 
 // NewTransactionTracker creates a new transaction tracker instance
@@ -39,10 +41,18 @@ func NewTransactionTracker() *TransactionTracker {
 	return tt
 }
 
+func (t *TransactionTracker) GetTransaction(txHash string) (*Transaction, error) {
+	txInterface, exists := t.processingTxs.Load(txHash)
+	if !exists {
+		return nil, errors.New("transaction not found")
+	}
+	return txInterface.(*Transaction), nil
+}
+
 // TrackProcessingTransaction starts tracking a transaction that was pulled from mempool
 func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	txHash := tx.Hash()
-	if t.IsRemoved(txHash) {
+	if t.isRemoved(txHash) {
 		t.historyList.Delete(txHash)
 		return
 	}
@@ -70,7 +80,7 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
-		t.MarkRemoved(txHash)
+		t.markRemoved(txHash)
 		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}
@@ -132,12 +142,12 @@ func remove(slice []string, item string) ([]string, bool) {
 }
 
 // IsApplied checks if txHash was marked applied
-func (t *TransactionTracker) IsRemoved(txHash string) bool {
+func (t *TransactionTracker) isRemoved(txHash string) bool {
 	_, ok := t.historyList.Load(txHash)
 	return ok
 }
 
-func (t *TransactionTracker) MarkRemoved(txHash string) {
+func (t *TransactionTracker) markRemoved(txHash string) {
 	t.historyList.Store(txHash, time.Now().UnixMilli())
 }
 

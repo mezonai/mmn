@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Calculate new tag
         id: get_tag
         run: |
@@ -76,7 +76,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-      
+
       - name: Get Git Commit SHA
         if: steps.decide.outputs.skip == 'false'
         id: get_sha
@@ -191,7 +191,7 @@ jobs:
           else
             TAG_TO_DEPLOY="$TAG_INPUT"
           fi
-          
+
           echo "tag_name=$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
           echo "binary_name=mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
           echo "binary_path=build/mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
@@ -239,7 +239,7 @@ jobs:
               | sudo tee /etc/mezon/monitoring/promtail-config.yml >/dev/null
             sudo chown mmn:mmn /etc/mezon/monitoring/promtail-config.yml
           EOF
-      
+
       - name: Monitoring config server runner
         if: inputs.env == 'prod'
         env:
@@ -258,7 +258,7 @@ jobs:
           echo "==> Setting up Grafana configs..."
           sudo mkdir -p /etc/grafana/
           sudo cp -r ./monitoring/grafana/* /etc/grafana/
-          
+
           sudo chown -R mmn:mmn /etc/grafana/provisioning
           sudo chown -R mmn:mmn /etc/grafana/dashboards
           sudo sed -i 's#url: http://prometheus:9090#url: http://localhost:9090#g' /etc/grafana/provisioning/datasources/prometheus.yml
@@ -400,7 +400,7 @@ jobs:
               -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
               /opt/mezon/mmn/config/systemd/mezon-node1.service.tpl \
               | sudo tee /etc/systemd/system/mezon-node1.service >/dev/null
-          
+
           if [[ "${{ inputs.env }}" == "prod" ]]; then
             LOG_LEVEL="warn"
             echo "==> Production environment detected. Setting LOGLEVEL to 'warn'."
@@ -441,26 +441,26 @@ jobs:
           printf "export BOOTNODE_ID=%q\n" "$BOOTNODE_ID" >> mezon_env.sh
           printf "export PUBLIC_IP=%q\n" "$PUBLIC_IP" >> mezon_env.sh
         env:
-          BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
-          NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
+          BOOTNODE_PRIVKEY: ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY: ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:     ${{ vars.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
-          BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
-          BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
-          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
+          NODE1_ADDRESS: ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS: ${{ vars.FAUCET_ADDRESS }}
+          BOOTNODE_IP: ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID: ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP: ${{ vars.PUBLIC_IP }}
 
       - name: Execute remote setup correctly with sourced env
         shell: bash
         env:
-          BOOTNODE_PRIVKEY:  ${{ secrets.BOOTNODE_PRIVKEY }}
-          NODE1_PRIVKEY:     ${{ secrets.NODE1_PRIVKEY }}
+          BOOTNODE_PRIVKEY: ${{ secrets.BOOTNODE_PRIVKEY }}
+          NODE1_PRIVKEY: ${{ secrets.NODE1_PRIVKEY }}
           VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
-          NODE1_ADDRESS:     ${{ vars.NODE1_ADDRESS }}
-          FAUCET_ADDRESS:    ${{ vars.FAUCET_ADDRESS }}
-          BOOTNODE_IP:       ${{ vars.BOOTNODE_IP }}
-          BOOTNODE_ID:       ${{ vars.BOOTNODE_ID }}
-          PUBLIC_IP:         ${{ vars.PUBLIC_IP }}
+          NODE1_ADDRESS: ${{ vars.NODE1_ADDRESS }}
+          FAUCET_ADDRESS: ${{ vars.FAUCET_ADDRESS }}
+          BOOTNODE_IP: ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_ID: ${{ vars.BOOTNODE_ID }}
+          PUBLIC_IP: ${{ vars.PUBLIC_IP }}
         run: |
           set -e
 
@@ -528,13 +528,13 @@ jobs:
           else
             TAG_INPUT="${{ needs.determine_tag.outputs.new_tag }}"
           fi
-          
+
           if [[ ! "$TAG_INPUT" == v* ]]; then
             TAG_TO_DEPLOY="v$TAG_INPUT"
           else
             TAG_TO_DEPLOY="$TAG_INPUT"
           fi
-          
+
           echo "tag_to_deploy=$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
           echo "binary_path=build/mmn-$TAG_TO_DEPLOY" >> $GITHUB_OUTPUT
 
@@ -548,3 +548,4 @@ jobs:
       binary_path_from_caller: ${{ needs.prepare_sync_tags.outputs.path }}
     secrets:
       LISTENER_PRIVKEY: ${{ secrets.LISTENER_PRIVKEY }}
+      VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}

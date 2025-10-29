@@ -51,5 +51,5 @@ type DatabaseBatch interface {
 	Reset()
 
 	// Close releases batch resources
-	Close() error
+	Close()
 }

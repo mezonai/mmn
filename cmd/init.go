@@ -122,7 +122,7 @@ func initializeNode() {
 		if privKeyExists && pubKeyExists {
 			logx.Info("INIT", "Private and public key files already exist, skipping key generation")
 			// Load existing public key
-			pubKeyHex, err = config.LoadPubKeyFromPriv(privKeyFile)
+			_, err = config.LoadPubKeyFromPriv(privKeyFile)
 			if err != nil {
 				logx.Error("INIT", "Failed to load existing public key:", err.Error())
 				return
@@ -248,7 +248,6 @@ func initializeNode() {
 
 // initializeBlockchainWithGenesis initializes blockchain with genesis block using AssembleBlock
 func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
-
 	// Create genesis PoH entry with alloc transaction
 	// For genesis, we create a simple entry with the alloc initialization
 	var genesisHash [32]byte                         // Zero hash for genesis

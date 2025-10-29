@@ -15,12 +15,14 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/abuse"
+	"github.com/mezonai/mmn/service"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
-	"github.com/mezonai/mmn/service"
+	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
@@ -40,11 +42,8 @@ import (
 )
 
 const (
-	// Storage paths - using absolute paths
-	fileBlockDir    = "./blockstore/blocks"
-	leveldbBlockDir = "blockstore/leveldb"
-	LISTEN_MODE     = "listen"
-	FULL_MODE       = "full"
+	LISTEN_MODE = "listen"
+	FULL_MODE   = "full"
 )
 
 var (
@@ -52,17 +51,17 @@ var (
 	listenAddr         string
 	jsonrpcAddr        string
 	p2pPort            string
-	publicIP           string
 	bootstrapAddresses []string
 	grpcAddr           string
 	nodeName           string
 	mode               string
+	publicIP           string
 	// legacy init command
 	// database backend
 	databaseBackend string
-
 	// multisig faucet flags
 	multisigAddresses []string
+	enableRateLimit   bool
 )
 
 var runCmd = &cobra.Command{
@@ -88,17 +87,18 @@ func init() {
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 	runCmd.Flags().StringArrayVar(&multisigAddresses, "multisig-addresses", []string{}, "List of multisig signer addresses")
-
+	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
 }
 
 func runNode() {
 	initializeFileLogger()
 	monitoring.InitMetrics()
 
-	logx.Info("NODE", "Running node")
+	logx.Info("NODE", "Running node", "with", "rate limit", enableRateLimit)
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -193,19 +193,22 @@ func runNode() {
 	latestSlot := bs.GetLatestFinalizedSlot()
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
-		log.Fatalf("Failed to initialize PoH: %v", err)
+		log.Printf("Failed to initialize PoH: %v", err)
+		return
 	}
 
 	// Load private key
 	privKey, err := config.LoadEd25519PrivKey(privKeyPath)
 	if err != nil {
-		log.Fatalf("load private key: %v", err)
+		log.Printf("load private key: %v", err)
+		return
 	}
 
 	// Initialize network
 	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
-		log.Fatalf("Failed to initialize network: %v", err)
+		log.Printf("Failed to initialize network: %v", err)
+		return
 	}
 
 	// Initialize zk verify
@@ -214,17 +217,19 @@ func runNode() {
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
 	if err != nil {
-		log.Fatalf("Failed to initialize mempool: %v", err)
+		log.Printf("Failed to initialize mempool: %v", err)
+		return
 	}
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, zkVerify)
 
 	// Initialize validator
 	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
 	if err != nil {
-		log.Fatalf("Failed to initialize validator: %v", err)
+		log.Printf("Failed to initialize validator: %v", err)
+		return
 	}
 
 	// In listen mode, do not start PoH or Validator
@@ -240,7 +245,7 @@ func runNode() {
 		multisigService = initializeMultisigFaucet(multisigStore, multisigAddresses, as, mp, zkVerify)
 	}
 
-	startServices(cfg, nodeConfig, libP2pClient, ld, collector, val, bs, mp, eventRouter, txTracker, multisigService)
+	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker, multisigService)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -252,7 +257,6 @@ func runNode() {
 
 	//  block until cancel
 	<-ctx.Done()
-
 }
 
 func initializeMultisigFaucet(multisigStore interface{}, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool, zkVerify *zkverify.ZkVerify) *faucet.MultisigFaucetService {
@@ -427,7 +431,6 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, ld *ledger.Ledger, collector *consensus.Collector) (*validator.Validator, error) {
-
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load validator config: %w", err)
@@ -459,37 +462,39 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, multisigService *faucet.MultisigFaucetService) {
+	abuseConfig := abuse.DefaultAbuseConfig()
+	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
 
-	// Load private key for gRPC server
-	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
-	if err != nil {
-		log.Fatalf("Failed to load private key for gRPC server: %v", err)
-	}
+	rateLimiterConfig := ratelimit.DefaultGlobalConfig()
+	rateLimiter := ratelimit.NewGlobalRateLimiterWithAbuseDetector(rateLimiterConfig, abuseDetector)
+	defer rateLimiter.Stop()
+
+	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
+	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
+	acctSvc := service.NewAccountService(ld, mp, txTracker)
+	healthSvc := service.NewHealthService(ld, bs, mp, val, nodeConfig.PubKey)
 
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
 		nodeConfig.GRPCAddr,
-		map[string]ed25519.PublicKey{},
-		fileBlockDir,
 		ld,
-		collector,
 		nodeConfig.PubKey,
-		privKey,
 		val,
 		bs,
 		mp,
 		eventRouter,
-		txTracker,
+		rateLimiter,
+		enableRateLimit,
+		txSvc,
+		acctSvc,
+		healthSvc,
 		multisigService,
 	)
 	_ = grpcSrv // Keep server running
 
-	// Start JSON-RPC server on dedicated JSON-RPC address using shared services
-	txSvc := service.NewTxService(ld, mp, bs, txTracker)
-	acctSvc := service.NewAccountService(ld, mp, txTracker)
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, multisigService)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, enableRateLimit, multisigService)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
