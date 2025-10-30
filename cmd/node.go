@@ -293,7 +293,7 @@ func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders i
 		}
 	}
 
-	existingConfig, err := multisigService.GetMultisigConfig(config.Address)
+	_, err = multisigService.GetMultisigConfig(config.Address)
 	if err != nil {
 		if err := multisigService.RegisterMultisigConfig(config); err != nil {
 			logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
@@ -307,18 +307,10 @@ func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders i
 		return nil
 	}
 
-	var finalThreshold int
-	if existingConfig != nil {
-		finalThreshold = existingConfig.Threshold
-	} else {
-		finalThreshold = config.Threshold
-	}
-
 	logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized",
 		"address", config.Address,
 		"balance", finalAccount.Balance.String(),
 		"signers", len(config.Signers),
-		"threshold", finalThreshold,
 		"max_amount", maxAmount.String())
 
 	return multisigService

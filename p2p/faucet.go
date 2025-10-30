@@ -143,7 +143,6 @@ func (ln *Libp2pNetwork) HandleRequestFaucetVoteTopic(ctx context.Context, sub *
 			return nil
 		default:
 			msg, err := sub.Next(ctx)
-			logx.Info("NETWORK:FAUCET", "Waiting for request faucet vote message...", msg)
 			if err != nil {
 				logx.Error("NETWORK:FAUCET", "Error reading request faucet vote message", err)
 				continue
@@ -256,7 +255,6 @@ func (ln *Libp2pNetwork) HandleInitFaucetConfigTopic(ctx context.Context, sub *p
 			}
 
 			if len(configMsg.Approvers) > 0 {
-				logx.Info("NETWORK:FAUCET", "Received init faucet config message", "config", configMsg)
 				if err := ln.HandleInitFaucetConfig(&configMsg); err != nil {
 					logx.Error("NETWORK:FAUCET", "Failed to handle init faucet config message", err)
 					continue

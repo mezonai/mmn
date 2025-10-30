@@ -10,9 +10,8 @@ import (
 )
 
 type MultisigConfig struct {
-	Threshold int      `json:"threshold"`
-	Signers   []string `json:"signers"`
-	Address   string   `json:"address"`
+	Signers []string `json:"signers"`
+	Address string   `json:"address"`
 }
 
 type MultisigSignature struct {
@@ -47,7 +46,6 @@ func (tx *MultisigTx) Hash() string {
 		TextData    string `json:"text_data"`
 		Nonce       uint64 `json:"nonce"`
 		ExtraInfo   string `json:"extra_info"`
-		Threshold   int    `json:"threshold"`
 		SignerCount int    `json:"signer_count"`
 	}{
 		Type:        tx.Type,
@@ -58,7 +56,6 @@ func (tx *MultisigTx) Hash() string {
 		TextData:    tx.TextData,
 		Nonce:       tx.Nonce,
 		ExtraInfo:   tx.ExtraInfo,
-		Threshold:   tx.Config.Threshold,
 		SignerCount: len(tx.Config.Signers),
 	}
 

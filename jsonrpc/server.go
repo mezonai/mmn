@@ -181,11 +181,10 @@ type getMultisigTxStatusParams struct {
 }
 
 type getMultisigTxStatusResponse struct {
-	Success            bool   `json:"success"`
-	Message            string `json:"message"`
-	Status             string `json:"status"`
-	SignatureCount     int32  `json:"signature_count"`
-	RequiredSignatures int32  `json:"required_signatures"`
+	Success        bool   `json:"success"`
+	Message        string `json:"message"`
+	Status         string `json:"status"`
+	SignatureCount int32  `json:"signature_count"`
 }
 
 type addToApproverWhitelistParams struct {
@@ -728,11 +727,10 @@ func (s *Server) rpcGetMultisigTxStatus(p getMultisigTxStatusParams) (interface{
 	}
 
 	return &getMultisigTxStatusResponse{
-		Success:            true,
-		Message:            tx.TextData,
-		Status:             status,
-		SignatureCount:     int32(len(tx.Signatures)),
-		RequiredSignatures: int32(tx.Config.Threshold),
+		Success:        true,
+		Message:        tx.TextData,
+		Status:         status,
+		SignatureCount: int32(len(tx.Signatures)),
 	}, nil
 }
 

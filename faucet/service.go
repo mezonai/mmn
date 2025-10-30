@@ -21,14 +21,6 @@ import (
 	"github.com/mr-tron/base58"
 )
 
-func calculateThreshold(approverCount int) int {
-	threshold := (approverCount * thresholdRatio) / thresholdDivisor
-	if threshold < minThreshold {
-		threshold = minThreshold
-	}
-	return threshold
-}
-
 type MultisigFaucetService struct {
 	ID                      peer.ID
 	store                   store.MultisigFaucetStore
@@ -181,26 +173,16 @@ func (s *MultisigFaucetService) loadWhitelistsFromDB() {
 }
 
 func (s *MultisigFaucetService) RegisterMultisigConfig(config *types.MultisigConfig) error {
-	if config.Threshold <= 0 || config.Threshold > len(config.Signers) {
-		return fmt.Errorf("invalid threshold: %d", config.Threshold)
-	}
-
-	if len(config.Signers) < 2 {
-		return fmt.Errorf("invalid signers: %d", len(config.Signers))
-	}
-
 	if err := s.store.StoreMultisigConfig(config); err != nil {
 		return fmt.Errorf("failed to store multisig config: %w", err)
 	}
 
 	s.configs[config.Address] = config
 
-	// Initialize approver whitelist with signers
 	for _, signer := range config.Signers {
 		s.approverWhitelist[signer] = true
 	}
 
-	// Store initial whitelist to database
 	approverAddresses := make([]string, 0, len(s.approverWhitelist))
 	for addr := range s.approverWhitelist {
 		approverAddresses = append(approverAddresses, addr)
@@ -281,7 +263,6 @@ func (s *MultisigFaucetService) CreateFaucetRequest(
 
 	s.lastRequest[callerAddress] = time.Now()
 
-	// Broadcast transaction creation
 	s.broadcastMultisigTx(tx, MultisigTxCreated)
 
 	return tx, nil
@@ -332,48 +313,26 @@ func (s *MultisigFaucetService) AddToApproverWhitelist(address string, signerPub
 
 	request.Signatures[callerAddress] = approve
 
-	configs := s.getAllMultisigConfigs()
-	if len(configs) == 0 {
-		return fmt.Errorf("no multisig config found")
-	}
-	config := configs[0]
+	threshold := s.CalculateThreshold()
 
-	countApprove := 0
-	for _, sig := range request.Signatures {
-		if sig {
-			countApprove++
-		}
-	}
+	isApprove := IsApprove(request.Signatures, threshold)
 
-	if countApprove >= config.Threshold {
+	if isApprove {
+
 		s.approverWhitelist[address] = true
 		delete(s.pendingApproverRequests, requestKey)
 
 		s.storeApproverWhitelist()
 
-		newThreshold := calculateThreshold(len(s.approverWhitelist))
-		if newThreshold != config.Threshold {
-			config.Threshold = newThreshold
-			s.store.StoreMultisigConfig(config)
-			s.broadcastConfig(config, ConfigUpdated)
-		}
 		s.broadcastWhitelist(address, "approver", "add")
 		return nil
-
 	}
 
-	countReject := 0
-	for _, sig := range request.Signatures {
-		if !sig {
-			countReject++
-		}
-	}
+	isReject := IsReject(request.Signatures, threshold)
 
-	if countReject >= config.Threshold {
+	if isReject {
 		delete(s.pendingApproverRequests, requestKey)
 	}
-
-	s.broadcastWhitelist(address, "approver", "remove")
 
 	return nil
 }
@@ -411,47 +370,25 @@ func (s *MultisigFaucetService) RemoveFromApproverWhitelist(address string, sign
 
 	request.Signatures[callerAddress] = approve
 
-	configs := s.getAllMultisigConfigs()
-	if len(configs) == 0 {
-		return fmt.Errorf("no multisig config found")
-	}
-	config := configs[0]
+	threshold := s.CalculateThreshold()
 
-	countApprove := 0
-	for _, sig := range request.Signatures {
-		if sig {
-			countApprove++
-		}
-	}
+	isApprove := IsApprove(request.Signatures, threshold)
 
-	if countApprove >= config.Threshold {
+	if isApprove {
 		delete(s.approverWhitelist, address)
 		delete(s.pendingApproverRequests, requestKey)
 
 		s.storeApproverWhitelist()
 
-		newThreshold := calculateThreshold(len(s.approverWhitelist))
-		if newThreshold != config.Threshold {
-			config.Threshold = newThreshold
-			s.store.StoreMultisigConfig(config)
-			s.broadcastConfig(config, ConfigUpdated)
-		}
 		s.broadcastWhitelist(address, "approver", "remove")
 		return nil
 	}
 
-	countReject := 0
-	for _, sig := range request.Signatures {
-		if !sig {
-			countReject++
-		}
-	}
+	isReject := IsReject(request.Signatures, threshold)
 
-	if countReject >= config.Threshold {
+	if isReject {
 		delete(s.pendingApproverRequests, requestKey)
 	}
-
-	s.broadcastWhitelist(address, "approver", "remove")
 
 	return nil
 }
@@ -483,28 +420,17 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 		s.pendingProposerRequests[requestKey] = request
 	}
 
-	// Check if caller already signed this request
 	if _, alreadySigned := request.Signatures[callerAddress]; alreadySigned {
 		return fmt.Errorf("signature from %s already exists for this request", callerAddress)
 	}
 
 	request.Signatures[callerAddress] = approve
-	configs := s.getAllMultisigConfigs()
-	if len(configs) == 0 {
-		return fmt.Errorf("no multisig config found")
-	}
-	config := configs[0]
 
-	countApprove := 0
-	for _, sig := range request.Signatures {
-		if sig {
-			countApprove++
-		}
-	}
+	threshold := s.CalculateThreshold()
 
-	logx.Info("FAUCET", "countApprove", countApprove, "Signatures", request.Signatures)
+	isApprove := IsApprove(request.Signatures, threshold)
 
-	if countApprove >= config.Threshold {
+	if isApprove {
 		s.proposerWhitelist[address] = true
 		delete(s.pendingProposerRequests, requestKey)
 		s.storeProposerWhitelist()
@@ -512,14 +438,8 @@ func (s *MultisigFaucetService) AddToProposerWhitelist(address string, signerPub
 		return nil
 	}
 
-	countReject := 0
-	for _, sig := range request.Signatures {
-		if !sig {
-			countReject++
-		}
-	}
-
-	if countReject >= config.Threshold {
+	isReject := IsReject(request.Signatures, threshold)
+	if isReject {
 		delete(s.pendingProposerRequests, requestKey)
 	}
 
@@ -536,7 +456,6 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 		return fmt.Errorf("caller %s is not authorized to manage proposer whitelist", callerAddress)
 	}
 
-	// Check if address exists in whitelist
 	if !s.proposerWhitelist[address] {
 		return fmt.Errorf("address %s is not in proposer whitelist", address)
 	}
@@ -554,28 +473,15 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 		s.pendingProposerRequests[requestKey] = request
 	}
 
-	// Check if caller already signed this request
 	if _, alreadySigned := request.Signatures[callerAddress]; alreadySigned {
 		return fmt.Errorf("signature from %s already exists for this request", callerAddress)
 	}
 
-	request.Signatures[callerAddress] = approve
+	threshold := s.CalculateThreshold()
 
-	configs := s.getAllMultisigConfigs()
-	if len(configs) == 0 {
-		return fmt.Errorf("no multisig config found")
-	}
-	config := configs[0]
+	isApprove := IsApprove(request.Signatures, threshold)
 
-	countApprove := 0
-
-	for _, sig := range request.Signatures {
-		if sig {
-			countApprove++
-		}
-	}
-
-	if countApprove >= config.Threshold {
+	if isApprove {
 		delete(s.proposerWhitelist, address)
 		delete(s.pendingProposerRequests, requestKey)
 		s.storeProposerWhitelist()
@@ -584,28 +490,14 @@ func (s *MultisigFaucetService) RemoveFromProposerWhitelist(address string, sign
 
 	}
 
-	countReject := 0
-	for _, sig := range request.Signatures {
-		if !sig {
-			countReject++
-		}
-	}
+	isReject := IsReject(request.Signatures, threshold)
 
-	if countReject >= config.Threshold {
+	if isReject {
 		delete(s.pendingProposerRequests, requestKey)
-		return nil
 
 	}
 
 	return nil
-}
-
-func (s *MultisigFaucetService) getAllMultisigConfigs() []*types.MultisigConfig {
-	var configs []*types.MultisigConfig
-	for _, config := range s.configs {
-		configs = append(configs, config)
-	}
-	return configs
 }
 
 func (s *MultisigFaucetService) storeApproverWhitelist() error {
@@ -707,9 +599,7 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		return fmt.Errorf("failed to update transaction in storage: %w", err)
 	}
 
-	s.broadcastMultisigTx(tx, MultisigTxUpdated)
-
-	logx.Info("FAUCET", "AddSignature", txHash, "signatures", tx.Signatures)
+	threshold := s.CalculateThreshold()
 
 	countApprove := 0
 	for _, sig := range tx.Signatures {
@@ -718,9 +608,7 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		}
 	}
 
-	logx.Info("FAUCET", "countApprove", countApprove, "threshold", tx.Config.Threshold)
-
-	if countApprove >= tx.Config.Threshold {
+	if countApprove >= threshold {
 		s.voteCollector.ProcessVote(txHash, s.ID, true)
 		appovers := make([]string, 0, len(s.approverWhitelist))
 		for addr := range s.approverWhitelist {
@@ -753,7 +641,7 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		}
 	}
 
-	if countReject >= tx.Config.Threshold {
+	if countReject >= threshold {
 		tx.Status = STATUS_REJECTED
 		if err := s.store.UpdateMultisigTx(tx); err != nil {
 			return fmt.Errorf("failed to update transaction status to rejected: %w", err)
@@ -762,8 +650,6 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 		return nil
 
 	}
-
-	logx.Info("FAUCET", "countReject", countReject, "threshold", tx.Config.Threshold)
 
 	return nil
 }
@@ -803,7 +689,6 @@ func (s *MultisigFaucetService) OnFaucetVoteCollected(txHash string, voterID pee
 }
 
 func (s *MultisigFaucetService) executeTransaction(tx *types.MultisigTx) error {
-
 	message := fmt.Sprintf("%s:%s", FAUCET_ACTION, ADD_SIGNATURE)
 	valid := 0
 	for _, sig := range tx.Signatures {
@@ -811,8 +696,11 @@ func (s *MultisigFaucetService) executeTransaction(tx *types.MultisigTx) error {
 			valid++
 		}
 	}
-	if valid < tx.Config.Threshold {
-		return fmt.Errorf("transaction verification failed: insufficient signatures: %d < %d", valid, tx.Config.Threshold)
+
+	threshold := s.CalculateThreshold()
+
+	if valid < threshold {
+		return fmt.Errorf("transaction verification failed: insufficient signatures: %d < %d", valid, threshold)
 	}
 
 	faucetAccount, err := s.accountStore.GetByAddr(tx.Sender)
@@ -875,7 +763,7 @@ func (s *MultisigFaucetService) createFaucetTransaction(tx *types.MultisigTx) *t
 		Timestamp: uint64(time.Now().UnixNano() / int64(time.Millisecond)),
 		TextData:  tx.TextData,
 		Nonce:     faucetAccount.Nonce + 1,
-		ExtraInfo: fmt.Sprintf("multisig_tx:%s:threshold:%d:signers:%d", tx.Hash(), config.Threshold, len(config.Signers)),
+		ExtraInfo: fmt.Sprintf("multisig_tx:%s:%d:signers:%d", tx.Hash(), len(config.Signers)),
 	}
 
 	aggregatedSignature := s.aggregateMultisigSignatures(tx)
@@ -943,32 +831,6 @@ func (s *MultisigFaucetService) GetPendingTransaction(txHash string) (*types.Mul
 
 	s.pendingTxs[txHash] = tx
 	return tx, nil
-}
-
-func (s *MultisigFaucetService) GetTransactionStatus(txHash string) (*types.TransactionStatus, error) {
-	tx, exists := s.pendingTxs[txHash]
-	if !exists {
-		var err error
-		tx, err = s.store.GetMultisigTx(txHash)
-		if err != nil {
-			return nil, fmt.Errorf("transaction not found: %s", txHash)
-		}
-
-		s.pendingTxs[txHash] = tx
-	}
-
-	status := &types.TransactionStatus{
-		TxHash:         txHash,
-		IsComplete:     len(tx.Signatures) >= tx.Config.Threshold,
-		SignatureCount: len(tx.Signatures),
-		RequiredCount:  tx.Config.Threshold,
-		Recipient:      tx.Recipient,
-		Amount:         tx.Amount,
-		CreatedAt:      time.Unix(int64(tx.Timestamp), 0),
-		Signatures:     tx.Signatures,
-	}
-
-	return status, nil
 }
 
 func (s *MultisigFaucetService) GetApproverWhitelist() []string {
@@ -1089,15 +951,6 @@ func (s *MultisigFaucetService) GetFaucetConfig() *RequestInitFaucetConfigMessag
 }
 
 func (s *MultisigFaucetService) HandleInitFaucetConfig(msg *RequestInitFaucetConfigMessage) error {
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "msg", msg)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "approvers", msg.Approvers)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "proposers", msg.Proposers)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "maxAmount", msg.MaxAmount)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "pendingTxs", msg.PendingTxs)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "pendingProposerRequests", msg.PendingProposerRequests)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "pendingApproverRequests", msg.PendingApproverRequests)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "configs", msg.Configs)
-	logx.Info("FAUCET", "HandleInitFaucetConfig", "votes", msg.Votes)
 	s.approverWhitelist = make(map[string]bool)
 	for _, approver := range msg.Approvers {
 		s.approverWhitelist[approver] = true
@@ -1125,4 +978,33 @@ func (s *MultisigFaucetService) HandleInitFaucetConfig(msg *RequestInitFaucetCon
 		return fmt.Errorf("failed to store multisig transactions: %w", err)
 	}
 	return nil
+}
+
+func IsApprove(signatures map[string]bool, threshold int) bool {
+	count := 0
+	for _, approve := range signatures {
+		if approve {
+			count++
+		}
+	}
+	return count >= threshold
+}
+
+func IsReject(signatures map[string]bool, threshold int) bool {
+	count := 0
+	for _, approve := range signatures {
+		if !approve {
+			count++
+		}
+	}
+
+	return count >= threshold
+}
+
+func (s *MultisigFaucetService) CalculateThreshold() int {
+	totalApprovers := len(s.approverWhitelist)
+	vf := totalApprovers / 3
+	threshold := max(2*vf, 1)
+
+	return threshold
 }

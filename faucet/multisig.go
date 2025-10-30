@@ -23,9 +23,8 @@ func CreateMultisigConfig(threshold int, signers []string) (*types.MultisigConfi
 	}
 
 	return &types.MultisigConfig{
-		Threshold: threshold,
-		Signers:   signers,
-		Address:   address,
+		Signers: signers,
+		Address: address,
 	}, nil
 }
 

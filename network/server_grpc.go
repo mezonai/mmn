@@ -662,11 +662,10 @@ func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMu
 	}
 
 	return &pb.GetMultisigTransactionStatusResponse{
-		Success:            true,
-		Message:            tx.TextData,
-		Status:             tx.Status,
-		SignatureCount:     int32(len(tx.Signatures)),
-		RequiredSignatures: int32(tx.Config.Threshold),
+		Success:        true,
+		Message:        tx.TextData,
+		Status:         tx.Status,
+		SignatureCount: int32(len(tx.Signatures)),
 	}, nil
 }
 

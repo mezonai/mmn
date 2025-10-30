@@ -167,12 +167,14 @@ func initializeNode() {
 		}
 	}
 
+	// Load genesis configuration
 	cfg, err := loadConfiguration(initGenesisPath)
 	if err != nil {
 		logx.Error("INIT", "Failed to load genesis configuration:", err.Error())
 		return
 	}
 
+	// Copy genesis.yml to data directory
 	genesisDestPath := filepath.Join(initDataDir, "genesis.yml")
 	genesisData, err := os.ReadFile(initGenesisPath)
 	if err != nil {
@@ -188,6 +190,7 @@ func initializeNode() {
 
 	logx.Info("INIT", "Genesis configuration copied to:", genesisDestPath)
 
+	// Initialize db store inside directory
 	dbStoreDir := filepath.Join(initDataDir, "store")
 	as, ts, tms, bs, fss, err := initializeDBStore(dbStoreDir, initDatabase, nil)
 	if err != nil {
