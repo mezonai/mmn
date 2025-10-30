@@ -8,19 +8,19 @@ import (
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/utils"
 )
 
 type AccountServiceImpl struct {
-	ledger  *ledger.Ledger
-	mempool *mempool.Mempool
-	tracker interfaces.TransactionTrackerInterface
+	ledger     *ledger.Ledger
+	blockStore store.BlockStore
+	tracker    interfaces.TransactionTrackerInterface
 }
 
-func NewAccountService(ld *ledger.Ledger, mp *mempool.Mempool, tracker interfaces.TransactionTrackerInterface) *AccountServiceImpl {
-	return &AccountServiceImpl{ledger: ld, mempool: mp, tracker: tracker}
+func NewAccountService(ld *ledger.Ledger, bs store.BlockStore, tracker interfaces.TransactionTrackerInterface) *AccountServiceImpl {
+	return &AccountServiceImpl{ledger: ld, blockStore: bs, tracker: tracker}
 }
 
 func (s *AccountServiceImpl) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
@@ -61,43 +61,8 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 		}, nil
 	}
 
-	// Get account from ledger
-	acc, err := s.ledger.GetAccount(addr)
-	if err != nil {
-		logx.Error("GRPC", fmt.Sprintf("Failed to get account for address %s: %v", addr, err))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-			Error:   err.Error(),
-		}, nil
-	}
-	if acc == nil {
-		logx.Info("GRPC", fmt.Sprintf("Account not found for address: %s", addr))
-		return &pb.GetCurrentNonceResponse{
-			Address: addr,
-			Nonce:   0,
-			Tag:     tag,
-		}, nil
-	}
-
-	var currentNonce uint64
-
-	if tag == "latest" {
-		// For "latest", return the current nonce from the most recent mined block
-		currentNonce = acc.Nonce
-		logx.Info("GRPC", fmt.Sprintf("Latest current nonce for %s: %d", addr, currentNonce))
-	} else { // tag == "pending"
-		// For "pending", return the largest nonce among ready transactions, processing transactions, current ledger nonce, and consecutive pending nonce
-		ledgerNonce := acc.Nonce
-		largestReadyNonce := s.mempool.GetLargestReadyTransactionNonce(addr)
-		largestProcessingNonce := s.tracker.GetLargestProcessingNonce(addr)
-		currentNonce = max(largestProcessingNonce, max(largestReadyNonce, ledgerNonce))
-
-		currentNonce = s.mempool.GetLargestConsecutivePendingNonce(addr, currentNonce)
-		logx.Info("GRPC", fmt.Sprintf("Pending current nonce for %s: ledger: %d, mempool: %d, processing: %d, final: %d",
-			addr, ledgerNonce, largestReadyNonce, largestProcessingNonce, currentNonce))
-	}
+	// Get account from blockstore, get the latest finalized slot
+	currentNonce := s.blockStore.GetLatestFinalizedSlot()
 
 	return &pb.GetCurrentNonceResponse{
 		Address: addr,

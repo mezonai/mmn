@@ -25,7 +25,7 @@ import (
 	"github.com/mezonai/mmn/zkverify"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, recorder *poh.PohRecorder, zkVerify *zkverify.ZkVerify) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, dedupService *mempool.DedupService, recorder *poh.PohRecorder, zkVerify *zkverify.ZkVerify) {
 	// Store zkVerify for transaction verification
 	ln.zkVerify = zkVerify
 
@@ -53,10 +53,31 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				return fmt.Errorf("transaction verification failed: %w", err)
 			}
 
+			var txs []*transaction.Transaction
+			var txHashSet = make(map[string]struct{})
+			var txDedupHashes []string
+			for _, entry := range blk.Entries {
+				for _, tx := range entry.Transactions {
+					txs = append(txs, tx)
+					txHashSet[tx.Hash()] = struct{}{}
+					txDedupHashes = append(txDedupHashes, tx.DedupHash())
+				}
+			}
+
+			if err := mp.VerifyBlockTransactions(txs); err != nil {
+				logx.Error("BLOCK", fmt.Sprintf("Block transaction validation failed at slot %d: %v", blk.Slot, err))
+				return fmt.Errorf("block transaction validation failed: %w", err)
+			}
+
 			if err := blk.VerifyPoH(); err != nil {
 				logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 				blk.InvalidPoH = true
 				monitoring.IncreaseInvalidPohCount()
+			}
+
+			if err := bs.AddBlockPending(blk); err != nil {
+				logx.Error("BLOCK", "Failed to store block: ", err)
+				return err
 			}
 
 			// Reset poh to sync poh clock with leader
@@ -66,18 +87,15 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 				}
 			}
 
-			if err := bs.AddBlockPending(blk); err != nil {
-				logx.Error("BLOCK", "Failed to store block: ", err)
-				return err
-			}
-
 			if ln.isListener {
 				return nil
 			}
 
-			// Remove transactions in block from mempool and add tx tracker if node is follower
-			if self.PubKey != blk.LeaderID && !blk.InvalidPoH {
-				mp.BlockCleanup(blk)
+			// Remove transactions in block from mempool and add tx tracker if block is valid
+			if !blk.InvalidPoH {
+				dedupService.Add(blk.Slot, txDedupHashes)
+				dedupService.CleanUpOldSlotTxHashes(blk.Slot)
+				mp.BlockCleanup(blk.Slot, txHashSet)
 			}
 
 			vote := &consensus.Vote{
@@ -187,7 +205,7 @@ func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.Priva
 	})
 }
 
-func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger) error {
+func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockStore, ld *ledger.Ledger, mp *mempool.Mempool) error {
 	// Lock to ensure thread safety for concurrent apply processing
 	ln.applyBlockMu.Lock()
 	defer ln.applyBlockMu.Unlock()
@@ -204,6 +222,8 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		// missing block how to handle
 		return fmt.Errorf("block not found for slot %d", vote.Slot)
 	}
+
+	mp.SetCurrentSlot(vote.Slot)
 
 	// Mark block as finalized
 	if err := bs.MarkFinalized(vote.Slot); err != nil {
