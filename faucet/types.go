@@ -1,6 +1,10 @@
 package faucet
 
 import (
+	"crypto/sha256"
+	"sort"
+	"strings"
+
 	"github.com/holiman/uint256"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/mezonai/mmn/types"
@@ -102,4 +106,19 @@ type RequestInitFaucetConfigMessage struct {
 	PendingApproverRequests map[string]*types.WhitelistManagementRequest `json:"pending_approver_requests"`
 	Configs                 map[string]*types.MultisigConfig             `json:"configs"`
 	Votes                   map[string]map[peer.ID]bool                  `json:"votes"`
+}
+
+func (r *RequestFaucetVoteMessage) ComputeHash() [32]byte {
+	h := sha256.New()
+
+	sortedApproved := make([]string, len(r.Appovers))
+	copy(sortedApproved, r.Appovers)
+	sort.Strings(sortedApproved)
+
+	h.Write([]byte(strings.Join(sortedApproved, ",")))
+	h.Write([]byte(r.Proposer))
+	h.Write([]byte(r.TxHash))
+	var hash [32]byte
+	copy(hash[:], h.Sum(nil))
+	return hash
 }

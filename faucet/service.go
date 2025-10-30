@@ -104,29 +104,6 @@ func (s *MultisigFaucetService) broadcastMultisigTx(tx *types.MultisigTx, action
 	}
 }
 
-func (s *MultisigFaucetService) broadcastConfig(config *types.MultisigConfig, action string) {
-	if s.publishConfig == nil {
-		return
-	}
-
-	msg := CreateConfigMessage(config, action)
-
-	data, err := msg.ToJSON()
-	if err != nil {
-		logx.Error("MultisigFaucetService", "Failed to marshal config message", err)
-		return
-	}
-
-	if err := s.publishConfig(data); err != nil {
-		logx.Error("MultisigFaucetService", "Failed to publish config", err)
-		return
-	}
-
-	if s.eventRouter != nil {
-		s.eventRouter.PublishTransactionEvent(events.NewFaucetConfigBroadcastedEvent(config, action))
-	}
-}
-
 func (s *MultisigFaucetService) broadcastWhitelist(address, whitelistType, action string) {
 	if s.publishWhitelist == nil {
 		return
@@ -615,15 +592,16 @@ func (s *MultisigFaucetService) AddSignature(txHash string, signerPubKey string,
 			appovers = append(appovers, addr)
 		}
 
-		sig := ed25519.Sign(s.privKey, []byte(txHash))
-
 		vote := &RequestFaucetVoteMessage{
-			TxHash:    txHash,
-			LeaderId:  s.selfPubKey,
-			Appovers:  appovers,
-			Proposer:  tx.Recipient,
-			Signature: sig,
+			TxHash:   txHash,
+			LeaderId: s.selfPubKey,
+			Appovers: appovers,
+			Proposer: tx.Recipient,
 		}
+		hash := vote.ComputeHash()
+		sig := ed25519.Sign(s.privKey, hash[:])
+
+		vote.Signature = sig
 
 		data, err := vote.ToJSON()
 		if err != nil {
@@ -763,7 +741,7 @@ func (s *MultisigFaucetService) createFaucetTransaction(tx *types.MultisigTx) *t
 		Timestamp: uint64(time.Now().UnixNano() / int64(time.Millisecond)),
 		TextData:  tx.TextData,
 		Nonce:     faucetAccount.Nonce + 1,
-		ExtraInfo: fmt.Sprintf("multisig_tx:%s:%d:signers:%d", tx.Hash(), len(config.Signers)),
+		ExtraInfo: fmt.Sprintf("multisig_tx:%s:signers:%d", tx.Hash(), len(config.Signers)),
 	}
 
 	aggregatedSignature := s.aggregateMultisigSignatures(tx)
@@ -919,17 +897,20 @@ func (s *MultisigFaucetService) HandleFaucetWhitelist(msg *FaucetSyncWhitelistMe
 func (s *MultisigFaucetService) VerifyVote(msg *RequestFaucetVoteMessage) bool {
 	approvers := msg.Appovers
 	if len(approvers) == 0 {
+		logx.Warn("MultisigFaucetService", "no approvers in vote", "vote", approvers)
 		return false
 	}
 
 	for _, approver := range approvers {
 		if exists := s.approverWhitelist[approver]; !exists {
+			logx.Warn("MultisigFaucetService", "approver whitelist", s.approverWhitelist)
 			return false
 		}
 	}
 
 	proposer := msg.Proposer
 	if exists := s.proposerWhitelist[proposer]; !exists {
+		logx.Warn("MultisigFaucetService", "proposer whitelist", proposer)
 		return false
 	}
 

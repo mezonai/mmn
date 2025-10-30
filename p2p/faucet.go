@@ -305,8 +305,9 @@ func (ln *Libp2pNetwork) verifySignature(msg *faucet.RequestFaucetVoteMessage) b
 		logx.Warn("BLOCK", "verify block signature failure different length of signature")
 		return false
 	}
+	hash := msg.ComputeHash()
 
-	return ed25519.Verify(pubKey, []byte(msg.TxHash), msg.Signature)
+	return ed25519.Verify(pubKey, hash[:], msg.Signature)
 }
 
 func getPublicKeyFromLeaderID(leaderID string) (ed25519.PublicKey, error) {

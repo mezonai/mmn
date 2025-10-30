@@ -211,22 +211,6 @@ func (e *FaucetMultisigTxBroadcastedEvent) TxHash() string                      
 func (e *FaucetMultisigTxBroadcastedEvent) TxExtraInfo() string                   { return e.action }
 func (e *FaucetMultisigTxBroadcastedEvent) Transaction() *transaction.Transaction { return nil }
 
-type FaucetConfigBroadcastedEvent struct {
-	config    *types.MultisigConfig
-	action    string
-	timestamp time.Time
-}
-
-func NewFaucetConfigBroadcastedEvent(config *types.MultisigConfig, action string) *FaucetConfigBroadcastedEvent {
-	return &FaucetConfigBroadcastedEvent{config: config, action: action, timestamp: time.Now()}
-}
-
-func (e *FaucetConfigBroadcastedEvent) Type() EventType                       { return EventFaucetConfigBroadcasted }
-func (e *FaucetConfigBroadcastedEvent) Timestamp() time.Time                  { return e.timestamp }
-func (e *FaucetConfigBroadcastedEvent) TxHash() string                        { return e.config.Address }
-func (e *FaucetConfigBroadcastedEvent) TxExtraInfo() string                   { return e.action }
-func (e *FaucetConfigBroadcastedEvent) Transaction() *transaction.Transaction { return nil }
-
 type FaucetWhitelistBroadcastedEvent struct {
 	address       string
 	whitelistType string
