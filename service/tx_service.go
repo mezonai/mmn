@@ -60,25 +60,22 @@ func (s *TxServiceImpl) GetTxByHash(ctx context.Context, in *pb.GetTxByHashReque
 
 	// 1) Check from mempool O(1) lookup
 	if s.mempool != nil {
-		if data, ok := s.mempool.GetTransaction(txHash); ok {
-			tx, err := utils.ParseTx(data)
-			if err == nil {
-				txInfo := &pb.TxInfo{
-					Sender:    tx.Sender,
-					Recipient: tx.Recipient,
-					Amount:    utils.Uint256ToString(tx.Amount),
-					Timestamp: tx.Timestamp,
-					TextData:  tx.TextData,
-					Nonce:     tx.Nonce,
-					Slot:      0,
-					Blockhash: "",
-					Status:    pb.TransactionStatus_PENDING,
-					ErrMsg:    "",
-					ExtraInfo: tx.ExtraInfo,
-					TxHash:    txHash,
-				}
-				return &pb.GetTxByHashResponse{Tx: txInfo, Decimals: decimalConfig}, nil
+		if tx, ok := s.mempool.GetTransaction(txHash); ok {
+			txInfo := &pb.TxInfo{
+				Sender:    tx.Sender,
+				Recipient: tx.Recipient,
+				Amount:    utils.Uint256ToString(tx.Amount),
+				Timestamp: tx.Timestamp,
+				TextData:  tx.TextData,
+				Nonce:     tx.Nonce,
+				Slot:      0,
+				Blockhash: "",
+				Status:    pb.TransactionStatus_PENDING,
+				ErrMsg:    "",
+				ExtraInfo: tx.ExtraInfo,
+				TxHash:    txHash,
 			}
+			return &pb.GetTxByHashResponse{Tx: txInfo, Decimals: decimalConfig}, nil
 		}
 	}
 
@@ -152,16 +149,11 @@ func (s *TxServiceImpl) GetPendingTransactions(ctx context.Context, in *pb.GetPe
 	var pendingTxs []*pb.TransactionData
 	for _, txHash := range orderedTxHashes {
 		// Get transaction data from mempool
-		txData, exists := s.mempool.GetTransaction(txHash)
+		tx, exists := s.mempool.GetTransaction(txHash)
 		if !exists {
 			continue // Skip if transaction not found
 		}
 
-		// Parse transaction to get details
-		tx, err := utils.ParseTx(txData)
-		if err != nil {
-			continue // Skip if parsing fails
-		}
 		// Create pending transaction info
 		pendingTx := &pb.TransactionData{
 			TxHash:    txHash,
