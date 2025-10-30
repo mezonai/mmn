@@ -194,27 +194,27 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 
 ### 2. Add Proposer to Whitelist
 ```bash
-./mmn multisig add-proposer --address "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" --private-key-file "config/key2.txt"
+./mmn multisig add-proposer --address <ADDRESS> --private-key-file "config/key2.txt"
 ```
 
 ### 3. Create Faucet Proposal
 ```bash
-./mmn multisig create-proposal --multisig-addr "CsJU8j4ptizrYY46yh6AMbmb2nGuG12yZsagyojQkmT6" --amount "40000" --message "Test faucet request" --private-key-file "config/key1.txt"
+./mmn multisig create-proposal --multisig-addr <ADDRESS> --amount "40000" --message "Test faucet request" --private-key-file "config/key1.txt"
 ```
 
 ### 4. Approve Proposal (First Signature)
 ```bash
-./mmn multisig approve --tx-hash "56A4AVkxcq6h8uZCwNt7Xa9cj5EDw1qD1hRjgjndWkmm" --private-key-file "config/key2.txt"
+./mmn multisig approve --tx-hash <HASH> --private-key-file "config/key2.txt"
 ```
 
 ### 5. Approve Proposal (Second Signature)
 ```bash
-./mmn multisig approve --tx-hash "56A4AVkxcq6h8uZCwNt7Xa9cj5EDw1qD1hRjgjndWkmm" --private-key-file "config/key3.txt"
+./mmn multisig approve --tx-hash <HASH> --private-key-file "config/key3.txt"
 ```
 
 ### 6. Check Proposal Status
 ```bash
-./mmn multisig status --tx-hash "56A4AVkxcq6h8uZCwNt7Xa9cj5EDw1qD1hRjgjndWkmm" --private-key-file "config/key1.txt"
+./mmn multisig status --tx-hash <HASH> --private-key-file "config/key1.txt"
 ```
 
 ### 7. Get All Proposals

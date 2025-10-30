@@ -283,6 +283,7 @@ func addProposer(config MultisigConfig) error {
 		Address:      config.Address,
 		SignerPubkey: pubKeyStr,
 		Signature:    signature,
+		Approve:      true,
 	})
 
 	if err != nil {
@@ -321,6 +322,7 @@ func addApprover(config MultisigConfig) error {
 		Address:      config.Address,
 		SignerPubkey: pubKeyStr,
 		Signature:    signature,
+		Approve:      true,
 	})
 
 	if err != nil {
@@ -359,6 +361,7 @@ func removeApprover(config MultisigConfig) error {
 		Address:      config.Address,
 		SignerPubkey: pubKeyStr,
 		Signature:    signature,
+		Approve:      true,
 	})
 
 	if err != nil {
@@ -397,6 +400,7 @@ func removeProposer(config MultisigConfig) error {
 		Address:      config.Address,
 		SignerPubkey: pubKeyStr,
 		Signature:    signature,
+		Approve:      true,
 	})
 
 	if err != nil {
