@@ -66,7 +66,7 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 
 	return &pb.GetCurrentNonceResponse{
 		Address: addr,
-		Nonce:   currentNonce,
+		Nonce:   currentNonce - 1, // TODO: Temporary fix to get the correct nonce
 		Tag:     tag,
 	}, nil
 }
