@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/consensus"
@@ -49,25 +50,13 @@ type Libp2pNetwork struct {
 	onSyncResponseReceived func(*block.BroadcastedBlock) error
 	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
-	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
+	OnForceResetPOH        func(seedHash [32]byte, slot uint64)
 	OnGetLatestPohSlot     func() uint64
 
 	maxPeers int
 
-	activeSyncRequests map[string]*SyncRequestInfo
-	syncMu             sync.RWMutex
-
 	syncRequests  map[string]*SyncRequestTracker
 	syncTrackerMu sync.RWMutex
-
-	missingBlocksTracker map[uint64]*MissingBlockInfo
-	missingBlocksMu      sync.RWMutex
-
-	lastScannedSlot uint64
-	scanMu          sync.RWMutex
-
-	recentlyRequestedSlots map[uint64]time.Time
-	recentlyRequestedMu    sync.RWMutex
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -96,6 +85,9 @@ type Libp2pNetwork struct {
 	// PoH config
 	pohCfg     *config.PohConfig
 	isListener bool
+
+	// ZK verify for transaction verification
+	zkVerify *zkverify.ZkVerify
 }
 
 type PeerInfo struct {

@@ -8,7 +8,15 @@ services:
         DB_VENDOR: ${DB_VENDOR:-rocksdb} #rocksdb or leveldb
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: bootnode
-    command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
+    command:
+      [
+        "./mmn",
+        "bootnode",
+        "--bootstrap-p2p-port",
+        "9000",
+        "--privkey-path",
+        "./config/bootnode_privkey.txt",
+      ]
     ports:
       - "9000:9000"
     volumes:
@@ -27,7 +35,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --rate-limit=false --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -49,14 +57,14 @@ services:
     networks:
       - mezon
     restart: unless-stopped
-      
+
   node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node2
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node2" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key2.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --public-ip "127.0.0.1" --p2p-port "9092" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node2" --listen-addr ":8002" --jsonrpc-addr ":8082" --grpc-addr ":9002" --public-ip "127.0.0.1" --p2p-port "9092" --rate-limit=false --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -84,7 +92,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node3" --genesis "config/genesis_dev.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key3.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --public-ip "127.0.0.1" --p2p-port "9093" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node3" --listen-addr ":8003" --jsonrpc-addr ":8083" --grpc-addr ":9003" --rate-limit=false --public-ip "127.0.0.1" --p2p-port "9093" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -174,10 +182,10 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     networks:
       - mezon
     restart: unless-stopped

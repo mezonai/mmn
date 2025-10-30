@@ -20,6 +20,8 @@ on:
     secrets:
       LISTENER_PRIVKEY:
         required: true
+      VERIFYING_KEY_B64:
+        required: true
 
 jobs:
   deploy_listener:
@@ -53,25 +55,34 @@ jobs:
       - name: Setup Listener Service
         env:
           LISTENER_PRIVKEY: ${{ secrets.LISTENER_PRIVKEY }}
-          BOOTNODE_IP: ${{ vars.BOOTNODE_IP }}
+          BOOTNODE_IP_LISTENER: ${{ vars.BOOTNODE_IP_LISTENER }}
           BOOTNODE_ID: ${{ vars.BOOTNODE_ID }}
-          PUBLIC_IP: ${{ vars.PUBLIC_IP }}
+          PUBLIC_IP_LISTENER: ${{ vars.PUBLIC_IP_LISTENER }}
+          VERIFYING_KEY_B64: ${{ secrets.VERIFYING_KEY_B64 }}
         run: |
           set -e
           echo "==> Setting up mezon-listener service locally for prod env..."
           echo "--> Preparing directories..."
           sudo mkdir -p /etc/mezon /opt/mezon/mmn/bin /opt/mezon/node-data
+          sudo chown -R mmn:mmn /etc/mezon
+          sudo chown -R mmn:mmn /opt/mezon
 
           echo "--> Writing listener private key..."
           printf '%s' "$LISTENER_PRIVKEY" | sudo tee /etc/mezon/listener_privkey.txt >/dev/null
           sudo chmod 600 /etc/mezon/listener_privkey.txt
           sudo chown mmn:mmn /etc/mezon/listener_privkey.txt
 
+          echo "--> Writing verifying key..."
+          printf '%s' "$VERIFYING_KEY_B64" | sudo tee /opt/mezon/mmn/config/verifying_key.b64 >/dev/null
+          sudo chmod 600 /opt/mezon/mmn/config/verifying_key.b64
+          sudo chown mmn:mmn /opt/mezon/mmn/config/verifying_key.b64
+
           echo "--> Creating listener systemd service file..."
-          BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP/tcp/9000/p2p/$BOOTNODE_ID"
+          BOOTNODE_MULTIADDR="/ip4/$BOOTNODE_IP_LISTENER/tcp/9000/p2p/$BOOTNODE_ID"
           sed -e "s|__BOOTNODE_MULTIADDR__|$BOOTNODE_MULTIADDR|g" \
-            -e "s|__PUBLIC_IP__|$PUBLIC_IP|g" \
-            ./config/systemd/mezon-listener.service.tpl \
+            -e "s|__PUBLIC_IP__|$PUBLIC_IP_LISTENER|g" \
+            -e "s|p2p-port 9001|p2p-port 9094|g" \
+            /opt/mezon/mmn/config/systemd/mezon-listener.service.tpl \
             | sudo tee /etc/systemd/system/mezon-listener.service >/dev/null
 
           echo "--> Creating listener env file..."
@@ -97,7 +108,7 @@ jobs:
         run: |
           set -e
           BINARY_TO_INSTALL="${{ inputs.binary_path_from_caller || steps.download_step.outputs.binary_path }}"
-          
+
           if [ -z "$BINARY_TO_INSTALL" ]; then
             echo "::error::Binary path is not available. Aborting."
             exit 1
@@ -106,12 +117,12 @@ jobs:
 
           echo "==> Deploying and restarting mezon-listener..."
           SHA=$(date +%s)
-          
+
           sudo systemctl stop mezon-listener || true
 
           sudo install -m 0755 "$BINARY_TO_INSTALL" /opt/mezon/mmn/bin/mmn-${SHA}
           sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
-          
+
           if [ ! -f "/etc/mezon/genesis.yml" ]; then
             echo "--> Generating genesis.yml locally for listener..."
             sed \
@@ -121,22 +132,22 @@ jobs:
               | sudo tee /etc/mezon/genesis.yml >/dev/null
             sudo chown mmn:mmn /etc/mezon/genesis.yml
           fi
-
           if [ ! -d "/opt/mezon/node-data/node-listener" ]; then
+            echo "--> Initializing node data directory..."
             set -a
             source /etc/mezon/node-listener.env
             set +a
-            /opt/mezon/mmn/bin/mmn init \
-              --data-dir "/opt/mezon/node-data/node-listener" \
-              --genesis "/etc/mezon/genesis.yml" \
-              --database rocksdb \
-              --privkey-path "/etc/mezon/listener_privkey.txt"
-          fi
-
+            sudo -u mmn -E /opt/mezon/mmn/bin/mmn init \
+                --data-dir "/opt/mezon/node-data/node-listener" \
+                --genesis "/etc/mezon/genesis.yml" \
+                --database rocksdb \
+                --privkey-path "/etc/mezon/listener_privkey.txt"
+            fi
           sudo systemctl start mezon-listener || true
 
       - name: Healthcheck Listener
         run: |
           echo "==> Healthchecking local listener..."
+          sleep 5
           sudo systemctl --no-pager -l status mezon-listener | tail -n 50
           curl -sSf http://127.0.0.1:8084/health || true

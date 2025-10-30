@@ -6,12 +6,11 @@ import (
 	"time"
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	libp2p_dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/discovery"
 	libp2p_host "github.com/libp2p/go-libp2p/core/host"
 	libp2p_peer "github.com/libp2p/go-libp2p/core/peer"
 	libp2p_dis "github.com/libp2p/go-libp2p/p2p/discovery/routing"
-	"github.com/rs/zerolog"
+	"github.com/mezonai/mmn/logx"
 )
 
 // Discovery is the interface for the underlying peer discovery protocol.
@@ -27,12 +26,11 @@ type Discovery interface {
 // dhtDiscovery is a wrapper of libp2p dht discovery service. It implements Discovery
 // interface.
 type dhtDiscovery struct {
-	dht  *libp2p_dht.IpfsDHT
+	dht  *dht.IpfsDHT
 	disc discovery.Discovery
 	host libp2p_host.Host
 
 	opt    DHTConfig
-	logger zerolog.Logger
 	ctx    context.Context
 	cancel func()
 }
@@ -57,9 +55,12 @@ func (d *dhtDiscovery) Start() error {
 
 // Stop stop the dhtDiscovery service
 func (d *dhtDiscovery) Close() error {
-	d.dht.Close()
+	err := d.dht.Close()
+	if err != nil {
+		logx.Error("DHTDISCOVERY", "Failed to close dht:", err)
+	}
 	d.cancel()
-	return nil
+	return err
 }
 
 // Advertise advertises a service

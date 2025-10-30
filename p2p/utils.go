@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/mezonai/mmn/logx"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
@@ -47,7 +48,11 @@ func AddrStrings(addrs []ma.Multiaddr) []string {
 func GenerateSyncRequestID() string {
 	// Generate 8 random bytes
 	randomBytes := make([]byte, 8)
-	rand.Read(randomBytes)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		logx.Error("NETWORK:SYNC REQUEST", "Failed to generate random bytes: ", err)
+		return ""
+	}
 
 	// Combine timestamp and random bytes
 	timestamp := time.Now().UnixNano()

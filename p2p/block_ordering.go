@@ -29,10 +29,11 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 	// Add block to queue
 	ln.blockOrderingQueue[blk.Slot] = blk
 
-	return ln.processConsecutiveBlocks(bs, ld)
+	rs := ln.processConsecutiveBlocks(bs, ld)
+	return rs, nil
 }
 
-func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
+func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) *block.BroadcastedBlock {
 	var processedBlocks []*block.BroadcastedBlock
 	var emptyBlocksToBroadcast []*block.BroadcastedBlock
 	// Find consecutive blocks starting from nextExpectedSlot
@@ -91,19 +92,22 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	}
 
 	if len(processedBlocks) == 0 {
-		return nil, nil
+		return nil
 	}
-	return processedBlocks[len(processedBlocks)-1], nil
+	return processedBlocks[len(processedBlocks)-1]
 }
 
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
-	// Verify signature
 	if !blk.VerifySignature() {
 		logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
 		return fmt.Errorf("invalid signature")
 	}
 
-	// Verify PoH
+	if err := ln.verifyBlockTransactions(blk); err != nil {
+		logx.Error("BLOCK", fmt.Sprintf("Transaction verification failed at slot %d: %v", blk.Slot, err))
+		return fmt.Errorf("transaction verification failed: %w", err)
+	}
+
 	if err := blk.VerifyPoH(); err != nil {
 		logx.Error("BLOCK", "Invalid PoH, marking block as InvalidPoH and continuing:", err)
 		blk.InvalidPoH = true
@@ -118,12 +122,9 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("failed to finalize block at slot %d: %w", blk.Slot, err)
 	}
 
-	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
+	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk), ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
-
-	// Remove from missing blocks tracker
-	ln.removeFromMissingTracker(blk.Slot)
 
 	logx.Info("BLOCK:ORDERING", "Successfully processed block at slot", blk.Slot)
 	return nil

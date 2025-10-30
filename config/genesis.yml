@@ -4,7 +4,7 @@ config:
       end_slot: 10
       leader: "89y4uNijxzE9xXNvhU5oCbEN2RhSPCPQUwrJy7bPZPf8" # node 1/key1
   alloc: # support array
-    addresses: 
+    addresses:
       - address: "tCpERuK8HdBMFVShya49pgfBFVyxbzzgDp7EKKE2Nx6"
         amount: 100000000000000000
   poh:

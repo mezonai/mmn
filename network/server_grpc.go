@@ -2,26 +2,23 @@ package network
 
 import (
 	"context"
-	"crypto/ed25519"
 	"fmt"
 	"net"
 	"time"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
-	"github.com/mezonai/mmn/logx"
-	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/types"
-
-	"github.com/mezonai/mmn/consensus"
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
+	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
-	"github.com/mezonai/mmn/service"
+	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
@@ -35,44 +32,54 @@ type server struct {
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
-	pubKeys       map[string]ed25519.PublicKey
-	blockDir      string
-	ledger        *ledger.Ledger
-	voteCollector *consensus.Collector
-	selfID        string
-	privKey       ed25519.PrivateKey
-	validator     *validator.Validator
-	blockStore    store.BlockStore
-	mempool       *mempool.Mempool
-	eventRouter   *events.EventRouter                    // Event router for complex event logic
-	txTracker     interfaces.TransactionTrackerInterface // Transaction state tracker
-	txSvc         interfaces.TxService
-	acctSvc       interfaces.AccountService
+	ledger      *ledger.Ledger
+	selfID      string
+	validator   *validator.Validator
+	blockStore  store.BlockStore
+	mempool     *mempool.Mempool
+	eventRouter *events.EventRouter          // Event router for complex event logic
+	rateLimiter *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
+	txSvc       interfaces.TxService
+	acctSvc     interfaces.AccountService
+	healthSvc   interfaces.HealthService
 }
 
-func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir string,
-	ld *ledger.Ledger, collector *consensus.Collector,
-	selfID string, priv ed25519.PrivateKey, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *grpc.Server {
-
+func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
 	s := &server{
-		pubKeys:       pubKeys,
-		blockDir:      blockDir,
-		ledger:        ld,
-		voteCollector: collector,
-		selfID:        selfID,
-		privKey:       priv,
-		blockStore:    blockStore,
-		validator:     validator,
-		mempool:       mempool,
-		eventRouter:   eventRouter,
-		txTracker:     txTracker,
+		ledger:      ld,
+		selfID:      selfID,
+		blockStore:  blockStore,
+		validator:   validator,
+		mempool:     mempool,
+		eventRouter: eventRouter,
+		rateLimiter: rateLimiter,
+		txSvc:       txSvc,
+		acctSvc:     acctSvc,
+		healthSvc:   healthSvc,
 	}
 
 	// Initialize shared services
-	s.txSvc = service.NewTxService(ld, mempool, blockStore, txTracker)
-	s.acctSvc = service.NewAccountService(ld, mempool, txTracker)
+	unaryInterceptors := []grpc.UnaryServerInterceptor{
+		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
+	}
+	streamInterceptors := []grpc.StreamServerInterceptor{}
 
-	grpcSrv := grpc.NewServer()
+	if enableRateLimit {
+		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
+			securityUnaryInterceptor(s.rateLimiter),
+		}, unaryInterceptors...)
+
+		streamInterceptors = append([]grpc.StreamServerInterceptor{
+			securityStreamInterceptor(s.rateLimiter),
+		}, streamInterceptors...)
+	}
+
+	grpcSrv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
+		grpc.MaxRecvMsgSize(GRPCMaxRecvMsgSize),
+		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
+	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
 	pb.RegisterAccountServiceServer(grpcSrv, s)
@@ -82,11 +89,61 @@ func NewGRPCServer(addr string, pubKeys map[string]ed25519.PublicKey, blockDir s
 		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", addr, err))
 		return nil
 	}
-	exception.SafeGo("Grpc Server", func() {
-		grpcSrv.Serve(lis)
+	exception.SafeGoWithPanic("Grpc Server", func() {
+		err = grpcSrv.Serve(lis)
+		if err != nil {
+			logx.Error("GRPC SERVER", fmt.Sprintf("Failed to serve gRPC server: %v", err))
+			panic(err)
+		}
 	})
 	logx.Info("GRPC SERVER", "gRPC server listening on ", addr)
 	return grpcSrv
+}
+
+func securityUnaryInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		clientIP := extractClientIP(ctx)
+		logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
+		if rateLimiter != nil {
+			if !rateLimiter.IsIPAllowed(clientIP) {
+				logx.Warn("SECURITY", "Alert spam from IP:", clientIP, "Method:", info.FullMethod)
+				return nil, status.Errorf(codes.ResourceExhausted, "Too many requests")
+			}
+			exception.SafeGo("TrackIPRequest", func() {
+				rateLimiter.TrackIPRequest(clientIP)
+			})
+		}
+
+		return handler(ctx, req)
+	}
+}
+
+func securityStreamInterceptor(rateLimiter *ratelimit.GlobalRateLimiter) grpc.StreamServerInterceptor {
+	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		clientIP := extractClientIP(ss.Context())
+		logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", info.FullMethod)
+		if rateLimiter != nil {
+			if !rateLimiter.IsIPAllowed(clientIP) {
+				logx.Warn("SECURITY", "IP limited (stream):", clientIP, "Method:", info.FullMethod)
+				return status.Errorf(codes.ResourceExhausted, "ip rate limit")
+			}
+			exception.SafeGo("TrackIPRequest", func() {
+				rateLimiter.TrackIPRequest(clientIP)
+			})
+		}
+		return handler(srv, ss)
+	}
+}
+
+func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) <= 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, defaultTimeout)
+			defer cancel()
+		}
+		return handler(ctx, req)
+	}
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
@@ -103,10 +160,6 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
 	return s.txSvc.GetTxByHash(ctx, in)
-}
-
-func (s *server) GetTransactionStatus(ctx context.Context, in *pb.GetTransactionStatusRequest) (*pb.TransactionStatusInfo, error) {
-	return s.txSvc.GetTransactionStatus(ctx, in)
 }
 
 func (s *server) GetPendingTransactions(ctx context.Context, in *pb.GetPendingTransactionsRequest) (*pb.GetPendingTransactionsResponse, error) {
@@ -226,83 +279,10 @@ func (s *server) Watch(in *pb.Empty, stream pb.HealthService_WatchServer) error 
 
 // performHealthCheck performs the actual health check logic
 func (s *server) performHealthCheck(ctx context.Context) (*pb.HealthCheckResponse, error) {
-	// Check if context is cancelled
-	select {
-	case <-ctx.Done():
-		return nil, status.Errorf(codes.DeadlineExceeded, "health check timeout")
-	default:
+	resp, err := s.healthSvc.Check(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to perform health check: %v", err)
 	}
-
-	// Get current node status
-	now := time.Now()
-
-	// Calculate uptime (assuming server started at some point)
-	// In a real implementation, you'd track server start time
-	uptime := uint64(now.Unix()) // Placeholder for actual uptime
-
-	// Get current slot and block height
-	currentSlot := uint64(0)
-	blockHeight := uint64(0)
-
-	if s.validator != nil && s.validator.Recorder != nil {
-		currentSlot = s.validator.Recorder.CurrentSlot()
-	}
-
-	if s.blockStore != nil {
-		// Get the latest finalized block height
-		// For now, we'll use a simple approach to get block height
-		// In a real implementation, you might want to track this separately
-		blockHeight = currentSlot // Use current slot as approximation
-	}
-
-	// Get mempool size
-	mempoolSize := uint64(0)
-	if s.mempool != nil {
-		mempoolSize = uint64(s.mempool.Size())
-	}
-
-	// Determine if node is leader or follower
-	isLeader := false
-	isFollower := false
-	if s.validator != nil {
-		isLeader = s.validator.IsLeader(currentSlot)
-		isFollower = s.validator.IsFollower(currentSlot)
-	}
-
-	// Check if core services are healthy
-	status := pb.HealthCheckResponse_SERVING
-
-	// Basic health checks
-	if s.ledger == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
-	}
-	if s.blockStore == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
-	}
-	if s.mempool == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
-	}
-
-	// Create response
-	resp := &pb.HealthCheckResponse{
-		Status:       status,
-		NodeId:       s.selfID,
-		Timestamp:    uint64(now.Unix()),
-		CurrentSlot:  currentSlot,
-		BlockHeight:  blockHeight,
-		MempoolSize:  mempoolSize,
-		IsLeader:     isLeader,
-		IsFollower:   isFollower,
-		Version:      "1.0.0", // You can make this configurable
-		Uptime:       uptime,
-		ErrorMessage: "",
-	}
-
-	// If there are any errors, set status accordingly
-	if status == pb.HealthCheckResponse_NOT_SERVING {
-		resp.ErrorMessage = "One or more core services are not available"
-	}
-
 	return resp, nil
 }
 

@@ -192,7 +192,6 @@ func (v *Validator) handleEntry(entries []poh.Entry) {
 	// When we are at the last tick of the slot, assemble block for lastSlot if we were leader
 	if v.Recorder.IsLastTickOfSlot() && v.IsLeader(lastSlot) &&
 		lastEntry.Tick && len(v.collectedEntries) > 0 {
-
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
 		copyCollectedEntries := make([]poh.Entry, len(v.collectedEntries))
@@ -251,10 +250,9 @@ func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) err
 	return nil
 }
 
-func (v *Validator) ForceResetPoh(seedHash [32]byte, slot uint64) error {
+func (v *Validator) ForceResetPoh(seedHash [32]byte, slot uint64) {
 	logx.Info("VALIDATOR", fmt.Sprintf("Force reset POH to latest slot %d", slot))
 	v.Recorder.Reset(seedHash, slot)
-	return nil
 }
 
 func (v *Validator) peekPendingTxs(size int) []*transaction.Transaction {

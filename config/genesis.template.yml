@@ -4,7 +4,7 @@ config:
       end_slot: 10
       leader: "__LEADER_ADDRESS__"
   alloc:
-    addresses: 
+    addresses:
       - address: "__FAUCET_ADDRESS__"
         amount: 100000000000000000
   poh:
