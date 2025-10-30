@@ -277,7 +277,6 @@ func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders i
 
 	maxAmount := uint256.NewInt(10000000000000)
 	multisigService := faucet.NewMultisigFaucetService(libP2pClient.GetHostId(), voteThreshold, multisigStore, accountStore, mp, maxAmount, zkVerify, libP2pClient.PublishFaucetMultisigTx, libP2pClient.PublishFaucetConfig, libP2pClient.PublishFaucetWhitelist, libP2pClient.PublicRequestFaucetVote, selfPubKey, privkey, eventRouter)
-	mp.SetIsMultisigWallet(multisigService.IsMultisigWallet)
 	libP2pClient.SetFaucetCallbacks(multisigService.HandleFaucetWhitelist, multisigService.HandleFaucetConfig, multisigService.HandleFaucetMultisigTx, multisigService.VerifyVote, multisigService.GetFaucetConfig, multisigService.HandleInitFaucetConfig, multisigService.OnFaucetVoteCollected)
 
 	// Create multisig configuration
