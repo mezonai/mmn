@@ -20,6 +20,7 @@ type MultisigSignature struct {
 	Signature string `json:"signature"`
 	ZkProof   string `json:"zk_proof,omitempty"`
 	ZkPub     string `json:"zk_pub,omitempty"`
+	Approve   bool   `json:"approve,omitempty"`
 }
 
 type MultisigTx struct {
@@ -78,15 +79,14 @@ type TransactionStatus struct {
 }
 
 type ServiceStats struct {
-	RegisteredConfigs   int           `json:"registered_configs"`
-	PendingTransactions int           `json:"pending_transactions"`
-	MaxAmount           *uint256.Int  `json:"max_amount"`
-	Cooldown            time.Duration `json:"cooldown"`
+	RegisteredConfigs   int          `json:"registered_configs"`
+	PendingTransactions int          `json:"pending_transactions"`
+	MaxAmount           *uint256.Int `json:"max_amount"`
 }
 
 type WhitelistManagementRequest struct {
-	Action     string            `json:"action"`      // ADD_APPROVER, REMOVE_APPROVER, ADD_PROPOSER, REMOVE_PROPOSER
-	TargetAddr string            `json:"target_addr"` // add/remove
-	Signatures map[string]string `json:"signatures"`  // signer_address -> signature
-	CreatedAt  time.Time         `json:"created_at"`
+	Action     string          `json:"action"`
+	TargetAddr string          `json:"target_addr"`
+	Signatures map[string]bool `json:"signatures"`
+	CreatedAt  time.Time       `json:"created_at"`
 }

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 )
 
 // EventType is an enum-like string type for blockchain events
@@ -14,6 +15,10 @@ const (
 	EventTransactionIncludedInBlock EventType = "TransactionIncludedInBlock"
 	EventTransactionFinalized       EventType = "TransactionFinalized"
 	EventTransactionFailed          EventType = "TransactionFailed"
+
+	EventFaucetMultisigTxBroadcasted EventType = "FaucetMultisigTxBroadcasted"
+	EventFaucetConfigBroadcasted     EventType = "FaucetConfigBroadcasted"
+	EventFaucetWhitelistBroadcasted  EventType = "FaucetWhitelistBroadcasted"
 )
 
 // BlockchainEvent represents any event that occurs in the blockchain
@@ -189,3 +194,54 @@ func (e *TransactionFailed) TxExtraInfo() string {
 func (e *TransactionFailed) Transaction() *transaction.Transaction {
 	return e.tx
 }
+
+type FaucetMultisigTxBroadcastedEvent struct {
+	tx        *types.MultisigTx
+	action    string
+	timestamp time.Time
+}
+
+func NewFaucetMultisigTxBroadcastedEvent(tx *types.MultisigTx, action string) *FaucetMultisigTxBroadcastedEvent {
+	return &FaucetMultisigTxBroadcastedEvent{tx: tx, action: action, timestamp: time.Now()}
+}
+
+func (e *FaucetMultisigTxBroadcastedEvent) Type() EventType                       { return EventFaucetMultisigTxBroadcasted }
+func (e *FaucetMultisigTxBroadcastedEvent) Timestamp() time.Time                  { return e.timestamp }
+func (e *FaucetMultisigTxBroadcastedEvent) TxHash() string                        { return e.tx.Hash() }
+func (e *FaucetMultisigTxBroadcastedEvent) TxExtraInfo() string                   { return e.action }
+func (e *FaucetMultisigTxBroadcastedEvent) Transaction() *transaction.Transaction { return nil }
+
+type FaucetConfigBroadcastedEvent struct {
+	config    *types.MultisigConfig
+	action    string
+	timestamp time.Time
+}
+
+func NewFaucetConfigBroadcastedEvent(config *types.MultisigConfig, action string) *FaucetConfigBroadcastedEvent {
+	return &FaucetConfigBroadcastedEvent{config: config, action: action, timestamp: time.Now()}
+}
+
+func (e *FaucetConfigBroadcastedEvent) Type() EventType                       { return EventFaucetConfigBroadcasted }
+func (e *FaucetConfigBroadcastedEvent) Timestamp() time.Time                  { return e.timestamp }
+func (e *FaucetConfigBroadcastedEvent) TxHash() string                        { return e.config.Address }
+func (e *FaucetConfigBroadcastedEvent) TxExtraInfo() string                   { return e.action }
+func (e *FaucetConfigBroadcastedEvent) Transaction() *transaction.Transaction { return nil }
+
+type FaucetWhitelistBroadcastedEvent struct {
+	address       string
+	whitelistType string
+	action        string
+	timestamp     time.Time
+}
+
+func NewFaucetWhitelistBroadcastedEvent(address, whitelistType, action string) *FaucetWhitelistBroadcastedEvent {
+	return &FaucetWhitelistBroadcastedEvent{address: address, whitelistType: whitelistType, action: action, timestamp: time.Now()}
+}
+
+func (e *FaucetWhitelistBroadcastedEvent) Type() EventType      { return EventFaucetWhitelistBroadcasted }
+func (e *FaucetWhitelistBroadcastedEvent) Timestamp() time.Time { return e.timestamp }
+func (e *FaucetWhitelistBroadcastedEvent) TxHash() string       { return e.address }
+func (e *FaucetWhitelistBroadcastedEvent) TxExtraInfo() string {
+	return e.whitelistType + ":" + e.action
+}
+func (e *FaucetWhitelistBroadcastedEvent) Transaction() *transaction.Transaction { return nil }

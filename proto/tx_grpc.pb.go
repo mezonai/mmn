@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.33.0
-// source: tx.proto
+// source: proto/tx.proto
 
 package proto
 
@@ -25,7 +25,6 @@ const (
 	TxService_GetPendingTransactions_FullMethodName       = "/mmn.TxService/GetPendingTransactions"
 	TxService_CreateFaucetRequest_FullMethodName          = "/mmn.TxService/CreateFaucetRequest"
 	TxService_AddSignature_FullMethodName                 = "/mmn.TxService/AddSignature"
-	TxService_RejectProposal_FullMethodName               = "/mmn.TxService/RejectProposal"
 	TxService_GetMultisigTransactionStatus_FullMethodName = "/mmn.TxService/GetMultisigTransactionStatus"
 	TxService_AddToApproverWhitelist_FullMethodName       = "/mmn.TxService/AddToApproverWhitelist"
 	TxService_AddToProposerWhitelist_FullMethodName       = "/mmn.TxService/AddToProposerWhitelist"
@@ -47,7 +46,6 @@ type TxServiceClient interface {
 	// Multisig Faucet RPCs
 	CreateFaucetRequest(ctx context.Context, in *CreateFaucetRequestRequest, opts ...grpc.CallOption) (*CreateFaucetRequestResponse, error)
 	AddSignature(ctx context.Context, in *AddSignatureRequest, opts ...grpc.CallOption) (*AddSignatureResponse, error)
-	RejectProposal(ctx context.Context, in *RejectProposalRequest, opts ...grpc.CallOption) (*RejectProposalResponse, error)
 	GetMultisigTransactionStatus(ctx context.Context, in *GetMultisigTransactionStatusRequest, opts ...grpc.CallOption) (*GetMultisigTransactionStatusResponse, error)
 	AddToApproverWhitelist(ctx context.Context, in *AddToApproverWhitelistRequest, opts ...grpc.CallOption) (*AddToApproverWhitelistResponse, error)
 	AddToProposerWhitelist(ctx context.Context, in *AddToProposerWhitelistRequest, opts ...grpc.CallOption) (*AddToProposerWhitelistResponse, error)
@@ -129,16 +127,6 @@ func (c *txServiceClient) AddSignature(ctx context.Context, in *AddSignatureRequ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AddSignatureResponse)
 	err := c.cc.Invoke(ctx, TxService_AddSignature_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *txServiceClient) RejectProposal(ctx context.Context, in *RejectProposalRequest, opts ...grpc.CallOption) (*RejectProposalResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RejectProposalResponse)
-	err := c.cc.Invoke(ctx, TxService_RejectProposal_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +224,6 @@ type TxServiceServer interface {
 	// Multisig Faucet RPCs
 	CreateFaucetRequest(context.Context, *CreateFaucetRequestRequest) (*CreateFaucetRequestResponse, error)
 	AddSignature(context.Context, *AddSignatureRequest) (*AddSignatureResponse, error)
-	RejectProposal(context.Context, *RejectProposalRequest) (*RejectProposalResponse, error)
 	GetMultisigTransactionStatus(context.Context, *GetMultisigTransactionStatusRequest) (*GetMultisigTransactionStatusResponse, error)
 	AddToApproverWhitelist(context.Context, *AddToApproverWhitelistRequest) (*AddToApproverWhitelistResponse, error)
 	AddToProposerWhitelist(context.Context, *AddToProposerWhitelistRequest) (*AddToProposerWhitelistResponse, error)
@@ -272,9 +259,6 @@ func (UnimplementedTxServiceServer) CreateFaucetRequest(context.Context, *Create
 }
 func (UnimplementedTxServiceServer) AddSignature(context.Context, *AddSignatureRequest) (*AddSignatureResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddSignature not implemented")
-}
-func (UnimplementedTxServiceServer) RejectProposal(context.Context, *RejectProposalRequest) (*RejectProposalResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RejectProposal not implemented")
 }
 func (UnimplementedTxServiceServer) GetMultisigTransactionStatus(context.Context, *GetMultisigTransactionStatusRequest) (*GetMultisigTransactionStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMultisigTransactionStatus not implemented")
@@ -418,24 +402,6 @@ func _TxService_AddSignature_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TxServiceServer).AddSignature(ctx, req.(*AddSignatureRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _TxService_RejectProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RejectProposalRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(TxServiceServer).RejectProposal(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: TxService_RejectProposal_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(TxServiceServer).RejectProposal(ctx, req.(*RejectProposalRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -612,10 +578,6 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _TxService_AddSignature_Handler,
 		},
 		{
-			MethodName: "RejectProposal",
-			Handler:    _TxService_RejectProposal_Handler,
-		},
-		{
 			MethodName: "GetMultisigTransactionStatus",
 			Handler:    _TxService_GetMultisigTransactionStatus_Handler,
 		},
@@ -655,5 +617,5 @@ var TxService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "tx.proto",
+	Metadata: "proto/tx.proto",
 }

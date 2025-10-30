@@ -182,8 +182,6 @@ func (mp *Mempool) processTransactionToQueue(tx *transaction.Transaction) {
 			mp.readyQueueIndex[tx.Sender] = make(map[uint64]bool)
 		}
 		mp.readyQueueIndex[tx.Sender][tx.Nonce] = true
-		logx.Debug("MEMPOOL", fmt.Sprintf("Added ready tx %s (sender: %s, nonce: %d, expected: %d)",
-			txHash, tx.Sender[:8], tx.Nonce, currentKnown+1))
 	} else {
 		// Add to pending transactions
 		if mp.pendingTxs[tx.Sender] == nil {

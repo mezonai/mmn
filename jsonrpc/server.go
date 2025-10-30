@@ -167,25 +167,13 @@ type addSignatureParams struct {
 	Signature    string `json:"signature"`
 	ZkProof      string `json:"zk_proof,omitempty"`
 	ZkPub        string `json:"zk_pub,omitempty"`
+	Approve      bool   `json:"approve"`
 }
 
 type addSignatureResponse struct {
 	Success        bool   `json:"success"`
 	Message        string `json:"message"`
 	SignatureCount int32  `json:"signature_count"`
-}
-
-type rejectProposalParams struct {
-	TxHash       string `json:"tx_hash"`
-	SignerPubkey string `json:"signer_pubkey"`
-	Signature    string `json:"signature"`
-	ZkProof      string `json:"zk_proof,omitempty"`
-	ZkPub        string `json:"zk_pub,omitempty"`
-}
-
-type rejectProposalResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
 }
 
 type getMultisigTxStatusParams struct {
@@ -206,6 +194,7 @@ type addToApproverWhitelistParams struct {
 	Signature    string `json:"signature"`
 	ZkProof      string `json:"zk_proof,omitempty"`
 	ZkPub        string `json:"zk_pub,omitempty"`
+	Approve      bool   `json:"approve"`
 }
 
 type addToApproverWhitelistResponse struct {
@@ -219,6 +208,7 @@ type addToProposerWhitelistParams struct {
 	Signature    string `json:"signature"`
 	ZkProof      string `json:"zk_proof,omitempty"`
 	ZkPub        string `json:"zk_pub,omitempty"`
+	Approve      bool   `json:"approve"`
 }
 
 type addToProposerWhitelistResponse struct {
@@ -232,6 +222,7 @@ type removeFromApproverWhitelistParams struct {
 	Signature    string `json:"signature"`
 	ZkProof      string `json:"zk_proof,omitempty"`
 	ZkPub        string `json:"zk_pub,omitempty"`
+	Approve      bool   `json:"approve"`
 }
 
 type removeFromApproverWhitelistResponse struct {
@@ -245,6 +236,7 @@ type removeFromProposerWhitelistParams struct {
 	Signature    string `json:"signature"`
 	ZkProof      string `json:"zk_proof,omitempty"`
 	ZkPub        string `json:"zk_pub,omitempty"`
+	Approve      bool   `json:"approve"`
 }
 
 type removeFromProposerWhitelistResponse struct {
@@ -472,16 +464,6 @@ func (s *Server) buildMethodMap() handler.Map {
 				return nil, nil
 			}
 			return res.(*addSignatureResponse), nil
-		}),
-		"faucet.reject": handler.New(func(ctx context.Context, p rejectProposalParams) (*rejectProposalResponse, error) {
-			res, err := s.rpcRejectProposal(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*rejectProposalResponse), nil
 		}),
 		"faucet.getstatus": handler.New(func(ctx context.Context, p getMultisigTxStatusParams) (*getMultisigTxStatusResponse, error) {
 			res, err := s.rpcGetMultisigTxStatus(p)
@@ -713,7 +695,7 @@ func (s *Server) rpcAddSignature(p addSignatureParams) (interface{}, *rpcError) 
 		return &addSignatureResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddSignature(p.TxHash, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
+	err = s.multisigFaucetSvc.AddSignature(p.TxHash, p.SignerPubkey, signature, p.ZkProof, p.ZkPub, p.Approve)
 	if err != nil {
 		return &addSignatureResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -727,27 +709,6 @@ func (s *Server) rpcAddSignature(p addSignatureParams) (interface{}, *rpcError) 
 		Success:        true,
 		Message:        "Signature added successfully",
 		SignatureCount: int32(len(tx.Signatures)),
-	}, nil
-}
-
-func (s *Server) rpcRejectProposal(p rejectProposalParams) (interface{}, *rpcError) {
-	if s.multisigFaucetSvc == nil {
-		return &rejectProposalResponse{Success: false, Message: "Multisig faucet service not initialized"}, nil
-	}
-
-	signature, err := hex.DecodeString(p.Signature)
-	if err != nil {
-		return &rejectProposalResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
-	}
-
-	err = s.multisigFaucetSvc.RejectProposal(p.TxHash, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
-	if err != nil {
-		return &rejectProposalResponse{Success: false, Message: err.Error()}, nil
-	}
-
-	return &rejectProposalResponse{
-		Success: true,
-		Message: "Proposal rejected successfully",
 	}, nil
 }
 
@@ -785,7 +746,7 @@ func (s *Server) rpcAddToApproverWhitelist(p addToApproverWhitelistParams) (inte
 		return &addToApproverWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddToApproverWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
+	err = s.multisigFaucetSvc.AddToApproverWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub, p.Approve)
 	if err != nil {
 		return &addToApproverWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -806,7 +767,7 @@ func (s *Server) rpcAddToProposerWhitelist(p addToProposerWhitelistParams) (inte
 		return &addToProposerWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.AddToProposerWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
+	err = s.multisigFaucetSvc.AddToProposerWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub, p.Approve)
 	if err != nil {
 		return &addToProposerWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -827,7 +788,7 @@ func (s *Server) rpcRemoveFromApproverWhitelist(p removeFromApproverWhitelistPar
 		return &removeFromApproverWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
+	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub, p.Approve)
 	if err != nil {
 		return &removeFromApproverWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}
@@ -848,7 +809,7 @@ func (s *Server) rpcRemoveFromProposerWhitelist(p removeFromProposerWhitelistPar
 		return &removeFromProposerWhitelistResponse{Success: false, Message: fmt.Sprintf("Invalid signature format: %v", err)}, nil
 	}
 
-	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub)
+	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(p.Address, p.SignerPubkey, signature, p.ZkProof, p.ZkPub, p.Approve)
 	if err != nil {
 		return &removeFromProposerWhitelistResponse{Success: false, Message: err.Error()}, nil
 	}

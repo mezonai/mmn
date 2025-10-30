@@ -152,17 +152,6 @@ var approveCmd = &cobra.Command{
 	},
 }
 
-var rejectCmd = &cobra.Command{
-	Use:   "reject",
-	Short: "Reject a proposal",
-	Long:  `Reject a multisig proposal.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := rejectProposal(multisigConfig); err != nil {
-			logx.Error("MULTISIG CLI", err)
-		}
-	},
-}
-
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check proposal status",
@@ -205,7 +194,6 @@ func init() {
 	multisigCmd.AddCommand(createProposalCmd)
 	multisigCmd.AddCommand(getProposalsCmd)
 	multisigCmd.AddCommand(approveCmd)
-	multisigCmd.AddCommand(rejectCmd)
 	multisigCmd.AddCommand(statusCmd)
 	multisigCmd.AddCommand(listApproversCmd)
 	multisigCmd.AddCommand(listProposersCmd)
@@ -224,7 +212,6 @@ func init() {
 	createProposalCmd.Flags().StringVar(&multisigConfig.Message, "message", "", "proposal message")
 
 	approveCmd.Flags().StringVarP(&multisigConfig.TxHash, "tx-hash", "t", "", "transaction hash to approve")
-	rejectCmd.Flags().StringVarP(&multisigConfig.TxHash, "tx-hash", "t", "", "transaction hash to reject")
 	statusCmd.Flags().StringVarP(&multisigConfig.TxHash, "tx-hash", "t", "", "transaction hash to check status")
 }
 
@@ -511,6 +498,7 @@ func approveProposal(config MultisigConfig) error {
 		TxHash:       config.TxHash,
 		SignerPubkey: pubKeyStr,
 		Signature:    signature,
+		Approve:      true,
 	})
 
 	if err != nil {
@@ -521,44 +509,6 @@ func approveProposal(config MultisigConfig) error {
 		fmt.Printf(msgSuccessApprovedProposal+"\n", resp.SignatureCount)
 	} else {
 		return fmt.Errorf(msgErrorApproveProposal+": %s", resp.Message)
-	}
-
-	return nil
-}
-
-func rejectProposal(config MultisigConfig) error {
-	if config.TxHash == "" {
-		return fmt.Errorf("--tx-hash is required")
-	}
-
-	client, err := createMultisigClient()
-	if err != nil {
-		return err
-	}
-
-	privKey, pubKeyStr, err := loadPrivateKey()
-	if err != nil {
-		return err
-	}
-
-	message := fmt.Sprintf("%s:%s", faucet.FAUCET_ACTION, faucet.REJECT_PROPOSAL)
-	signature := signMessage(message, privKey)
-
-	ctx := context.Background()
-	resp, err := client.RejectProposal(ctx, &pb.RejectProposalRequest{
-		TxHash:       config.TxHash,
-		SignerPubkey: pubKeyStr,
-		Signature:    signature,
-	})
-
-	if err != nil {
-		return fmt.Errorf(msgErrorRejectProposal+": %w", err)
-	}
-
-	if resp.Success {
-		fmt.Printf(msgSuccessRejectedProposal+"\n", config.TxHash)
-	} else {
-		return fmt.Errorf(msgErrorRejectProposal+": %s", resp.Message)
 	}
 
 	return nil

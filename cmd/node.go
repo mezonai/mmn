@@ -205,7 +205,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode, multisigStore)
 	if err != nil {
 		log.Printf("Failed to initialize network: %v", err)
 		return
@@ -241,9 +241,10 @@ func runNode() {
 
 	// Initialize multisig faucet service if addresses provided
 	var multisigService *faucet.MultisigFaucetService
-	if len(multisigAddresses) > 0 {
-		multisigService = initializeMultisigFaucet(multisigStore, multisigAddresses, as, mp, zkVerify)
-	}
+
+	f := len(cfg.LeaderSchedule) / 3
+	q := max(2*f, 1)
+	multisigService = initializeMultisigFaucet(multisigStore, q, multisigAddresses, as, mp, zkVerify, libP2pClient, nodeConfig.PubKey, privKey, eventRouter)
 
 	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker, multisigService)
 
@@ -259,27 +260,17 @@ func runNode() {
 	<-ctx.Done()
 }
 
-func initializeMultisigFaucet(multisigStore interface{}, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool, zkVerify *zkverify.ZkVerify) *faucet.MultisigFaucetService {
-	if len(addresses) < 2 {
-		logx.Error("MULTISIG_FAUCET", "At least 2 addresses required for multisig, got:", len(addresses))
-		return nil
-	}
+func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders int, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool, zkVerify *zkverify.ZkVerify, libP2pClient *p2p.Libp2pNetwork, selfPubKey string, privkey ed25519.PrivateKey, eventRouter *events.EventRouter) *faucet.MultisigFaucetService {
+	tf := len(addresses) / 3
+	threshold := max(2*tf, 1)
 
-	threshold := (len(addresses) * 2) / 3
-	if threshold < 2 {
-		threshold = 2
-	}
+	vf := leaders / 3
+	voteThreshold := max(2*vf, 1)
 
-	store, ok := multisigStore.(faucet.MultisigFaucetStoreInterface)
-	if !ok {
-		logx.Error("MULTISIG_FAUCET", "Failed to cast multisig store to interface")
-		return nil
-	}
-
-	maxAmount := uint256.NewInt(1000000) // TODO: research max amount for multisig faucet
-	cooldown := 1 * time.Hour            // TODO: research cooldown for multisig faucet
-	multisigService := faucet.NewMultisigFaucetService(store, accountStore, mp, maxAmount, cooldown, zkVerify)
+	maxAmount := uint256.NewInt(10000000000000)
+	multisigService := faucet.NewMultisigFaucetService(libP2pClient.GetHostId(), voteThreshold, multisigStore, accountStore, mp, maxAmount, zkVerify, libP2pClient.PublishFaucetMultisigTx, libP2pClient.PublishFaucetConfig, libP2pClient.PublishFaucetWhitelist, libP2pClient.PublicRequestFaucetVote, selfPubKey, privkey, eventRouter)
 	mp.SetIsMultisigWallet(multisigService.IsMultisigWallet)
+	libP2pClient.SetFaucetCallbacks(multisigService.HandleFaucetWhitelist, multisigService.HandleFaucetConfig, multisigService.HandleFaucetMultisigTx, multisigService.VerifyVote, multisigService.GetFaucetConfig, multisigService.HandleInitFaucetConfig, multisigService.OnFaucetVoteCollected)
 
 	// Create multisig configuration
 	config, err := faucet.CreateMultisigConfig(threshold, addresses)
@@ -288,12 +279,11 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 		return nil
 	}
 
-	// Check if faucet account already exists
 	existingAccount, err := accountStore.GetByAddr(config.Address)
 	if err != nil || existingAccount == nil {
 		faucetAccount := &types.Account{
 			Address: config.Address,
-			Balance: uint256.NewInt(100000000000000000), // TODO: already have faucet account so we can transfer token from that account to this account
+			Balance: uint256.NewInt(100000000000000000),
 			Nonce:   0,
 		}
 
@@ -329,8 +319,7 @@ func initializeMultisigFaucet(multisigStore interface{}, addresses []string, acc
 		"balance", finalAccount.Balance.String(),
 		"signers", len(config.Signers),
 		"threshold", finalThreshold,
-		"max_amount", maxAmount.String(),
-		"cooldown", cooldown)
+		"max_amount", maxAmount.String())
 
 	return multisigService
 }
@@ -398,7 +387,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string, multisigStore store.MultisigFaucetStore) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -411,6 +400,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		ts,
 		pohCfg,
 		mode == LISTEN_MODE,
+		multisigStore,
 	)
 
 	return libp2pNetwork, err
@@ -516,5 +506,3 @@ func serveMetricsApi(listenAddr string) {
 		}
 	})
 }
-
-// HVZMR6CvrVV5mKWhuYW2Ujcd9nRHeg7zCNkkQXeT43Ka

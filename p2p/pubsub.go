@@ -438,7 +438,61 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 		}
 	}
 
-	ln.startRealtimeTopicMonitoring(ctx)
+	if ln.topicFaucetMultisigTx, err = ln.pubsub.Join(TopicFaucetMultisigTx); err == nil {
+		if sub, err := ln.topicFaucetMultisigTx.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleFaucetMultisigTxTopic", func() {
+				ln.HandleFaucetMultisigTxTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicFaucetConfig, err = ln.pubsub.Join(TopicFaucetConfig); err == nil {
+		if sub, err := ln.topicFaucetConfig.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleFaucetConfigTopic", func() {
+				ln.HandleFaucetConfigTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicFaucetWhitelist, err = ln.pubsub.Join(TopicFaucetWhitelist); err == nil {
+		if sub, err := ln.topicFaucetWhitelist.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleFaucetWhitelistTopic", func() {
+				ln.HandleFaucetWhitelistTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicFaucetVote, err = ln.pubsub.Join(TopicFaucetVote); err == nil {
+		if sub, err := ln.topicFaucetVote.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleFaucetVoteTopic", func() {
+				ln.HandleFaucetVoteTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicRequestFaucetVote, err = ln.pubsub.Join(TopicRequestFaucetVote); err == nil {
+		if sub, err := ln.topicRequestFaucetVote.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleRequestFaucetVoteTopic", func() {
+				ln.HandleRequestFaucetVoteTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicRequesInitFaucetConfig, err = ln.pubsub.Join(TopicRequestInitFaucetConfig); err == nil {
+		if sub, err := ln.topicRequesInitFaucetConfig.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleRequestInitFaucetConfigTopic", func() {
+				ln.HandleRequestInitFaucetConfigTopic(ctx, sub)
+			})
+		}
+	}
+
+	if ln.topicInitFaucetConfig, err = ln.pubsub.Join(TopicInitFaucetConfig); err == nil {
+		if sub, err := ln.topicInitFaucetConfig.Subscribe(); err == nil {
+			exception.SafeGoWithPanic("HandleInitFaucetConfigTopic", func() {
+				ln.HandleInitFaucetConfigTopic(ctx, sub)
+			})
+		}
+	}
 }
 
 // HandleCheckpointRequestTopic listens for checkpoint hash requests and responds with local hash
@@ -576,98 +630,5 @@ func (ln *Libp2pNetwork) SetCallbacks(cbs Callbacks) {
 	}
 	if cbs.OnSyncResponseReceived != nil {
 		ln.onSyncResponseReceived = cbs.OnSyncResponseReceived
-	}
-}
-
-func (ln *Libp2pNetwork) logTopicStatus() {
-	logx.Info("NETWORK:PUBSUB:STATUS", "=== TOPIC STATUS REPORT ===")
-	logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Node ID: %s", ln.host.ID().String()))
-	logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Total connected peers: %d", ln.GetPeersConnected()))
-
-	if ln.topicBlocks != nil {
-		meshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Block Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-		for i, peer := range meshPeers {
-			logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Block mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Block Topic: NOT INITIALIZED")
-	}
-
-	if ln.topicVotes != nil {
-		meshPeers := ln.topicVotes.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Vote Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-		for i, peer := range meshPeers {
-			logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Vote mesh peer %d: %s", i+1, peer.String()))
-		}
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Vote Topic: NOT INITIALIZED")
-	}
-
-	if ln.topicTxs != nil {
-		meshPeers := ln.topicTxs.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Transaction Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Transaction Topic: NOT INITIALIZED")
-	}
-
-	if ln.topicCheckpointRequest != nil {
-		meshPeers := ln.topicCheckpointRequest.ListPeers()
-		logx.Info("NETWORK:PUBSUB:STATUS", fmt.Sprintf("Checkpoint Request Topic: ACTIVE (mesh peers: %d)", len(meshPeers)))
-	} else {
-		logx.Error("NETWORK:PUBSUB:STATUS", "Checkpoint Request Topic: NOT INITIALIZED")
-	}
-
-	logx.Info("NETWORK:PUBSUB:STATUS", "=== END TOPIC STATUS REPORT ===")
-}
-
-func (ln *Libp2pNetwork) startRealtimeTopicMonitoring(ctx context.Context) {
-	logx.Info("NETWORK:PUBSUB:MONITOR", "Starting realtime topic monitoring...")
-
-	exception.SafeGoWithPanic("RealtimeTopicMonitoring", func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				ln.logTopicStatus()
-
-				ln.logMeshChanges()
-
-			case <-ctx.Done():
-				logx.Info("NETWORK:PUBSUB:MONITOR", "Stopping realtime topic monitoring")
-				return
-			}
-		}
-	})
-}
-
-func (ln *Libp2pNetwork) logMeshChanges() {
-	if ln.topicBlocks != nil {
-		currentMeshPeers := ln.topicBlocks.ListPeers()
-		logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Block topic mesh peers: %d", len(currentMeshPeers)))
-
-		if len(currentMeshPeers) == 0 {
-			logx.Info("NETWORK:PUBSUB:MESH", "Block topic mesh is EMPTY - this may cause block propagation issues!")
-		}
-	}
-
-	if ln.topicVotes != nil {
-		currentMeshPeers := ln.topicVotes.ListPeers()
-		logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Vote topic mesh peers: %d", len(currentMeshPeers)))
-
-		if len(currentMeshPeers) == 0 {
-			logx.Info("NETWORK:PUBSUB:MESH", "Vote topic mesh is EMPTY - this may cause vote propagation issues!")
-		}
-	}
-
-	if ln.topicBlocks != nil && ln.topicVotes != nil {
-		blockMeshSize := len(ln.topicBlocks.ListPeers())
-		voteMeshSize := len(ln.topicVotes.ListPeers())
-
-		if blockMeshSize != voteMeshSize {
-			logx.Info("NETWORK:PUBSUB:MESH", fmt.Sprintf("Mesh size mismatch: Block=%d, Vote=%d", blockMeshSize, voteMeshSize))
-		}
 	}
 }

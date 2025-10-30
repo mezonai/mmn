@@ -10,6 +10,7 @@ import (
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
@@ -41,6 +42,7 @@ func NewNetWork(
 	txStore store.TxStore,
 	pohCfg *config.PohConfig,
 	isListener bool,
+	multisigStore store.MultisigFaucetStore,
 ) (*Libp2pNetwork, error) {
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
 	if err != nil {
@@ -148,6 +150,7 @@ func NewNetWork(
 		nextExpectedSlot:   0,
 		pohCfg:             pohCfg,
 		isListener:         isListener,
+		multisigStore:      multisigStore,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {
@@ -179,7 +182,6 @@ func (ln *Libp2pNetwork) setupHandlers(ctx context.Context, bootstrapPeers []str
 
 	// Start latest slot request mechanism
 	ln.startLatestSlotRequestMechanism()
-
 	bootstrapConnected := false
 	for _, bootstrapPeer := range bootstrapPeers {
 		if bootstrapPeer == "" {
@@ -374,6 +376,10 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 }
 
+func (ln *Libp2pNetwork) GetHostId() peer.ID {
+	return ln.host.ID()
+}
+
 // ApplyLeaderSchedule stores the schedule locally for leader checks inside p2p
 func (ln *Libp2pNetwork) ApplyLeaderSchedule(ls *poh.LeaderSchedule) {
 	ln.leaderSchedule = ls
@@ -399,6 +405,12 @@ func (ln *Libp2pNetwork) startCoreServices(ctx context.Context) {
 	ln.SetupPubSubTopics(ctx)
 
 	ln.setNodeReady()
+
+	err := ln.topicRequesInitFaucetConfig.Publish(ctx, []byte{})
+	if err != nil {
+		logx.Error("NETWORK:START CORE SERVICES", "Failed to publish block sync request to start block sync: ", err)
+	}
+
 }
 
 func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
@@ -427,4 +439,23 @@ func (ln *Libp2pNetwork) startLatestSlotRequestMechanism() {
 			}
 		}
 	})
+}
+
+func (ln *Libp2pNetwork) SetFaucetCallbacks(
+	HandleFaucetWhitelist func(msg *faucet.FaucetSyncWhitelistMessage) error,
+	HandleFaucetConfig func(msg *faucet.FaucetSyncConfigMessage) error,
+	HandleFaucetMultisigTx func(msg *faucet.FaucetSyncTransactionMessage) error,
+	VerifyVote func(voteMsg *faucet.RequestFaucetVoteMessage) bool,
+	GetFaucetConfig func() *faucet.RequestInitFaucetConfigMessage,
+	HandleInitFaucetConfig func(msg *faucet.RequestInitFaucetConfigMessage) error,
+	FaucetVoteHandler func(txHash string, voterID peer.ID, approve bool),
+) {
+	ln.HandleFaucetWhitelist = HandleFaucetWhitelist
+	ln.HandleFaucetConfig = HandleFaucetConfig
+	ln.HandleFaucetMultisigTx = HandleFaucetMultisigTx
+	ln.VerifyVote = VerifyVote
+	ln.GetFaucetConfig = GetFaucetConfig
+	ln.HandleInitFaucetConfig = HandleInitFaucetConfig
+	ln.OnFaucetVote = FaucetVoteHandler
+
 }

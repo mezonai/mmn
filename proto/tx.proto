@@ -105,7 +105,6 @@ service TxService {
   // Multisig Faucet RPCs
   rpc CreateFaucetRequest(CreateFaucetRequestRequest) returns (CreateFaucetRequestResponse);
   rpc AddSignature(AddSignatureRequest) returns (AddSignatureResponse);
-  rpc RejectProposal(RejectProposalRequest) returns (RejectProposalResponse);
   rpc GetMultisigTransactionStatus(GetMultisigTransactionStatusRequest) returns (GetMultisigTransactionStatusResponse);
   rpc AddToApproverWhitelist(AddToApproverWhitelistRequest) returns (AddToApproverWhitelistResponse);
   rpc AddToProposerWhitelist(AddToProposerWhitelistRequest) returns (AddToProposerWhitelistResponse);
@@ -139,25 +138,13 @@ message AddSignatureRequest {
   string signature = 3;
   string zk_proof = 4;
   string zk_pub = 5;
+  bool approve = 6;
 }
 
 message AddSignatureResponse {
   bool success = 1;
   string message = 2;
   int32 signature_count = 3;
-}
-
-message RejectProposalRequest {
-  string tx_hash = 1;
-  string signer_pubkey = 2;
-  string signature = 3;
-  string zk_proof = 4;
-  string zk_pub = 5;
-}
-
-message RejectProposalResponse {
-  bool success = 1;
-  string message = 2;
 }
 
 message GetMultisigTransactionStatusRequest {
@@ -178,6 +165,7 @@ message AddToApproverWhitelistRequest {
   string signature = 3;
   string zk_proof = 4;
   string zk_pub = 5;
+  bool   approve = 6;
 }
 
 message AddToApproverWhitelistResponse {
@@ -191,6 +179,7 @@ message AddToProposerWhitelistRequest {
   string signature = 3;
   string zk_proof = 4;
   string zk_pub = 5;
+  bool   approve = 6;
 }
 
 message AddToProposerWhitelistResponse {
@@ -204,6 +193,7 @@ message RemoveFromApproverWhitelistRequest {
   string signature = 3;
   string zk_proof = 4;
   string zk_pub = 5;
+  bool   approve = 6;
 }
 
 message RemoveFromApproverWhitelistResponse {
@@ -217,6 +207,7 @@ message RemoveFromProposerWhitelistRequest {
   string signature = 3;
   string zk_proof = 4;
   string zk_pub = 5;
+  bool   approve = 6;
 }
 
 message RemoveFromProposerWhitelistResponse {
