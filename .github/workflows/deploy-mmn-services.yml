@@ -159,6 +159,7 @@ jobs:
         with:
           tag_name: ${{ steps.determine_release_tag.outputs.tag }}
           name: "Release ${{ steps.determine_release_tag.outputs.tag }}"
+          target_commitish: ${{ steps.get_sha.outputs.sha }}
           fail_on_unmatched_files: true
           files: |
             build/mmn-${{ steps.determine_release_tag.outputs.tag }}
