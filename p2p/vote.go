@@ -75,7 +75,7 @@ func (ln *Libp2pNetwork) ProcessVote(bs store.BlockStore, ld *ledger.Ledger, mp 
 
 	if committed && needApply {
 		logx.Info("VOTE", "Committed vote from OnVote Received: slot= ", vote.Slot, ",voter= ", vote.VoterID)
-		err := ln.applyDataToBlock(vote, bs, ld)
+		err := ln.applyDataToBlock(vote, bs, ld, mp)
 		if err != nil {
 			logx.Error("VOTE", "Failed to apply data to block: ", err)
 			return err

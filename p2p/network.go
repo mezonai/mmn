@@ -395,6 +395,9 @@ func (ln *Libp2pNetwork) startCoreServices(ctx context.Context) {
 	if ln.OnStartValidator != nil {
 		ln.OnStartValidator()
 	}
+	if ln.OnStartLoadTxHashes != nil {
+		ln.OnStartLoadTxHashes()
+	}
 
 	ln.SetupPubSubTopics(ctx)
 
