@@ -31,6 +31,7 @@ jobs:
       - name: Checkout for git history
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - name: Calculate new tag
