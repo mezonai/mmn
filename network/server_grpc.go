@@ -2,23 +2,26 @@ package network
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"time"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mezonai/mmn/faucet"
+	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
+
 	"github.com/mezonai/mmn/events"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
 	"github.com/mezonai/mmn/ledger"
-	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
-	"github.com/mezonai/mmn/store"
-	"github.com/mezonai/mmn/transaction"
-	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
@@ -32,30 +35,32 @@ type server struct {
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
-	ledger      *ledger.Ledger
-	selfID      string
-	validator   *validator.Validator
-	blockStore  store.BlockStore
-	mempool     *mempool.Mempool
-	eventRouter *events.EventRouter          // Event router for complex event logic
-	rateLimiter *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
-	txSvc       interfaces.TxService
-	acctSvc     interfaces.AccountService
-	healthSvc   interfaces.HealthService
+	ledger            *ledger.Ledger
+	selfID            string
+	validator         *validator.Validator
+	blockStore        store.BlockStore
+	mempool           *mempool.Mempool
+	eventRouter       *events.EventRouter          // Event router for complex event logic
+	rateLimiter       *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
+	txSvc             interfaces.TxService
+	acctSvc           interfaces.AccountService
+	healthSvc         interfaces.HealthService
+	multisigFaucetSvc *faucet.MultisigFaucetService
 }
 
-func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
+func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService, multisigFaucetSvc *faucet.MultisigFaucetService) *grpc.Server {
 	s := &server{
-		ledger:      ld,
-		selfID:      selfID,
-		blockStore:  blockStore,
-		validator:   validator,
-		mempool:     mempool,
-		eventRouter: eventRouter,
-		rateLimiter: rateLimiter,
-		txSvc:       txSvc,
-		acctSvc:     acctSvc,
-		healthSvc:   healthSvc,
+		ledger:            ld,
+		selfID:            selfID,
+		blockStore:        blockStore,
+		validator:         validator,
+		mempool:           mempool,
+		eventRouter:       eventRouter,
+		rateLimiter:       rateLimiter,
+		txSvc:             txSvc,
+		acctSvc:           acctSvc,
+		healthSvc:         healthSvc,
+		multisigFaucetSvc: multisigFaucetSvc,
 	}
 
 	// Initialize shared services
@@ -529,5 +534,290 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 		TotalBlocks: uint32(len(blocks)),
 		Decimals:    uint32(config.GetDecimalsFactor()),
 		Errors:      errors,
+	}, nil
+}
+
+// Multisig Faucet Methods
+
+// CreateFaucetRequest creates a new multisig faucet request
+func (s *server) CreateFaucetRequest(ctx context.Context, req *pb.CreateFaucetRequestRequest) (*pb.CreateFaucetRequestResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.CreateFaucetRequestResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	// Parse amount
+	amount := utils.Uint256FromString(req.Amount)
+
+	// Decode signature
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.CreateFaucetRequestResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	// Create faucet request
+	tx, err := s.multisigFaucetSvc.CreateFaucetRequest(
+		req.MultisigAddress,
+		amount,
+		req.TextData,
+		req.SignerPubkey,
+		signature,
+		req.ZkProof,
+		req.ZkPub,
+	)
+	if err != nil {
+		return &pb.CreateFaucetRequestResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to create faucet request: %v", err),
+		}, nil
+	}
+
+	return &pb.CreateFaucetRequestResponse{
+		Success: true,
+		Message: "Faucet request created successfully",
+		TxHash:  tx.Hash(),
+	}, nil
+}
+
+func (s *server) CheckWhitelistStatus(ctx context.Context, req *pb.CheckWhitelistStatusRequest) (*pb.CheckWhitelistStatusResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.CheckWhitelistStatusResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	logx.Info("MultisigFaucetGRPC", "CheckWhitelistStatus called",
+		"address", req.Address)
+
+	isApprover := s.multisigFaucetSvc.IsApprover(req.Address)
+	isProposer := s.multisigFaucetSvc.IsProposer(req.Address)
+
+	return &pb.CheckWhitelistStatusResponse{
+		Success:    true,
+		Message:    "Whitelist status retrieved",
+		IsApprover: isApprover,
+		IsProposer: isProposer,
+	}, nil
+}
+
+func (s *server) AddSignature(ctx context.Context, req *pb.AddSignatureRequest) (*pb.AddSignatureResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	err = s.multisigFaucetSvc.AddSignature(req.TxHash, req.SignerPubkey, signature, req.ZkProof, req.ZkPub, req.Approve)
+	if err != nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to add signature: %v", err),
+		}, nil
+	}
+
+	tx, err := s.multisigFaucetSvc.GetMultisigTx(req.TxHash)
+	if err != nil {
+		return &pb.AddSignatureResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to get transaction: %v", err),
+		}, nil
+	}
+
+	return &pb.AddSignatureResponse{
+		Success:        true,
+		Message:        "Signature added successfully",
+		SignatureCount: int32(len(tx.Signatures)),
+	}, nil
+}
+
+func (s *server) GetMultisigTransactionStatus(ctx context.Context, req *pb.GetMultisigTransactionStatusRequest) (*pb.GetMultisigTransactionStatusResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.GetMultisigTransactionStatusResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	tx, err := s.multisigFaucetSvc.GetMultisigTx(req.TxHash)
+	if err != nil {
+		return &pb.GetMultisigTransactionStatusResponse{
+			Success: false,
+			Message: fmt.Sprintf("Transaction not found: %v", err),
+		}, nil
+	}
+
+	return &pb.GetMultisigTransactionStatusResponse{
+		Success:        true,
+		Message:        tx.TextData,
+		Status:         tx.Status,
+		SignatureCount: int32(len(tx.Signatures)),
+	}, nil
+}
+
+func (s *server) AddToApproverWhitelist(ctx context.Context, req *pb.AddToApproverWhitelistRequest) (*pb.AddToApproverWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.AddToApproverWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.AddToApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	err = s.multisigFaucetSvc.AddToApproverWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub, req.Approve)
+	if err != nil {
+		return &pb.AddToApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to add to approver whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.AddToApproverWhitelistResponse{
+		Success: true,
+		Message: "Address added to approver whitelist successfully",
+	}, nil
+}
+
+func (s *server) AddToProposerWhitelist(ctx context.Context, req *pb.AddToProposerWhitelistRequest) (*pb.AddToProposerWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.AddToProposerWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.AddToProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	err = s.multisigFaucetSvc.AddToProposerWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub, req.Approve)
+	if err != nil {
+		return &pb.AddToProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to add to proposer whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.AddToProposerWhitelistResponse{
+		Success: true,
+		Message: "Address added to proposer whitelist successfully",
+	}, nil
+}
+
+func (s *server) RemoveFromApproverWhitelist(ctx context.Context, req *pb.RemoveFromApproverWhitelistRequest) (*pb.RemoveFromApproverWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.RemoveFromApproverWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.RemoveFromApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	err = s.multisigFaucetSvc.RemoveFromApproverWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub, req.Approve)
+	if err != nil {
+		return &pb.RemoveFromApproverWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to remove from approver whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.RemoveFromApproverWhitelistResponse{
+		Success: true,
+		Message: "Address removed from approver whitelist successfully",
+	}, nil
+}
+
+func (s *server) RemoveFromProposerWhitelist(ctx context.Context, req *pb.RemoveFromProposerWhitelistRequest) (*pb.RemoveFromProposerWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.RemoveFromProposerWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	signature, err := hex.DecodeString(req.Signature)
+	if err != nil {
+		return &pb.RemoveFromProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Invalid signature format: %v", err),
+		}, nil
+	}
+
+	err = s.multisigFaucetSvc.RemoveFromProposerWhitelist(req.Address, req.SignerPubkey, signature, req.ZkProof, req.ZkPub, req.Approve)
+	if err != nil {
+		return &pb.RemoveFromProposerWhitelistResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to remove from proposer whitelist: %v", err),
+		}, nil
+	}
+
+	return &pb.RemoveFromProposerWhitelistResponse{
+		Success: true,
+		Message: "Address removed from proposer whitelist successfully",
+	}, nil
+}
+
+func (s *server) GetApproverWhitelist(ctx context.Context, req *pb.GetApproverWhitelistRequest) (*pb.GetApproverWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.GetApproverWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	addresses := s.multisigFaucetSvc.GetApproverWhitelist()
+
+	return &pb.GetApproverWhitelistResponse{
+		Success:   true,
+		Message:   "Approver whitelist retrieved successfully",
+		Addresses: addresses,
+	}, nil
+}
+
+func (s *server) GetProposerWhitelist(ctx context.Context, req *pb.GetProposerWhitelistRequest) (*pb.GetProposerWhitelistResponse, error) {
+	if s.multisigFaucetSvc == nil {
+		return &pb.GetProposerWhitelistResponse{
+			Success: false,
+			Message: "Multisig faucet service not initialized",
+		}, nil
+	}
+
+	addresses := s.multisigFaucetSvc.GetProposerWhitelist()
+
+	return &pb.GetProposerWhitelistResponse{
+		Success:   true,
+		Message:   "Proposer whitelist retrieved successfully",
+		Addresses: addresses,
 	}, nil
 }

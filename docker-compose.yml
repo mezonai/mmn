@@ -36,7 +36,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2" --multisig-addresses "25Rr7PryVXBDippJius2esQiqN7o1uJRNfAYoPJvA9YF" --multisig-addresses "H1nFx9Wyu6FgVQa6syuJAdE5vCHNhwfpQp79moT7VvqN"
       '
     depends_on:
       - bootnode

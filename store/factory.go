@@ -58,42 +58,48 @@ func NewStoreFactory() *StoreFactory {
 }
 
 // CreateStoreWithProvider creates store instances using the provider pattern
-func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, error) {
+func (sf *StoreFactory) CreateStoreWithProvider(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, MultisigFaucetStore, error) {
 	if config == nil {
-		return nil, nil, nil, nil, fmt.Errorf("config cannot be nil")
+		return nil, nil, nil, nil, nil, fmt.Errorf("config cannot be nil")
 	}
 
 	if err := config.Validate(); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("invalid config: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("invalid config: %w", err)
 	}
 
 	// Create the appropriate provider
 	provider, err := sf.CreateProvider(config)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create provider: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create provider: %w", err)
 	}
 
 	accStore, err := NewGenericAccountStore(provider)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create account store: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create account store: %w", err)
 	}
 
 	txStore, err := NewGenericTxStore(provider)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create transaction store: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create transaction store: %w", err)
 	}
 
 	txMetaStore, err := NewGenericTxMetaStore(provider)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create transaction meta store: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create transaction meta store: %w", err)
 	}
 
 	blkStore, err := NewGenericBlockStore(provider, txStore, txMetaStore, eventRouter)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("failed to create block store: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create block store: %w", err)
 	}
 
-	return accStore, txStore, txMetaStore, blkStore, nil
+	multisigFaucetStore, err := NewGenericMultisigFaucetStore(provider)
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create multisig faucet store: %w", err)
+	}
+
+
+	return accStore, txStore, txMetaStore, blkStore, multisigFaucetStore, nil
 }
 
 // CreateProvider creates a database provider based on the configuration
@@ -126,6 +132,6 @@ func (sf *StoreFactory) CreateProvider(config *StoreConfig) (db.DatabaseProvider
 var globalFactory = NewStoreFactory()
 
 // CreateStore creates new store instances using the global factory
-func CreateStore(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, error) {
+func CreateStore(config *StoreConfig, eventRouter *events.EventRouter) (AccountStore, TxStore, TxMetaStore, BlockStore, MultisigFaucetStore, error) {
 	return globalFactory.CreateStoreWithProvider(config, eventRouter)
 }

@@ -35,6 +35,10 @@ type Mempool struct {
 	broadcaster       interfaces.Broadcaster
 	ledger            interfaces.Ledger
 
+	// Performance optimization: index map to avoid O(n) scans in ready queue
+	readyQueueIndex  map[string]map[uint64]bool
+	isMultisigWallet func(sender string) bool
+
 	dedupService *DedupService
 	eventRouter  *events.EventRouter                    // Event router for transaction status updates
 	txTracker    interfaces.TransactionTrackerInterface // Transaction state tracker

@@ -12,4 +12,10 @@ const (
 
 	PrefixTx     = "tx:"
 	PrefixTxMeta = "tx_meta:"
+
+	PrefixMultisigConfig = "multisig_config:"
+	PrefixMultisigTx     = "multisig_tx:"
+	PrefixMultisigSig    = "multisig_sig:"
+	PrefixProposer		 = "whitelist:proposer"
+	PrefixApprover		 = "whitelist:approver"
 )

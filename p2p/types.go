@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mezonai/mmn/config"
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/zkverify"
@@ -43,6 +44,14 @@ type Libp2pNetwork struct {
 	topicLatestSlot        *pubsub.Topic
 	topicCheckpointRequest *pubsub.Topic
 
+	topicFaucetMultisigTx       *pubsub.Topic
+	topicFaucetConfig           *pubsub.Topic
+	topicFaucetWhitelist        *pubsub.Topic
+	topicFaucetVote             *pubsub.Topic
+	topicRequestFaucetVote      *pubsub.Topic
+	topicRequesInitFaucetConfig *pubsub.Topic
+	topicInitFaucetConfig       *pubsub.Topic
+
 	onBlockReceived        func(broadcastedBlock *block.BroadcastedBlock) error
 	onEmptyBlockReceived   func(blocks []*block.BroadcastedBlock) error
 	onVoteReceived         func(*consensus.Vote) error
@@ -52,6 +61,7 @@ type Libp2pNetwork struct {
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	OnForceResetPOH        func(seedHash [32]byte, slot uint64)
 	OnGetLatestPohSlot     func() uint64
+	OnFaucetVote           func(txHash string, voterID peer.ID, approve bool)
 
 	maxPeers int
 
@@ -89,6 +99,14 @@ type Libp2pNetwork struct {
 
 	// ZK verify for transaction verification
 	zkVerify *zkverify.ZkVerify
+	// Multisig faucet store
+	multisigStore          store.MultisigFaucetStore
+	HandleFaucetWhitelist  func(msg *faucet.FaucetSyncWhitelistMessage) error
+	HandleFaucetConfig     func(msg *faucet.FaucetSyncConfigMessage) error
+	HandleFaucetMultisigTx func(msg *faucet.FaucetSyncTransactionMessage) error
+	VerifyVote             func(msg *faucet.RequestFaucetVoteMessage) bool
+	GetFaucetConfig        func() *faucet.RequestInitFaucetConfigMessage
+	HandleInitFaucetConfig func(msg *faucet.RequestInitFaucetConfigMessage) error
 }
 
 type PeerInfo struct {
@@ -196,4 +214,10 @@ type SnapshotAnnounce struct {
 }
 
 type SnapshotRequest struct {
+}
+
+type FaucetVoteMessage struct {
+	TxHash  string  `json:"tx_hash"`
+	VoterID peer.ID `json:"voter_id"`
+	Approve bool    `json:"approve"`
 }

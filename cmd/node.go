@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/holiman/uint256"
+	"github.com/mezonai/mmn/faucet"
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/security/abuse"
 	"github.com/mezonai/mmn/service"
@@ -23,6 +25,7 @@ import (
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
+	"github.com/mezonai/mmn/types"
 
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/consensus"
@@ -56,7 +59,9 @@ var (
 	// legacy init command
 	// database backend
 	databaseBackend string
-	enableRateLimit bool
+	// multisig faucet flags
+	multisigAddresses []string
+	enableRateLimit   bool
 )
 
 var runCmd = &cobra.Command{
@@ -81,6 +86,7 @@ func init() {
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().StringArrayVar(&multisigAddresses, "multisig-addresses", []string{}, "List of multisig signer addresses")
 	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
 }
 
@@ -145,7 +151,7 @@ func runNode() {
 	eventRouter := events.NewEventRouter(eventBus)
 
 	// Initialize db store inside directory
-	as, ts, tms, bs, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
+	as, ts, tms, bs, multisigStore, err := initializeDBStore(dbStoreDir, databaseBackend, eventRouter)
 	if err != nil {
 		logx.Error("NODE", "Failed to initialize blockstore:", err.Error())
 		return
@@ -154,6 +160,11 @@ func runNode() {
 	defer ts.MustClose()
 	defer tms.MustClose()
 	defer as.MustClose()
+	if multisigStore != nil {
+		if store, ok := multisigStore.(interface{ MustClose() }); ok {
+			defer store.MustClose()
+		}
+	}
 
 	// Load genesis configuration from file
 	cfg, err := loadConfiguration(genesisPath)
@@ -194,7 +205,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode, multisigStore)
 	if err != nil {
 		log.Printf("Failed to initialize network: %v", err)
 		return
@@ -236,7 +247,14 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker)
+	// Initialize multisig faucet service if addresses provided
+	var multisigService *faucet.MultisigFaucetService
+
+	f := len(cfg.LeaderSchedule) / 3
+	q := max(2*f, 1)
+	multisigService = initializeMultisigFaucet(multisigStore, q, multisigAddresses, as, mp, zkVerify, libP2pClient, nodeConfig.PubKey, privKey, eventRouter)
+
+	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker, multisigService)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
@@ -250,7 +268,68 @@ func runNode() {
 	<-ctx.Done()
 }
 
-// loadConfiguration loads all configuration files
+func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders int, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool, zkVerify *zkverify.ZkVerify, libP2pClient *p2p.Libp2pNetwork, selfPubKey string, privkey ed25519.PrivateKey, eventRouter *events.EventRouter) *faucet.MultisigFaucetService {
+	tf := len(addresses) / 3
+	threshold := 0
+	if len(addresses) > 0 {
+		threshold = max(2*tf, 1)
+	}
+
+	vf := leaders / 3
+	voteThreshold := max(2*vf, 1)
+
+	maxAmount := uint256.NewInt(10000000000000)
+	multisigService := faucet.NewMultisigFaucetService(libP2pClient.GetHostId(), voteThreshold, multisigStore, accountStore, mp, maxAmount, zkVerify, libP2pClient.PublishFaucetMultisigTx, libP2pClient.PublishFaucetConfig, libP2pClient.PublishFaucetWhitelist, libP2pClient.PublicRequestFaucetVote, selfPubKey, privkey, eventRouter)
+	libP2pClient.SetFaucetCallbacks(multisigService.HandleFaucetWhitelist, multisigService.HandleFaucetConfig, multisigService.HandleFaucetMultisigTx, multisigService.VerifyVote, multisigService.GetFaucetConfig, multisigService.HandleInitFaucetConfig, multisigService.OnFaucetVoteCollected)
+
+	// Create multisig configuration
+	if len(addresses) > 0 {
+		config, err := faucet.CreateMultisigConfig(threshold, addresses)
+		if err != nil {
+			logx.Error("MULTISIG_FAUCET", "Failed to create multisig config:", err)
+			return nil
+		}
+
+		existingAccount, err := accountStore.GetByAddr(config.Address)
+		if err != nil || existingAccount == nil {
+			faucetAccount := &types.Account{
+				Address: config.Address,
+				Balance: uint256.NewInt(uint64(0)),
+				Nonce:   0,
+			}
+
+			if err := accountStore.Store(faucetAccount); err != nil {
+				logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
+				return nil
+			}
+		}
+
+		_, err = multisigService.GetMultisigConfig(config.Address)
+		if err != nil {
+			if err := multisigService.RegisterMultisigConfig(config); err != nil {
+				logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
+				return nil
+			}
+		}
+
+		finalAccount, err := accountStore.GetByAddr(config.Address)
+		if err != nil || finalAccount == nil {
+			logx.Error("MULTISIG_FAUCET", "Failed to get final account info", "address", config.Address, "error", err)
+			return nil
+		}
+
+		logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized",
+			"address", config.Address,
+			"balance", finalAccount.Balance.String(),
+			"signers", len(config.Signers),
+			"max_amount", maxAmount.String())
+
+	}
+
+	return multisigService
+
+}
+
 func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 	cfg, err := config.LoadGenesisConfig(genesisPath)
 	if err != nil {
@@ -260,11 +339,11 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 }
 
 // initializeDBStore initializes the block storage backend using the factory pattern
-func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
+func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, store.MultisigFaucetStore, error) {
 	// Create data folder if not exist
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		logx.Error("INIT", "Failed to create db store directory:", err.Error())
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// Create store configuration with StoreType
@@ -276,11 +355,15 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 
 	// Validate the configuration (this will check if the backend is supported)
 	if err := storeCfg.Validate(); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("invalid blockstore configuration: %w", err)
 	}
 
 	// Use the factory pattern to create the store
-	return store.CreateStore(storeCfg, eventRouter)
+	accountStore, txStore, txMetaStore, blockStore, multisigStore, err := store.CreateStore(storeCfg, eventRouter)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	return accountStore, txStore, txMetaStore, blockStore, multisigStore, nil
 }
 
 // initializePoH initializes Proof of History components
@@ -310,7 +393,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string, multisigStore store.MultisigFaucetStore) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -323,6 +406,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		ts,
 		pohCfg,
 		mode == LISTEN_MODE,
+		multisigStore,
 	)
 
 	return libp2pNetwork, err
@@ -375,7 +459,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 
 // startServices starts all network and API services
 func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
-	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
+	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, multisigService *faucet.MultisigFaucetService) {
 	abuseConfig := abuse.DefaultAbuseConfig()
 	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
 
@@ -402,10 +486,11 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 		txSvc,
 		acctSvc,
 		healthSvc,
+		multisigService,
 	)
 	_ = grpcSrv // Keep server running
 
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, enableRateLimit)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, enableRateLimit, multisigService)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {

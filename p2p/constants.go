@@ -9,20 +9,28 @@ const (
 	CheckpointProtocol     = "/checkpoint-hash"
 	SnapshotSyncProtocol   = "/snapshot-sync"
 
-	TopicBlocks            = "blocks"
-	TopicVotes             = "votes"
-	TopicTxs               = "transactions"
-	TopicEmptyBlocks       = "block-sync/empty-blocks"
-	BlockSyncRequestTopic  = "block-sync/request"
-	BlockSyncResponseTopic = "block-sync/response"
-	TopicSnapshotAnnounce  = "snapshot/announce"
-	TopicSnapshotRequest   = "snapshot/request"
-	LatestSlotTopic        = "latest-slot/request"
-	CheckpointRequestTopic = "checkpoint/request"
-	SnapshotRequestTopic   = "snapshot/request"
-	SnapshotResponseTopic  = "snapshot/response"
-	SnapshotSyncTopic      = "snapshot/sync"
-	AdvertiseName          = "mmn"
+	TopicBlocks                  = "blocks"
+	TopicVotes                   = "votes"
+	TopicTxs                     = "transactions"
+	TopicEmptyBlocks             = "block-sync/empty-blocks"
+	BlockSyncRequestTopic        = "block-sync/request"
+	BlockSyncResponseTopic       = "block-sync/response"
+	TopicSnapshotAnnounce        = "snapshot/announce"
+	TopicSnapshotRequest         = "snapshot/request"
+	LatestSlotTopic              = "latest-slot/request"
+	CheckpointRequestTopic       = "checkpoint/request"
+	SnapshotRequestTopic         = "snapshot/request"
+	SnapshotResponseTopic        = "snapshot/response"
+	SnapshotSyncTopic            = "snapshot/sync"
+	TopicFaucetVote              = "faucet/vote"
+	TopicRequestFaucetVote       = "faucet/request-vote"
+	TopicInitFaucetConfig        = "faucet/init-faucet-config"
+	TopicRequestInitFaucetConfig = "faucet/request-init-faucet-config"
+
+	TopicFaucetMultisigTx = "faucet/multisig-tx"
+	TopicFaucetConfig     = "faucet/config"
+	TopicFaucetWhitelist  = "faucet/whitelist"
+	AdvertiseName         = "mmn"
 )
 
 var (
@@ -34,4 +42,5 @@ var (
 	LatestSlotSyncGapThreshold      uint64        = 1
 	WaitWorldLatestSlotTimeInterval time.Duration = 50 * time.Millisecond
 	InitRequestLatestSlotMaxRetries int           = 3
+	MaxRetrySyncFaucetConfig        int           = 10
 )

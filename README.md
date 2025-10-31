@@ -179,6 +179,49 @@ Mezon (wallet) -> create and sign transaction -> send rpc -> mmn node verify com
 - Take a look [Dashboard](http://localhost:3300/a/grafana-lokiexplore-app/explore) for node monitoring
 - Navigate to [Drilldown > Logs](http://localhost:3300/a/grafana-lokiexplore-app/explore) for logs
 
+# Multisig Faucet Testing
+
+## Prerequisites
+- Docker containers running with multisig addresses configured
+- Genesis file updated with all node addresses in alloc section
+
+## Test Commands
+
+### 1. Get Multisig Address
+```bash
+./mmn multisig get-multisig-address
+```
+
+### 2. Add Proposer to Whitelist
+```bash
+./mmn multisig add-proposer --address <ADDRESS> --private-key-file "config/key2.txt"
+```
+
+### 3. Create Faucet Proposal
+```bash
+./mmn multisig create-proposal --multisig-addr <ADDRESS> --amount "40000" --message "Test faucet request" --private-key-file "config/key1.txt"
+```
+
+### 4. Approve Proposal (First Signature)
+```bash
+./mmn multisig approve --tx-hash <HASH> --private-key-file "config/key2.txt"
+```
+
+### 5. Approve Proposal (Second Signature)
+```bash
+./mmn multisig approve --tx-hash <HASH> --private-key-file "config/key3.txt"
+```
+
+### 6. Check Proposal Status
+```bash
+./mmn multisig status --tx-hash <HASH> --private-key-file "config/key1.txt"
+```
+
+### 7. Get All Proposals
+```bash
+./mmn multisig get-proposals --private-key-file "config/key2.txt"
+```
+
 # Deploy
 
 ## bootstrap address

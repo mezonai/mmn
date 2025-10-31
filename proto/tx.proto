@@ -101,4 +101,145 @@ service TxService {
   rpc GetTxByHash(GetTxByHashRequest) returns (GetTxByHashResponse);  
   rpc SubscribeTransactionStatus(SubscribeTransactionStatusRequest) returns (stream TransactionStatusInfo);
   rpc GetPendingTransactions(GetPendingTransactionsRequest) returns (GetPendingTransactionsResponse);
+
+  // Multisig Faucet RPCs
+  rpc CreateFaucetRequest(CreateFaucetRequestRequest) returns (CreateFaucetRequestResponse);
+  rpc AddSignature(AddSignatureRequest) returns (AddSignatureResponse);
+  rpc GetMultisigTransactionStatus(GetMultisigTransactionStatusRequest) returns (GetMultisigTransactionStatusResponse);
+  rpc AddToApproverWhitelist(AddToApproverWhitelistRequest) returns (AddToApproverWhitelistResponse);
+  rpc AddToProposerWhitelist(AddToProposerWhitelistRequest) returns (AddToProposerWhitelistResponse);
+  rpc RemoveFromApproverWhitelist(RemoveFromApproverWhitelistRequest) returns (RemoveFromApproverWhitelistResponse);
+  rpc RemoveFromProposerWhitelist(RemoveFromProposerWhitelistRequest) returns (RemoveFromProposerWhitelistResponse);
+  rpc CheckWhitelistStatus(CheckWhitelistStatusRequest) returns (CheckWhitelistStatusResponse);
+  rpc GetApproverWhitelist(GetApproverWhitelistRequest) returns (GetApproverWhitelistResponse);
+  rpc GetProposerWhitelist(GetProposerWhitelistRequest) returns (GetProposerWhitelistResponse);
+}
+
+// Multisig Faucet Messages
+message CreateFaucetRequestRequest {
+  string multisig_address = 1;
+  string amount = 3;
+  string text_data = 4;
+  string signer_pubkey = 5;
+  string signature = 6;
+  string zk_proof = 7;
+  string zk_pub = 8;
+}
+
+message CreateFaucetRequestResponse {
+  bool success = 1;
+  string message = 2;
+  string tx_hash = 3;
+}
+
+message AddSignatureRequest {
+  string tx_hash = 1;
+  string signer_pubkey = 2;
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
+  bool approve = 6;
+}
+
+message AddSignatureResponse {
+  bool success = 1;
+  string message = 2;
+  int32 signature_count = 3;
+}
+
+message GetMultisigTransactionStatusRequest {
+  string tx_hash = 1;
+}
+
+message GetMultisigTransactionStatusResponse {
+  bool success = 1;
+  string message = 2;
+  string status = 3;
+  int32 signature_count = 4;
+  int32 required_signatures = 5;
+}
+
+message AddToApproverWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
+  bool   approve = 6;
+}
+
+message AddToApproverWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message AddToProposerWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
+  bool   approve = 6;
+}
+
+message AddToProposerWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RemoveFromApproverWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
+  bool   approve = 6;
+}
+
+message RemoveFromApproverWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RemoveFromProposerWhitelistRequest {
+  string address = 1;
+  string signer_pubkey = 2;
+  string signature = 3;
+  string zk_proof = 4;
+  string zk_pub = 5;
+  bool   approve = 6;
+}
+
+message RemoveFromProposerWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CheckWhitelistStatusRequest {
+  string address = 1;
+}
+
+message CheckWhitelistStatusResponse {
+  bool success = 1;
+  string message = 2;
+  bool is_approver = 3;
+  bool is_proposer = 4;
+}
+
+message GetApproverWhitelistRequest {
+}
+
+message GetApproverWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string addresses = 3;
+}
+
+message GetProposerWhitelistRequest {
+}
+
+message GetProposerWhitelistResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string addresses = 3;
 }
