@@ -45,11 +45,11 @@ func TestEventBus(t *testing.T) {
 		if receivedEvent.Type() != EventTransactionAddedToMempool {
 			t.Errorf("Expected %s, got %s", EventTransactionAddedToMempool, receivedEvent.Type())
 		}
-		if receivedEvent.TxHash() != txHash {
-			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.TxHash())
+		if receivedEvent.Transaction().Hash() != txHash {
+			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.Transaction().Hash())
 		}
-		if receivedEvent.TxExtraInfo() != extraInfo {
-			t.Errorf("Expected extraInfo %s, got %s", extraInfo, receivedEvent.TxExtraInfo())
+		if receivedEvent.Transaction().ExtraInfo != extraInfo {
+			t.Errorf("Expected extraInfo %s, got %s", extraInfo, receivedEvent.Transaction().ExtraInfo)
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event")
@@ -152,8 +152,8 @@ func TestMultipleSubscribers(t *testing.T) {
 	// Both subscribers should receive the event
 	select {
 	case receivedEvent := <-eventChan1:
-		if receivedEvent.TxHash() != txHash {
-			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.TxHash())
+		if receivedEvent.Transaction().Hash() != txHash {
+			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.Transaction().Hash())
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event on channel 1")
@@ -161,8 +161,8 @@ func TestMultipleSubscribers(t *testing.T) {
 
 	select {
 	case receivedEvent := <-eventChan2:
-		if receivedEvent.TxHash() != txHash {
-			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.TxHash())
+		if receivedEvent.Transaction().Hash() != txHash {
+			t.Errorf("Expected txHash %s, got %s", txHash, receivedEvent.Transaction().Hash())
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for event on channel 2")
@@ -247,8 +247,8 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 			t.Errorf("Expected event type %s, got %s", EventTransactionFailed, receivedEvent.Type())
 		}
 
-		if receivedEvent.TxHash() != tx.Hash() {
-			t.Errorf("Expected tx hash %s, got %s", tx.Hash(), receivedEvent.TxHash())
+		if receivedEvent.Transaction().Hash() != tx.Hash() {
+			t.Errorf("Expected tx hash %s, got %s", tx.Hash(), receivedEvent.Transaction().Hash())
 		}
 
 		// Type assert to get error message

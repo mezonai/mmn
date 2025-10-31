@@ -177,7 +177,7 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 		select {
 		case event := <-eventChan:
 			// Convert event to status update for the specific transaction
-			statusUpdate := s.convertEventToStatusUpdate(event, event.TxHash())
+			statusUpdate := s.convertEventToStatusUpdate(event, event.Transaction().Hash())
 			if statusUpdate != nil {
 				if err := stream.Send(statusUpdate); err != nil {
 					return err

@@ -57,6 +57,7 @@ var (
 	// database backend
 	databaseBackend string
 	enableRateLimit bool
+	eventBuffer     int
 )
 
 var runCmd = &cobra.Command{
@@ -82,6 +83,7 @@ func init() {
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
+	runCmd.Flags().IntVar(&eventBuffer, "event-buffer", 256, "Default buffer size for event subscribers")
 }
 
 func runNode() {
@@ -140,6 +142,9 @@ func runNode() {
 
 	// --- Event Bus ---
 	eventBus := events.NewEventBus()
+	if eventBuffer > 0 {
+		eventBus.SetBuffer(eventBuffer)
+	}
 
 	// --- Event Router ---
 	eventRouter := events.NewEventRouter(eventBus)
@@ -235,6 +240,8 @@ func runNode() {
 		log.Println("Shutting down node...")
 		// for now just shutdown p2p network
 		libP2pClient.Close()
+		// stop event bus to prevent further publish/subscribe and release subscribers
+		eventBus.Shutdown()
 		cancel()
 	})
 
