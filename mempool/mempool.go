@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
@@ -191,10 +192,10 @@ func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
 
-	// Validate memo length (max 64 characters)
-	if len(tx.TextData) > MAX_MEMO_CHARACTERS {
+	// Validate memo length using centralized limit
+	if len(tx.TextData) > validation.ValidationMaxTextDataLen {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTERS, len(tx.TextData))
+		return fmt.Errorf("memo too long: max %d chars, got %d", validation.ValidationMaxTextDataLen, len(tx.TextData))
 	}
 
 	// Validate mempool size

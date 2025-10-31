@@ -6,6 +6,10 @@ import (
 	"net"
 	"time"
 
+	"regexp"
+	"strings"
+
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/events"
@@ -16,6 +20,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
@@ -61,6 +66,7 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *val
 	// Initialize shared services
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
+		validationUnaryInterceptor(),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
@@ -77,8 +83,8 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *val
 	grpcSrv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
-		grpc.MaxRecvMsgSize(GRPCMaxRecvMsgSize),
-		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
+		grpc.MaxRecvMsgSize(validation.MaxBodyBytes),
+		grpc.MaxSendMsgSize(validation.MaxResponseBytes),
 	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
@@ -144,6 +150,137 @@ func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnarySer
 		}
 		return handler(ctx, req)
 	}
+}
+
+func validationUnaryInterceptor() grpc.UnaryServerInterceptor {
+	var allowedTextPattern = regexp.MustCompile(`^[\p{L}\p{N}\s._\-:/@#%+*=,;!?()\[\]{}]*$`)
+
+	validators := map[string]func(interface{}) error{
+		"TxService/AddTx":                func(r interface{}) error { return validateGRPCAddTxRequest(r, allowedTextPattern) },
+		"TxService/GetTxByHash":          func(r interface{}) error { return validateTxHashRequest(r) },
+		"AccountService/GetAccount":      func(r interface{}) error { return validateAddressRequest(r) },
+		"AccountService/GetCurrentNonce": func(r interface{}) error { return validateAddressAndTagRequest(r) },
+		"BlockService/GetBlockByRange":   func(r interface{}) error { return validateBlockRangeRequest(r) },
+	}
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		for suffix, v := range validators {
+			if strings.HasSuffix(info.FullMethod, suffix) {
+				if err := v(req); err != nil {
+					return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+				}
+				break
+			}
+		}
+		return handler(ctx, req)
+	}
+}
+
+func validateGRPCAddTxRequest(req interface{}, textPattern *regexp.Regexp) error {
+	msg, ok := req.(*pb.SignedTxMsg)
+	if !ok || msg == nil || msg.TxMsg == nil {
+		return fmt.Errorf("malformed SignedTxMsg")
+	}
+	tx := msg.TxMsg
+
+	if tx.Sender == "" || tx.Recipient == "" {
+		return fmt.Errorf("sender/recipient required")
+	}
+	if !isValidBase58AddressStrict(tx.Sender) || !isValidBase58AddressStrict(tx.Recipient) {
+		return fmt.Errorf("sender/recipient must be valid base58")
+	}
+	if len(tx.Amount) == 0 || len(tx.Amount) > validation.ValidationMaxAmountLen {
+		return fmt.Errorf("amount length out of range")
+	}
+	if len(tx.TextData) > validation.ValidationMaxTextDataLen {
+		return fmt.Errorf("text_data too long")
+	}
+	if tx.TextData != "" && !textPattern.MatchString(tx.TextData) {
+		return fmt.Errorf("text_data contains disallowed characters")
+	}
+	if containsInjectionPatterns(tx.TextData) || containsInjectionPatterns(tx.ExtraInfo) {
+		logx.Warn("INJECTION", "suspicious patterns detected in text fields")
+		return fmt.Errorf("text contains suspicious patterns")
+	}
+	if len(msg.Signature) == 0 || len(msg.Signature) > validation.ValidationMaxSignatureLen {
+		return fmt.Errorf("signature missing or too long")
+	}
+	return nil
+}
+
+func validateTxHashRequest(req interface{}) error {
+	r, ok := req.(*pb.GetTxByHashRequest)
+	if !ok || r == nil || r.TxHash == "" {
+		return fmt.Errorf("tx_hash required")
+	}
+	if len(r.TxHash) > validation.ValidationMaxTxHashLen {
+		return fmt.Errorf("tx_hash too long")
+	}
+	return nil
+}
+
+func validateAddressRequest(req interface{}) error {
+	r, ok := req.(*pb.GetAccountRequest)
+	if !ok || r == nil || r.Address == "" {
+		return fmt.Errorf("address required")
+	}
+	if !isValidBase58AddressStrict(r.Address) {
+		return fmt.Errorf("address must be valid base58")
+	}
+	return nil
+}
+
+func validateAddressAndTagRequest(req interface{}) error {
+	r, ok := req.(*pb.GetCurrentNonceRequest)
+	if !ok || r == nil || r.Address == "" {
+		return fmt.Errorf("address required")
+	}
+	if !isValidBase58AddressStrict(r.Address) {
+		return fmt.Errorf("address must be valid base58")
+	}
+	if r.Tag != "latest" && r.Tag != "pending" {
+		return fmt.Errorf("tag must be 'latest' or 'pending'")
+	}
+	return nil
+}
+
+func isValidBase58AddressStrict(addr string) bool {
+	if !common.IsValidBase58(addr) {
+		return false
+	}
+	b, err := common.DecodeBase58ToBytes(addr)
+	if err != nil {
+		return false
+	}
+	return len(b) >= 32
+}
+
+func containsInjectionPatterns(s string) bool {
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
+	for _, p := range validation.InjectionPatterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateBlockRangeRequest(req interface{}) error {
+	r, ok := req.(*pb.GetBlockByRangeRequest)
+	if !ok || r == nil {
+		return fmt.Errorf("malformed GetBlockByRangeRequest")
+	}
+	if r.FromSlot > r.ToSlot {
+		return fmt.Errorf("from_slot (%d) cannot be greater than to_slot (%d)", r.FromSlot, r.ToSlot)
+	}
+	total := r.ToSlot - r.FromSlot + 1
+	if total > validation.ValidationMaxBlockRange {
+		return fmt.Errorf("range too large: %d blocks requested, maximum allowed: %d", total, validation.ValidationMaxBlockRange)
+	}
+	return nil
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
@@ -410,21 +547,8 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequest) (*pb.GetBlockByRangeResponse, error) {
 	logx.Info("GRPC SERVER", fmt.Sprintf("GetBlockByRange: retrieving blocks from %d to %d", in.FromSlot, in.ToSlot))
 
-	// Validate input
-	if in.FromSlot > in.ToSlot {
-		logx.Error("GRPC SERVER", fmt.Sprintf("from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot))
-		return nil, status.Errorf(codes.InvalidArgument, "from_slot (%d) cannot be greater than to_slot (%d)", in.FromSlot, in.ToSlot)
-	}
-
 	// Calculate total blocks in range
 	totalBlocks := in.ToSlot - in.FromSlot + 1
-
-	// Reject if range is too large
-	const maxRange = 500
-	if totalBlocks > maxRange {
-		logx.Error("GRPC SERVER", fmt.Sprintf("range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange))
-		return nil, status.Errorf(codes.InvalidArgument, "range too large: %d blocks requested, maximum allowed: %d", totalBlocks, maxRange)
-	}
 
 	// Prepare slot range for batch operation
 	slots := make([]uint64, 0, totalBlocks)
