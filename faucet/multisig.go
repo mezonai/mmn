@@ -3,19 +3,13 @@ package faucet
 import (
 	"crypto/sha256"
 	"fmt"
+	"strings"
 
 	"github.com/mezonai/mmn/types"
 	"github.com/mr-tron/base58"
 )
 
 func CreateMultisigConfig(threshold int, signers []string) (*types.MultisigConfig, error) {
-	if len(signers) < 2 {
-		return nil, fmt.Errorf("invalid signers: %d", len(signers))
-	}
-
-	if threshold <= 0 || threshold > len(signers) {
-		return nil, fmt.Errorf("invalid threshold: %d", threshold)
-	}
 
 	address, err := generateMultisigAddress(threshold, signers)
 	if err != nil {
@@ -29,9 +23,11 @@ func CreateMultisigConfig(threshold int, signers []string) (*types.MultisigConfi
 }
 
 func generateMultisigAddress(threshold int, signers []string) (string, error) {
-	configData := fmt.Sprintf("multisig:%d:%s", threshold, signers[0])
-	for i := 1; i < len(signers); i++ {
-		configData += ":" + signers[i]
+	var configData string
+	if len(signers) == 0 {
+		configData = fmt.Sprintf("multisig:%d", threshold)
+	} else {
+		configData = fmt.Sprintf("multisig:%d:%s", threshold, strings.Join(signers, ":"))
 	}
 
 	hash := sha256.Sum256([]byte(configData))

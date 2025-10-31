@@ -270,7 +270,10 @@ func runNode() {
 
 func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders int, addresses []string, accountStore store.AccountStore, mp *mempool.Mempool, zkVerify *zkverify.ZkVerify, libP2pClient *p2p.Libp2pNetwork, selfPubKey string, privkey ed25519.PrivateKey, eventRouter *events.EventRouter) *faucet.MultisigFaucetService {
 	tf := len(addresses) / 3
-	threshold := max(2*tf, 1)
+	threshold := 0
+	if len(addresses) > 0 {
+		threshold = max(2*tf, 1)
+	}
 
 	vf := leaders / 3
 	voteThreshold := max(2*vf, 1)
@@ -280,47 +283,51 @@ func initializeMultisigFaucet(multisigStore store.MultisigFaucetStore, leaders i
 	libP2pClient.SetFaucetCallbacks(multisigService.HandleFaucetWhitelist, multisigService.HandleFaucetConfig, multisigService.HandleFaucetMultisigTx, multisigService.VerifyVote, multisigService.GetFaucetConfig, multisigService.HandleInitFaucetConfig, multisigService.OnFaucetVoteCollected)
 
 	// Create multisig configuration
-	config, err := faucet.CreateMultisigConfig(threshold, addresses)
-	if err != nil {
-		logx.Error("MULTISIG_FAUCET", "Failed to create multisig config:", err)
-		return nil
-	}
-
-	existingAccount, err := accountStore.GetByAddr(config.Address)
-	if err != nil || existingAccount == nil {
-		faucetAccount := &types.Account{
-			Address: config.Address,
-			Balance: uint256.NewInt(100000000000000000),
-			Nonce:   0,
-		}
-
-		if err := accountStore.Store(faucetAccount); err != nil {
-			logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
+	if len(addresses) > 0 {
+		config, err := faucet.CreateMultisigConfig(threshold, addresses)
+		if err != nil {
+			logx.Error("MULTISIG_FAUCET", "Failed to create multisig config:", err)
 			return nil
 		}
-	}
 
-	_, err = multisigService.GetMultisigConfig(config.Address)
-	if err != nil {
-		if err := multisigService.RegisterMultisigConfig(config); err != nil {
-			logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
+		existingAccount, err := accountStore.GetByAddr(config.Address)
+		if err != nil || existingAccount == nil {
+			faucetAccount := &types.Account{
+				Address: config.Address,
+				Balance: uint256.NewInt(uint64(0)),
+				Nonce:   0,
+			}
+
+			if err := accountStore.Store(faucetAccount); err != nil {
+				logx.Error("MULTISIG_FAUCET", "Failed to create faucet account:", err)
+				return nil
+			}
+		}
+
+		_, err = multisigService.GetMultisigConfig(config.Address)
+		if err != nil {
+			if err := multisigService.RegisterMultisigConfig(config); err != nil {
+				logx.Error("MULTISIG_FAUCET", "Failed to register multisig config:", err)
+				return nil
+			}
+		}
+
+		finalAccount, err := accountStore.GetByAddr(config.Address)
+		if err != nil || finalAccount == nil {
+			logx.Error("MULTISIG_FAUCET", "Failed to get final account info", "address", config.Address, "error", err)
 			return nil
 		}
-	}
 
-	finalAccount, err := accountStore.GetByAddr(config.Address)
-	if err != nil || finalAccount == nil {
-		logx.Error("MULTISIG_FAUCET", "Failed to get final account info", "address", config.Address, "error", err)
-		return nil
-	}
+		logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized",
+			"address", config.Address,
+			"balance", finalAccount.Balance.String(),
+			"signers", len(config.Signers),
+			"max_amount", maxAmount.String())
 
-	logx.Info("MULTISIG_FAUCET", "Multisig faucet service initialized",
-		"address", config.Address,
-		"balance", finalAccount.Balance.String(),
-		"signers", len(config.Signers),
-		"max_amount", maxAmount.String())
+	}
 
 	return multisigService
+
 }
 
 func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {

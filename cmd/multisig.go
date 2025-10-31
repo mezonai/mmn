@@ -46,12 +46,6 @@ const (
 	labelHash                    = "Hash: %s"
 	labelStatus                  = "Status: %s"
 	labelAddress                 = "%d. %s"
-
-	// Required field messages
-	msgAddressRequired      = "--address is required"
-	msgMultisigAddrRequired = "--multisig-addr is required"
-	msgAmountRequired       = "--amount is required"
-	msgTxHashRequired       = "--tx-hash is required"
 )
 
 type MultisigConfig struct {
@@ -539,7 +533,6 @@ func checkStatus(config MultisigConfig) error {
 
 	fmt.Printf(msgProposalStatus + "\n")
 	fmt.Printf(msgStatusLabel+"\n", resp.Status)
-	fmt.Printf(msgSignaturesLabel+"\n", resp.SignatureCount, resp.RequiredSignatures)
 	fmt.Printf(msgMessageLabel+"\n", resp.Message)
 
 	return nil

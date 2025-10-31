@@ -409,10 +409,29 @@ func (ln *Libp2pNetwork) startCoreServices(ctx context.Context) {
 
 	ln.setNodeReady()
 
-	err := ln.topicRequesInitFaucetConfig.Publish(ctx, []byte{})
-	if err != nil {
-		logx.Error("NETWORK:START CORE SERVICES", "Failed to publish block sync request to start block sync: ", err)
-	}
+	exception.SafeGo("RetryRequestInitFaucetConfig", func() {
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		attempts := 0
+		for {
+			select {
+			case <-ticker.C:
+				attempts++
+				if ln.GetFaucetConfig != nil {
+					if cfg := ln.GetFaucetConfig(); cfg != nil && len(cfg.Approvers) > 0 {
+						return
+					}
+				}
+				if ln.topicRequesInitFaucetConfig != nil && attempts <= MaxRetrySyncFaucetConfig {
+					_ = ln.topicRequesInitFaucetConfig.Publish(ln.ctx, []byte{})
+				} else {
+					return
+				}
+			case <-ln.ctx.Done():
+				return
+			}
+		}
+	})
 
 }
 
