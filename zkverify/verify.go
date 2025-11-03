@@ -2,9 +2,7 @@ package zkverify
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"os"
@@ -15,6 +13,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 )
 
@@ -51,13 +50,17 @@ func NewZkVerify(keyPath string) *ZkVerify {
 	}
 
 	zv := &ZkVerify{vk: vk}
-	go zv.cleaner()
+	exception.SafeGoWithPanic("ZkVerifyCleaner", func() {
+		zv.cleaner()
+	})
 	return zv
 }
 
 func (v *ZkVerify) cleaner() {
-	for {
-		time.Sleep(CLEANER_INTERVAL)
+	ticker := time.NewTicker(CLEANER_INTERVAL)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		now := time.Now()
 		v.cache.Range(func(key, value interface{}) bool {
 			entry := value.(CacheEntry)
@@ -70,12 +73,7 @@ func (v *ZkVerify) cleaner() {
 }
 
 func makeCacheKey(sender, pubKey, proofB64, pubB64 string) string {
-	h := sha256.New()
-	h.Write([]byte(sender))
-	h.Write([]byte(pubKey))
-	h.Write([]byte(proofB64))
-	h.Write([]byte(pubB64))
-	return hex.EncodeToString(h.Sum(nil))
+	return sender + "|" + pubKey + "|" + proofB64 + "|" + pubB64
 }
 
 func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
@@ -83,10 +81,7 @@ func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
 
 	if val, ok := v.cache.Load(cacheKey); ok {
 		entry := val.(CacheEntry)
-		if time.Now().Before(entry.expireAt) {
-			return entry.value
-		}
-		v.cache.Delete(cacheKey)
+		return entry.value
 	}
 
 	result := v.verifyInternal(sender, pubKey, proofB64, pubB64)
