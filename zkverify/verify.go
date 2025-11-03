@@ -2,11 +2,15 @@ package zkverify
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -14,8 +18,19 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
+const (
+	CACHE_EXPIRY_DURATION = 30 * time.Minute
+	CLEANER_INTERVAL      = 10 * time.Minute
+)
+
+type CacheEntry struct {
+	value    bool
+	expireAt time.Time
+}
+
 type ZkVerify struct {
-	vk groth16.VerifyingKey
+	vk    groth16.VerifyingKey
+	cache sync.Map // map[string]CacheEntry
 }
 
 func NewZkVerify(keyPath string) *ZkVerify {
@@ -35,10 +50,56 @@ func NewZkVerify(keyPath string) *ZkVerify {
 		return nil
 	}
 
-	return &ZkVerify{vk: vk}
+	zv := &ZkVerify{vk: vk}
+	go zv.cleaner()
+	return zv
+}
+
+func (v *ZkVerify) cleaner() {
+	for {
+		time.Sleep(CLEANER_INTERVAL)
+		now := time.Now()
+		v.cache.Range(func(key, value interface{}) bool {
+			entry := value.(CacheEntry)
+			if now.After(entry.expireAt) {
+				v.cache.Delete(key)
+			}
+			return true
+		})
+	}
+}
+
+func makeCacheKey(sender, pubKey, proofB64, pubB64 string) string {
+	h := sha256.New()
+	h.Write([]byte(sender))
+	h.Write([]byte(pubKey))
+	h.Write([]byte(proofB64))
+	h.Write([]byte(pubB64))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
+	cacheKey := makeCacheKey(sender, pubKey, proofB64, pubB64)
+
+	if val, ok := v.cache.Load(cacheKey); ok {
+		entry := val.(CacheEntry)
+		if time.Now().Before(entry.expireAt) {
+			return entry.value
+		}
+		v.cache.Delete(cacheKey)
+	}
+
+	result := v.verifyInternal(sender, pubKey, proofB64, pubB64)
+
+	v.cache.Store(cacheKey, CacheEntry{
+		value:    result,
+		expireAt: time.Now().Add(CACHE_EXPIRY_DURATION),
+	})
+
+	return result
+}
+
+func (v *ZkVerify) verifyInternal(sender, pubKey, proofB64, pubB64 string) bool {
 	proofBytes, err := base64.StdEncoding.DecodeString(proofB64)
 	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to decode proof: %v", err))
