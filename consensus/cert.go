@@ -91,6 +91,10 @@ func (c *Cert) Validate() error {
 		return fmt.Errorf("missing aggregate signature")
 	}
 
+	if !c.VerifySignature() {
+		return fmt.Errorf("invalid aggregate signature")
+	}
+
 	return nil
 }
 

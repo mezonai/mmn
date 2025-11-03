@@ -12,10 +12,9 @@ import (
 
 // TODO: need logic to cleanup old slots
 type MemBlockStore struct {
-	blockData            map[uint64]*SlotBlockData // slot -> SlotBlockData
-	pool                 *pool.Pool
-	votorChannel         chan votor.VotorEvent
-	entryHashToBlockHash map[[32]byte][32]byte // entry hash -> block hash
+	blockData    map[uint64]*SlotBlockData // slot -> SlotBlockData
+	pool         *pool.Pool
+	votorChannel chan votor.VotorEvent
 }
 
 func NewMemBlockStore(votorChannel chan votor.VotorEvent, pool *pool.Pool, genesisBlock *block.Block) *MemBlockStore {
@@ -30,10 +29,9 @@ func NewMemBlockStore(votorChannel chan votor.VotorEvent, pool *pool.Pool, genes
 	blockData := make(map[uint64]*SlotBlockData)
 	blockData[0] = slotBlockData
 	return &MemBlockStore{
-		blockData:            blockData,
-		pool:                 pool,
-		votorChannel:         votorChannel,
-		entryHashToBlockHash: make(map[[32]byte][32]byte),
+		blockData:    blockData,
+		pool:         pool,
+		votorChannel: votorChannel,
 	}
 }
 
@@ -61,11 +59,9 @@ func (mbs *MemBlockStore) AddBlock(block *block.BroadcastedBlock) {
 	slotBlockData.AddBlock(block)
 	mbs.blockData[slot] = slotBlockData
 
-	// add mapping from entry hash to block hash
-	mbs.entryHashToBlockHash[block.LastEntryHash()] = block.Hash
 	logx.Info("MEM_BLOCKSTORE", fmt.Sprintf("Added block %s in slot %d", block.HashString(), slot))
 
-	parentBlock := mbs.getParentBlock(block.Slot, block.PrevHash)
+	parentBlock := mbs.GetParentBlock(block.Slot, block.PrevHash)
 	logx.Info("MEM_BLOCKSTORE", fmt.Sprintf("Parent block of block %s in slot %d is %s in slot %d", block.HashString(), slot, parentBlock.HashString(), parentBlock.Slot))
 
 	blockInfo := votor.BlockInfo{
@@ -90,7 +86,9 @@ func (mbs *MemBlockStore) AddRepairedBlock(slot uint64, block *block.Broadcasted
 	slotBlockData.AddRepairedBlock(block)
 	mbs.blockData[slot] = slotBlockData
 
-	mbs.pool.AddBlock(pool.BlockId{Slot: block.Slot, BlockHash: block.Hash}, pool.BlockId{Slot: 0, BlockHash: [32]byte{}})
+	parentBlock := mbs.GetParentBlock(block.Slot, block.PrevHash)
+
+	mbs.pool.AddBlock(pool.BlockId{Slot: block.Slot, BlockHash: block.Hash}, pool.BlockId{Slot: parentBlock.Slot, BlockHash: parentBlock.Hash})
 }
 
 func (mbs *MemBlockStore) Prune(finalizedSlot uint64) {
@@ -102,7 +100,7 @@ func (mbs *MemBlockStore) Prune(finalizedSlot uint64) {
 	}
 }
 
-func (mbs *MemBlockStore) getParentBlock(slot uint64, prevHash [32]byte) *block.BroadcastedBlock {
+func (mbs *MemBlockStore) GetParentBlock(slot uint64, prevHash [32]byte) *block.BroadcastedBlock {
 	// If parent is genesis block
 	if slot == 1 {
 		return mbs.blockData[0].GetPrimaryBlocks()
@@ -110,7 +108,7 @@ func (mbs *MemBlockStore) getParentBlock(slot uint64, prevHash [32]byte) *block.
 
 	for s := slot - 1; s > 0; s-- {
 		if slotBlockData, exists := mbs.blockData[s]; exists {
-			if blk := slotBlockData.GetBlock(mbs.entryHashToBlockHash[prevHash]); blk != nil {
+			if blk := slotBlockData.GetBlock(prevHash); blk != nil {
 				return blk
 			}
 		}

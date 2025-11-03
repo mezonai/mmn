@@ -1,8 +1,9 @@
 package poh
 
 import (
-	"github.com/mezonai/mmn/logx"
 	"time"
+
+	"github.com/mezonai/mmn/logx"
 
 	"github.com/mezonai/mmn/exception"
 )
@@ -10,7 +11,6 @@ import (
 type PohService struct {
 	Recorder     *PohRecorder
 	TickInterval time.Duration
-	OnEntry      func(entry []Entry)
 	stopCh       chan struct{}
 }
 
@@ -39,13 +39,7 @@ func (s *PohService) tickAndFlush() {
 	for {
 		select {
 		case <-ticker.C:
-			entries := s.Recorder.DrainEntries()
-			if tickEntry := s.Recorder.Tick(); tickEntry != nil {
-				entries = append(entries, *tickEntry)
-			}
-			if len(entries) > 0 && s.OnEntry != nil {
-				s.OnEntry(entries)
-			}
+			s.Recorder.Tick()
 		case <-s.stopCh:
 			logx.Info("POH SERVICE", "Ticking and flushing stopped")
 			return

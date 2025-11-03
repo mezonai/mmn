@@ -305,6 +305,7 @@ func (s *GenericBlockStore) updateLatestStoreSlot(slot uint64) error {
 	return nil
 }
 
+// TODO: consider to remove this function if not used
 // LastEntryInfoAtSlot returns the slot boundary information for the given slot
 func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 	blk := s.Block(slot)

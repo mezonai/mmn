@@ -9,12 +9,12 @@ func IsSlotStartOfWindow(slot uint64) bool {
 }
 
 func FirstSlotInWindow(slot uint64) uint64 {
-	window := slot / SLOTS_PER_WINDOW
+	window := (slot - 1) / SLOTS_PER_WINDOW
 	return window*SLOTS_PER_WINDOW + 1
 }
 
 func LastSlotInWindow(slot uint64) uint64 {
-	window := slot / SLOTS_PER_WINDOW
+	window := (slot - 1) / SLOTS_PER_WINDOW
 	return (window + 1) * SLOTS_PER_WINDOW
 }
 

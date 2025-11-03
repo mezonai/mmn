@@ -168,9 +168,9 @@ func (ft *FinalityTracker) handleFinalizedBlock(finalized BlockId, event *Finali
 
 func (ft *FinalityTracker) handleImplicitlyFinalized(sourceSlot uint64, implicitlyFinalized BlockId, event *FinalizationEvent) {
 
-	// panic if sourceSlot > implicitlyFinalized.Slot
-	if sourceSlot > implicitlyFinalized.Slot {
-		panic("sourceSlot > implicitlyFinalized.Slot")
+	// panic if sourceSlot <= implicitlyFinalized.Slot
+	if sourceSlot <= implicitlyFinalized.Slot {
+		panic("sourceSlot <= implicitlyFinalized.Slot")
 	}
 
 	// Append all implicitly skipped slots

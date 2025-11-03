@@ -45,7 +45,7 @@ func (p *Pool) AddVote(v *consensus.Vote) (bool, error) {
 	logx.Info("POOL", fmt.Sprintf("Received vote of type %v for block %s in slot %d from %s", v.VoteType, hex.EncodeToString(v.BlockHash[:]), v.Slot, v.PubKey))
 
 	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
-	if v.Slot <= latestFinalizedSlot || v.Slot >= latestFinalizedSlot+2*utils.SLOTS_PER_WINDOW {
+	if v.Slot <= latestFinalizedSlot || v.Slot >= latestFinalizedSlot+(2*utils.SLOTS_PER_WINDOW) {
 		return false, errors.New("slot out of range")
 	}
 
@@ -84,12 +84,8 @@ func (p *Pool) AddCert(c *consensus.Cert) (bool, error) {
 	logx.Info("POOL", fmt.Sprintf("Received certificate of type %v for block %s in slot %d", c.CertType, hex.EncodeToString(c.BlockHash[:]), c.Slot))
 
 	latestFinalizedSlot := p.finalityTracker.GetHighestFinalizedSlot()
-	if c.Slot <= latestFinalizedSlot || c.Slot > latestFinalizedSlot+utils.SLOTS_PER_WINDOW {
+	if c.Slot <= latestFinalizedSlot || c.Slot >= latestFinalizedSlot+(2*utils.SLOTS_PER_WINDOW) {
 		return false, errors.New("slot out of range")
-	}
-
-	if valid := c.VerifySignature(); !valid {
-		return false, errors.New("invalid certificate signature")
 	}
 
 	if p.getSlotState(c.Slot).ContainsCert(c) {
@@ -206,6 +202,18 @@ func (p *Pool) AddBlock(blockId BlockId, parentId BlockId) {
 	}
 
 	p.s2nWaitingParentCert[parentId] = blockId
+}
+
+func (p *Pool) GetParentsReady(slot uint64) BlockId {
+	return p.parentReadyTracker.GetParentsReady(slot)
+}
+
+func (p *Pool) IsSlotSkipped(slot uint64) bool {
+	return p.parentReadyTracker.getState(slot).Skip
+}
+
+func (p *Pool) GetHighestFinalizedSlot() uint64 {
+	return p.finalityTracker.GetHighestFinalizedSlot()
 }
 
 func (p *Pool) prune() {

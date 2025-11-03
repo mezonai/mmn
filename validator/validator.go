@@ -3,10 +3,12 @@ package validator
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"fmt"
 	"time"
 
-	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/alpenglow/pool"
+	"github.com/mezonai/mmn/exception"
 
 	"github.com/mezonai/mmn/store"
 
@@ -15,13 +17,14 @@ import (
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
-	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/mempool"
 	"github.com/mezonai/mmn/p2p"
 	"github.com/mezonai/mmn/poh"
 )
 
-const NoSlot = ^uint64(0)
+const (
+	TIMEOUT_FOR_SLOT = 300 * time.Millisecond
+)
 
 // Validator encapsulates leader/follower behavior.
 type Validator struct {
@@ -42,11 +45,15 @@ type Validator struct {
 	p2pClient  *p2p.Libp2pNetwork
 	blockStore store.BlockStore
 	// Slot & entry buffer
-	leaderStartAtSlot uint64
-	collectedEntries  []poh.Entry
-	pendingTxs        []*transaction.Transaction
-	stopCh            chan struct{}
+	pendingTxs    []*transaction.Transaction
+	pool          *pool.Pool
+	slotCh        <-chan uint64
+	timeoutSlotCh chan struct{}
+	stopCh        chan struct{}
 
+	currentSlot     uint64
+	prevBlockHash   [32]byte
+	isWindowSkipped bool
 	// Additional dependencies for block processing
 	onBroadcastBlock func(ctx context.Context, blk *block.BroadcastedBlock) error
 }
@@ -66,6 +73,8 @@ func NewValidator(
 	batchSize int,
 	p2pClient *p2p.Libp2pNetwork,
 	blockStore store.BlockStore,
+	pool *pool.Pool,
+	slotCh <-chan uint64,
 ) *Validator {
 	v := &Validator{
 		Pubkey:                    pubkey,
@@ -78,83 +87,67 @@ func NewValidator(
 		roleMonitorLoopInterval:   roleMonitorLoopInterval,
 		leaderTimeout:             leaderTimeout,
 		leaderTimeoutLoopInterval: leaderTimeoutLoopInterval,
-		BatchSize:                 batchSize,
 		p2pClient:                 p2pClient,
 		blockStore:                blockStore,
-		leaderStartAtSlot:         NoSlot,
-		collectedEntries:          make([]poh.Entry, 0),
 		pendingTxs:                make([]*transaction.Transaction, 0, batchSize),
+		pool:                      pool,
+		slotCh:                    slotCh,
+		timeoutSlotCh:             make(chan struct{}, 1),
+		currentSlot:               0,
+		prevBlockHash:             [32]byte{},
+		isWindowSkipped:           false,
 	}
-	svc.OnEntry = v.handleEntry
-	p2pClient.OnSyncPohFromLeader = v.handleResetPohFromLeader
-	p2pClient.OnForceResetPOH = v.ForceResetPoh
-	p2pClient.OnGetLatestPohSlot = v.Recorder.CurrentPassedSlot
+
+	p2pClient.OnGetLatestSlot = v.getCurrentSlot
 	v.onBroadcastBlock = p2pClient.BroadcastBlockWithProcessing
 	return v
 }
 
 func (v *Validator) onLeaderSlotStart(currentSlot uint64) {
 	logx.Info("LEADER", "onLeaderSlotStart", currentSlot)
-	prevSlot := currentSlot - 1
 	ticker := time.NewTicker(v.leaderTimeoutLoopInterval)
 	deadline := time.NewTimer(v.leaderTimeout)
 	defer ticker.Stop()
 	defer deadline.Stop()
-	var seedHash [32]byte
 
 waitLoop:
 	for {
 		select {
 		case <-ticker.C:
-			if v.blockStore.HasCompleteBlock(prevSlot) {
-				logx.Info("LEADER", fmt.Sprintf("Found complete block in database for slot %d", prevSlot))
-				seedSlot, _ := v.blockStore.LastEntryInfoAtSlot(prevSlot)
-				seedHash = seedSlot.Hash
+			if currentSlot == 1 {
+				logx.Info("LEADER", "Genesis block, using genesis hash as seed")
+				v.prevBlockHash = v.blockStore.Block(0).Hash
+				break waitLoop
+			}
+
+			parentId := v.pool.GetParentsReady(currentSlot)
+			if parentId != (pool.BlockId{}) {
+				logx.Info("LEADER", fmt.Sprintf("Found parent ready for slot %d: %x", currentSlot, hex.EncodeToString(parentId.BlockHash[:])))
+				v.prevBlockHash = parentId.BlockHash
+				v.isWindowSkipped = false
+				break waitLoop
+			} else if v.pool.IsSlotSkipped(currentSlot) {
+				logx.Info("LEADER", fmt.Sprintf("Slot %d is skipped, using previous block hash %x as seed", currentSlot, v.prevBlockHash))
+				v.isWindowSkipped = true
 				break waitLoop
 			} else {
-				logx.Debug("LEADER", fmt.Sprintf("No complete block for slot %d", prevSlot))
+				logx.Info("LEADER", fmt.Sprintf("No parent ready for slot %d yet, waiting...", currentSlot))
 			}
+
 		case <-deadline.C:
-			logx.Warn("LEADER", fmt.Sprintf("Meet at deadline %d", prevSlot))
+			logx.Warn("LEADER", fmt.Sprintf("Meet at deadline %d", currentSlot))
 			lastSeenSlot := v.blockStore.GetLatestStoreSlot()
-
-			// Try POH recorder for latest slot too
-			if hash, ok := v.Recorder.GetSlotHashFromQueue(lastSeenSlot); ok {
-				logx.Info("LEADER", fmt.Sprintf("Using POH recorder hash for latest slot %d at deadline", lastSeenSlot))
-				seedSlot := v.fastForwardTicks(hash, lastSeenSlot, prevSlot)
-				seedHash = seedSlot.Hash
-				break waitLoop
-			}
-
-			// Fallback to database
-			lastSeenEntry, _ := v.blockStore.LastEntryInfoAtSlot(lastSeenSlot)
-			seedSlot := v.fastForwardTicks(lastSeenEntry.Hash, lastSeenEntry.Slot, prevSlot)
-			seedHash = seedSlot.Hash
+			v.prevBlockHash = v.blockStore.Block(lastSeenSlot).Hash
 			break waitLoop
+
 		case <-v.stopCh:
 			return
+
 		}
 	}
 
-	logx.Debug("LEADER", fmt.Sprintf("Reset POH recorder with hash %x for slot %d", seedHash, prevSlot))
-	v.Recorder.Reset(seedHash, prevSlot)
-	v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
 	v.pendingTxs = make([]*transaction.Transaction, 0, v.BatchSize)
-	v.leaderStartAtSlot = currentSlot
 	logx.Info("LEADER", fmt.Sprintf("Leader ready to start at slot: %d", currentSlot))
-}
-
-func (v *Validator) onLeaderSlotEnd() {
-	logx.Info("LEADER", "onLeaderSlotEnd")
-	v.leaderStartAtSlot = NoSlot
-}
-
-func (v *Validator) fastForwardTicks(seenHash [32]byte, fromSlot uint64, toSlot uint64) store.SlotBoundary {
-	hash := v.Recorder.FastForward(seenHash, fromSlot, toSlot)
-	return store.SlotBoundary{
-		Slot: toSlot,
-		Hash: hash,
-	}
 }
 
 // IsLeader checks if this validator is leader for given slot.
@@ -167,82 +160,30 @@ func (v *Validator) IsFollower(slot uint64) bool {
 	return !v.IsLeader(slot)
 }
 
-func (v *Validator) ReadyToStart(slot uint64) bool {
-	return v.IsLeader(slot) && v.leaderStartAtSlot != NoSlot
-}
+// handleCreateBlock creates and broadcasts a block from given entries.
+func (v *Validator) handleCreateBlock(entries []poh.Entry) {
+	if len(entries) != 0 {
+		logx.Info("VALIDATOR", fmt.Sprintf("Creating block in slot %d with %d entries", v.currentSlot, len(entries)))
 
-// handleEntry buffers entries and assembles a block at slot boundary.
-func (v *Validator) handleEntry(entries []poh.Entry) {
-	currentSlot := v.Recorder.CurrentSlot()
-	lastSlot := currentSlot - 1
-	lastEntry := entries[len(entries)-1]
+		blk := block.AssembleBlock(
+			v.currentSlot,
+			v.prevBlockHash,
+			v.Pubkey,
+			entries,
+		)
+		blk.Sign(v.PrivKey)
+		v.prevBlockHash = blk.Hash
+		logx.Info("VALIDATOR", fmt.Sprintf("Created block: slot=%d, entries=%d", v.currentSlot, len(entries)))
 
-	// When we are at the last tick of the slot, assemble block for lastSlot if we were leader
-	if v.Recorder.IsLastTickOfSlot() && v.IsLeader(lastSlot) &&
-		lastEntry.Tick && len(v.collectedEntries) > 0 {
-
-		// Buffer entries
-		v.collectedEntries = append(v.collectedEntries, entries...)
-		copyCollectedEntries := make([]poh.Entry, len(v.collectedEntries))
-		copy(copyCollectedEntries, v.collectedEntries)
-
-		// Assemble block if we have entries
-		if len(copyCollectedEntries) > 0 {
-			// Retrieve previous hash from recorder
-			prevSlot := lastSlot - 1
-			prevHash := v.Recorder.GetSlotHash(prevSlot)
-			logx.Info("VALIDATOR", fmt.Sprintf("Previous hash for slot %d %x", lastSlot-1, prevHash))
-
-			blk := block.AssembleBlock(
-				lastSlot,
-				prevHash,
-				v.Pubkey,
-				copyCollectedEntries,
-			)
-
-			blk.Sign(v.PrivKey)
-			logx.Info("VALIDATOR", fmt.Sprintf("Leader assembled block: slot=%d, entries=%d", lastSlot, len(v.collectedEntries)))
-			prevBlock := v.blockStore.Block(prevSlot)
-			if prevBlock != nil {
-				monitoring.RecordBlockTime(blk.CreationTimestamp().Sub(prevBlock.CreationTimestamp()))
+		exception.SafeGo("onBroadcastBlock", func() {
+			if err := v.onBroadcastBlock(context.Background(), blk); err != nil {
+				logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
 			}
+		})
 
-			// Reset buffer
-			v.collectedEntries = make([]poh.Entry, 0, v.BatchSize)
-
-			exception.SafeGo("onBroadcastBlock", func() {
-				if err := v.onBroadcastBlock(context.Background(), blk); err != nil {
-					logx.Error("VALIDATOR", fmt.Sprintf("Failed to process block before broadcast: %v", err))
-				}
-			})
-		} else {
-			logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", lastSlot))
-		}
-	} else if v.IsLeader(currentSlot) && v.ReadyToStart(currentSlot) {
-		// Buffer entries only if leader of current slot and ready to start
-		logx.Debug("VALIDATOR", fmt.Sprintf("Adding %d entries for slot %d", len(entries), currentSlot))
-		v.collectedEntries = append(v.collectedEntries, entries...)
+	} else {
+		logx.Warn("VALIDATOR", fmt.Sprintf("No entries for slot %d (skip assembling block)", v.currentSlot))
 	}
-}
-
-// Leader to validator to reset poh
-func (v *Validator) handleResetPohFromLeader(seedHash [32]byte, slot uint64) error {
-	logx.Info("VALIDATOR", fmt.Sprintf("Received latest slot %d", slot))
-	currentSlot := v.Recorder.CurrentSlot()
-	// Just reset if
-	// - Incoming block is from other leader
-	// - This node is follower for current slot
-	if v.IsFollower(currentSlot) && v.IsFollower(slot) {
-		logx.Info("VALIDATOR", fmt.Sprintf("Follower received latest slot %d", slot))
-		v.Recorder.Reset(seedHash, slot)
-	}
-	return nil
-}
-
-func (v *Validator) ForceResetPoh(seedHash [32]byte, slot uint64) error {
-	logx.Info("VALIDATOR", fmt.Sprintf("Force reset POH to latest slot %d", slot))
-	v.Recorder.Reset(seedHash, slot)
-	return nil
 }
 
 func (v *Validator) peekPendingTxs(size int) []*transaction.Transaction {
@@ -275,34 +216,53 @@ func (v *Validator) Run() {
 	exception.SafeGoWithPanic("roleMonitorLoop", func() {
 		v.roleMonitorLoop()
 	})
-
-	exception.SafeGoWithPanic("leaderBatchLoop", func() {
-		v.leaderBatchLoop()
-	})
-
-	exception.SafeGoWithPanic("mempoolCleanupLoop", func() {
-		v.mempoolCleanupLoop()
-	})
 }
 
-func (v *Validator) leaderBatchLoop() {
+func (v *Validator) roleMonitorLoop() {
+	stopBatchLoopCh := make(chan struct{})
+
+	for {
+		select {
+		case slot := <-v.slotCh:
+			logx.Info("VALIDATOR", fmt.Sprintf("Slot %d are ready!", slot))
+			v.currentSlot = slot
+			if v.IsLeader(slot) {
+				v.Recorder.DrainEntries() // Reset entries
+				v.setTimeout()
+
+				if utils.IsSlotStartOfWindow(slot) {
+					v.onLeaderSlotStart(slot)
+				}
+
+				if v.isWindowSkipped {
+					continue
+				}
+
+				go v.leaderBatchLoop(slot, stopBatchLoopCh)
+			} else {
+
+			}
+
+		case <-v.timeoutSlotCh:
+			logx.Info("VALIDATOR", fmt.Sprintf("Timeout for slot %d", v.currentSlot))
+			stopBatchLoopCh <- struct{}{}
+			v.handleCreateBlock(v.Recorder.DrainEntries())
+
+		case <-v.stopCh:
+			return
+		}
+	}
+}
+
+func (v *Validator) leaderBatchLoop(slot uint64, stopCh chan struct{}) {
 	batchTicker := time.NewTicker(v.leaderBatchLoopInterval)
 	defer batchTicker.Stop()
 	for {
 		select {
-		case <-v.stopCh:
+		case <-stopCh:
+			logx.Info("LEADER", fmt.Sprintf("Stopping batch loop for slot %d", slot))
 			return
 		case <-batchTicker.C:
-			slot := v.Recorder.CurrentSlot()
-
-			if !v.IsLeader(slot) {
-				continue
-			}
-
-			if !v.ReadyToStart(slot) {
-				logx.Warn("LEADER", fmt.Sprintf("Leader batch loop: leader has not ready to start for slot %d", slot))
-				continue
-			}
 
 			logx.Info("LEADER", fmt.Sprintf("Pulling batch for slot %d", slot))
 			batch := v.Mempool.PullBatch(v.BatchSize)
@@ -337,41 +297,31 @@ func (v *Validator) leaderBatchLoop() {
 	}
 }
 
-func (v *Validator) roleMonitorLoop() {
-	ticker := time.NewTicker(v.roleMonitorLoopInterval)
-	defer ticker.Stop()
+func (v *Validator) setTimeout() {
+	sender := v.timeoutSlotCh
 
-	for {
-		select {
-		case <-v.stopCh:
-			return
-		case <-ticker.C:
-			slot := v.Recorder.CurrentSlot()
-
-			if v.IsLeader(slot) {
-				if v.leaderStartAtSlot == NoSlot {
-					v.onLeaderSlotStart(slot)
-				}
-			} else {
-				if v.leaderStartAtSlot != NoSlot {
-					v.onLeaderSlotEnd()
-				}
-			}
-		}
-	}
+	go func() {
+		time.Sleep(TIMEOUT_FOR_SLOT)
+		logx.Info("VALIDATOR", "Timeout triggered, sending signal")
+		sender <- struct{}{}
+	}()
 }
 
-func (v *Validator) mempoolCleanupLoop() {
-	cleanupTicker := time.NewTicker(1 * time.Minute)
-	defer cleanupTicker.Stop()
-
-	for {
-		select {
-		case <-v.stopCh:
-			return
-		case <-cleanupTicker.C:
-			logx.Info("VALIDATOR", "Running periodic mempool cleanup")
-			v.Mempool.PeriodicCleanup()
-		}
-	}
+func (v *Validator) getCurrentSlot() uint64 {
+	return v.currentSlot
 }
+
+// func (v *Validator) mempoolCleanupLoop() {
+// 	cleanupTicker := time.NewTicker(1 * time.Minute)
+// 	defer cleanupTicker.Stop()
+
+// 	for {
+// 		select {
+// 		case <-v.stopCh:
+// 			return
+// 		case <-cleanupTicker.C:
+// 			logx.Info("VALIDATOR", "Running periodic mempool cleanup")
+// 			v.Mempool.PeriodicCleanup()
+// 		}
+// 	}
+// }

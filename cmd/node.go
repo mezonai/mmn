@@ -245,7 +245,8 @@ func runNode() {
 	mbs := mem_blockstore.NewMemBlockStore(votorChannel, p, genesisBlock)
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, mbs, ts, privKey, &cfg.Poh, mode)
+	vSlotCh := make(chan uint64, 100)
+	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode, vSlotCh, votorChannel, p)
 	if err != nil {
 		log.Fatalf("Failed to initialize network: %v", err)
 	}
@@ -265,10 +266,10 @@ func runNode() {
 	// Initialize repair block worker
 	initializeRepairBlockWorker(repairChannel, mbs, libP2pClient)
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, mbs, bs, mp, p, recorder)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, mbs, bs, mp, p, votorChannel)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, p, privKey, genesisPath, vSlotCh)
 	if err != nil {
 		log.Fatalf("Failed to initialize validator: %v", err)
 	}
@@ -355,7 +356,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blockstore.MemBlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string, vSlotCh chan uint64, votorCh chan votor.VotorEvent, pool *pool.Pool) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -363,10 +364,12 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, mbs *mem_blo
 		self.Libp2pAddr,
 		self.BootStrapAddresses,
 		bs,
-		mbs,
 		ts,
 		pohCfg,
 		mode == LISTEN_MODE,
+		vSlotCh,
+		votorCh,
+		pool,
 	)
 
 	return libp2pNetwork, err
@@ -386,7 +389,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string) (*validator.Validator, error) {
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, pool *pool.Pool, privKey ed25519.PrivateKey, genesisPath string, slotCh chan uint64) (*validator.Validator, error) {
 
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -408,7 +411,8 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		nodeConfig.PubKey, privKey, recorder, pohService,
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
-		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs,
+		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs, pool,
+		slotCh,
 	)
 
 	// Cache leader schedule inside p2p for local leader checks

@@ -305,6 +305,7 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	genesisEntry := poh.NewTickEntry(1, genesisHash) // Simple tick entry for genesis
 
 	// Use AssembleBlock to create the genesis block
+	// TODO: Create a separate function to generate a deterministic genesis block with the same hash across all nodes. (not dependent on timestamp)
 	genesisBlock := block.AssembleBlock(
 		0,                         // slot 0 for genesis
 		genesisHash,               // previous hash is zero for genesis

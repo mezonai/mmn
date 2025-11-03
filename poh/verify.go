@@ -7,27 +7,27 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
-	logx.Info("POH", fmt.Sprintf("VerifyEntries: prev hash=%x slot=%d", prev, slot))
+func VerifyEntries(entries []Entry, slot uint64) error {
 	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries in slot=%d", len(entries), slot))
-	cur := prev
+	cur := entries[0].Hash
 
-	for i, e := range entries {
-		for n := uint64(0); n < e.NumHashes-1; n++ {
+	for i := 1; i < len(entries); i++ {
+		for n := uint64(0); n < entries[i].NumHashes-1; n++ {
 			cur = sha256.Sum256(cur[:])
 		}
 
-		if len(e.Transactions) == 0 {
+		if len(entries[i].Transactions) == 0 {
 			cur = sha256.Sum256(cur[:])
 		} else {
-			mixin := HashTransactions(e.Transactions)
+			mixin := HashTransactions(entries[i].Transactions)
 			hash := sha256.Sum256(append(cur[:], mixin[:]...))
 			copy(cur[:], hash[:])
 		}
 
-		if cur != e.Hash {
-			return fmt.Errorf("PoH mismatch: entry=%d slot=%d expected=%x got=%x", i, slot, e.Hash, cur)
+		if cur != entries[i].Hash {
+			return fmt.Errorf("PoH mismatch: entry=%d slot=%d expected=%x got=%x", i, slot, entries[i].Hash, cur)
 		}
 	}
+
 	return nil
 }

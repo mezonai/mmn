@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 )
 
+// TODO: consider to remove this function if not used
 func GenerateTickOnlyEntries(seed [32]byte, numEntries int, hashesPerTick uint64) []Entry {
 	if numEntries <= 0 || hashesPerTick == 0 {
 		return nil

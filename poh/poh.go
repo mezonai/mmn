@@ -115,20 +115,6 @@ func (p *Poh) Tick() *PohEntry {
 	return entry
 }
 
-func (p *Poh) TickFastForward(seenHash [32]byte, fromTick uint64, toTick uint64) [32]byte {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.Hash = seenHash
-	numHashes := (toTick - fromTick) * p.HashesPerTick
-	for i := uint64(0); i < numHashes; i++ {
-		p.Hash = sha256.Sum256(p.Hash[:])
-	}
-	p.NumHashes = 0
-	p.RemainingHashes = p.HashesPerTick
-	return p.Hash
-}
-
 func (p *Poh) Run() {
 	exception.SafeGoWithPanic("AutoHash", func() {
 		p.AutoHash()
