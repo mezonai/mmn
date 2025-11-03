@@ -213,6 +213,7 @@ func (v *Votor) trySkipWindow(currentSlot uint64) {
 			}
 			vote.Sign(v.blsPrivKey)
 			v.addVoteToPoolAndBroadcast(vote)
+			v.voted[slot] = struct{}{}
 		}
 	}
 }

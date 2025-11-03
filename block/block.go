@@ -20,7 +20,8 @@ const (
 )
 
 type BlockCore struct {
-	Slot       uint64
+	Slot uint64
+	// TODO: add prevSlot => use in validator
 	PrevHash   [32]byte // hash of the last entry in the previous block
 	LeaderID   string
 	Timestamp  uint64 // unix nanos
@@ -118,7 +119,7 @@ func (b *BroadcastedBlock) VerifySignature() bool {
 }
 
 func (b *BroadcastedBlock) VerifyPoH() error {
-	return poh.VerifyEntries(b.PrevHash, b.Entries, b.Slot)
+	return poh.VerifyEntries(b.Entries, b.Slot)
 }
 
 func (b *BroadcastedBlock) LastEntryHash() [32]byte {

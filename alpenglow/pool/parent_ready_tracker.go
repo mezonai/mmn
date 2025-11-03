@@ -1,6 +1,10 @@
 package pool
 
-import "github.com/mezonai/mmn/utils"
+import (
+	"sort"
+
+	"github.com/mezonai/mmn/utils"
+)
 
 type ParentReadyState struct {
 	Skip           bool
@@ -125,6 +129,10 @@ func (prt *ParentReadyTracker) HandleFinalization(event FinalizationEvent) []Slo
 	return nil
 }
 
+func (prt *ParentReadyTracker) GetParentsReady(slot uint64) BlockId {
+	return prt.getState(slot).getParentsReady()
+}
+
 // ParentReadyState methods
 func newParentReadyState() *ParentReadyState {
 	return &ParentReadyState{
@@ -145,6 +153,20 @@ func (prs *ParentReadyState) isContainedNotarFallback(blockHash [32]byte) bool {
 		}
 	}
 	return false
+}
+
+func (prs *ParentReadyState) getParentsReady() BlockId {
+	if len(prs.IsReady) > 0 {
+		prs.sortIsReadyBySlot()
+		return prs.IsReady[0]
+	}
+	return BlockId{}
+}
+
+func (prs *ParentReadyState) sortIsReadyBySlot() {
+	sort.Slice(prs.IsReady, func(i, j int) bool {
+		return prs.IsReady[i].Slot < prs.IsReady[j].Slot
+	})
 }
 
 func (prt *ParentReadyTracker) Prune(highestFinalizedSlot uint64) {

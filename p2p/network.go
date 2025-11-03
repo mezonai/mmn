@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mezonai/mmn/alpenglow/pool"
+	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/jsonx"
-	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -36,10 +37,12 @@ func NewNetWork(
 	listenAddr string,
 	bootstrapPeers []string,
 	blockStore store.BlockStore,
-	memBlockStore *mem_blockstore.MemBlockStore,
 	txStore store.TxStore,
 	pohCfg *config.PohConfig,
 	isListener bool,
+	vSlotCh chan uint64,
+	votorCh chan votor.VotorEvent,
+	pool *pool.Pool,
 ) (*Libp2pNetwork, error) {
 
 	privKey, err := crypto.UnmarshalEd25519PrivateKey(selfPrivKey)
@@ -112,29 +115,32 @@ func NewNetWork(
 	}
 
 	ln := &Libp2pNetwork{
-		host:                   h,
-		pubsub:                 ps,
-		selfPubKey:             selfPubKey,
-		selfPrivKey:            selfPrivKey,
-		peers:                  make(map[peer.ID]*PeerInfo),
-		bootstrapPeerIDs:       make(map[peer.ID]struct{}),
-		blockStore:             blockStore,
-		memBlockStore:          memBlockStore,
-		txStore:                txStore,
-		maxPeers:               int(MaxPeers),
-		activeSyncRequests:     make(map[string]*SyncRequestInfo),
-		syncRequests:           make(map[string]*SyncRequestTracker),
-		missingBlocksTracker:   make(map[uint64]*MissingBlockInfo),
-		lastScannedSlot:        0,
-		recentlyRequestedSlots: make(map[uint64]time.Time),
-		ctx:                    ctx,
-		cancel:                 cancel,
-		worldLatestSlot:        0,
-		worldLatestPohSlot:     0,
-		blockOrderingQueue:     make(map[uint64]*block.BroadcastedBlock),
-		nextExpectedSlot:       0,
-		pohCfg:                 pohCfg,
-		isListener:             isListener,
+		host:                     h,
+		pubsub:                   ps,
+		selfPubKey:               selfPubKey,
+		selfPrivKey:              selfPrivKey,
+		peers:                    make(map[peer.ID]*PeerInfo),
+		bootstrapPeerIDs:         make(map[peer.ID]struct{}),
+		blockStore:               blockStore,
+		txStore:                  txStore,
+		maxPeers:                 int(MaxPeers),
+		activeSyncRequests:       make(map[string]*SyncRequestInfo),
+		syncRequests:             make(map[string]*SyncRequestTracker),
+		missingBlocksTracker:     make(map[uint64]*MissingBlockInfo),
+		lastScannedSlot:          0,
+		recentlyRequestedSlots:   make(map[uint64]time.Time),
+		ctx:                      ctx,
+		cancel:                   cancel,
+		worldLatestSlot:          0,
+		worldLatestFinalizedSlot: 0,
+		blockOrderingQueue:       make(map[uint64]*block.BroadcastedBlock),
+		nextExpectedSlot:         0,
+		pohCfg:                   pohCfg,
+		isListener:               isListener,
+		blkHashToSlot:            make(map[[32]byte]uint64),
+		vSlotCh:                  vSlotCh,
+		votorCh:                  votorCh,
+		pool:                     pool,
 	}
 
 	if err := ln.setupHandlers(ctx, bootstrapPeers); err != nil {

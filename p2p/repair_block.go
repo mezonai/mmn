@@ -21,7 +21,7 @@ func (ln *Libp2pNetwork) handleRepairBlockStream(s network.Stream) {
 		return
 	}
 
-	blk := ln.memBlockStore.GetBlock(req.Slot, req.BlockHash)
+	blk := ln.blockStore.Block(req.Slot)
 	if blk == nil {
 		logx.Error("NETWORK:REPAIR BLOCK", "Block not found for slot:", req.Slot)
 		return

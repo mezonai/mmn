@@ -1,15 +1,14 @@
 package p2p
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/mezonai/mmn/block"
 	"github.com/mezonai/mmn/ledger"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
-	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/utils"
 )
 
 func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
@@ -33,7 +32,7 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 
 func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
 	var processedBlocks []*block.BroadcastedBlock
-	var emptyBlocksToBroadcast []*block.BroadcastedBlock
+	// var emptyBlocksToBroadcast []*block.BroadcastedBlock
 	// Find consecutive blocks starting from nextExpectedSlot
 	for {
 		if ln.nextExpectedSlot > ln.worldLatestSlot {
@@ -43,23 +42,23 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 			delete(ln.blockOrderingQueue, ln.nextExpectedSlot)
 			ln.nextExpectedSlot++
 		} else if ln.isLeaderOfSlot(ln.nextExpectedSlot) {
-			// Create empty block for leader slot
-			prevHash := ln.getPrevHashForSlot(ln.nextExpectedSlot, bs, processedBlocks)
-			// Use PoH config instead of hardcoded values
-			entries := poh.GenerateTickOnlyEntries(prevHash, int(ln.pohCfg.TicksPerSlot), ln.pohCfg.HashesPerTick)
-			emptyBlock := block.AssembleBlock(
-				ln.nextExpectedSlot,
-				prevHash,
-				ln.selfPubKey,
-				entries,
-			)
+			// // Create empty block for leader slot
+			// prevHash := ln.getPrevHashForSlot(ln.nextExpectedSlot, bs, processedBlocks)
+			// // Use PoH config instead of hardcoded values
+			// entries := []poh.Entry{} // Thế này có được k ta
+			// emptyBlock := block.AssembleBlock(
+			// 	ln.nextExpectedSlot,
+			// 	prevHash,
+			// 	ln.selfPubKey,
+			// 	entries,
+			// )
 
-			emptyBlock.Sign(ln.selfPrivKey)
+			// emptyBlock.Sign(ln.selfPrivKey)
 
-			// Add to processed blocks
-			processedBlocks = append(processedBlocks, emptyBlock)
-			// Add to empty blocks array for later broadcast
-			emptyBlocksToBroadcast = append(emptyBlocksToBroadcast, emptyBlock)
+			// // Add to processed blocks
+			// processedBlocks = append(processedBlocks, emptyBlock)
+			// // Add to empty blocks array for later broadcast
+			// emptyBlocksToBroadcast = append(emptyBlocksToBroadcast, emptyBlock)
 
 			ln.nextExpectedSlot++
 			continue
@@ -81,13 +80,13 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	}
 
 	// Broadcast empty blocks if any were created
-	if len(emptyBlocksToBroadcast) > 0 {
-		if err := ln.BroadcastEmptyBlocks(context.Background(), emptyBlocksToBroadcast); err != nil {
-			logx.Error("BLOCK:ORDERING", "Failed to broadcast empty blocks:", err)
-		} else {
-			logx.Info("BLOCK:ORDERING", "Successfully broadcasted", len(emptyBlocksToBroadcast), "empty blocks")
-		}
-	}
+	// if len(emptyBlocksToBroadcast) > 0 {
+	// 	if err := ln.BroadcastEmptyBlocks(context.Background(), emptyBlocksToBroadcast); err != nil {
+	// 		logx.Error("BLOCK:ORDERING", "Failed to broadcast empty blocks:", err)
+	// 	} else {
+	// 		logx.Info("BLOCK:ORDERING", "Successfully broadcasted", len(emptyBlocksToBroadcast), "empty blocks")
+	// 	}
+	// }
 
 	if len(processedBlocks) == 0 {
 		return nil, nil
@@ -117,7 +116,7 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("failed to finalize block at slot %d: %w", blk.Slot, err)
 	}
 
-	if err := ld.ApplyBlock(blk); err != nil {
+	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk)); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
 
@@ -153,13 +152,13 @@ func (ln *Libp2pNetwork) getPrevHashForSlot(slot uint64, bs store.BlockStore, pr
 	if len(processedBlocks) > 0 {
 		lastProcessedBlock := processedBlocks[len(processedBlocks)-1]
 		if lastProcessedBlock.Slot == prevSlot {
-			return lastProcessedBlock.LastEntryHash()
+			return lastProcessedBlock.Hash
 		}
 	} else {
 		// First check in block store
 		prevBlock := bs.Block(prevSlot)
 		if prevBlock != nil {
-			return prevBlock.LastEntryHash()
+			return prevBlock.Hash
 		}
 	}
 

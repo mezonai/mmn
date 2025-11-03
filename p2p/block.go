@@ -404,16 +404,21 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 				continue
 			}
 
-			latestSlot := ln.getLocalLatestSlot()
-			latestPohSlot := ln.OnGetLatestPohSlot()
+			latestFinalizedSlot := ln.getLocalLatestSlot()
+			latestSlot := ln.OnGetLatestSlot()
 
-			ln.sendLatestSlotResponse(msg.ReceivedFrom, latestSlot, latestPohSlot)
+			ln.sendLatestSlotResponse(msg.ReceivedFrom, latestFinalizedSlot, latestSlot)
 		}
 	}
 }
 
 func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock) error {
-	ln.memBlockStore.AddBlock(blk)
+	if err := ln.blockStore.AddBlockPending(blk); err != nil {
+		logx.Error("BLOCK", "Failed to add pending block:", err)
+		return err
+	}
+
+	ln.blkHashToSlot[blk.Hash] = blk.Slot
 
 	if ln.topicBlocks != nil {
 		meshPeers := ln.topicBlocks.ListPeers()
@@ -441,7 +446,7 @@ func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
 	return ln.blockStore.GetLatestFinalizedSlot()
 }
 
-func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot uint64, latestPohSlot uint64) {
+func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestFinalizedSlot uint64, latestSlot uint64) {
 	stream, err := ln.host.NewStream(context.Background(), targetPeer, LatestSlotProtocol)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to open stream to peer:", err)
@@ -450,9 +455,9 @@ func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot u
 	defer stream.Close()
 
 	response := LatestSlotResponse{
-		LatestSlot:    latestSlot,
-		LatestPohSlot: latestPohSlot,
-		PeerID:        ln.host.ID().String(),
+		LatestFinalizedSlot: latestFinalizedSlot,
+		LatestSlot:          latestSlot,
+		PeerID:              ln.host.ID().String(),
 	}
 
 	data, err := jsonx.Marshal(response)
@@ -480,7 +485,7 @@ func (ln *Libp2pNetwork) handleLatestSlotStream(s network.Stream) {
 	}
 
 	if ln.onLatestSlotReceived != nil {
-		if err := ln.onLatestSlotReceived(response.LatestSlot, response.LatestPohSlot, response.PeerID); err != nil {
+		if err := ln.onLatestSlotReceived(response.LatestFinalizedSlot, response.LatestSlot, response.PeerID); err != nil {
 			logx.Error("NETWORK:LATEST SLOT", "Error in latest slot callback:", err)
 		}
 	}

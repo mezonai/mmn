@@ -7,8 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/alpenglow/pool"
+	"github.com/mezonai/mmn/alpenglow/votor"
 	"github.com/mezonai/mmn/config"
-	"github.com/mezonai/mmn/mem_blockstore"
 	"github.com/mezonai/mmn/poh"
 	"github.com/mezonai/mmn/store"
 
@@ -32,9 +33,8 @@ type Libp2pNetwork struct {
 	// Track bootstrap peers so we can exclude them from certain requests
 	bootstrapPeerIDs map[peer.ID]struct{}
 
-	blockStore    store.BlockStore
-	memBlockStore *mem_blockstore.MemBlockStore
-	txStore       store.TxStore
+	blockStore store.BlockStore
+	txStore    store.TxStore
 
 	topicBlocks            *pubsub.Topic
 	topicEmptyBlocks       *pubsub.Topic
@@ -54,7 +54,7 @@ type Libp2pNetwork struct {
 	onLatestSlotReceived   func(uint64, uint64, string) error
 	OnSyncPohFromLeader    func(seedHash [32]byte, slot uint64) error
 	OnForceResetPOH        func(seedHash [32]byte, slot uint64) error
-	OnGetLatestPohSlot     func() uint64
+	OnGetLatestSlot        func() uint64
 
 	maxPeers int
 
@@ -87,8 +87,8 @@ type Libp2pNetwork struct {
 	ready              atomic.Bool
 
 	// New field for join behavior control
-	worldLatestSlot    uint64
-	worldLatestPohSlot uint64
+	worldLatestSlot          uint64
+	worldLatestFinalizedSlot uint64
 	// Global block ordering queue
 	blockOrderingQueue map[uint64]*block.BroadcastedBlock
 	nextExpectedSlot   uint64
@@ -98,8 +98,12 @@ type Libp2pNetwork struct {
 	OnStartValidator func()
 
 	// PoH config
-	pohCfg     *config.PohConfig
-	isListener bool
+	pohCfg        *config.PohConfig
+	isListener    bool
+	blkHashToSlot map[[32]byte]uint64
+	vSlotCh       chan uint64
+	votorCh       chan votor.VotorEvent
+	pool          *pool.Pool
 }
 
 type PeerInfo struct {
@@ -136,9 +140,9 @@ type LatestSlotRequest struct {
 }
 
 type LatestSlotResponse struct {
-	LatestSlot    uint64 `json:"latest_slot"`
-	PeerID        string `json:"peer_id"`
-	LatestPohSlot uint64 `json:"latest_poh_slot"`
+	LatestFinalizedSlot uint64 `json:"latest_finalized_slot"`
+	LatestSlot          uint64 `json:"latest_slot"`
+	PeerID              string `json:"peer_id"`
 }
 
 type SnapshotSyncRequest struct {
