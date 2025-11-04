@@ -94,8 +94,8 @@ jobs:
         if: steps.decide.outputs.skip == 'false'
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.6.0
-          args: --timeout=5m
+          version: v2.5.0
+          args: --timeout=5m --out-format=colored-line-number
 
       - name: Install build dependencies
         if: steps.decide.outputs.skip == 'false'
