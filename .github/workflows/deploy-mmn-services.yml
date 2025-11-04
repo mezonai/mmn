@@ -92,10 +92,10 @@ jobs:
 
       - name: Run golangci-lint
         if: steps.decide.outputs.skip == 'false'
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v8
         with:
           version: v2.6.0
-          args: --timeout=10m
+          args: --timeout=5m
 
       - name: Install build dependencies
         if: steps.decide.outputs.skip == 'false'
