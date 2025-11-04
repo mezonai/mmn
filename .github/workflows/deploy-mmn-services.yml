@@ -95,7 +95,7 @@ jobs:
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.5.0
-          args: --timeout=5m --out-format=colored-line-number
+          args: --timeout=5m --output.text.print-issued-lines
 
       - name: Install build dependencies
         if: steps.decide.outputs.skip == 'false'
