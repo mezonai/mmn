@@ -1,6 +1,6 @@
 # golangci-lint configuration file
 # https://golangci-lint.run/usage/configuration/
-version: 2
+version: "2"
 
 run:
   timeout: 5m
@@ -30,6 +30,32 @@ linters:
       # Display function signature instead of selector.
       verbose: true
 
+    govet:
+      enable: 
+        - shadow
+
+    staticcheck:
+      checks: ["all"]
+
+    gocyclo:
+      min-complexity: 15
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+
+
+    misspell:
+      locale: US
+
   exclusions:
     paths:
       - client_test
@@ -38,62 +64,26 @@ linters:
       - ".*\\.pb\\.go$"
       - ".*\\.grpc\\.pb\\.go$"
 
-linters-settings:
-  govet:
-    check-shadowing: true
+    rules:
+      - path: ".*\\.pb\\.go$"
+        linters:
+          - all
 
-  staticcheck:
-    checks: ["all"]
+      - path: ".*\\.grpc\\.pb\\.go$"
+        linters:
+          - all
 
-  unused:
-    check-exported: false
+      # Exclude client_test and mezon-migration directories
+      - path: "^client_test/.*"
+        linters:
+          - all
 
-  gocyclo:
-    min-complexity: 15
+      - path: "^mezon-migration/.*"
+        linters:
+          - all
 
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - experimental
-      - opinionated
-      - performance
-      - style
-
-  goconst:
-    min-len: 2
-    min-occurrences: 2
-
-
-  misspell:
-    locale: US
-
-
-issues:
-  exclude-rules:
-    # Exclude protobuf generated files
-    - path: ".*\\.pb\\.go$"
-      linters:
-        - all
-
-    - path: ".*\\.grpc\\.pb\\.go$"
-      linters:
-        - all
-
-    # Exclude client_test and mezon-migration directories
-    - path: "^client_test/.*"
-      linters:
-        - all
-
-    - path: "^mezon-migration/.*"
-      linters:
-        - all
-
-    # Exclude some linters from test files
-    - path: "_test\\.go$"
-      linters:
-        - gocyclo
-        - gosec
-
-  max-issues-per-linter: 0
-  max-same-issues: 0
-  new: false
+      # Exclude some linters from test files
+      - path: "_test\\.go$"
+        linters:
+          - gocyclo
+          - gosec
