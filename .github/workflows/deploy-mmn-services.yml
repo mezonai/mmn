@@ -90,6 +90,13 @@ jobs:
           cache: true
           check-latest: false
 
+      - name: Run golangci-lint
+        if: steps.decide.outputs.skip == 'false'
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=10m
+
       - name: Install build dependencies
         if: steps.decide.outputs.skip == 'false'
         run: |
