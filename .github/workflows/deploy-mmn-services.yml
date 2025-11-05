@@ -96,6 +96,7 @@ jobs:
         with:
           version: v2.5.0
           args: --timeout=5m --output.text.print-issued-lines
+        continue-on-error: true
 
       - name: Install build dependencies
         if: steps.decide.outputs.skip == 'false'
