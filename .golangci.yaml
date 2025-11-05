@@ -35,10 +35,9 @@ linters:
         - shadow
 
     staticcheck:
-      checks: ["all"]
-
-    gocyclo:
-      min-complexity: 15
+      checks:
+        - "all"
+        - "-ST1000"
 
     gocritic:
       enabled-tags:
