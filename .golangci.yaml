@@ -61,30 +61,6 @@ linters:
       - ".*\\.pb\\.go$"
       - ".*\\.grpc\\.pb\\.go$"
 
-    rules:
-      - path: ".*\\.pb\\.go$"
-        linters:
-          - all
-
-      - path: ".*\\.grpc\\.pb\\.go$"
-        linters:
-          - all
-
-      # Exclude client_test and mezon-migration directories
-      - path: "^client_test/.*"
-        linters:
-          - all
-
-      - path: "^mezon-migration/.*"
-        linters:
-          - all
-
-      # Exclude some linters from test files
-      - path: "_test\\.go$"
-        linters:
-          - gocyclo
-          - gosec
-          
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
