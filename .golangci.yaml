@@ -51,8 +51,6 @@ linters:
     goconst:
       min-len: 2
       min-occurrences: 2
-
-
     misspell:
       locale: US
 
@@ -87,3 +85,7 @@ linters:
         linters:
           - gocyclo
           - gosec
+          
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
