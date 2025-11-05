@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DEDUP_SLOT_GAP = 200
+	DedupSlotGap = 200
 )
 
 type DedupService struct {
@@ -35,8 +35,8 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 	}
 
 	startSlot := uint64(1)
-	if latestSlot > DEDUP_SLOT_GAP {
-		startSlot = latestSlot - DEDUP_SLOT_GAP + 1
+	if latestSlot > DedupSlotGap {
+		startSlot = latestSlot - DedupSlotGap + 1
 	}
 
 	loadSlots := make([]uint64, 0, latestSlot-startSlot+1)
@@ -92,7 +92,7 @@ func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 }
 
 func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
-	if slot <= DEDUP_SLOT_GAP {
+	if slot <= DedupSlotGap {
 		return
 	}
 
@@ -100,7 +100,7 @@ func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
 	defer ds.mu.Unlock()
 
 	// Clean up old slot tx hashes
-	oldSlot := slot - DEDUP_SLOT_GAP
+	oldSlot := slot - DedupSlotGap
 	if oldTxDedupHashes, exists := ds.slotTxDedupHashSet[oldSlot]; exists {
 		for oldTxDedupHash := range oldTxDedupHashes {
 			delete(ds.txDedupHashSet, oldTxDedupHash)

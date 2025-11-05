@@ -30,10 +30,10 @@ func (eb *EventBus) generateUUIDID() SubscriberID {
 	return SubscriberID(id.String())
 }
 
-func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
-	id := eb.generateUUIDID()
+func (eb *EventBus) Subscribe() (id SubscriberID, ch chan BlockchainEvent) {
+	id = eb.generateUUIDID()
 
-	ch := make(chan BlockchainEvent, 50) // Buffer for events
+	ch = make(chan BlockchainEvent, 50) // Buffer for events
 	subscriber := &Subscriber{
 		ID:      id,
 		Channel: ch,
@@ -83,7 +83,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Channel is full, skip this subscriber
 				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", id, txHash))
 			}
-			return true // continue iteration
+			return true
 		})
 	} else {
 		logx.Info("EVENTBUS", fmt.Sprintf("No subscribers for event | event_type=%s | tx_hash=%s", event.Type(), txHash))

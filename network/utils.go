@@ -28,7 +28,7 @@ func extractClientIP(ctx context.Context) string {
 		return unknownIP
 	}
 
-	if len(host) > 0 && host[0] == '[' && host[len(host)-1] == ']' {
+	if host != "" && host[0] == '[' && host[len(host)-1] == ']' {
 		host = host[1 : len(host)-1]
 	}
 

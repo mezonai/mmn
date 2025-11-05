@@ -2,7 +2,7 @@ package interfaces
 
 import "github.com/mezonai/mmn/transaction"
 
-// Tracking transactions between mempool and ledger
+// TransactionTrackerInterface tracks transactions between the mempool and the ledger.
 type TransactionTrackerInterface interface {
 	TrackProcessingTransaction(tx *transaction.Transaction)
 	RemoveTransaction(txHash string)

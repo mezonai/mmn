@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	NONCE_WINDOW = 150
+	NonceWindow = 150
 )
 
 type Mempool struct {
@@ -41,14 +41,14 @@ type Mempool struct {
 	zkVerify     *zkverify.ZkVerify                     // Zk verify for zk transactions
 }
 
-func NewMempool(max int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
+func NewMempool(maxSize int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
 	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
 	return &Mempool{
-		txs:               make(map[string]*transaction.Transaction, max),
-		txOrder:           make([]string, 0, max),
+		txs:               make(map[string]*transaction.Transaction, maxSize),
+		txOrder:           make([]string, 0, maxSize),
 		dedupTxHashSet:    make(map[string]struct{}),
 		senderTotalAmount: make(map[string]*uint256.Int),
-		max:               max,
+		max:               maxSize,
 		netCurrentSlot:    atomic.Uint64{},
 		broadcaster:       broadcaster,
 		ledger:            ledger,
@@ -160,8 +160,8 @@ func (mp *Mempool) validateBalance(tx *transaction.Transaction) error {
 func (mp *Mempool) validateNonce(txs []*transaction.Transaction) error {
 	minNonce := uint64(1)
 	netCurrentSlot := mp.netCurrentSlot.Load()
-	if netCurrentSlot > NONCE_WINDOW {
-		minNonce = netCurrentSlot - NONCE_WINDOW
+	if netCurrentSlot > NonceWindow {
+		minNonce = netCurrentSlot - NonceWindow
 	}
 	for _, tx := range txs {
 		if tx.Nonce < minNonce {
@@ -192,9 +192,9 @@ func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
 	}
 
 	// Validate memo length (max 64 characters)
-	if len(tx.TextData) > MAX_MEMO_CHARACTERS {
+	if len(tx.TextData) > MaxMemoCharacters {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
-		return fmt.Errorf("memo too long: max %d chars, got %d", MAX_MEMO_CHARACTERS, len(tx.TextData))
+		return fmt.Errorf("memo too long: max %d chars, got %d", MaxMemoCharacters, len(tx.TextData))
 	}
 
 	// Validate mempool size
@@ -298,18 +298,18 @@ func (mp *Mempool) Size() int {
 	return len(mp.txs)
 }
 
-// New method: GetTransactionCount - read-only operation
+// GetTransactionCount - read-only operation
 func (mp *Mempool) GetTransactionCount() int {
 	return mp.Size()
 }
 
-// New method: GetTransaction - retrieve transaction data (read-only)
+// GetTransaction - retrieve transaction data (read-only)
 func (mp *Mempool) GetTransaction(txHash string) (*transaction.Transaction, bool) {
 	data, exists := mp.txs[txHash]
 	return data, exists
 }
 
-// New method: GetOrderedTransactions - get transactions in FIFO order (read-only)
+// GetOrderedTransactions - get transactions in FIFO order (read-only)
 func (mp *Mempool) GetOrderedTransactions() []string {
 	// Return a copy to avoid external modification
 	result := make([]string, len(mp.txOrder))

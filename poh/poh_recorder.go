@@ -43,9 +43,9 @@ func (r *PohRecorder) Reset(lastHash [32]byte, slot uint64) {
 	r.slotHashQueue.Put(slot, lastHash)
 }
 
-// Assume fromSlot is the last seen slot, toSlot is the target slot
+// FastForward assume fromSlot is the last seen slot, toSlot is the target slot
 // Simulate the poh clock from fromSlot to toSlot
-func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uint64) [32]byte {
+func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot, toSlot uint64) [32]byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -61,12 +61,12 @@ func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) 
 	defer r.mu.Unlock()
 
 	// Resource bounds validation
-	if len(txs) > MAX_TRANSACTIONS_PER_ENTRY {
-		return nil, fmt.Errorf("too many transactions: %d > %d", len(txs), MAX_TRANSACTIONS_PER_ENTRY)
+	if len(txs) > MaxTransactionsPerEntry {
+		return nil, fmt.Errorf("too many transactions: %d > %d", len(txs), MaxTransactionsPerEntry)
 	}
 
-	if len(r.entries) >= MAX_ENTRIES_PER_SLOT {
-		return nil, fmt.Errorf("slot full: %d entries >= %d", len(r.entries), MAX_ENTRIES_PER_SLOT)
+	if len(r.entries) >= MaxEntriesPerSlot {
+		return nil, fmt.Errorf("slot full: %d entries >= %d", len(r.entries), MaxEntriesPerSlot)
 	}
 
 	mixin := HashTransactions(txs)
@@ -76,15 +76,15 @@ func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) 
 	}
 
 	// Validate NumHashes bounds
-	if pohEntry.NumHashes > MAX_NUM_HASHES {
-		return nil, fmt.Errorf("NumHashes too large: %d > %d", pohEntry.NumHashes, MAX_NUM_HASHES)
+	if pohEntry.NumHashes > MaxNumHashes {
+		return nil, fmt.Errorf("NumHashes too large: %d > %d", pohEntry.NumHashes, MaxNumHashes)
 	}
 
 	entry := NewTxEntry(pohEntry.NumHashes, pohEntry.Hash, txs)
 
 	// Validate entry size
-	if entrySize := estimateEntrySize(entry); entrySize > MAX_ENTRY_SIZE {
-		return nil, fmt.Errorf("entry too large: %d bytes > %d", entrySize, MAX_ENTRY_SIZE)
+	if entrySize := estimateEntrySize(entry); entrySize > MaxEntrySize {
+		return nil, fmt.Errorf("entry too large: %d bytes > %d", entrySize, MaxEntrySize)
 	}
 
 	r.entries = append(r.entries, entry)
@@ -101,8 +101,8 @@ func (r *PohRecorder) Tick() *Entry {
 	}
 
 	// Validate NumHashes bounds for tick entries
-	if pohEntry.NumHashes > MAX_NUM_HASHES {
-		logx.Error("PohRecorder", fmt.Sprintf("NumHashes too large in tick: %d > %d", pohEntry.NumHashes, MAX_NUM_HASHES))
+	if pohEntry.NumHashes > MaxNumHashes {
+		logx.Error("PohRecorder", fmt.Sprintf("NumHashes too large in tick: %d > %d", pohEntry.NumHashes, MaxNumHashes))
 		return nil
 	}
 

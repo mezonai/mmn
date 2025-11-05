@@ -29,10 +29,10 @@ func (ln *Libp2pNetwork) RequestNodeInfo(bootstrapPeer string, info *peer.AddrIn
 	return nil
 }
 
-func (ln *Libp2pNetwork) Discovery(discovery discovery.Discovery, ctx context.Context, h host.Host) {
+func (ln *Libp2pNetwork) Discovery(dsc discovery.Discovery, ctx context.Context, h host.Host) {
 	func() {
 		for {
-			peerChan, err := discovery.FindPeers(ctx, AdvertiseName, ln.maxPeers)
+			peerChan, err := dsc.FindPeers(ctx, AdvertiseName, ln.maxPeers)
 			if err != nil {
 				logx.Error("DISCOVERY", "Failed to find peers:", err)
 				time.Sleep(10 * time.Second)

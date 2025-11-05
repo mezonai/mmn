@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	CACHE_EXPIRY_DURATION = 30 * time.Minute
-	CLEANER_INTERVAL      = 10 * time.Minute
+	CacheExpiryDuration   = 30 * time.Minute
+	CleanerInterval       = 10 * time.Minute
 )
 
 type CacheEntry struct {
@@ -57,7 +57,7 @@ func NewZkVerify(keyPath string) *ZkVerify {
 }
 
 func (v *ZkVerify) cleaner() {
-	ticker := time.NewTicker(CLEANER_INTERVAL)
+	ticker := time.NewTicker(CleanerInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -88,7 +88,7 @@ func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
 
 	v.cache.Store(cacheKey, CacheEntry{
 		value:    result,
-		expireAt: time.Now().Add(CACHE_EXPIRY_DURATION),
+		expireAt: time.Now().Add(CacheExpiryDuration),
 	})
 
 	return result
@@ -101,7 +101,8 @@ func (v *ZkVerify) verifyInternal(sender, pubKey, proofB64, pubB64 string) bool 
 		return false
 	}
 	proof := groth16.NewProof(ecc.BN254)
-	if _, err := proof.ReadFrom(bytes.NewReader(proofBytes)); err != nil {
+	_, err = proof.ReadFrom(bytes.NewReader(proofBytes));
+	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to read proof: %v", err))
 		return false
 	}

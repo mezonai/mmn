@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -46,7 +47,8 @@ func runBootstrap() {
 
 	if bootPrivKeyPath != "" {
 		// Load private key from file
-		ed25519PrivKey, err := config.LoadEd25519PrivKey(bootPrivKeyPath)
+		var ed25519PrivKey ed25519.PrivateKey
+		ed25519PrivKey, err = config.LoadEd25519PrivKey(bootPrivKeyPath)
 		if err != nil {
 			logx.Error("BOOTSTRAP NODE", "Failed to load private key from file:", err)
 			return

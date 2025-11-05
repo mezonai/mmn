@@ -173,7 +173,7 @@ func (s *GenericBlockStore) CleanupOldSlotLocks(keepRecentSlots uint64) {
 		if slotNum < cleanupThreshold {
 			slotsToDelete = append(slotsToDelete, slotNum)
 		}
-		return true // continue iteration
+		return true
 	})
 
 	// Delete collected slots
@@ -499,8 +499,8 @@ func (s *GenericBlockStore) MustClose() {
 // GetConfirmations calculates the number of confirmations for a transaction in a given block slot.
 // Confirmations = latestFinalized - blockSlot + 1 if the block is finalized,
 // otherwise returns 1 for confirmed but not finalized blocks.
-func (bs *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
-	latest := bs.latestFinalized.Load()
+func (s *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
+	latest := s.latestFinalized.Load()
 	if latest >= blockSlot {
 		return latest - blockSlot + 1
 	}
