@@ -13,25 +13,27 @@ const (
 	NUM_SHARDS     = 128
 )
 
+type slotEntry struct {
+	mu            sync.Mutex
+	txDedupHashes []string
+}
+
 type dedupShard struct {
 	mu             sync.RWMutex
 	txDedupHashSet map[string]struct{}
 }
 
 type DedupService struct {
-	txShards          [NUM_SHARDS]*dedupShard
-	slotTxDedupHashes map[uint64][]string //slot -> tx dedup hashes
-	mu                sync.Mutex
-
-	bs store.BlockStore
-	ts store.TxStore
+	txShards  [NUM_SHARDS]*dedupShard
+	slotEntry sync.Map // map[uint64]*slotEntry
+	bs        store.BlockStore
+	ts        store.TxStore
 }
 
 func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
 	ds := &DedupService{
-		bs:                bs,
-		ts:                ts,
-		slotTxDedupHashes: make(map[uint64][]string),
+		bs: bs,
+		ts: ts,
 	}
 
 	for i := 0; i < NUM_SHARDS; i++ {
@@ -94,14 +96,12 @@ func (ds *DedupService) IsDuplicate(txDedupHash string) bool {
 }
 
 func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
-	ds.mu.Lock()
-	txHashes, exists := ds.slotTxDedupHashes[slot]
-	if !exists {
-		txHashes = make([]string, 0, len(txDedupHashes))
-	}
-	txHashes = append(txHashes, txDedupHashes...)
-	ds.slotTxDedupHashes[slot] = txHashes
-	ds.mu.Unlock()
+	v, _ := ds.slotEntry.LoadOrStore(slot, &slotEntry{})
+
+	se := v.(*slotEntry)
+	se.mu.Lock()
+	se.txDedupHashes = append(se.txDedupHashes, txDedupHashes...)
+	se.mu.Unlock()
 
 	for _, txDedupHash := range txDedupHashes {
 		shardIndex := getShardIndex(txDedupHash)
@@ -118,14 +118,15 @@ func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
 	}
 	oldSlot := slot - DEDUP_SLOT_GAP
 
-	ds.mu.Lock()
-	txDedupHashes, exists := ds.slotTxDedupHashes[oldSlot]
-	if !exists {
-		ds.mu.Unlock()
+	v, ok := ds.slotEntry.LoadAndDelete(oldSlot)
+	if !ok {
 		return
 	}
-	delete(ds.slotTxDedupHashes, oldSlot)
-	ds.mu.Unlock()
+
+	se := v.(*slotEntry)
+	se.mu.Lock()
+	txDedupHashes := se.txDedupHashes
+	se.mu.Unlock()
 
 	for _, txDedupHash := range txDedupHashes {
 		shardIndex := getShardIndex(txDedupHash)
