@@ -346,13 +346,14 @@ func TestPullBatch_and_DedupServiceAdd(t *testing.T) {
 		t.Fatalf("expected size 1 after pull, got %d", mp.Size())
 	}
 	// Dedup service should have recorded the pulled dedup hashes (slot 100)
-	if v, ok := dedup.slotTxDedupHashes.Load(uint64(100)); ok {
-		txList := v.([]string)
-		if len(txList) != 1 {
-			t.Fatalf("expected 1 hash for slot 100, got %d", len(txList))
-		}
-	} else {
+	dedup.mu.Lock()
+	txList, exists := dedup.slotTxDedupHashes[uint64(100)]
+	dedup.mu.Unlock()
+	if !exists {
 		t.Fatalf("expected dedup service to have slot 100 recorded")
+	}
+	if len(txList) != 1 {
+		t.Fatalf("expected 1 hash for slot 100, got %d", len(txList))
 	}
 }
 
@@ -424,7 +425,10 @@ func TestBlockCleanupAndVerifyBlockTransactions(t *testing.T) {
 	shard.txDedupHashSet[dh] = struct{}{}
 	shard.mu.Unlock()
 
-	dedup.slotTxDedupHashes.Store(uint64(1), []string{dh})
+	// Store into slotTxDedupHashes (map + lock)
+	dedup.mu.Lock()
+	dedup.slotTxDedupHashes[uint64(1)] = []string{dh}
+	dedup.mu.Unlock()
 
 	// Now VerifyBlockTransactions should fail (duplicate)
 	if err := mp.VerifyBlockTransactions([]*transaction.Transaction{tx1}); err == nil {

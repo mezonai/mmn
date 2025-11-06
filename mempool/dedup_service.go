@@ -20,7 +20,8 @@ type dedupShard struct {
 
 type DedupService struct {
 	txShards          [NUM_SHARDS]*dedupShard
-	slotTxDedupHashes sync.Map // map[uint64][]string
+	slotTxDedupHashes map[uint64][]string //slot -> tx dedup hashes
+	mu                sync.Mutex
 
 	bs store.BlockStore
 	ts store.TxStore
@@ -28,8 +29,9 @@ type DedupService struct {
 
 func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
 	ds := &DedupService{
-		bs: bs,
-		ts: ts,
+		bs:                bs,
+		ts:                ts,
+		slotTxDedupHashes: make(map[uint64][]string),
 	}
 
 	for i := 0; i < NUM_SHARDS; i++ {
@@ -92,7 +94,14 @@ func (ds *DedupService) IsDuplicate(txDedupHash string) bool {
 }
 
 func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
-	ds.slotTxDedupHashes.Store(slot, txDedupHashes)
+	ds.mu.Lock()
+	txHashes, exists := ds.slotTxDedupHashes[slot]
+	if !exists {
+		txHashes = make([]string, 0, len(txDedupHashes))
+	}
+	txHashes = append(txHashes, txDedupHashes...)
+	ds.slotTxDedupHashes[slot] = txHashes
+	ds.mu.Unlock()
 
 	for _, txDedupHash := range txDedupHashes {
 		shardIndex := getShardIndex(txDedupHash)
@@ -107,14 +116,18 @@ func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
 	if slot <= DEDUP_SLOT_GAP {
 		return
 	}
-
 	oldSlot := slot - DEDUP_SLOT_GAP
-	txHashes, ok := ds.slotTxDedupHashes.LoadAndDelete(oldSlot)
-	if !ok {
+
+	ds.mu.Lock()
+	txDedupHashes, exists := ds.slotTxDedupHashes[oldSlot]
+	if !exists {
+		ds.mu.Unlock()
 		return
 	}
+	delete(ds.slotTxDedupHashes, oldSlot)
+	ds.mu.Unlock()
 
-	for _, txDedupHash := range txHashes.([]string) {
+	for _, txDedupHash := range txDedupHashes {
 		shardIndex := getShardIndex(txDedupHash)
 		shard := ds.txShards[shardIndex]
 		shard.mu.Lock()
