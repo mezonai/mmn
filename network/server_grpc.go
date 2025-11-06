@@ -254,7 +254,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     events.HeartBeat,
+			ExtraInfo:     "",
 			Amount:        "0",
 			TextData:      events.HeartBeat,
 		}

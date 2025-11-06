@@ -217,7 +217,7 @@ func (e *HeartBeatEvent) TxHash() string {
 }
 
 func (e *HeartBeatEvent) TxExtraInfo() string {
-	return HeartBeat
+	return ""
 }
 
 func (e *HeartBeatEvent) Transaction() *transaction.Transaction {
