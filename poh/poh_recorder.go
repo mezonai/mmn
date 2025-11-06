@@ -18,7 +18,7 @@ type PohRecorder struct {
 	tickHeight    uint64
 	entries       []Entry
 	slotHashQueue *SlotHashQueue
-	mu            sync.Mutex
+	mu            sync.RWMutex
 }
 
 // NewPohRecorder creates a new recorder that tracks PoH and turns txs into entries
@@ -57,19 +57,20 @@ func (r *PohRecorder) FastForward(seenHash [32]byte, fromSlot uint64, toSlot uin
 }
 
 func (r *PohRecorder) RecordTxs(txs []*transaction.Transaction) (*Entry, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	// Resource bounds validation
 	if len(txs) > MAX_TRANSACTIONS_PER_ENTRY {
 		return nil, fmt.Errorf("too many transactions: %d > %d", len(txs), MAX_TRANSACTIONS_PER_ENTRY)
 	}
 
+	mixin := HashTransactions(txs)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if len(r.entries) >= MAX_ENTRIES_PER_SLOT {
 		return nil, fmt.Errorf("slot full: %d entries >= %d", len(r.entries), MAX_ENTRIES_PER_SLOT)
 	}
 
-	mixin := HashTransactions(txs)
 	pohEntry := r.poh.Record(mixin)
 	if pohEntry == nil {
 		return nil, fmt.Errorf("PoH refused to record, tick required")
@@ -137,16 +138,16 @@ func estimateEntrySize(entry Entry) int {
 }
 
 func (r *PohRecorder) CurrentPassedSlot() uint64 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	// +1 to make slot start from 1
 	return r.tickHeight / r.ticksPerSlot
 }
 
 func (r *PohRecorder) CurrentSlot() uint64 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	// +1 to make slot start from 1
 	return r.tickHeight/r.ticksPerSlot + 1
