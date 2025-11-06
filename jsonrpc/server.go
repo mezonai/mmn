@@ -9,12 +9,14 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/handler"
 	"github.com/creachadair/jrpc2/jhttp"
+	"github.com/mezonai/mmn/common"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
@@ -22,6 +24,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/security/validation"
 )
 
 // --- Error type used by handlers ---
@@ -168,6 +171,31 @@ type Server struct {
 	rateLimiter     *ratelimit.GlobalRateLimiter
 }
 
+type limitedResponseWriter struct {
+	http.ResponseWriter
+	limit   int64
+	written int64
+	blocked bool
+}
+
+func (lw *limitedResponseWriter) Write(b []byte) (int, error) {
+	if lw.blocked {
+		return 0, nil
+	}
+	next := lw.written + int64(len(b))
+	if next > lw.limit {
+		lw.blocked = true
+		if lw.written == 0 {
+			http.Error(lw.ResponseWriter, "response too large", http.StatusInternalServerError)
+		}
+		logx.Warn("JSONRPC SERVER", "response exceeded limit", "limit", lw.limit)
+		return 0, nil
+	}
+	n, err := lw.ResponseWriter.Write(b)
+	lw.written += int64(n)
+	return n, err
+}
+
 type CORSConfig struct {
 	AllowedOrigins []string
 	AllowedMethods []string
@@ -203,6 +231,16 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			return
 		}
 
+		if r.Method == http.MethodPost {
+			ct := r.Header.Get("Content-Type")
+			if !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+				http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, validation.MaxBodyBytes)
+
 		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -217,6 +255,10 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 				http.Error(w, "invalid request", http.StatusBadRequest)
 				return
 			}
+			if err := validateJSONRPCRequestByMethod(req.Method, req.Params); err != nil {
+				http.Error(w, fmt.Sprintf("invalid params: %v", err), http.StatusBadRequest)
+				return
+			}
 			logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", req.Method)
 			if !s.rateLimiter.IsIPAllowed(clientIP) {
 				logx.Warn("SECURITY", "IP rate limit exceeded:", clientIP, "Method:", req.Method)
@@ -227,7 +269,8 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 				s.rateLimiter.TrackIPRequest(clientIP)
 			})
 		}
-		jh.ServeHTTP(w, r)
+		lw := &limitedResponseWriter{ResponseWriter: w, limit: int64(validation.MaxResponseBytes)}
+		jh.ServeHTTP(lw, r)
 	})
 	return h
 }
@@ -397,9 +440,6 @@ func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
 }
 
 func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpcError) {
-	if p.Tag != "latest" && p.Tag != "pending" {
-		return &getCurrentNonceResponse{Address: p.Address, Nonce: 0, Tag: p.Tag, Error: "invalid tag: must be 'latest' or 'pending'"}, nil
-	}
 	resp, err := s.acctSvc.GetCurrentNonce(context.Background(), &pb.GetCurrentNonceRequest{Address: p.Address, Tag: p.Tag})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
@@ -416,6 +456,109 @@ func (s *Server) rpcHealthCheck(ctx context.Context) (interface{}, *rpcError) {
 }
 
 // --- Helpers ---
+
+func validateJSONRPCTx(p signedTxParams) error {
+	var allowedTextPattern = regexp.MustCompile(`^[\p{L}\p{N}\s._\-:/@#%+*=,;!?()\[\]{}]*$`)
+	if p.TxMsg.Sender == "" || p.TxMsg.Recipient == "" {
+		return fmt.Errorf("sender/recipient required")
+	}
+	if !isValidBase58AddressStrict(p.TxMsg.Sender) || !isValidBase58AddressStrict(p.TxMsg.Recipient) {
+		return fmt.Errorf("sender/recipient must be valid base58")
+	}
+	if len(p.TxMsg.Amount) == 0 || len(p.TxMsg.Amount) > validation.ValidationMaxAmountLen {
+		return fmt.Errorf("amount length out of range")
+	}
+	if len(p.TxMsg.TextData) > validation.ValidationMaxTextDataLen {
+		return fmt.Errorf("text_data too long")
+	}
+	if p.TxMsg.TextData != "" && !allowedTextPattern.MatchString(p.TxMsg.TextData) {
+		return fmt.Errorf("text_data contains disallowed characters")
+	}
+	if containsInjectionPatterns(p.TxMsg.TextData) || containsInjectionPatterns(p.TxMsg.ExtraInfo) {
+		logx.Warn("INJECTION", "suspicious patterns detected in text fields")
+		return fmt.Errorf("text contains suspicious patterns")
+	}
+	if len(p.TxMsg.ExtraInfo) > validation.ValidationMaxExtraInfoLen {
+		return fmt.Errorf("extra_info too long")
+	}
+	if len(p.Signature) == 0 || len(p.Signature) > validation.ValidationMaxSignatureLen {
+		return fmt.Errorf("signature missing or too long")
+	}
+	return nil
+}
+
+func isValidBase58AddressStrict(addr string) bool {
+	if !common.IsValidBase58(addr) {
+		return false
+	}
+	b, err := common.DecodeBase58ToBytes(addr)
+	if err != nil {
+		return false
+	}
+	return len(b) >= 32
+}
+
+func containsInjectionPatterns(s string) bool {
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
+	for _, p := range validation.InjectionPatterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateJSONRPCRequestByMethod(method string, params json.RawMessage) error {
+	switch method {
+	case MethodTxAddTx:
+		var p signedTxParams
+		if err := strictUnmarshal(params, &p); err != nil {
+			return fmt.Errorf("malformed params")
+		}
+		return validateJSONRPCTx(p)
+	case MethodTxGetTxByHash:
+		var p getTxByHashRequest
+		if err := strictUnmarshal(params, &p); err != nil {
+			return fmt.Errorf("malformed params")
+		}
+		if p.TxHash == "" || len(p.TxHash) > validation.ValidationMaxTxHashLen {
+			return fmt.Errorf("invalid tx_hash")
+		}
+		return nil
+	case MethodAccountGetAccount:
+		var p getAccountRequest
+		if err := strictUnmarshal(params, &p); err != nil {
+			return fmt.Errorf("malformed params")
+		}
+		if p.Address == "" || !common.IsValidBase58(p.Address) {
+			return fmt.Errorf("invalid address")
+		}
+		return nil
+	case MethodAccountGetCurrentNonce:
+		var p getCurrentNonceRequest
+		if err := strictUnmarshal(params, &p); err != nil {
+			return fmt.Errorf("malformed params")
+		}
+		if p.Address == "" || !common.IsValidBase58(p.Address) {
+			return fmt.Errorf("invalid address")
+		}
+		if p.Tag != "latest" && p.Tag != "pending" {
+			return fmt.Errorf("invalid tag")
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func strictUnmarshal(data []byte, v interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
+}
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	// Set allowed origins
