@@ -247,6 +247,17 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
+
+	case *events.HeartBeatEvent:
+		return &pb.TransactionStatusInfo{
+			TxHash:        events.HeartBeat,
+			Status:        pb.TransactionStatus_PENDING,
+			Confirmations: 0, // No confirmations for mempool transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     events.HeartBeat,
+			Amount:        "0",
+			TextData:      events.HeartBeat,
+		}
 	}
 
 	return nil

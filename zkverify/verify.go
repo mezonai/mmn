@@ -7,15 +7,29 @@ import (
 	"math/big"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 )
 
+const (
+	CACHE_EXPIRY_DURATION = 30 * time.Minute
+	CLEANER_INTERVAL      = 10 * time.Minute
+)
+
+type CacheEntry struct {
+	value    bool
+	expireAt time.Time
+}
+
 type ZkVerify struct {
-	vk groth16.VerifyingKey
+	vk    groth16.VerifyingKey
+	cache sync.Map // map[string]CacheEntry
 }
 
 func NewZkVerify(keyPath string) *ZkVerify {
@@ -35,10 +49,52 @@ func NewZkVerify(keyPath string) *ZkVerify {
 		return nil
 	}
 
-	return &ZkVerify{vk: vk}
+	zv := &ZkVerify{vk: vk}
+	exception.SafeGoWithPanic("ZkVerifyCleaner", func() {
+		zv.cleaner()
+	})
+	return zv
+}
+
+func (v *ZkVerify) cleaner() {
+	ticker := time.NewTicker(CLEANER_INTERVAL)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		now := time.Now()
+		v.cache.Range(func(key, value interface{}) bool {
+			entry := value.(CacheEntry)
+			if now.After(entry.expireAt) {
+				v.cache.Delete(key)
+			}
+			return true
+		})
+	}
+}
+
+func makeCacheKey(sender, pubKey, proofB64, pubB64 string) string {
+	return sender + "|" + pubKey + "|" + proofB64 + "|" + pubB64
 }
 
 func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
+	cacheKey := makeCacheKey(sender, pubKey, proofB64, pubB64)
+
+	if val, ok := v.cache.Load(cacheKey); ok {
+		entry := val.(CacheEntry)
+		return entry.value
+	}
+
+	result := v.verifyInternal(sender, pubKey, proofB64, pubB64)
+
+	v.cache.Store(cacheKey, CacheEntry{
+		value:    result,
+		expireAt: time.Now().Add(CACHE_EXPIRY_DURATION),
+	})
+
+	return result
+}
+
+func (v *ZkVerify) verifyInternal(sender, pubKey, proofB64, pubB64 string) bool {
 	proofBytes, err := base64.StdEncoding.DecodeString(proofB64)
 	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to decode proof: %v", err))

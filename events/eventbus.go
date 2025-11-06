@@ -4,12 +4,17 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 )
 
-const DEFAULT_BUFFER = 256
+const (
+	DEFAULT_BUFFER     = 256
+	HEARTBEAT_INTERVAL = 30 * time.Second
+)
 
 type SubscriberID string
 
@@ -27,7 +32,11 @@ type EventBus struct {
 }
 
 func NewEventBus() *EventBus {
-	return &EventBus{buffer: DEFAULT_BUFFER}
+	eb := &EventBus{buffer: DEFAULT_BUFFER}
+	exception.SafeGoWithPanic("EventBusHeartbeat", func() {
+		eb.heartbeat()
+	})
+	return eb
 }
 
 func (eb *EventBus) generateUUIDID() SubscriberID {
@@ -80,6 +89,22 @@ func (eb *EventBus) Unsubscribe(id SubscriberID) bool {
 
 	logx.Info("EVENTBUS", fmt.Sprintf("Client unsubscribed from events | subscriber_id=%s | remaining_subscribers=%d", id, eb.GetTotalSubscriptions()))
 	return true
+}
+
+func (eb *EventBus) heartbeat() {
+	heartBeatEvent := &HeartBeatEvent{
+		timestamp: time.Now(),
+	}
+
+	ticker := time.NewTicker(HEARTBEAT_INTERVAL)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		logx.Info("EVENTBUS", fmt.Sprintf("Heartbeat | total_subscribers=%d", eb.GetTotalSubscriptions()))
+		exception.SafeGoWithPanic("EventBusHeartbeat", func() {
+			eb.Publish(heartBeatEvent)
+		})
+	}
 }
 
 // Publish publishes an event to all subscribers
