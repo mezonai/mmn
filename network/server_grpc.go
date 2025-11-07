@@ -177,7 +177,7 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 		select {
 		case event := <-eventChan:
 			// Convert event to status update for the specific transaction
-			statusUpdate := s.convertEventToStatusUpdate(event, event.TxHash())
+			statusUpdate := s.convertEventToStatusUpdate(event, event.Transaction().Hash())
 			if statusUpdate != nil {
 				if err := stream.Send(statusUpdate); err != nil {
 					return err
@@ -246,6 +246,17 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ExtraInfo:     e.TxExtraInfo(),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
+		}
+
+	case *events.HeartBeatEvent:
+		return &pb.TransactionStatusInfo{
+			TxHash:        events.HeartBeat,
+			Status:        pb.TransactionStatus_PENDING,
+			Confirmations: 0, // No confirmations for mempool transactions
+			Timestamp:     uint64(e.Timestamp().Unix()),
+			ExtraInfo:     "",
+			Amount:        "0",
+			TextData:      events.HeartBeat,
 		}
 	}
 

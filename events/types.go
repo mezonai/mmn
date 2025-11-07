@@ -14,15 +14,15 @@ const (
 	EventTransactionIncludedInBlock EventType = "TransactionIncludedInBlock"
 	EventTransactionFinalized       EventType = "TransactionFinalized"
 	EventTransactionFailed          EventType = "TransactionFailed"
+	EventHeartBeat                  EventType = "HeartBeat"
 )
 
+const HeartBeat = "HeartBeat"
+
 // BlockchainEvent represents any event that occurs in the blockchain
-// TODO: omit redundant fields (TxHash, TxExtraInfo) to keep Transaction only
 type BlockchainEvent interface {
 	Type() EventType
 	Timestamp() time.Time
-	TxHash() string
-	TxExtraInfo() string
 	Transaction() *transaction.Transaction
 }
 
@@ -188,4 +188,35 @@ func (e *TransactionFailed) TxExtraInfo() string {
 
 func (e *TransactionFailed) Transaction() *transaction.Transaction {
 	return e.tx
+}
+
+// HeartBeatEvent event when a heartbeat is received
+type HeartBeatEvent struct {
+	timestamp time.Time
+}
+
+func NewHeartBeatEvent() *HeartBeatEvent {
+	return &HeartBeatEvent{
+		timestamp: time.Now(),
+	}
+}
+
+func (e *HeartBeatEvent) Type() EventType {
+	return EventHeartBeat
+}
+
+func (e *HeartBeatEvent) Timestamp() time.Time {
+	return e.timestamp
+}
+
+func (e *HeartBeatEvent) TxHash() string {
+	return HeartBeat
+}
+
+func (e *HeartBeatEvent) TxExtraInfo() string {
+	return ""
+}
+
+func (e *HeartBeatEvent) Transaction() *transaction.Transaction {
+	return nil
 }

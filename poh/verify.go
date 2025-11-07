@@ -56,7 +56,7 @@ func ValidateEntry(e Entry) error {
 			return fmt.Errorf("transaction %d is nil", i)
 		}
 
-		if tx.Sender == "0" {
+		if tx.Sender == "" {
 			return fmt.Errorf("transaction %d has empty sender", i)
 		}
 
