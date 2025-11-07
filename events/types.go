@@ -20,12 +20,9 @@ const (
 const HeartBeat = "HeartBeat"
 
 // BlockchainEvent represents any event that occurs in the blockchain
-// TODO: omit redundant fields (TxHash, TxExtraInfo) to keep Transaction only
 type BlockchainEvent interface {
 	Type() EventType
 	Timestamp() time.Time
-	TxHash() string
-	TxExtraInfo() string
 	Transaction() *transaction.Transaction
 }
 
