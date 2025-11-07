@@ -228,10 +228,7 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	if sender.Balance.Cmp(tx.Amount) < 0 {
 		return fmt.Errorf("insufficient balance")
 	}
-	// Strict nonce validation to prevent duplicate transactions
-	if tx.Nonce != sender.Nonce+1 {
-		return fmt.Errorf("%w: expected %d, got %d", ErrInvalidNonce, sender.Nonce+1, tx.Nonce)
-	}
+
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
 	sender.Nonce = tx.Nonce

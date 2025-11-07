@@ -12,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/zkverify"
+	"github.com/mr-tron/base58"
 )
 
 const (
@@ -140,6 +141,11 @@ func (tx *Transaction) Bytes() []byte {
 func (tx *Transaction) Hash() string {
 	sum256 := sha256.Sum256(tx.Bytes())
 	return hex.EncodeToString(sum256[:])
+}
+
+func (tx *Transaction) DedupHash() string {
+	sum256 := sha256.Sum256(tx.Serialize())
+	return base58.Encode(sum256[:])
 }
 
 func base58ToEd25519(addr string) (ed25519.PublicKey, error) {
