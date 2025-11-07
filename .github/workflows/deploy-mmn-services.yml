@@ -31,6 +31,7 @@ jobs:
       - name: Checkout for git history
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - name: Calculate new tag
@@ -158,6 +159,7 @@ jobs:
         with:
           tag_name: ${{ steps.determine_release_tag.outputs.tag }}
           name: "Release ${{ steps.determine_release_tag.outputs.tag }}"
+          target_commitish: ${{ inputs.ref }}
           fail_on_unmatched_files: true
           files: |
             build/mmn-${{ steps.determine_release_tag.outputs.tag }}
