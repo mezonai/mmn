@@ -238,10 +238,7 @@ func (mb *MockBroadcaster) GetBroadcasted() []*transaction.Transaction {
 
 // NewTestDedupService returns an empty DedupService suitable for tests (no stores)
 func NewTestDedupService() *DedupService {
-	return &DedupService{
-		txDedupHashSet:     make(map[string]struct{}),
-		slotTxDedupHashSet: make(map[uint64]map[string]struct{}),
-	}
+	return NewDedupService(nil, nil)
 }
 
 // ----------------- Tests -----------------
@@ -349,11 +346,17 @@ func TestPullBatch_and_DedupServiceAdd(t *testing.T) {
 		t.Fatalf("expected size 1 after pull, got %d", mp.Size())
 	}
 	// Dedup service should have recorded the pulled dedup hashes (slot 100)
-	dedup.mu.RLock()
-	added := dedup.slotTxDedupHashSet[100]
-	dedup.mu.RUnlock()
-	if len(added) != 1 {
-		t.Fatalf("expected dedup service to receive 1 hash for slot 100, got %d", len(added))
+	v, ok := dedup.slotEntry.Load(uint64(100))
+	if !ok {
+		t.Fatalf("expected dedup service to have slot 100 recorded")
+	}
+	se := v.(*slotEntry)
+	se.mu.Lock()
+	count := len(se.txDedupHashes)
+	se.mu.Unlock()
+
+	if count != 1 {
+		t.Fatalf("expected 1 hash for slot 100, got %d", count)
 	}
 }
 
@@ -419,13 +422,14 @@ func TestBlockCleanupAndVerifyBlockTransactions(t *testing.T) {
 
 	// simulate dedup service marking one of tx dedup as duplicate
 	dh := tx1.DedupHash()
-	dedup.mu.Lock()
-	if _, exists := dedup.slotTxDedupHashSet[1]; !exists {
-		dedup.slotTxDedupHashSet[1] = make(map[string]struct{})
-	}
-	dedup.txDedupHashSet[dh] = struct{}{}
-	dedup.slotTxDedupHashSet[1][dh] = struct{}{}
-	dedup.mu.Unlock()
+	shardIndex := getShardIndex(dh)
+	shard := dedup.txShards[shardIndex]
+	shard.mu.Lock()
+	shard.txDedupHashSet[dh] = struct{}{}
+	shard.mu.Unlock()
+
+	// Store into slotTxDedupHashes (map + lock)
+	dedup.Add(1, []string{dh})
 
 	// Now VerifyBlockTransactions should fail (duplicate)
 	if err := mp.VerifyBlockTransactions([]*transaction.Transaction{tx1}); err == nil {
