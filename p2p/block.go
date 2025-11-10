@@ -225,7 +225,7 @@ func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.BroadcastedBlock, s
 	if err != nil {
 		return fmt.Errorf("failed to marshal batch: %w", err)
 	}
-	err = s.SetWriteDeadline(time.Now().Add(30 * time.Second))	
+	err = s.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to set write deadline:", err)
 	}
@@ -535,7 +535,7 @@ func (ln *Libp2pNetwork) verifyBlockTransactions(blk *block.BroadcastedBlock) er
 			}
 			if !tx.Verify(ln.zkVerify) {
 				logx.Error("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verification failed at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, stringutil.ShortenLog(tx.Hash())))
-				return fmt.Errorf("transaction verification failed for tx hash: %s", stringutil.ShortenLog(string(tx.Hash())))
+				return fmt.Errorf("transaction verification failed for tx hash: %s", stringutil.ShortenLog(tx.Hash()))
 			}
 
 			logx.Debug("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verified successfully at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, tx.Hash()))

@@ -134,7 +134,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Event sent successfully
 			default:
 				// Channel is full, skip this subscriber
-				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", stringutil.ShortenLog(string(id)), stringutil.ShortenLog(string(txHash))))
+				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", stringutil.ShortenLog(string(id)), stringutil.ShortenLog(txHash)))
 			}
 			return true
 		})
