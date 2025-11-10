@@ -25,6 +25,7 @@ var (
 
 type Ledger struct {
 	mu           sync.RWMutex
+	bStore       store.BlockStore
 	txStore      store.TxStore
 	txMetaStore  store.TxMetaStore
 	accountStore store.AccountStore
@@ -32,8 +33,9 @@ type Ledger struct {
 	txTracker    interfaces.TransactionTrackerInterface
 }
 
-func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
+func NewLedger(bStore store.BlockStore, txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
 	return &Ledger{
+		bStore:       bStore,
 		txStore:      txStore,
 		txMetaStore:  txMetaStore,
 		accountStore: accountStore,
@@ -94,7 +96,7 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
+func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
@@ -103,36 +105,34 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 		return nil
 	}
 
+	successfulTxs := make([]*transaction.Transaction, 0)
+	txMetas := make([]*types.TransactionMeta, 0)
+	state := map[string]*types.Account{}
+
 	for _, entry := range b.Entries {
+		if entry.Tick {
+			continue
+		}
+
 		txs, err := l.txStore.GetBatch(entry.TxHashes)
 		if err != nil {
 			return err
 		}
-		txMetas := make([]*types.TransactionMeta, 0, len(txs))
 
 		for _, tx := range txs {
-			// load account state
-			sender, err := l.accountStore.GetByAddr(tx.Sender)
-			if err != nil {
-				return err
-			}
-			if sender == nil {
-				if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
+			if state[tx.Sender] == nil {
+				sender, err := l.getAccountOrCreate(tx.Sender)
+				if err != nil {
 					return err
 				}
+				state[tx.Sender] = sender
 			}
-			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
-			if err != nil {
-				return err
-			}
-			if recipient == nil {
-				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
+			if state[tx.Recipient] == nil {
+				recipient, err := l.getAccountOrCreate(tx.Recipient)
+				if err != nil {
 					return err
 				}
-			}
-			state := map[string]*types.Account{
-				sender.Address:    sender,
-				recipient.Address: recipient,
+				state[tx.Recipient] = recipient
 			}
 
 			// try to apply tx
@@ -142,14 +142,9 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 				if l.eventRouter != nil {
 					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
 					l.eventRouter.PublishTransactionEvent(event)
-					if errors.Is(err, ErrInvalidNonce) {
-						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxInvalidNonce)
-					} else {
-						monitoring.IncreaseFailedTpsCount(err.Error())
-					}
+					monitoring.IncreaseFailedTpsCount(err.Error())
 				}
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
-				state[tx.Sender].Nonce++
 				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
 				// Remove failed transaction from tracker
 				if l.txTracker != nil && !isListener {
@@ -158,38 +153,24 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 				continue
 			}
 			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+			successfulTxs = append(successfulTxs, tx)
 			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
 			// Remove successful transaction from tracker
 			if l.txTracker != nil && !isListener {
 				l.txTracker.RemoveTransaction(txHash)
 			}
+		}
+	}
 
-			// commit the update
-			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
-				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
-					l.eventRouter.PublishTransactionEvent(event)
-					switch {
-					case errors.Is(err, store.ErrFailedMarshalAccount):
-						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedMarshalAccount)
-					case errors.Is(err, store.ErrFaliedWriteAccount):
-						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedWriteAccount)
-					default:
-						monitoring.IncreaseFailedTpsCount(err.Error())
-					}
-				}
-				return err
+	if err := l.bStore.FinalizeBlock(b.Slot, txMetas, state); err != nil {
+		if l.eventRouter != nil {
+			for _, tx := range successfulTxs {
+				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+				l.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFailedTpsCount(err.Error())
 			}
-			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
 		}
-		if len(txMetas) > 0 {
-			err := l.txMetaStore.StoreBatch(txMetas)
-			if err != nil {
-				logx.Error("LEDGER", fmt.Sprintf("Failed to store tx metas for block=%d, len=%d: %v", b.Slot, len(txMetas), err))
-				return err
-			}
-			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
-		}
+		return fmt.Errorf("finalized block error: %w", err)
 	}
 
 	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
@@ -261,6 +242,19 @@ func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[st
 	}
 
 	return txs, txMetas, nil
+}
+
+func (l *Ledger) getAccountOrCreate(accAddr string) (*types.Account, error) {
+	sender, err := l.accountStore.GetByAddr(accAddr)
+	if err != nil {
+		return nil, err
+	}
+	if sender == nil {
+		if sender, err = l.createAccountWithoutLocking(accAddr, uint256.NewInt(0)); err != nil {
+			return nil, err
+		}
+	}
+	return sender, nil
 }
 
 var ErrInvalidNonce = errors.New("invalid nonce")
