@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	DEDUP_SLOT_GAP = 200
-	NUM_SHARDS     = 128
+	DedupSlotGap = 200
+	NumShards     = 128
 )
 
 type slotEntry struct {
@@ -24,7 +24,7 @@ type dedupShard struct {
 }
 
 type DedupService struct {
-	txShards  [NUM_SHARDS]*dedupShard
+	txShards  [NumShards]*dedupShard
 	slotEntry sync.Map // map[uint64]*slotEntry
 	bs        store.BlockStore
 	ts        store.TxStore
@@ -36,7 +36,7 @@ func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
 		ts: ts,
 	}
 
-	for i := 0; i < NUM_SHARDS; i++ {
+	for i := 0; i < NumShards; i++ {
 		ds.txShards[i] = &dedupShard{
 			txDedupHashSet: make(map[string]struct{}),
 		}
@@ -51,8 +51,8 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 	}
 
 	startSlot := uint64(1)
-	if latestSlot > DEDUP_SLOT_GAP {
-		startSlot = latestSlot - DEDUP_SLOT_GAP + 1
+	if latestSlot > DedupSlotGap {
+		startSlot = latestSlot - DedupSlotGap + 1
 	}
 
 	loadSlots := make([]uint64, 0, latestSlot-startSlot+1)
@@ -113,10 +113,10 @@ func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
 }
 
 func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
-	if slot <= DEDUP_SLOT_GAP {
+	if slot <= DedupSlotGap {
 		return
 	}
-	oldSlot := slot - DEDUP_SLOT_GAP
+	oldSlot := slot - DedupSlotGap
 
 	v, ok := ds.slotEntry.LoadAndDelete(oldSlot)
 	if !ok {
@@ -140,5 +140,5 @@ func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
 func getShardIndex(key string) uint {
 	h := fnv.New32a()
 	h.Write([]byte(key))
-	return uint(h.Sum32() % NUM_SHARDS)
+	return uint(h.Sum32() % NumShards)
 }

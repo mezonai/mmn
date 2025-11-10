@@ -64,12 +64,14 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 		return nil, nil, err
 	}
 
-	if err := ddht.Bootstrap(ctx); err != nil {
+	err = ddht.Bootstrap(ctx);
+	if err != nil {
 		return nil, nil, err
 	}
 
 	// Start circuit relay service (server side) to relay connections between isolated nodes
-	if _, err := relay.New(h); err != nil {
+	 _, err = relay.New(h);
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to enable relay service: %w", err)
 	}
 
@@ -178,7 +180,7 @@ func openSteam(peerID peer.ID, h host.Host) {
 	}
 }
 
-func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, localBootstrapAddr ma.Multiaddr) {
+func sendPeerInfo(h host.Host, targetPeer, peerToAnnounce peer.ID, localBootstrapAddr ma.Multiaddr) {
 	stream, err := h.NewStream(context.Background(), targetPeer, NodeInfoProtocol)
 	if err != nil {
 		logx.Error("BOOTSTRAP NODE", "Failed to open stream for peer introduction:", err)

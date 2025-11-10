@@ -36,10 +36,10 @@ type dhtDiscovery struct {
 }
 
 // NewDHTDiscovery creates a new dhtDiscovery that implements Discovery interface.
-func NewDHTDiscovery(ctx context.Context, cancel context.CancelFunc, host libp2p_host.Host, dht *dht.IpfsDHT, opt DHTConfig) (Discovery, error) {
-	d := libp2p_dis.NewRoutingDiscovery(dht)
+func NewDHTDiscovery(ctx context.Context, cancel context.CancelFunc, host libp2p_host.Host, ipfsDHT *dht.IpfsDHT, opt DHTConfig) (Discovery, error) {
+	d := libp2p_dis.NewRoutingDiscovery(ipfsDHT)
 	return &dhtDiscovery{
-		dht:    dht,
+		dht:    ipfsDHT,
 		disc:   d,
 		host:   host,
 		opt:    opt,

@@ -141,7 +141,7 @@ type SyncRequestInfo struct {
 	IsActive  bool
 }
 
-// for trach when multiples requests
+// SyncRequestTracker for tracking multiple synchronization requests.
 type SyncRequestTracker struct {
 	RequestID    string
 	FromSlot     uint64
@@ -184,7 +184,7 @@ type MissingBlockInfo struct {
 	MaxRetries int       `json:"max_retries"`
 }
 
-// Snapshot gossip messages
+// SnapshotAnnounce represents a snapshot gossip message.
 type SnapshotAnnounce struct {
 	Slot      uint64 `json:"slot"`
 	BankHash  string `json:"bank_hash"`

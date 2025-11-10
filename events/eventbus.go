@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	DEFAULT_BUFFER     = 256
-	HEARTBEAT_INTERVAL = 30 * time.Second
+	DefaultBuffer     = 256
+	HeartbeatInterval = 30 * time.Second
 )
 
 type SubscriberID string
@@ -32,7 +32,7 @@ type EventBus struct {
 }
 
 func NewEventBus() *EventBus {
-	eb := &EventBus{buffer: DEFAULT_BUFFER}
+	eb := &EventBus{buffer: DefaultBuffer}
 	exception.SafeGoWithPanic("EventBusHeartbeat", func() {
 		eb.heartbeat()
 	})
@@ -44,16 +44,16 @@ func (eb *EventBus) generateUUIDID() SubscriberID {
 	return SubscriberID(id.String())
 }
 
-func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
+func (eb *EventBus) Subscribe() (id SubscriberID, ch chan BlockchainEvent) {
 	if eb.closed.Load() {
 		logx.Warn("EVENTBUS", "Subscribe called on closed EventBus")
-		ch := make(chan BlockchainEvent)
+		ch = make(chan BlockchainEvent)
 		close(ch)
 		return "", ch
 	}
-	id := eb.generateUUIDID()
+	id = eb.generateUUIDID()
 
-	ch := make(chan BlockchainEvent, eb.buffer) // Buffer for events
+	ch = make(chan BlockchainEvent, eb.buffer) // Buffer for events
 	subscriber := &Subscriber{
 		ID:      id,
 		Channel: ch,
@@ -67,10 +67,10 @@ func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
 	return id, ch
 }
 
-// SetDefaultBuffer sets the default channel buffer size for new subscriptions
+// SetBuffer sets the default channel buffer size for new subscriptions
 func (eb *EventBus) SetBuffer(buffer int) {
 	if buffer <= 0 {
-		buffer = DEFAULT_BUFFER
+		buffer = DefaultBuffer
 	}
 	eb.buffer = buffer
 }
@@ -96,7 +96,7 @@ func (eb *EventBus) heartbeat() {
 		timestamp: time.Now(),
 	}
 
-	ticker := time.NewTicker(HEARTBEAT_INTERVAL)
+	ticker := time.NewTicker(HeartbeatInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -135,7 +135,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Channel is full, skip this subscriber
 				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", id, txHash))
 			}
-			return true // continue iteration
+			return true
 		})
 	} else {
 		logx.Info("EVENTBUS", fmt.Sprintf("No subscribers for event | event_type=%s | tx_hash=%s", event.Type(), txHash))
