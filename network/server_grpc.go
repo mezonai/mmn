@@ -17,6 +17,7 @@ import (
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/stringutil"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/utils"
@@ -86,7 +87,7 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *val
 	pb.RegisterHealthServiceServer(grpcSrv, s)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
-		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", utils.ShortenLog(string(addr)), err))
+		logx.Error("GRPC SERVER", fmt.Sprintf("[gRPC] Failed to listen on %s: %v", stringutil.ShortenLog(addr), err))
 		return nil
 	}
 	exception.SafeGoWithPanic("Grpc Server", func() {
@@ -378,7 +379,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 			txMeta, metaExists := txMetaMap[txHash]
 
 			if !txExists || !metaExists {
-				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", utils.ShortenLog(string(txHash))))
+				logx.Error("GRPC SERVER", fmt.Sprintf("tx %s not found in batch result", stringutil.ShortenLog(txHash)))
 				return nil, errors.NewError(errors.ErrCodeTransactionNotFound, errors.ErrMsgTransactionNotFound)
 			}
 
@@ -499,8 +500,8 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 			txMeta, metaExists := txMetas[txHash]
 
 			if !txExists || !metaExists {
-				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", utils.ShortenLog(string(txHash)), slot))
-				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", utils.ShortenLog(string(txHash)), slot))
+				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", stringutil.ShortenLog(txHash), slot))
+				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", stringutil.ShortenLog(txHash), slot))
 				continue
 			}
 

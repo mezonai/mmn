@@ -10,7 +10,7 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
-	"github.com/mezonai/mmn/utils"
+	"github.com/mezonai/mmn/stringutil"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
@@ -69,7 +69,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 
 	// Quick validate transaction
 	if err := mp.cheapValidateTransaction(tx); err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", utils.ShortenLog(string(txHash)), err))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", stringutil.ShortenLog(txHash), err))
 		return "", err
 	}
 
@@ -77,7 +77,7 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.mu.Lock()
 	// Validate transaction INSIDE the write lock
 	if err := mp.validateTransaction(tx); err != nil {
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", utils.ShortenLog(string(txHash)), err))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping invalid tx %s: %v", stringutil.ShortenLog(txHash), err))
 		mp.mu.Unlock()
 		return "", err
 	}
@@ -240,7 +240,7 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	// Validate balance accounting
 	if err := mp.validateBalance(tx); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxInsufficientBalance)
-		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", utils.ShortenLog(string(tx.Hash())), err.Error()))
+		logx.Error("MEMPOOL", fmt.Sprintf("Dropping tx %s due to insufficient balance: %s", stringutil.ShortenLog(tx.Hash()), err.Error()))
 		return err
 	}
 

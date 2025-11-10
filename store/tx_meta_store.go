@@ -6,8 +6,8 @@ import (
 	"github.com/mezonai/mmn/db"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/stringutil"
 	"github.com/mezonai/mmn/types"
-	"github.com/mezonai/mmn/utils"
 )
 
 // TxMetaStore is the interface for transaction meta store
@@ -74,13 +74,13 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta, error) {
 	data, err := tms.dbProvider.Get(tms.getDbKey(txHash))
 	if err != nil {
-		return nil, fmt.Errorf("could not get transaction meta %s from db: %w",  utils.ShortenLog(txHash), err)
+		return nil, fmt.Errorf("could not get transaction meta %s from db: %w", stringutil.ShortenLog(txHash), err)
 	}
 
 	var txMeta types.TransactionMeta
 	err = jsonx.Unmarshal(data, &txMeta)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transaction meta %s: %w", utils.ShortenLog(txHash), err)
+		return nil, fmt.Errorf("failed to unmarshal transaction meta %s: %w", stringutil.ShortenLog(txHash), err)
 	}
 
 	return &txMeta, nil
@@ -113,14 +113,14 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 		data, exists := dataMap[string(key)]
 
 		if !exists {
-			logx.Warn("TX_META_STORE", fmt.Sprintf("Transaction meta %s not found in batch result", utils.ShortenLog(txHash)))
+			logx.Warn("TX_META_STORE", fmt.Sprintf("Transaction meta %s not found in batch result", stringutil.ShortenLog(txHash)))
 			continue
 		}
 
 		var txMeta types.TransactionMeta
 		err = jsonx.Unmarshal(data, &txMeta)
 		if err != nil {
-			logx.Warn("TX_META_STORE", fmt.Sprintf("Failed to unmarshal transaction meta %s: %s", utils.ShortenLog(txHash), err.Error()))
+			logx.Warn("TX_META_STORE", fmt.Sprintf("Failed to unmarshal transaction meta %s: %s", stringutil.ShortenLog(txHash), err.Error()))
 			continue
 		}
 
