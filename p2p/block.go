@@ -535,7 +535,7 @@ func (ln *Libp2pNetwork) verifyBlockTransactions(blk *block.BroadcastedBlock) er
 			}
 			if !tx.Verify(ln.zkVerify) {
 				logx.Error("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verification failed at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, utils.ShortenLog(string(tx.Hash()))))
-				return fmt.Errorf("transaction verification failed for tx hash: %s", tx.Hash())
+				return fmt.Errorf("transaction verification failed for tx hash: %s", utils.ShortenLog(string(tx.Hash())))
 			}
 
 			logx.Debug("BLOCK:TX:VERIFY", fmt.Sprintf("Transaction verified successfully at slot %d, entry %d, tx %d, hash: %s", blk.Slot, entryIdx, txIdx, utils.ShortenLog(string(tx.Hash()))))

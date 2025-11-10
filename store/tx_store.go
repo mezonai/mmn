@@ -74,14 +74,14 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, error) {
 	data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
 	if err != nil {
-		return nil, fmt.Errorf("could not get transaction %s from db: %w", txHash, err)
+		return nil, fmt.Errorf("could not get transaction %s from db: %w",  utils.ShortenLog(txHash), err)
 	}
 
 	// Deserialize transaction
 	var tx transaction.Transaction
 	err = jsonx.Unmarshal(data, &tx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txHash, err)
+		return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", utils.ShortenLog(txHash), err)
 	}
 
 	return &tx, nil

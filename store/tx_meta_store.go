@@ -74,13 +74,13 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta, error) {
 	data, err := tms.dbProvider.Get(tms.getDbKey(txHash))
 	if err != nil {
-		return nil, fmt.Errorf("could not get transaction meta %s from db: %w", txHash, err)
+		return nil, fmt.Errorf("could not get transaction meta %s from db: %w",  utils.ShortenLog(txHash), err)
 	}
 
 	var txMeta types.TransactionMeta
 	err = jsonx.Unmarshal(data, &txMeta)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transaction meta %s: %w", txHash, err)
+		return nil, fmt.Errorf("failed to unmarshal transaction meta %s: %w", utils.ShortenLog(txHash), err)
 	}
 
 	return &txMeta, nil
