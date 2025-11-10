@@ -58,7 +58,7 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 			return fmt.Errorf("failed to marshal transaction: %w", err)
 		}
 
-		batch.Put(ts.getDbKey(tx.Hash()), txData)
+		batch.Put(ts.getDBKey(tx.Hash()), txData)
 	}
 
 	err := batch.Write()
@@ -72,7 +72,7 @@ func (ts *GenericTxStore) StoreBatch(txs []*transaction.Transaction) error {
 
 // GetByHash retrieves a transaction by its hash
 func (ts *GenericTxStore) GetByHash(txHash string) (*transaction.Transaction, error) {
-	data, err := ts.dbProvider.Get(ts.getDbKey(txHash))
+	data, err := ts.dbProvider.Get(ts.getDBKey(txHash))
 	if err != nil {
 		return nil, fmt.Errorf("could not get transaction %s from db: %w", stringutil.ShortenLog(txHash), err)
 	}
@@ -98,7 +98,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 	// Prepare keys for batch operation
 	keys := make([][]byte, len(txHashes))
 	for i, txHash := range txHashes {
-		keys[i] = ts.getDbKey(txHash)
+		keys[i] = ts.getDBKey(txHash)
 	}
 
 	// Use true batch read - single CGO call!
@@ -110,7 +110,7 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 	transactions := make([]*transaction.Transaction, 0, len(txHashes))
 
 	for _, txHash := range txHashes {
-		key := ts.getDbKey(txHash)
+		key := ts.getDBKey(txHash)
 		data, exists := dataMap[string(key)]
 
 		if !exists {
@@ -141,6 +141,6 @@ func (ts *GenericTxStore) MustClose() {
 	}
 }
 
-func (ts *GenericTxStore) getDbKey(txHash string) []byte {
+func (ts *GenericTxStore) getDBKey(txHash string) []byte {
 	return []byte(PrefixTx + txHash)
 }

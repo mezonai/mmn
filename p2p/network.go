@@ -56,7 +56,8 @@ func NewNetWork(
 		if bootstrapPeer == "" {
 			continue
 		}
-		infos, err := discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
+		var infos []peer.AddrInfo
+		infos, err = discovery.ResolveAndParseMultiAddrs([]string{bootstrapPeer})
 		if err != nil {
 			logx.Error("NETWORK:SETUP", "Invalid bootstrap address for static relay:", bootstrapPeer, ", error:", err)
 			continue
@@ -68,7 +69,7 @@ func NewNetWork(
 
 	quicAddr := strings.Replace(listenAddr, "/tcp/", "/udp/", 1) + "/quic-v1"
 
-	publicTcpAddr, publicQuicAddr := createPublicAddresses(p2pPort, publicIP)
+	publicTCPAddr, publicQuicAddr := createPublicAddresses(p2pPort, publicIP)
 
 	h, err := libp2p.New(
 		libp2p.Identity(privKey),
@@ -80,8 +81,8 @@ func NewNetWork(
 		libp2p.NATPortMap(),
 		libp2p.ForceReachabilityPublic(),
 		libp2p.AddrsFactory(func(addrs []ma.Multiaddr) []ma.Multiaddr {
-			if publicTcpAddr != nil && publicQuicAddr != nil {
-				addrs = append(addrs, publicTcpAddr, publicQuicAddr)
+			if publicTCPAddr != nil && publicQuicAddr != nil {
+				addrs = append(addrs, publicTCPAddr, publicQuicAddr)
 			}
 			return addrs
 		}),
@@ -96,7 +97,7 @@ func NewNetWork(
 		return nil, fmt.Errorf("failed to create libp2p host: %w", err)
 	}
 
-	if err := ddht.Bootstrap(ctx); err != nil {
+	if err = ddht.Bootstrap(ctx); err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to bootstrap DHT: %w", err)
 	}
@@ -279,19 +280,19 @@ func (ln *Libp2pNetwork) startRelayReservationMaintainer() {
 	})
 }
 
-func createPublicAddresses(p2pPort string, publicIP string) (ma.Multiaddr, ma.Multiaddr) {
+func createPublicAddresses(p2pPort, publicIP string) (publicTCPAddr, publicQuicAddr ma.Multiaddr) {
 	port, err := strconv.Atoi(p2pPort)
 	if err != nil {
 		return nil, nil
 	}
 
-	publicTcpAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", publicIP, port))
-	publicQuicAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", publicIP, port))
+	publicTCPAddr, _ = ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", publicIP, port))
+	publicQuicAddr, _ = ma.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/%d/quic-v1", publicIP, port))
 
-	return publicTcpAddr, publicQuicAddr
+	return publicTCPAddr, publicQuicAddr
 }
 
-// this func will call if node shutdown for now just cancle when error
+// Close func will call if node shutdown for now just cancle when error
 func (ln *Libp2pNetwork) Close() {
 	ln.cancel()
 	err := ln.host.Close()
@@ -316,7 +317,8 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	}
 
 	var msg map[string]interface{}
-	if err := jsonx.Unmarshal(buf[:n], &msg); err != nil {
+	err = jsonx.Unmarshal(buf[:n], &msg)
+	if err != nil {
 		logx.Error("NETWORK:HANDLE NODE INFOR STREAM", "Failed to unmarshal peer info: ", err)
 		return
 	}
@@ -331,7 +333,8 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 	addrStrs := msg["addrs"].([]interface{})
 	var addrs []ma.Multiaddr
 	for _, a := range addrStrs {
-		maddr, err := ma.NewMultiaddr(a.(string))
+		var maddr ma.Multiaddr
+		maddr, err = ma.NewMultiaddr(a.(string))
 		if err == nil {
 			addrs = append(addrs, maddr)
 		}
@@ -349,16 +352,18 @@ func (ln *Libp2pNetwork) handleNodeInfoStream(s network.Stream) {
 			continue
 		}
 		hopStr := addrStr[:idx]
-		hopMaddr, err := ma.NewMultiaddr(hopStr)
+		var hopMaddr ma.Multiaddr
+		hopMaddr, err = ma.NewMultiaddr(hopStr)
 		if err != nil {
 			continue
 		}
-		relayInfo, err := peer.AddrInfoFromP2pAddr(hopMaddr)
+		var relayInfo *peer.AddrInfo
+		relayInfo, err = peer.AddrInfoFromP2pAddr(hopMaddr)
 		if err != nil {
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if _, err := rclient.Reserve(ctx, ln.host, *relayInfo); err != nil {
+		if _, err = rclient.Reserve(ctx, ln.host, *relayInfo); err != nil {
 			logx.Warn("RELAYER", "Reserve via hop failed:", err)
 		} else {
 			logx.Info("RELAYER", "Reserved via hop relay:", relayInfo.ID.String())

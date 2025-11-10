@@ -26,7 +26,7 @@ func NewSlotHashQueue() *SlotHashQueue {
 
 	return &SlotHashQueue{
 		slotMap: slotMap,
-		maxSize: MAX_SLOT_HASH_QUEUE_SIZE,
+		maxSize: MaxSlotHashQueueSize,
 	}
 }
 

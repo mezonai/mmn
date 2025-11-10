@@ -22,7 +22,7 @@ import (
 const WALLETS_DIR = "wallets"
 
 func ToBigNumber(s int64) *uint256.Int {
-	scale := new(uint256.Int).Exp(uint256.NewInt(10), uint256.NewInt(clt.NATIVE_DECIMAL))
+	scale := new(uint256.Int).Exp(uint256.NewInt(10), uint256.NewInt(clt.NativeDecimal))
 	return new(uint256.Int).Mul(uint256.NewInt(uint64(s)), scale)
 }
 

@@ -144,7 +144,7 @@ type getCurrentNonceResponse struct {
 
 type HealthCheckResponse struct {
 	Status       int32  `json:"status"`
-	NodeId       string `json:"node_id"`
+	NodeID       string `json:"node_id"`
 	Timestamp    uint64 `json:"timestamp"`
 	CurrentSlot  uint64 `json:"current_slot"`
 	BlockHeight  uint64 `json:"block_height"`
@@ -245,15 +245,15 @@ func (s *Server) Start() {
 }
 
 // SetCORSConfig allows configuring CORS settings
-func (s *Server) SetCORSConfig(config CORSConfig) {
-	s.corsConfig = config
+func (s *Server) SetCORSConfig(config *CORSConfig) {
+	s.corsConfig = *config
 }
 
 // Build jrpc2 method map
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
 		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			res := s.rpcAddTx(p)
+			res := s.rpcAddTx(&p)
 			if res == nil {
 				return nil, nil
 			}
@@ -316,7 +316,7 @@ func (s *Server) buildMethodMap() handler.Map {
 
 // --- Implementations ---
 
-func (s *Server) rpcAddTx(p signedTxParams) interface{} {
+func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
 	pbSigned := &pb.SignedTxMsg{
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
@@ -412,7 +412,7 @@ func (s *Server) rpcHealthCheck(ctx context.Context) (interface{}, *rpcError) {
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
-	return &HealthCheckResponse{Status: int32(resp.Status), NodeId: resp.NodeId, Timestamp: resp.Timestamp, CurrentSlot: resp.CurrentSlot, BlockHeight: resp.BlockHeight, MempoolSize: resp.MempoolSize, IsLeader: resp.IsLeader, IsFollower: resp.IsFollower, Version: resp.Version, Uptime: resp.Uptime, ErrorMessage: resp.ErrorMessage}, nil
+	return &HealthCheckResponse{Status: int32(resp.Status), NodeID: resp.NodeId, Timestamp: resp.Timestamp, CurrentSlot: resp.CurrentSlot, BlockHeight: resp.BlockHeight, MempoolSize: resp.MempoolSize, IsLeader: resp.IsLeader, IsFollower: resp.IsFollower, Version: resp.Version, Uptime: resp.Uptime, ErrorMessage: resp.ErrorMessage}, nil
 }
 
 // --- Helpers ---

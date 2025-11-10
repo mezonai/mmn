@@ -23,7 +23,7 @@ func (opt DHTConfig) GetLibp2pRawOptions() ([]dht.Option, error) {
 	}
 	opts = append(opts, bootOption)
 
-	if opt.DataStoreFile != nil && len(*opt.DataStoreFile) != 0 {
+	if opt.DataStoreFile != nil && *opt.DataStoreFile != "" {
 		dsOption, err := getDataStoreOption(*opt.DataStoreFile)
 		if err != nil {
 			return nil, errors.WithMessage(err, "failed to get data store option")
