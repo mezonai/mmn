@@ -29,10 +29,11 @@ func (ln *Libp2pNetwork) AddBlockToOrderingQueue(blk *block.BroadcastedBlock, bs
 	// Add block to queue
 	ln.blockOrderingQueue[blk.Slot] = blk
 
-	return ln.processConsecutiveBlocks(bs, ld)
+	rs := ln.processConsecutiveBlocks(bs, ld)
+	return rs, nil
 }
 
-func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) (*block.BroadcastedBlock, error) {
+func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledger.Ledger) *block.BroadcastedBlock {
 	var processedBlocks []*block.BroadcastedBlock
 	var emptyBlocksToBroadcast []*block.BroadcastedBlock
 	// Find consecutive blocks starting from nextExpectedSlot
@@ -91,17 +92,15 @@ func (ln *Libp2pNetwork) processConsecutiveBlocks(bs store.BlockStore, ld *ledge
 	}
 
 	if len(processedBlocks) == 0 {
-		return nil, nil
+		return nil
 	}
-	return processedBlocks[len(processedBlocks)-1], nil
+	return processedBlocks[len(processedBlocks)-1]
 }
 
 func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.BlockStore, ld *ledger.Ledger) error {
-
 	if !blk.VerifySignature() {
 		logx.Error("BLOCK", fmt.Sprintf("Invalid signature at slot %d, leaderID: %s", blk.Slot, blk.LeaderID))
 		return fmt.Errorf("invalid signature")
-
 	}
 
 	if err := ln.verifyBlockTransactions(blk); err != nil {
@@ -126,9 +125,6 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk), ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
-
-	// Remove from missing blocks tracker
-	ln.removeFromMissingTracker(blk.Slot)
 
 	logx.Info("BLOCK:ORDERING", "Successfully processed block at slot", blk.Slot)
 	return nil

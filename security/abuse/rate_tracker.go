@@ -2,6 +2,8 @@ package abuse
 
 import (
 	"time"
+
+	"github.com/mezonai/mmn/exception"
 )
 
 func DefaultRateConfig() *RateConfig {
@@ -24,7 +26,9 @@ func NewRateTracker(config *RateConfig) *RateTracker {
 		config:      config,
 	}
 
-	go rt.cleanupRoutine()
+	exception.SafeGo("RateTrackerCleanup", func() {
+		rt.cleanupRoutine()
+	})
 
 	return rt
 }
@@ -75,7 +79,6 @@ func (rt *RateTracker) trackRequest(rates map[string]*RateData, key string) {
 	data.minuteCount++
 	data.hourCount++
 	data.dayCount++
-
 }
 
 func (rt *RateTracker) GetIPRate(ip string, window time.Duration) int {

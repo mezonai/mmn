@@ -113,7 +113,6 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 }
 
 func (b *BroadcastedBlock) VerifySignature() bool {
-
 	pubKey, err := getPublicKeyFromLeaderID(b.LeaderID)
 	if err != nil {
 		logx.Error("BroadcastedBlock", fmt.Sprintf("Failed to get public key from LeaderID: %v", err))
@@ -135,7 +134,7 @@ func getPublicKeyFromLeaderID(leaderID string) (ed25519.PublicKey, error) {
 
 	pubKeyBytes, err := common.DecodeBase58ToBytes(leaderID)
 	if err != nil {
-		return nil, errors.Errorf("failed to decode leader ID: %w", err)
+		return nil, errors.Wrap(err, "failed to decode leader ID")
 	}
 
 	if len(pubKeyBytes) != ed25519.PublicKeySize {

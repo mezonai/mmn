@@ -8,7 +8,15 @@ services:
         DB_VENDOR: ${DB_VENDOR:-rocksdb} #rocksdb or leveldb
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: bootnode
-    command: ["./mmn", "bootnode", "--bootstrap-p2p-port", "9000", "--privkey-path", "./config/bootnode_privkey.txt"]
+    command:
+      [
+        "./mmn",
+        "bootnode",
+        "--bootstrap-p2p-port",
+        "9000",
+        "--privkey-path",
+        "./config/bootnode_privkey.txt",
+      ]
     ports:
       - "9000:9000"
     volumes:
@@ -49,7 +57,7 @@ services:
     networks:
       - mezon
     restart: unless-stopped
-      
+
   node2:
     image: mmn-node:${DB_VENDOR:-rocksdb}
     container_name: node2
@@ -174,10 +182,10 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     networks:
       - mezon
     restart: unless-stopped

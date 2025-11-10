@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 
@@ -83,7 +84,10 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 		}
 
 		data, _ := jsonx.Marshal(info)
-		s.Write(data)
+		_, err = s.Write(data)
+		if err != nil {
+			logx.Error("BOOTSTRAP NODE", "Failed to write node info to stream:", err)
+		}
 	})
 
 	// Track which bootstrap local addr a peer dialed so we can craft relay addrs
@@ -108,22 +112,30 @@ func CreateNode(ctx context.Context, cfg *Config, bootstrapP2pPort string) (h ho
 			logx.Info("BOOTSTRAP NODE", "New peer connected:", addrs.String(), peerID.String())
 
 			// Delay introductions briefly to allow peers to complete relay reservations
-			go func(newPeer peer.ID) {
-				time.Sleep(2 * time.Second)
-				// Introduce the new peer to all existing peers, and vice versa
-				peers := h.Network().Peers()
-				for _, p := range peers {
-					if p == newPeer {
-						continue
+			exception.SafeGo("IntroduceNewPeer", func() {
+				func(newPeer peer.ID) {
+					time.Sleep(2 * time.Second)
+					// Introduce the new peer to all existing peers, and vice versa
+					peers := h.Network().Peers()
+					for _, p := range peers {
+						if p == newPeer {
+							continue
+						}
+						// Send new peer info to existing peer
+						exception.SafeGo("SendPeerInfo", func() {
+							sendPeerInfo(h, p, newPeer, peerInboundOn[p])
+						})
+						// Send existing peer info to new peer
+						exception.SafeGo("SendPeerInfo", func() {
+							sendPeerInfo(h, newPeer, p, peerInboundOn[newPeer])
+						})
 					}
-					// Send new peer info to existing peer
-					go sendPeerInfo(h, p, newPeer, peerInboundOn[p])
-					// Send existing peer info to new peer
-					go sendPeerInfo(h, newPeer, p, peerInboundOn[newPeer])
-				}
-				// Also send bootstrap's own info to the new peer (existing behavior)
-				go openSteam(newPeer, h)
-			}(peerID)
+					// Also send bootstrap's own info to the new peer (existing behavior)
+					exception.SafeGo("OpenStream", func() {
+						openSteam(newPeer, h)
+					})
+				}(peerID)
+			})
 		},
 
 		DisconnectedF: func(n network.Network, c network.Conn) {
@@ -160,7 +172,10 @@ func openSteam(peerID peer.ID, h host.Host) {
 		"addrs":       addrStrings(h.Addrs()),
 	}
 	data, _ := jsonx.Marshal(info)
-	stream.Write(data)
+	_, err = stream.Write(data)
+	if err != nil {
+		logx.Error("BOOTSTRAP NODE", "Failed to write node info to stream:", err)
+	}
 }
 
 func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, localBootstrapAddr ma.Multiaddr) {
@@ -183,7 +198,8 @@ func sendPeerInfo(h host.Host, targetPeer peer.ID, peerToAnnounce peer.ID, local
 		}
 	}
 
-	combined := append(relayAddrs, addrStrings(baseAddrs)...)
+	relayAddrs = append(relayAddrs, addrStrings(baseAddrs)...)
+	combined := relayAddrs
 
 	info := map[string]interface{}{
 		"new_peer_id": peerToAnnounce.String(),

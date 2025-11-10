@@ -31,7 +31,7 @@ func NewLeaderSchedule(entries []LeaderScheduleEntry) (*LeaderSchedule, error) {
 
 // LeaderAt returns the leader for a given slot, or false if none assigned.
 func (ls *LeaderSchedule) LeaderAt(slot uint64) (string, bool) {
-	slot = slot % ls.maxSlot
+	slot %= ls.maxSlot
 	if slot == 0 {
 		slot = ls.maxSlot
 	}

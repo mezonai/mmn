@@ -1,0 +1,66 @@
+# golangci-lint configuration file
+# https://golangci-lint.run/usage/configuration/
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    - goconst
+    - gocritic
+    - gocyclo
+    - misspell
+    - unconvert
+    - unparam
+    - whitespace
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*db.DatabaseBatch).Close
+      # Display function signature instead of selector.
+      verbose: true
+
+    govet:
+      enable: 
+        - shadow
+
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000"
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    misspell:
+      locale: US
+
+  exclusions:
+    paths:
+      - client_test
+      - mezon-migration
+      - ".*_test\\.go$"
+      - ".*\\.pb\\.go$"
+      - ".*\\.grpc\\.pb\\.go$"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

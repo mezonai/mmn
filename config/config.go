@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -51,7 +50,7 @@ func LoadGenesisConfig(path string) (*GenesisConfig, error) {
 
 // LoadEd25519PrivKey loads an Ed25519 private key from a file (accepts base58 or hex)
 func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -67,13 +66,14 @@ func LoadEd25519PrivKey(path string) (ed25519.PrivateKey, error) {
 	}
 
 	var privKey ed25519.PrivateKey
-	if len(privBytes) == ed25519.SeedSize {
+	switch len(privBytes) {
+	case ed25519.SeedSize:
 		// 32-byte seed, generate full private key
 		privKey = ed25519.NewKeyFromSeed(privBytes)
-	} else if len(privBytes) == ed25519.PrivateKeySize {
+	case ed25519.PrivateKeySize:
 		// 64-byte full private key
 		privKey = ed25519.PrivateKey(privBytes)
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid ed25519 private key length: %d, expected %d (seed) or %d (full key)", len(privBytes), ed25519.SeedSize, ed25519.PrivateKeySize)
 	}
 
@@ -157,11 +157,12 @@ func LoadPubKeyFromPriv(privKeyPath string) (string, error) {
 	}
 
 	var privKey ed25519.PrivateKey
-	if len(privBytes) == ed25519.SeedSize {
+	switch len(privBytes) {
+	case ed25519.SeedSize:
 		privKey = ed25519.NewKeyFromSeed(privBytes)
-	} else if len(privBytes) == ed25519.PrivateKeySize {
+	case ed25519.PrivateKeySize:
 		privKey = ed25519.PrivateKey(privBytes)
-	} else {
+	default:
 		return "", fmt.Errorf("invalid ed25519 private key length: %d", len(privBytes))
 	}
 

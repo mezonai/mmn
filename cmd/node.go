@@ -39,9 +39,6 @@ import (
 )
 
 const (
-	// Storage paths - using absolute paths
-	fileBlockDir = "./blockstore/blocks"
-	// leveldbBlockDir = "blockstore/leveldb"
 	LISTEN_MODE = "listen"
 	FULL_MODE   = "full"
 )
@@ -60,6 +57,7 @@ var (
 	// database backend
 	databaseBackend string
 	enableRateLimit bool
+	eventBuffer     int
 )
 
 var runCmd = &cobra.Command{
@@ -85,7 +83,7 @@ func init() {
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
 	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
 	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
-
+	runCmd.Flags().IntVar(&eventBuffer, "event-buffer", 256, "Default buffer size for event subscribers")
 }
 
 func runNode() {
@@ -96,6 +94,7 @@ func runNode() {
 
 	// Handle Docker stop or Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -143,6 +142,9 @@ func runNode() {
 
 	// --- Event Bus ---
 	eventBus := events.NewEventBus()
+	if eventBuffer > 0 {
+		eventBus.SetBuffer(eventBuffer)
+	}
 
 	// --- Event Router ---
 	eventRouter := events.NewEventRouter(eventBus)
@@ -185,60 +187,74 @@ func runNode() {
 	latestSlot := bs.GetLatestFinalizedSlot()
 	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
 	if err != nil {
-		log.Fatalf("Failed to initialize PoH: %v", err)
+		log.Printf("Failed to initialize PoH: %v", err)
+		return
 	}
 
 	// Load private key
 	privKey, err := config.LoadEd25519PrivKey(privKeyPath)
 	if err != nil {
-		log.Fatalf("load private key: %v", err)
+		log.Printf("load private key: %v", err)
+		return
 	}
 
 	// Initialize network
 	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
-		log.Fatalf("Failed to initialize network: %v", err)
+		log.Printf("Failed to initialize network: %v", err)
+		return
 	}
 
 	// Initialize zk verify
 	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
 
+	// Initialize dedup service
+	dedupService := mempool.NewDedupService(bs, ts)
+
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, eventRouter, txTracker, zkVerify)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify)
 	if err != nil {
-		log.Fatalf("Failed to initialize mempool: %v", err)
+		log.Printf("Failed to initialize mempool: %v", err)
+		return
 	}
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, recorder, zkVerify)
+	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, dedupService, recorder, zkVerify)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector)
+	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector, dedupService)
 	if err != nil {
-		log.Fatalf("Failed to initialize validator: %v", err)
+		log.Printf("Failed to initialize validator: %v", err)
+		return
 	}
 
 	// In listen mode, do not start PoH or Validator
 	if nodeConfig.Mode != LISTEN_MODE {
 		libP2pClient.OnStartPoh = func() { pohService.Start() }
 		libP2pClient.OnStartValidator = func() { val.Run() }
+		libP2pClient.OnStartLoadTxHashes = func() {
+			latestSlot := bs.GetLatestFinalizedSlot()
+			dedupService.LoadTxHashes(latestSlot)
+			mp.SetCurrentSlot(latestSlot)
+		}
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(nodeConfig, ld, collector, val, bs, mp, eventRouter, txTracker)
+	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
 		log.Println("Shutting down node...")
 		// for now just shutdown p2p network
 		libP2pClient.Close()
+		// stop event bus to prevent further publish/subscribe and release subscribers
+		eventBus.Shutdown()
 		cancel()
 	})
 
 	//  block until cancel
 	<-ctx.Done()
-
 }
 
 // loadConfiguration loads all configuration files
@@ -320,21 +336,20 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 }
 
 // initializeMempool initializes the mempool
-func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string,
+func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, dedupService *mempool.DedupService,
 	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, eventRouter, txTracker, zkVerify)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, dedupService, eventRouter, txTracker, zkVerify)
 	return mp, nil
 }
 
 // initializeValidator initializes the validator
 func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
-	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, ld *ledger.Ledger, collector *consensus.Collector) (*validator.Validator, error) {
-
+	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, ld *ledger.Ledger, collector *consensus.Collector, dedupService *mempool.DedupService) (*validator.Validator, error) {
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load validator config: %w", err)
@@ -356,7 +371,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 		config.ConvertLeaderSchedule(cfg.LeaderSchedule), mp,
 		leaderBatchLoopInterval, roleMonitorLoopInterval, leaderTimeout,
 		leaderTimeoutLoopInterval, validatorCfg.BatchSize, p2pClient, bs,
-		ld, collector,
+		ld, collector, dedupService,
 	)
 
 	// Cache leader schedule inside p2p for local leader checks
@@ -366,15 +381,8 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *consensus.Collector,
+func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
-
-	// Load private key for gRPC server
-	privKey, err := config.LoadEd25519PrivKey(nodeConfig.PrivKeyPath)
-	if err != nil {
-		log.Fatalf("Failed to load private key for gRPC server: %v", err)
-	}
-
 	abuseConfig := abuse.DefaultAbuseConfig()
 	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
 
@@ -384,23 +392,18 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger, collector *c
 
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
 	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
-	acctSvc := service.NewAccountService(ld, mp, txTracker)
+	acctSvc := service.NewAccountService(ld, bs, txTracker)
 	healthSvc := service.NewHealthService(ld, bs, mp, val, nodeConfig.PubKey)
 
 	// Start gRPC server
 	grpcSrv := network.NewGRPCServer(
 		nodeConfig.GRPCAddr,
-		map[string]ed25519.PublicKey{},
-		fileBlockDir,
 		ld,
-		collector,
 		nodeConfig.PubKey,
-		privKey,
 		val,
 		bs,
 		mp,
 		eventRouter,
-		txTracker,
 		rateLimiter,
 		enableRateLimit,
 		txSvc,
