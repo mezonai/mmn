@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const ZERO_ADDRESS = "0000000000000000000000000000000000000000000000000000000000000000"
+const ZeroAddress = "0000000000000000000000000000000000000000000000000000000000000000"
 
 var (
 	// Init command specific variables
@@ -63,7 +63,7 @@ func initializeNode() {
 	monitoring.InitMetrics()
 
 	// Ensure data directory exists
-	if err := os.MkdirAll(initDataDir, 0755); err != nil {
+	if err := os.MkdirAll(initDataDir, 0o755); err != nil {
 		logx.Error("INIT", "Failed to create data directory:", err.Error())
 		return
 	}
@@ -88,20 +88,21 @@ func initializeNode() {
 		}
 
 		// Copy the private key to data directory
-		privKeyData, err := os.ReadFile(initPrivKeyPath)
+		var privKeyData []byte
+		privKeyData, err = os.ReadFile(initPrivKeyPath)
 		if err != nil {
 			logx.Error("INIT", "Failed to read provided private key file:", err.Error())
 			return
 		}
 
-		err = os.WriteFile(privKeyFile, privKeyData, 0600)
+		err = os.WriteFile(privKeyFile, privKeyData, 0o600)
 		if err != nil {
 			logx.Error("INIT", "Failed to copy private key to data directory:", err.Error())
 			return
 		}
 
 		// Save public key
-		err = os.WriteFile(pubKeyFile, []byte(pubKeyHex), 0644)
+		err = os.WriteFile(pubKeyFile, []byte(pubKeyHex), 0o644)
 		if err != nil {
 			logx.Error("INIT", "Failed to write public key to file:", err.Error())
 			return
@@ -113,10 +114,10 @@ func initializeNode() {
 		// Check if both private and public key files already exist
 		privKeyExists := false
 		pubKeyExists := false
-		if _, err := os.Stat(privKeyFile); err == nil {
+		if _, err = os.Stat(privKeyFile); err == nil {
 			privKeyExists = true
 		}
-		if _, err := os.Stat(pubKeyFile); err == nil {
+		if _, err = os.Stat(pubKeyFile); err == nil {
 			pubKeyExists = true
 		}
 
@@ -134,7 +135,7 @@ func initializeNode() {
 
 			// Generate 32-byte Ed25519 seed
 			seed := make([]byte, ed25519.SeedSize)
-			_, err := rand.Read(seed)
+			_, err = rand.Read(seed)
 			if err != nil {
 				logx.Error("INIT", "Failed to generate Ed25519 seed:", err.Error())
 				return
@@ -148,7 +149,7 @@ func initializeNode() {
 			seedHex := hex.EncodeToString(seed)
 
 			// Save private key
-			err = os.WriteFile(privKeyFile, []byte(seedHex), 0600)
+			err = os.WriteFile(privKeyFile, []byte(seedHex), 0o600)
 			if err != nil {
 				logx.Error("INIT", "Failed to write private key to file:", err.Error())
 				return
@@ -156,7 +157,7 @@ func initializeNode() {
 
 			// Save public key
 			pubKeyHex = hex.EncodeToString(pubKey)
-			err = os.WriteFile(pubKeyFile, []byte(pubKeyHex), 0644)
+			err = os.WriteFile(pubKeyFile, []byte(pubKeyHex), 0o644)
 			if err != nil {
 				logx.Error("INIT", "Failed to write public key to file:", err.Error())
 				return
@@ -183,7 +184,7 @@ func initializeNode() {
 		return
 	}
 
-	err = os.WriteFile(genesisDestPath, genesisData, 0644)
+	err = os.WriteFile(genesisDestPath, genesisData, 0o644)
 	if err != nil {
 		logx.Error("INIT", "Failed to copy genesis configuration to data directory:", err.Error())
 		return
@@ -262,7 +263,7 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	genesisBlock := block.AssembleBlock(
 		0,                         // slot 0 for genesis
 		genesisHash,               // previous hash is zero for genesis
-		ZERO_ADDRESS,              // use alloc address as leader for genesis
+		ZeroAddress,              // use alloc address as leader for genesis
 		[]poh.Entry{genesisEntry}, // genesis entry
 	)
 

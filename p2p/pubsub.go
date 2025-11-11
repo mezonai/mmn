@@ -25,7 +25,7 @@ import (
 	"github.com/mezonai/mmn/zkverify"
 )
 
-func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, dedupService *mempool.DedupService, recorder *poh.PohRecorder, zkVerify *zkverify.ZkVerify) {
+func (ln *Libp2pNetwork) SetupCallbacks(ld *ledger.Ledger, privKey ed25519.PrivateKey, self *config.NodeConfig, bs store.BlockStore, collector *consensus.Collector, mp *mempool.Mempool, dedupService *mempool.DedupService, recorder *poh.PohRecorder, zkVerify *zkverify.ZkVerify) {
 	// Store zkVerify for transaction verification
 	ln.zkVerify = zkVerify
 
@@ -217,15 +217,15 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		return nil
 	}
 	// Apply block to ledger
-	block := bs.Block(vote.Slot)
-	if block == nil {
+	b := bs.Block(vote.Slot)
+	if b == nil {
 		// missing block how to handle
 		return fmt.Errorf("block not found for slot %d", vote.Slot)
 	}
 
 	mp.SetCurrentSlot(vote.Slot)
 
-	if err := ld.FinalizeBlock(block, ln.isListener); err != nil {
+	if err := ld.FinalizeBlock(b, ln.isListener); err != nil {
 		return fmt.Errorf("apply block error: %w", err)
 	}
 
@@ -419,7 +419,9 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	var err error
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
-		if sub, err := ln.topicBlocks.Subscribe(); err == nil {
+		var sub *pubsub.Subscription
+		sub, err = ln.topicBlocks.Subscribe()
+		if err == nil {
 			exception.SafeGoWithPanic("HandleBlockTopic", func() {
 				ln.HandleBlockTopic(ctx, sub)
 			})
@@ -427,7 +429,9 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 	}
 
 	if ln.topicVotes, err = ln.pubsub.Join(TopicVotes); err == nil {
-		if sub, err := ln.topicVotes.Subscribe(); err == nil {
+		var sub *pubsub.Subscription
+		sub, err = ln.topicVotes.Subscribe()
+		if err == nil {
 			exception.SafeGoWithPanic("HandleVoteTopic", func() {
 				ln.HandleVoteTopic(ctx, sub)
 			})
@@ -497,7 +501,7 @@ func (ln *Libp2pNetwork) HandleCheckpointRequestTopic(ctx context.Context, sub *
 	}
 }
 
-func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (uint64, [32]byte, bool) {
+func (ln *Libp2pNetwork) getCheckpointHash(checkpoint uint64) (slot uint64, hash [32]byte, ok bool) {
 	if checkpoint == 0 {
 		return 0, [32]byte{}, false
 	}

@@ -22,12 +22,12 @@ type HealthServiceImpl struct {
 	selfID     string
 }
 
-func NewHealthService(ld *ledger.Ledger, bs store.BlockStore, mp *mempool.Mempool, validator *validator.Validator, selfID string) *HealthServiceImpl {
-	return &HealthServiceImpl{ledger: ld, blockStore: bs, mempool: mp, validator: validator, selfID: selfID}
+func NewHealthService(ld *ledger.Ledger, bs store.BlockStore, mp *mempool.Mempool, val *validator.Validator, selfID string) *HealthServiceImpl {
+	return &HealthServiceImpl{ledger: ld, blockStore: bs, mempool: mp, validator: val, selfID: selfID}
 }
 
 func (hs *HealthServiceImpl) Check(ctx context.Context) (*pb.HealthCheckResponse, error) {
-	// Check if context is cancelled
+	// Check if context is canceled
 	select {
 	case <-ctx.Done():
 		return nil, status.Errorf(codes.DeadlineExceeded, "health check timeout")
@@ -71,22 +71,22 @@ func (hs *HealthServiceImpl) Check(ctx context.Context) (*pb.HealthCheckResponse
 	}
 
 	// Check if core services are healthy
-	status := pb.HealthCheckResponse_SERVING
+	hcStatus := pb.HealthCheckResponse_SERVING
 
 	// Basic health checks
 	if hs.ledger == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
+		hcStatus = pb.HealthCheckResponse_NOT_SERVING
 	}
 	if hs.blockStore == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
+		hcStatus = pb.HealthCheckResponse_NOT_SERVING
 	}
 	if hs.mempool == nil {
-		status = pb.HealthCheckResponse_NOT_SERVING
+		hcStatus = pb.HealthCheckResponse_NOT_SERVING
 	}
 
 	// Create response
 	resp := &pb.HealthCheckResponse{
-		Status:       status,
+		Status:       hcStatus,
 		NodeId:       hs.selfID,
 		Timestamp:    uint64(now.Unix()),
 		CurrentSlot:  currentSlot,
@@ -100,7 +100,7 @@ func (hs *HealthServiceImpl) Check(ctx context.Context) (*pb.HealthCheckResponse
 	}
 
 	// If there are any errors, set status accordingly
-	if status == pb.HealthCheckResponse_NOT_SERVING {
+	if hcStatus == pb.HealthCheckResponse_NOT_SERVING {
 		resp.ErrorMessage = "One or more core services are not available"
 	}
 

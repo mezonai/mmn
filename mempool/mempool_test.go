@@ -262,7 +262,7 @@ func TestAddTx_SuccessAndDuplicate(t *testing.T) {
 	dedup := NewTestDedupService()
 	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil)
 
-	// set slot such that minNonce = 1 (netCurrentSlot < NONCE_WINDOW)
+	// set slot such that minNonce = 1 (netCurrentSlot < NonceWindow)
 	mp.SetCurrentSlot(100)
 
 	priv, sender := getOrCreateKeyPair("senderA")
@@ -366,7 +366,7 @@ func TestValidateNonceWindow(t *testing.T) {
 	dedup := NewTestDedupService()
 	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil)
 
-	// set current slot 200 -> minNonce = 200 - NONCE_WINDOW (150) = 50
+	// set current slot 200 -> minNonce = 200 - NonceWindow (150) = 50
 	mp.SetCurrentSlot(200)
 
 	_, s := getOrCreateKeyPair("nv")

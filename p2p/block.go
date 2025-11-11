@@ -224,8 +224,8 @@ func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.BroadcastedBlock, s
 	if err != nil {
 		return fmt.Errorf("failed to marshal batch: %w", err)
 	}
-
-	if err := s.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+	err = s.SetWriteDeadline(time.Now().Add(30 * time.Second))	
+	if err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to set write deadline:", err)
 	}
 
@@ -306,7 +306,7 @@ func (ln *Libp2pNetwork) sendBlocksOverStream(req SyncRequest, targetPeer peer.I
 		// Check context cancellation
 		select {
 		case <-ctx.Done():
-			logx.Warn("NETWORK:SYNC BLOCK", "Context cancelled, stopping sync for peer:", targetPeer.String())
+			logx.Warn("NETWORK:SYNC BLOCK", "Context canceled, stopping sync for peer:", targetPeer.String())
 			return
 		default:
 		}
@@ -395,8 +395,8 @@ func (ln *Libp2pNetwork) HandleLatestSlotTopic(ctx context.Context, sub *pubsub.
 	}
 }
 
-func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, dedupService *mempool.DedupService) error {
-	if err := ln.ProcessBlockBeforeBroadcast(blk, ledger, mempool, collector, dedupService); err != nil {
+func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *block.BroadcastedBlock, ld *ledger.Ledger, mp *mempool.Mempool, collector *consensus.Collector, dedupService *mempool.DedupService) error {
+	if err := ln.ProcessBlockBeforeBroadcast(blk, ld, mp, collector, dedupService); err != nil {
 		logx.Error("BLOCK", "Failed to process block before broadcast:", err)
 		return err
 	}
@@ -421,7 +421,7 @@ func (ln *Libp2pNetwork) BroadcastBlockWithProcessing(ctx context.Context, blk *
 			vote := &consensus.Vote{Slot: blk.Slot, BlockHash: blk.Hash, VoterID: ln.selfPubKey}
 			vote.Sign(ln.selfPrivKey)
 
-			if err := ln.ProcessVote(ln.blockStore, ledger, mempool, vote, collector); err != nil {
+			if err := ln.ProcessVote(ln.blockStore, ld, mp, vote, collector); err != nil {
 				return err
 			}
 
@@ -438,7 +438,7 @@ func (ln *Libp2pNetwork) getLocalLatestSlot() uint64 {
 	return ln.blockStore.GetLatestFinalizedSlot()
 }
 
-func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot uint64, latestPohSlot uint64) {
+func (ln *Libp2pNetwork) sendLatestSlotResponse(targetPeer peer.ID, latestSlot, latestPohSlot uint64) {
 	stream, err := ln.host.NewStream(context.Background(), targetPeer, LatestSlotProtocol)
 	if err != nil {
 		logx.Error("NETWORK:LATEST SLOT", "Failed to open stream to peer:", err)
@@ -510,7 +510,7 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 	return nil
 }
 
-func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ledger *ledger.Ledger, mempool *mempool.Mempool, collector *consensus.Collector, dedupService *mempool.DedupService) error {
+func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ld *ledger.Ledger, mp *mempool.Mempool, collector *consensus.Collector, dedupService *mempool.DedupService) error {
 	dedupService.CleanUpOldSlotTxHashes(blk.Slot)
 
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {

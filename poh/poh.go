@@ -10,7 +10,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-var LOW_POWER_MODE = ^uint64(0) // max uint64
+var LowPowerMode = ^uint64(0) // max uint64
 
 type PohEntry struct {
 	NumHashes uint64
@@ -33,7 +33,7 @@ type Poh struct {
 func NewPoh(seed []byte, hashesPerTickOpt *uint64, autoHashInterval time.Duration) *Poh {
 	var hashesPerTick uint64
 	if hashesPerTickOpt == nil {
-		hashesPerTick = LOW_POWER_MODE
+		hashesPerTick = LowPowerMode
 	} else {
 		hashesPerTick = *hashesPerTickOpt
 	}
@@ -115,7 +115,7 @@ func (p *Poh) Tick() *PohEntry {
 	return entry
 }
 
-func (p *Poh) TickFastForward(seenHash [32]byte, fromTick uint64, toTick uint64) [32]byte {
+func (p *Poh) TickFastForward(seenHash [32]byte, fromTick, toTick uint64) [32]byte {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -145,7 +145,6 @@ func (p *Poh) AutoHash() {
 			return
 		case <-ticker.C:
 			p.mu.Lock()
-			// fmt.Println("AutoHash: RemainingHashes", p.RemainingHashes)
 			if p.RemainingHashes > 1 {
 				p.hashOnce(p.Hash[:])
 			}

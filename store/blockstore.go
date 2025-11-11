@@ -174,7 +174,7 @@ func (s *GenericBlockStore) CleanupOldSlotLocks(keepRecentSlots uint64) {
 		if slotNum < cleanupThreshold {
 			slotsToDelete = append(slotsToDelete, slotNum)
 		}
-		return true // continue iteration
+		return true
 	})
 
 	// Delete collected slots
@@ -375,7 +375,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 				if err != nil {
 					return fmt.Errorf("failed to marshal transaction: %w", err)
 				}
-				batch.Put(s.txStore.GetDbKey(tx.Hash()), txData)
+				batch.Put(s.txStore.GetDBKey(tx.Hash()), txData)
 
 				// Store block transaction meta
 				txMeta := types.NewTxMeta(tx, b.Slot, b.HashString(), types.TxStatusProcessed, "")
@@ -383,7 +383,7 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 				if err != nil {
 					return fmt.Errorf("failed to marshal transaction meta: %w", err)
 				}
-				batch.Put(s.txMetaStore.GetDbKey(tx.Hash()), data)
+				batch.Put(s.txMetaStore.GetDBKey(tx.Hash()), data)
 			}
 			count += len(entry.Transactions)
 		}
@@ -447,7 +447,7 @@ func (s *GenericBlockStore) FinalizeBlock(slot uint64, txMetas []*types.Transact
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction meta: %w", err)
 		}
-		batch.Put(s.txMetaStore.GetDbKey(txMeta.TxHash), data)
+		batch.Put(s.txMetaStore.GetDBKey(txMeta.TxHash), data)
 	}
 
 	// Store batch of accounts
@@ -456,7 +456,7 @@ func (s *GenericBlockStore) FinalizeBlock(slot uint64, txMetas []*types.Transact
 		if err != nil {
 			return fmt.Errorf("failed to marshal account: %w", err)
 		}
-		batch.Put(s.accStore.GetDbKey(account.Address), accountData)
+		batch.Put(s.accStore.GetDBKey(account.Address), accountData)
 	}
 
 	// Mark this specific slot as finalized
@@ -529,8 +529,8 @@ func (s *GenericBlockStore) MustClose() {
 // GetConfirmations calculates the number of confirmations for a transaction in a given block slot.
 // Confirmations = latestFinalized - blockSlot + 1 if the block is finalized,
 // otherwise returns 1 for confirmed but not finalized blocks.
-func (bs *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
-	latest := bs.latestFinalized.Load()
+func (s *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
+	latest := s.latestFinalized.Load()
 	if latest >= blockSlot {
 		return latest - blockSlot + 1
 	}
