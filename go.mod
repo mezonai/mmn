@@ -6,7 +6,7 @@ toolchain go1.24.5
 
 require (
 	github.com/consensys/gnark v0.14.0
-	github.com/consensys/gnark-crypto v0.19.0
+	github.com/consensys/gnark-crypto v0.19.2
 	github.com/creachadair/jrpc2 v1.3.2
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/holiman/uint256 v1.3.2
