@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
@@ -105,72 +106,88 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		return nil
 	}
 
-	successfulTxs := make([]*transaction.Transaction, 0)
-	txMetas := make([]*types.TransactionMeta, 0)
-	state := map[string]*types.Account{}
+	txHashes := make([]string, 0)
+	txMetas := make(map[string]*types.TransactionMeta)
+	accAddrs := make([]string, 0)
+	accAddrsSet := make(map[string]struct{})
 
 	for _, entry := range b.Entries {
 		if entry.Tick {
 			continue
 		}
+		txHashes = append(txHashes, entry.TxHashes...)
+	}
 
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
+	allTxsInBlock, err := l.txStore.GetBatch(txHashes)
+	if err != nil {
+		return fmt.Errorf("failed to get transactions for block %d: %w", b.Slot, err)
+	}
+
+	for _, tx := range allTxsInBlock {
+		if _, exists := accAddrsSet[tx.Sender]; !exists {
+			accAddrsSet[tx.Sender] = struct{}{}
+			accAddrs = append(accAddrs, tx.Sender)
 		}
+		if _, exists := accAddrsSet[tx.Recipient]; !exists {
+			accAddrsSet[tx.Recipient] = struct{}{}
+			accAddrs = append(accAddrs, tx.Recipient)
+		}
+	}
 
-		for _, tx := range txs {
-			if state[tx.Sender] == nil {
-				sender, err := l.getAccountOrCreate(tx.Sender)
-				if err != nil {
-					return err
-				}
-				state[tx.Sender] = sender
-			}
-			if state[tx.Recipient] == nil {
-				recipient, err := l.getAccountOrCreate(tx.Recipient)
-				if err != nil {
-					return err
-				}
-				state[tx.Recipient] = recipient
-			}
+	state, err := l.accountStore.GetBatch(accAddrs)
+	if err != nil {
+		return fmt.Errorf("failed to get accounts for block %d: %w", b.Slot, err)
+	}
 
-			// try to apply tx
-			txHash := tx.Hash()
-			if err := applyTx(state, tx); err != nil {
-				// Publish specific transaction failure event
-				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
-					l.eventRouter.PublishTransactionEvent(event)
-					monitoring.IncreaseFailedTpsCount(err.Error())
-				}
-				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
-				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
-				// Remove failed transaction from tracker
-				if l.txTracker != nil && !isListener {
-					l.txTracker.RemoveTransaction(txHash)
-				}
-				continue
-			}
-			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
-			successfulTxs = append(successfulTxs, tx)
-			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
-			// Remove successful transaction from tracker
+	for _, tx := range allTxsInBlock {
+		txHash := tx.Hash()
+		if err := applyTx(state, tx); err != nil {
+			logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
+			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+			// Remove failed transaction from tracker
 			if l.txTracker != nil && !isListener {
 				l.txTracker.RemoveTransaction(txHash)
 			}
+			continue
+		}
+		logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+		txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+		// Remove successful transaction from tracker
+		if l.txTracker != nil && !isListener {
+			l.txTracker.RemoveTransaction(txHash)
 		}
 	}
 
 	if err := l.bStore.FinalizeBlock(b.Slot, txMetas, state); err != nil {
 		if l.eventRouter != nil {
-			for _, tx := range successfulTxs {
+			for _, tx := range allTxsInBlock {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
 				l.eventRouter.PublishTransactionEvent(event)
 				monitoring.IncreaseFailedTpsCount(err.Error())
 			}
 		}
 		return fmt.Errorf("finalized block error: %w", err)
+	}
+
+	if l.eventRouter != nil {
+		blockHashHex := b.HashString()
+		now := time.Now()
+		for _, tx := range allTxsInBlock {
+			if meta, exists := txMetas[tx.Hash()]; exists && meta.Status == types.TxStatusFailed {
+				// Publish specific transaction failure event
+				event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", meta.Error))
+				l.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFailedTpsCount(meta.Error)
+			}
+
+			// Record metrics
+			txTimestamp := time.UnixMilli(int64(tx.Timestamp))
+			monitoring.RecordTimeToFinality(now.Sub(txTimestamp))
+
+			event := events.NewTransactionFinalized(tx, b.Slot, blockHashHex)
+			l.eventRouter.PublishTransactionEvent(event)
+			monitoring.IncreaseFinalizedTpsCount()
+		}
 	}
 
 	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
@@ -242,19 +259,6 @@ func (l *Ledger) GetTxBatch(hashes []string) ([]*transaction.Transaction, map[st
 	}
 
 	return txs, txMetas, nil
-}
-
-func (l *Ledger) getAccountOrCreate(accAddr string) (*types.Account, error) {
-	sender, err := l.accountStore.GetByAddr(accAddr)
-	if err != nil {
-		return nil, err
-	}
-	if sender == nil {
-		if sender, err = l.createAccountWithoutLocking(accAddr, uint256.NewInt(0)); err != nil {
-			return nil, err
-		}
-	}
-	return sender, nil
 }
 
 var ErrInvalidNonce = errors.New("invalid nonce")

@@ -229,7 +229,7 @@ func initializeNode() {
 		}
 
 		// Finalizegenesis block
-		txMeta := []*types.TransactionMeta{}
+		txMeta := map[string]*types.TransactionMeta{}
 		addrAccount := map[string]*types.Account{}
 		err = bs.FinalizeBlock(genesisBlock.Slot, txMeta, addrAccount)
 		if err != nil {
@@ -263,7 +263,7 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	genesisBlock := block.AssembleBlock(
 		0,                         // slot 0 for genesis
 		genesisHash,               // previous hash is zero for genesis
-		ZeroAddress,              // use alloc address as leader for genesis
+		ZeroAddress,               // use alloc address as leader for genesis
 		[]poh.Entry{genesisEntry}, // genesis entry
 	)
 
