@@ -181,7 +181,7 @@ func runNode() {
 
 	txTracker := transaction.NewTransactionTracker()
 
-	ld := ledger.NewLedger(ts, tms, as, eventRouter, txTracker)
+	ld := ledger.NewLedger(bs, ts, tms, as, eventRouter, txTracker)
 
 	// Initialize PoH components
 	latestSlot := bs.GetLatestFinalizedSlot()

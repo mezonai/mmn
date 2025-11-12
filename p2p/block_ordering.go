@@ -118,12 +118,8 @@ func (ln *Libp2pNetwork) processBlock(blk *block.BroadcastedBlock, bs store.Bloc
 		return fmt.Errorf("add pending block error: %w", err)
 	}
 
-	if err := bs.MarkFinalized(blk.Slot); err != nil {
+	if err := ld.FinalizeBlock(utils.BroadcastedBlockToBlock(blk), ln.isListener); err != nil {
 		return fmt.Errorf("failed to finalize block at slot %d: %w", blk.Slot, err)
-	}
-
-	if err := ld.ApplyBlock(utils.BroadcastedBlockToBlock(blk), ln.isListener); err != nil {
-		return fmt.Errorf("apply block error: %w", err)
 	}
 
 	logx.Info("BLOCK:ORDERING", "Successfully processed block at slot", blk.Slot)

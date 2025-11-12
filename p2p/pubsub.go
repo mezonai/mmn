@@ -225,13 +225,8 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 
 	mp.SetCurrentSlot(vote.Slot)
 
-	// Mark block as finalized
-	if err := bs.MarkFinalized(vote.Slot); err != nil {
-		return fmt.Errorf("mark block as finalized error: %w", err)
-	}
-
-	if err := ld.ApplyBlock(b, ln.isListener); err != nil {
-		return fmt.Errorf("apply block error: %w", err)
+	if err := ld.FinalizeBlock(b, ln.isListener); err != nil {
+		return fmt.Errorf("failed to finalize block at slot %d: %w", b.Slot, err)
 	}
 
 	logx.Info("VOTE", "Block finalized via P2P! slot=", vote.Slot)
@@ -425,7 +420,7 @@ func (ln *Libp2pNetwork) SetupPubSubTopics(ctx context.Context) {
 
 	if ln.topicBlocks, err = ln.pubsub.Join(TopicBlocks); err == nil {
 		var sub *pubsub.Subscription
-		sub, err = ln.topicBlocks.Subscribe();
+		sub, err = ln.topicBlocks.Subscribe()
 		if err == nil {
 			exception.SafeGoWithPanic("HandleBlockTopic", func() {
 				ln.HandleBlockTopic(ctx, sub)
