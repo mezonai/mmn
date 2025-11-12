@@ -178,6 +178,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", meta.Error))
 				l.eventRouter.PublishTransactionEvent(event)
 				monitoring.IncreaseFailedTpsCount(meta.Error)
+				continue
 			}
 
 			// Record metrics
