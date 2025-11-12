@@ -37,7 +37,7 @@ type BlockStore interface {
 	GetLatestFinalizedSlot() uint64
 	GetLatestStoreSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
-	FinalizeBlock(slot uint64, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error
+	FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
@@ -420,7 +420,8 @@ func (s *GenericBlockStore) IsApplied(slot uint64) bool {
 }
 
 // FinalizeBlock stores transaction metas and account states, marking the block as finalized
-func (s *GenericBlockStore) FinalizeBlock(slot uint64, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error {
+func (s *GenericBlockStore) FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error {
+	slot := blk.Slot
 	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
 	}
@@ -431,6 +432,15 @@ func (s *GenericBlockStore) FinalizeBlock(slot uint64, txMetas map[string]*types
 
 	batch := s.provider.Batch()
 	defer batch.Close()
+
+	// Mark block as finalized
+	blk.BlockCore.Status = block.BlockFinalized
+	blkKey := slotToBlockKey(slot)
+	blkValue, err := jsonx.Marshal(blk)
+	if err != nil {
+		return fmt.Errorf("failed to marshal block: %w", err)
+	}
+	batch.Put(blkKey, blkValue)
 
 	// Store batch of tx metas
 	for _, txMeta := range txMetas {

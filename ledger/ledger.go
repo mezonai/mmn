@@ -158,7 +158,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		}
 	}
 
-	if err := l.bStore.FinalizeBlock(b.Slot, txMetas, state); err != nil {
+	if err := l.bStore.FinalizeBlock(b, txMetas, state); err != nil {
 		if l.eventRouter != nil {
 			for _, tx := range allTxsInBlock {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))

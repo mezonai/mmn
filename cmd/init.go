@@ -11,6 +11,7 @@ import (
 
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -231,7 +232,7 @@ func initializeNode() {
 		// Finalizegenesis block
 		txMeta := map[string]*types.TransactionMeta{}
 		addrAccount := map[string]*types.Account{}
-		err = bs.FinalizeBlock(genesisBlock.Slot, txMeta, addrAccount)
+		err = bs.FinalizeBlock(utils.BroadcastedBlockToBlock(genesisBlock), txMeta, addrAccount)
 		if err != nil {
 			logx.Error("INIT", "Failed to finalize genesis block :", err.Error())
 			return
