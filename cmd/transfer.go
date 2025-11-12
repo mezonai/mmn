@@ -98,13 +98,12 @@ func transferToken(transferConfig *TransferConfig) error {
 
 	// Get sender account info to get current nonce
 	ctx := context.Background()
-	senderAccount, err := grpcClient.GetAccount(ctx, senderAddress)
-	if err != nil {
-		return fmt.Errorf("failed to get sender account: %w", err)
-	}
 
 	// Build and sign transferConfig transaction
-	nonce := senderAccount.Nonce + 1
+	nonce, err := grpcClient.GetCurrentNonce(ctx, senderAddress, "pending")
+	if err != nil {
+		return fmt.Errorf("failed to get nonce: %w", err)
+	}
 	unsigned, err := mmn.BuildTransferTx(
 		mmn.TxTypeFaucet,
 		senderAddress,
