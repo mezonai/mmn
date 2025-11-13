@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
+	"github.com/mezonai/mmn/stringutil"
 )
 
 const (
@@ -79,7 +80,7 @@ func (eb *EventBus) SetBuffer(buffer int) {
 func (eb *EventBus) Unsubscribe(id SubscriberID) bool {
 	value, exists := eb.subscribers.Load(id)
 	if !exists {
-		logx.Warn("EVENTBUS", fmt.Sprintf("Attempted to unsubscribe non-existent subscriber | subscriber_id=%s", id))
+		logx.Warn("EVENTBUS", fmt.Sprintf("Attempted to unsubscribe non-existent subscriber | subscriber_id=%s", stringutil.ShortenLog(string(id))))
 		return false
 	}
 	subscriber := value.(*Subscriber)
@@ -133,7 +134,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Event sent successfully
 			default:
 				// Channel is full, skip this subscriber
-				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", id, txHash))
+				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", stringutil.ShortenLog(string(id)), stringutil.ShortenLog(txHash)))
 			}
 			return true
 		})

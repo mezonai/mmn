@@ -10,6 +10,7 @@ import (
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/stringutil"
 )
 
 const defaultRemovalThreshold = 10 * time.Minute
@@ -67,7 +68,7 @@ func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
 		t.markRemoved(txHash)
-		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
+		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", stringutil.ShortenLog(txHash)))
 		return
 	}
 	atomic.AddInt64(&t.processingCount, -1)
