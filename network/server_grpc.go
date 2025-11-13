@@ -16,6 +16,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
@@ -77,8 +78,8 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator
 	grpcSrv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
-		grpc.MaxRecvMsgSize(GRPCMaxRecvMsgSize),
-		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
+		grpc.MaxRecvMsgSize(validation.MaxRequestBodySize),
+		grpc.MaxSendMsgSize(validation.MaxResponseBodySize),
 	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
@@ -147,18 +148,59 @@ func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnarySer
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
+	shortFields := map[string]string{
+		"sender":    in.TxMsg.Sender,
+		"recipient": in.TxMsg.Recipient,
+		"amount":    in.TxMsg.Amount,
+	}
+	longFields := map[string]string{
+		"text_data":  in.TxMsg.TextData,
+		"extra_info": in.TxMsg.ExtraInfo,
+		"zk_proof":   in.TxMsg.ZkProof,
+		"zk_pub":     in.TxMsg.ZkPub,
+		"signature":  in.Signature,
+	}
+
+	for name, val := range shortFields {
+		if err := validation.ValidateShortTextLength(name, val); err != nil {
+			return nil, err
+		}
+	}
+	for name, val := range longFields {
+		if err := validation.ValidateLongTextLength(name, val); err != nil {
+			return nil, err
+		}
+	}
+
 	return s.txSvc.AddTx(ctx, in)
 }
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
+	if err := validation.ValidateShortTextLength("address", in.Address); err != nil {
+		return nil, err
+	}
+
 	return s.acctSvc.GetAccount(ctx, in)
 }
 
 func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
+	if err := validation.ValidateShortTextLength("address", in.Address); err != nil {
+		return nil, err
+	}
+
+	tag := in.GetTag()
+	if err := validation.ValidateShortTextLength("tag", tag); err != nil {
+		return nil, err
+	}
+
 	return s.acctSvc.GetCurrentNonce(ctx, in)
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
+	if err := validation.ValidateShortTextLength("tx_hash", in.TxHash); err != nil {
+		return nil, err
+	}
+
 	return s.txSvc.GetTxByHash(ctx, in)
 }
 

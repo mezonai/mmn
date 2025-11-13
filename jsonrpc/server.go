@@ -22,6 +22,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/security/validation"
 )
 
 // --- Error type used by handlers ---
@@ -175,6 +176,31 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
+type limitedResponseWriter struct {
+	http.ResponseWriter
+	limit   int64
+	written int64
+	blocked bool
+}
+
+func (lw *limitedResponseWriter) Write(b []byte) (int, error) {
+	if lw.blocked {
+		return 0, nil
+	}
+	next := lw.written + int64(len(b))
+	if next > lw.limit {
+		lw.blocked = true
+		if lw.written == 0 {
+			http.Error(lw.ResponseWriter, "response too large", http.StatusInternalServerError)
+		}
+		logx.Warn("JSONRPC SERVER", "response exceeded limit", "limit", lw.limit)
+		return 0, nil
+	}
+	n, err := lw.ResponseWriter.Write(b)
+	lw.written += int64(n)
+	return n, err
+}
+
 func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *Server {
 	return &Server{
 		addr:      addr,
@@ -203,6 +229,16 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			return
 		}
 
+		if r.Method == http.MethodPost {
+			ct := r.Header.Get("Content-Type")
+			if !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+				http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySize)
+
 		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -227,7 +263,8 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 				s.rateLimiter.TrackIPRequest(clientIP)
 			})
 		}
-		jh.ServeHTTP(w, r)
+		lw := &limitedResponseWriter{ResponseWriter: w, limit: int64(validation.MaxResponseBodySize)}
+		jh.ServeHTTP(lw, r)
 	})
 	return h
 }
@@ -317,6 +354,32 @@ func (s *Server) buildMethodMap() handler.Map {
 // --- Implementations ---
 
 func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
+	shortFields := map[string]string{
+		"sender":    p.TxMsg.Sender,
+		"recipient": p.TxMsg.Recipient,
+		"amount":    p.TxMsg.Amount,
+	}
+
+	longFields := map[string]string{
+		"text_data":  p.TxMsg.TextData,
+		"extra_info": p.TxMsg.ExtraInfo,
+		"zk_proof":   p.TxMsg.ZkProof,
+		"zk_pub":     p.TxMsg.ZkPub,
+		"signature":  p.Signature,
+	}
+
+	for fieldName, fieldValue := range shortFields {
+		if err := validation.ValidateShortTextLength(fieldName, fieldValue); err != nil {
+			return &addTxResponse{Ok: false, Error: err.Error()}
+		}
+	}
+
+	for fieldName, fieldValue := range longFields {
+		if err := validation.ValidateLongTextLength(fieldName, fieldValue); err != nil {
+			return &addTxResponse{Ok: false, Error: err.Error()}
+		}
+	}
+
 	pbSigned := &pb.SignedTxMsg{
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
@@ -340,7 +403,12 @@ func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
 }
 
 func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
-	resp, err := s.txSvc.GetTxByHash(context.Background(), &pb.GetTxByHashRequest{TxHash: p.TxHash})
+	txHash := p.TxHash
+	if err := validation.ValidateShortTextLength("tx_hash", txHash); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
+	resp, err := s.txSvc.GetTxByHash(context.Background(), &pb.GetTxByHashRequest{TxHash: txHash})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
@@ -389,7 +457,12 @@ func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
 }
 
 func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
-	resp, err := s.acctSvc.GetAccount(context.Background(), &pb.GetAccountRequest{Address: p.Address})
+	accAddr := p.Address
+	if err := validation.ValidateShortTextLength("address", accAddr); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
+	resp, err := s.acctSvc.GetAccount(context.Background(), &pb.GetAccountRequest{Address: accAddr})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
@@ -397,10 +470,20 @@ func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
 }
 
 func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpcError) {
-	if p.Tag != "latest" && p.Tag != "pending" {
-		return &getCurrentNonceResponse{Address: p.Address, Nonce: 0, Tag: p.Tag, Error: "invalid tag: must be 'latest' or 'pending'"}, nil
+	accAddr := p.Address
+	tag := p.Tag
+
+	if err := validation.ValidateShortTextLength("address", accAddr); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
 	}
-	resp, err := s.acctSvc.GetCurrentNonce(context.Background(), &pb.GetCurrentNonceRequest{Address: p.Address, Tag: p.Tag})
+	if err := validation.ValidateShortTextLength("tag", tag); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
+	if tag != "latest" && tag != "pending" {
+		return &getCurrentNonceResponse{Address: accAddr, Nonce: 0, Tag: tag, Error: "invalid tag: must be 'latest' or 'pending'"}, nil
+	}
+	resp, err := s.acctSvc.GetCurrentNonce(context.Background(), &pb.GetCurrentNonceRequest{Address: accAddr, Tag: tag})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
