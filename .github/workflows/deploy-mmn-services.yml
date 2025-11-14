@@ -31,6 +31,7 @@ jobs:
       - name: Checkout for git history
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - name: Calculate new tag
@@ -89,6 +90,14 @@ jobs:
           go-version: "1.22.5"
           cache: true
           check-latest: false
+
+      - name: Run golangci-lint
+        if: steps.decide.outputs.skip == 'false'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+          args: --timeout=5m --output.text.print-issued-lines
+        continue-on-error: true
 
       - name: Install build dependencies
         if: steps.decide.outputs.skip == 'false'
@@ -158,6 +167,7 @@ jobs:
         with:
           tag_name: ${{ steps.determine_release_tag.outputs.tag }}
           name: "Release ${{ steps.determine_release_tag.outputs.tag }}"
+          target_commitish: ${{ inputs.ref }}
           fail_on_unmatched_files: true
           files: |
             build/mmn-${{ steps.determine_release_tag.outputs.tag }}

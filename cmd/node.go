@@ -39,8 +39,8 @@ import (
 )
 
 const (
-	LISTEN_MODE = "listen"
-	FULL_MODE   = "full"
+	ListenMode = "listen"
+	FullMode   = "full"
 )
 
 var (
@@ -57,6 +57,7 @@ var (
 	// database backend
 	databaseBackend string
 	enableRateLimit bool
+	eventBuffer     int
 )
 
 var runCmd = &cobra.Command{
@@ -80,8 +81,9 @@ func init() {
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
 	runCmd.Flags().StringVar(&nodeName, "node-name", "node1", "Node name for loading genesis configuration")
 	runCmd.Flags().StringVar(&databaseBackend, "database", "leveldb", "Database backend (leveldb or rocksdb)")
-	runCmd.Flags().StringVar(&mode, "mode", FULL_MODE, "Node mode: full or listen")
+	runCmd.Flags().StringVar(&mode, "mode", FullMode, "Node mode: full or listen")
 	runCmd.Flags().BoolVar(&enableRateLimit, "rate-limit", true, "enable rate limit for json-rpc and grpc")
+	runCmd.Flags().IntVar(&eventBuffer, "event-buffer", 256, "Default buffer size for event subscribers")
 }
 
 func runNode() {
@@ -127,7 +129,7 @@ func runNode() {
 	}
 
 	// Create blockstore directory if it doesn't exist
-	if err := os.MkdirAll(dbStoreDir, 0755); err != nil {
+	if err := os.MkdirAll(dbStoreDir, 0o755); err != nil {
 		logx.Error("NODE", "Failed to create blockstore directory:", err.Error())
 		return
 	}
@@ -140,6 +142,9 @@ func runNode() {
 
 	// --- Event Bus ---
 	eventBus := events.NewEventBus()
+	if eventBuffer > 0 {
+		eventBus.SetBuffer(eventBuffer)
+	}
 
 	// --- Event Router ---
 	eventRouter := events.NewEventRouter(eventBus)
@@ -194,7 +199,7 @@ func runNode() {
 	}
 
 	// Initialize network
-	libP2pClient, err := initializeNetwork(nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
+	libP2pClient, err := initializeNetwork(&nodeConfig, bs, ts, privKey, &cfg.Poh, mode)
 	if err != nil {
 		log.Printf("Failed to initialize network: %v", err)
 		return
@@ -215,17 +220,17 @@ func runNode() {
 
 	collector := consensus.NewCollector(len(cfg.LeaderSchedule))
 
-	libP2pClient.SetupCallbacks(ld, privKey, nodeConfig, bs, collector, mp, dedupService, recorder, zkVerify)
+	libP2pClient.SetupCallbacks(ld, privKey, &nodeConfig, bs, collector, mp, dedupService, recorder, zkVerify)
 
 	// Initialize validator
-	val, err := initializeValidator(cfg, nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector, dedupService)
+	val, err := initializeValidator(cfg, &nodeConfig, pohService, recorder, mp, libP2pClient, bs, privKey, genesisPath, ld, collector, dedupService)
 	if err != nil {
 		log.Printf("Failed to initialize validator: %v", err)
 		return
 	}
 
 	// In listen mode, do not start PoH or Validator
-	if nodeConfig.Mode != LISTEN_MODE {
+	if nodeConfig.Mode != ListenMode {
 		libP2pClient.OnStartPoh = func() { pohService.Start() }
 		libP2pClient.OnStartValidator = func() { val.Run() }
 		libP2pClient.OnStartLoadTxHashes = func() {
@@ -236,13 +241,15 @@ func runNode() {
 	}
 	libP2pClient.SetupPubSubSyncTopics(ctx)
 
-	startServices(nodeConfig, ld, val, bs, mp, eventRouter, txTracker)
+	startServices(&nodeConfig, ld, val, bs, mp, eventRouter, txTracker)
 
 	exception.SafeGoWithPanic("Shutting down", func() {
 		<-sigCh
 		log.Println("Shutting down node...")
 		// for now just shutdown p2p network
 		libP2pClient.Close()
+		// stop event bus to prevent further publish/subscribe and release subscribers
+		eventBus.Shutdown()
 		cancel()
 	})
 
@@ -260,9 +267,9 @@ func loadConfiguration(genesisPath string) (*config.GenesisConfig, error) {
 }
 
 // initializeDBStore initializes the block storage backend using the factory pattern
-func initializeDBStore(dataDir string, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
+func initializeDBStore(dataDir, backend string, eventRouter *events.EventRouter) (store.AccountStore, store.TxStore, store.TxMetaStore, store.BlockStore, error) {
 	// Create data folder if not exist
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		logx.Error("INIT", "Failed to create db store directory:", err.Error())
 		return nil, nil, nil, nil, err
 	}
@@ -284,7 +291,7 @@ func initializeDBStore(dataDir string, backend string, eventRouter *events.Event
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string, latestSlot uint64) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+func initializePoH(cfg *config.GenesisConfig, pubKey, genesisPath string, latestSlot uint64) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -297,8 +304,8 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
-	empty_seed := []byte("")
-	pohEngine := poh.NewPoh(empty_seed, &hashesPerTick, pohAutoHashInterval)
+	emptySeed := []byte("")
+	pohEngine := poh.NewPoh(emptySeed, &hashesPerTick, pohAutoHashInterval)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)
@@ -310,7 +317,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey string, genesisPath string,
 }
 
 // initializeNetwork initializes network components
-func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
+func initializeNetwork(self *config.NodeConfig, bs store.BlockStore, ts store.TxStore, privKey ed25519.PrivateKey, pohCfg *config.PohConfig, mode string) (*p2p.Libp2pNetwork, error) {
 	// Prepare peer addresses (excluding self)
 	libp2pNetwork, err := p2p.NewNetWork(
 		self.PubKey,
@@ -322,7 +329,7 @@ func initializeNetwork(self config.NodeConfig, bs store.BlockStore, ts store.TxS
 		bs,
 		ts,
 		pohCfg,
-		mode == LISTEN_MODE,
+		mode == ListenMode,
 	)
 
 	return libp2pNetwork, err
@@ -341,7 +348,7 @@ func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisP
 }
 
 // initializeValidator initializes the validator
-func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
+func initializeValidator(cfg *config.GenesisConfig, nodeConfig *config.NodeConfig, pohService *poh.PohService, recorder *poh.PohRecorder,
 	mp *mempool.Mempool, p2pClient *p2p.Libp2pNetwork, bs store.BlockStore, privKey ed25519.PrivateKey, genesisPath string, ld *ledger.Ledger, collector *consensus.Collector, dedupService *mempool.DedupService) (*validator.Validator, error) {
 	validatorCfg, err := config.LoadValidatorConfig(genesisPath)
 	if err != nil {
@@ -374,7 +381,7 @@ func initializeValidator(cfg *config.GenesisConfig, nodeConfig config.NodeConfig
 }
 
 // startServices starts all network and API services
-func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
+func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	val *validator.Validator, bs store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) {
 	abuseConfig := abuse.DefaultAbuseConfig()
 	abuseDetector := abuse.NewAbuseDetector(abuseConfig)
@@ -409,14 +416,14 @@ func startServices(nodeConfig config.NodeConfig, ld *ledger.Ledger,
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
-		rpcSrv.SetCORSConfig(corsCfg)
+		rpcSrv.SetCORSConfig(&corsCfg)
 	}
 
 	rpcSrv.Start()
-	serveMetricsApi(nodeConfig.ListenAddr)
+	serveMetricsAPI(nodeConfig.ListenAddr)
 }
 
-func serveMetricsApi(listenAddr string) {
+func serveMetricsAPI(listenAddr string) {
 	mux := http.NewServeMux()
 	monitoring.RegisterMetrics(mux)
 	exception.SafeGo("serveMetricsApi", func() {

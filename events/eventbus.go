@@ -11,22 +11,28 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-const HEARTBEAT_INTERVAL = 30 * time.Second
+const (
+	DefaultBuffer     = 256
+	HeartbeatInterval = 30 * time.Second
+)
 
 type SubscriberID string
 
 type Subscriber struct {
 	ID      SubscriberID
 	Channel chan BlockchainEvent
+	closed  atomic.Bool
 }
 
 type EventBus struct {
 	subscribers sync.Map      // map[SubscriberID]*Subscriber
 	count       atomic.Uint64 // atomic counter for subscriber count
+	closed      atomic.Bool   // indicates bus is shut down
+	buffer      int           // default channel buffer size per subscriber
 }
 
 func NewEventBus() *EventBus {
-	eb := &EventBus{}
+	eb := &EventBus{buffer: DefaultBuffer}
 	exception.SafeGoWithPanic("EventBusHeartbeat", func() {
 		eb.heartbeat()
 	})
@@ -38,10 +44,16 @@ func (eb *EventBus) generateUUIDID() SubscriberID {
 	return SubscriberID(id.String())
 }
 
-func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
-	id := eb.generateUUIDID()
+func (eb *EventBus) Subscribe() (id SubscriberID, ch chan BlockchainEvent) {
+	if eb.closed.Load() {
+		logx.Warn("EVENTBUS", "Subscribe called on closed EventBus")
+		ch = make(chan BlockchainEvent)
+		close(ch)
+		return "", ch
+	}
+	id = eb.generateUUIDID()
 
-	ch := make(chan BlockchainEvent, 50) // Buffer for events
+	ch = make(chan BlockchainEvent, eb.buffer) // Buffer for events
 	subscriber := &Subscriber{
 		ID:      id,
 		Channel: ch,
@@ -55,16 +67,24 @@ func (eb *EventBus) Subscribe() (SubscriberID, chan BlockchainEvent) {
 	return id, ch
 }
 
+// SetBuffer sets the default channel buffer size for new subscriptions
+func (eb *EventBus) SetBuffer(buffer int) {
+	if buffer <= 0 {
+		buffer = DefaultBuffer
+	}
+	eb.buffer = buffer
+}
+
 // Unsubscribe removes a subscription by ID
 func (eb *EventBus) Unsubscribe(id SubscriberID) bool {
-	value, exists := eb.subscribers.LoadAndDelete(id)
+	value, exists := eb.subscribers.Load(id)
 	if !exists {
 		logx.Warn("EVENTBUS", fmt.Sprintf("Attempted to unsubscribe non-existent subscriber | subscriber_id=%s", id))
 		return false
 	}
-
 	subscriber := value.(*Subscriber)
-	close(subscriber.Channel)
+	subscriber.closed.Store(true)
+	eb.subscribers.Delete(id)
 	eb.count.Add(^uint64(0)) // equivalent to subtract 1
 
 	logx.Info("EVENTBUS", fmt.Sprintf("Client unsubscribed from events | subscriber_id=%s | remaining_subscribers=%d", id, eb.GetTotalSubscriptions()))
@@ -76,7 +96,7 @@ func (eb *EventBus) heartbeat() {
 		timestamp: time.Now(),
 	}
 
-	ticker := time.NewTicker(HEARTBEAT_INTERVAL)
+	ticker := time.NewTicker(HeartbeatInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -89,7 +109,10 @@ func (eb *EventBus) heartbeat() {
 
 // Publish publishes an event to all subscribers
 func (eb *EventBus) Publish(event BlockchainEvent) {
-	txHash := event.TxHash()
+	if eb.closed.Load() {
+		return
+	}
+	txHash := event.Transaction().Hash()
 	totalSubscribers := eb.GetTotalSubscriptions()
 
 	// Notify subscribers
@@ -100,6 +123,11 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 			id := key.(SubscriberID)
 			subscriber := value.(*Subscriber)
 
+			// Skip if unsubscribed concurrently
+			if subscriber.closed.Load() {
+				return true
+			}
+
 			select {
 			case subscriber.Channel <- event:
 				// Event sent successfully
@@ -107,7 +135,7 @@ func (eb *EventBus) Publish(event BlockchainEvent) {
 				// Channel is full, skip this subscriber
 				logx.Warn("EVENTBUS", fmt.Sprintf("Subscriber channel full | subscriber_id=%s | tx_hash=%s", id, txHash))
 			}
-			return true // continue iteration
+			return true
 		})
 	} else {
 		logx.Info("EVENTBUS", fmt.Sprintf("No subscribers for event | event_type=%s | tx_hash=%s", event.Type(), txHash))
@@ -134,4 +162,18 @@ func (eb *EventBus) GetSubscriberIDs() []SubscriberID {
 func (eb *EventBus) HasSubscriber(id SubscriberID) bool {
 	_, exists := eb.subscribers.Load(id)
 	return exists
+}
+
+// Shutdown stops the EventBus: prevents new subscriptions and publications,
+// and clears all current subscribers without closing their channels.
+func (eb *EventBus) Shutdown() {
+	if eb.closed.Swap(true) {
+		return
+	}
+	eb.subscribers.Range(func(key, _ interface{}) bool {
+		eb.subscribers.Delete(key)
+		return true
+	})
+	eb.count.Store(0)
+	logx.Info("EVENTBUS", "EventBus shutdown completed")
 }

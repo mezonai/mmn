@@ -9,7 +9,7 @@ import (
 	"github.com/mr-tron/base58"
 )
 
-const NATIVE_DECIMAL = 6
+const NativeDecimal = 6
 const addressDecodedExpectedLength = 32
 const (
 	TxTypeTransfer = 0
@@ -22,7 +22,6 @@ var (
 	ErrKeyNotFound    = errors.New("keystore: not found")
 )
 
-// ----- Account -----
 type Account struct {
 	Address string
 	Balance *uint256.Int
@@ -40,7 +39,6 @@ func ValidateAddress(addr string) error {
 	return nil
 }
 
-// ----- Tx -----
 type Tx struct {
 	Type      int          `json:"type"`
 	Sender    string       `json:"sender"`
@@ -125,13 +123,13 @@ type AddTxResponse struct {
 	Error  string `json:"error"`
 }
 
-type TxMeta_Status int32
+type TxMetaStatus int32
 
 const (
-	TxMeta_Status_PENDING   TxMeta_Status = 0
-	TxMeta_Status_CONFIRMED TxMeta_Status = 1
-	TxMeta_Status_FINALIZED TxMeta_Status = 2
-	TxMeta_Status_FAILED    TxMeta_Status = 3
+	TxMetaStatusPENDING   TxMetaStatus = 0
+	TxMetaStatusCONFIRMED TxMetaStatus = 1
+	TxMetaStatusFINALIZED TxMetaStatus = 2
+	TxMetaStatusFAILED    TxMetaStatus = 3
 )
 
 type TxMetaResponse struct {
@@ -140,7 +138,7 @@ type TxMetaResponse struct {
 	Amount    *uint256.Int
 	Nonce     uint64
 	Timestamp uint64
-	Status    TxMeta_Status
+	Status    TxMetaStatus
 }
 
 type TxHistoryResponse struct {

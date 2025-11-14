@@ -40,8 +40,8 @@ func NewCollector(n int) *Collector {
 	return collector
 }
 
-// return (committed, need apply block, err)
-func (c *Collector) AddVote(v *Vote) (bool, bool, error) {
+// AddVote func will return (committed, need apply block, err)
+func (c *Collector) AddVote(v *Vote) (isCommittes, needApplyBlock bool, err error) {
 	if err := v.Validate(); err != nil {
 		return false, false, err
 	}
@@ -88,7 +88,7 @@ func (c *Collector) VotesForSlot(slot uint64) map[string]*Vote {
 
 // CleanupOldVotes removes votes for slots older than the specified threshold
 // to prevent memory leak from accumulating votes indefinitely
-func (c *Collector) CleanupOldVotes(currentSlot uint64, keepRecentSlots uint64) {
+func (c *Collector) CleanupOldVotes(currentSlot, keepRecentSlots uint64) {
 	if currentSlot < keepRecentSlots {
 		return // Not enough slots to cleanup
 	}

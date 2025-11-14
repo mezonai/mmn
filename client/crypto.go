@@ -26,8 +26,8 @@ func SignTx(tx *Tx, pubKey, privKey []byte) (SignedTx, error) {
 		return SignedTx{}, ErrUnsupportedKey
 	}
 
-	tx_hash := Serialize(tx)
-	signature := ed25519.Sign(privKey, tx_hash)
+	txHash := Serialize(tx)
+	signature := ed25519.Sign(privKey, txHash)
 	if tx.Type == TxTypeFaucet {
 		return SignedTx{
 			Tx:  tx,
@@ -51,7 +51,7 @@ func SignTx(tx *Tx, pubKey, privKey []byte) (SignedTx, error) {
 }
 
 func Verify(tx *Tx, sig string) bool {
-	tx_hash := Serialize(tx)
+	txHash := Serialize(tx)
 	if tx.Type == TxTypeFaucet {
 		decoded, err := base58.Decode(tx.Sender)
 		if err != nil {
@@ -72,7 +72,7 @@ func Verify(tx *Tx, sig string) bool {
 			return false
 		}
 
-		return ed25519.Verify(pubKey, tx_hash, signature)
+		return ed25519.Verify(pubKey, txHash, signature)
 	}
 
 	sigBytes, err := base58.Decode(sig)
@@ -91,7 +91,7 @@ func Verify(tx *Tx, sig string) bool {
 
 	pubKey := ed25519.PublicKey(userSig.PubKey)
 
-	return ed25519.Verify(pubKey, tx_hash, userSig.Sig)
+	return ed25519.Verify(pubKey, txHash, userSig.Sig)
 }
 
 func GenerateAddress(input string) string {

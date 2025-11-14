@@ -123,7 +123,7 @@ func (c *MmnClient) GetTxByHash(ctx context.Context, txHash string) (TxInfo, err
 	}, nil
 }
 
-func (c *MmnClient) GetCurrentNonce(ctx context.Context, addr string, tag string) (uint64, error) {
+func (c *MmnClient) GetCurrentNonce(ctx context.Context, addr, tag string) (uint64, error) {
 	res, err := c.accClient.GetCurrentNonce(ctx, &mmnpb.GetCurrentNonceRequest{Address: addr, Tag: tag})
 	if err != nil {
 		return 0, err

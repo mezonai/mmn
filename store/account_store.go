@@ -44,7 +44,7 @@ func (as *GenericAccountStore) Store(account *types.Account) error {
 		return fmt.Errorf("%w failed to marshal account: %w", ErrFailedMarshalAccount, err)
 	}
 
-	err = as.dbProvider.Put(as.getDbKey(account.Address), accountData)
+	err = as.dbProvider.Put(as.getDBKey(account.Address), accountData)
 	if err != nil {
 		return fmt.Errorf("%w failed to write account to db: %w", ErrFaliedWriteAccount, err)
 	}
@@ -65,7 +65,7 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 			return fmt.Errorf("failed to marshal account: %w", err)
 		}
 
-		batch.Put(as.getDbKey(account.Address), accountData)
+		batch.Put(as.getDBKey(account.Address), accountData)
 	}
 
 	err := batch.Write()
@@ -78,7 +78,7 @@ func (as *GenericAccountStore) StoreBatch(accounts []*types.Account) error {
 
 // GetByAddr returns account instance from db, return both nil if not exist
 func (as *GenericAccountStore) GetByAddr(addr string) (*types.Account, error) {
-	data, err := as.dbProvider.Get(as.getDbKey(addr))
+	data, err := as.dbProvider.Get(as.getDBKey(addr))
 	if err != nil {
 		logx.Error("ACCOUNT_STORE", fmt.Sprintf("could not get account %s from db: %v", addr, err))
 		return nil, errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
@@ -110,7 +110,7 @@ func (as *GenericAccountStore) GetBatch(addrs []string) (map[string]*types.Accou
 	keys := make([][]byte, len(addrs))
 	keyToAddr := make(map[string]string, len(addrs))
 	for i, addr := range addrs {
-		key := as.getDbKey(addr)
+		key := as.getDBKey(addr)
 		keys[i] = key
 		keyToAddr[string(key)] = addr
 	}
@@ -140,7 +140,7 @@ func (as *GenericAccountStore) GetBatch(addrs []string) (map[string]*types.Accou
 }
 
 func (as *GenericAccountStore) ExistsByAddr(addr string) (bool, error) {
-	return as.dbProvider.Has(as.getDbKey(addr))
+	return as.dbProvider.Has(as.getDBKey(addr))
 }
 
 func (as *GenericAccountStore) MustClose() {
@@ -150,7 +150,7 @@ func (as *GenericAccountStore) MustClose() {
 	}
 }
 
-func (as *GenericAccountStore) getDbKey(addr string) []byte {
+func (as *GenericAccountStore) getDBKey(addr string) []byte {
 	return []byte(PrefixAccount + addr)
 }
 

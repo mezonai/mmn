@@ -1,6 +1,7 @@
 package mempool
 
 import (
+	"hash/fnv"
 	"sync"
 
 	"github.com/mezonai/mmn/logx"
@@ -8,25 +9,40 @@ import (
 )
 
 const (
-	DEDUP_SLOT_GAP = 200
+	DedupSlotGap = 200
+	NumShards     = 128
 )
 
-type DedupService struct {
-	mu                 sync.RWMutex
-	txDedupHashSet     map[string]struct{}
-	slotTxDedupHashSet map[uint64]map[string]struct{}
+type slotEntry struct {
+	mu            sync.Mutex
+	txDedupHashes []string
+}
 
-	bs store.BlockStore
-	ts store.TxStore
+type dedupShard struct {
+	mu             sync.RWMutex
+	txDedupHashSet map[string]struct{}
+}
+
+type DedupService struct {
+	txShards  [NumShards]*dedupShard
+	slotEntry sync.Map // map[uint64]*slotEntry
+	bs        store.BlockStore
+	ts        store.TxStore
 }
 
 func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
-	return &DedupService{
-		txDedupHashSet:     make(map[string]struct{}),
-		slotTxDedupHashSet: make(map[uint64]map[string]struct{}),
-		bs:                 bs,
-		ts:                 ts,
+	ds := &DedupService{
+		bs: bs,
+		ts: ts,
 	}
+
+	for i := 0; i < NumShards; i++ {
+		ds.txShards[i] = &dedupShard{
+			txDedupHashSet: make(map[string]struct{}),
+		}
+	}
+
+	return ds
 }
 
 func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
@@ -35,8 +51,8 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 	}
 
 	startSlot := uint64(1)
-	if latestSlot > DEDUP_SLOT_GAP {
-		startSlot = latestSlot - DEDUP_SLOT_GAP + 1
+	if latestSlot > DedupSlotGap {
+		startSlot = latestSlot - DedupSlotGap + 1
 	}
 
 	loadSlots := make([]uint64, 0, latestSlot-startSlot+1)
@@ -71,40 +87,58 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 }
 
 func (ds *DedupService) IsDuplicate(txDedupHash string) bool {
-	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-	_, exists := ds.txDedupHashSet[txDedupHash]
+	shardIndex := getShardIndex(txDedupHash)
+	shard := ds.txShards[shardIndex]
+	shard.mu.RLock()
+	_, exists := shard.txDedupHashSet[txDedupHash]
+	shard.mu.RUnlock()
 	return exists
 }
 
 func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
+	v, _ := ds.slotEntry.LoadOrStore(slot, &slotEntry{})
 
-	// Add new tx hashes
+	se := v.(*slotEntry)
+	se.mu.Lock()
+	se.txDedupHashes = append(se.txDedupHashes, txDedupHashes...)
+	se.mu.Unlock()
+
 	for _, txDedupHash := range txDedupHashes {
-		ds.txDedupHashSet[txDedupHash] = struct{}{}
-		if _, exists := ds.slotTxDedupHashSet[slot]; !exists {
-			ds.slotTxDedupHashSet[slot] = make(map[string]struct{})
-		}
-		ds.slotTxDedupHashSet[slot][txDedupHash] = struct{}{}
+		shardIndex := getShardIndex(txDedupHash)
+		shard := ds.txShards[shardIndex]
+		shard.mu.Lock()
+		shard.txDedupHashSet[txDedupHash] = struct{}{}
+		shard.mu.Unlock()
 	}
 }
 
 func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
-	if slot <= DEDUP_SLOT_GAP {
+	if slot <= DedupSlotGap {
+		return
+	}
+	oldSlot := slot - DedupSlotGap
+
+	v, ok := ds.slotEntry.LoadAndDelete(oldSlot)
+	if !ok {
 		return
 	}
 
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
+	se := v.(*slotEntry)
+	se.mu.Lock()
+	txDedupHashes := se.txDedupHashes
+	se.mu.Unlock()
 
-	// Clean up old slot tx hashes
-	oldSlot := slot - DEDUP_SLOT_GAP
-	if oldTxDedupHashes, exists := ds.slotTxDedupHashSet[oldSlot]; exists {
-		for oldTxDedupHash := range oldTxDedupHashes {
-			delete(ds.txDedupHashSet, oldTxDedupHash)
-		}
-		delete(ds.slotTxDedupHashSet, oldSlot)
+	for _, txDedupHash := range txDedupHashes {
+		shardIndex := getShardIndex(txDedupHash)
+		shard := ds.txShards[shardIndex]
+		shard.mu.Lock()
+		delete(shard.txDedupHashSet, txDedupHash)
+		shard.mu.Unlock()
 	}
+}
+
+func getShardIndex(key string) uint {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	return uint(h.Sum32() % NumShards)
 }

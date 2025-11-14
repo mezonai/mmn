@@ -12,8 +12,8 @@ func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
 	logx.Info("POH", fmt.Sprintf("VerifyEntries: verifying %d entries in slot=%d", len(entries), slot))
 
 	// Validate entries count bounds
-	if len(entries) > MAX_ENTRIES_PER_SLOT {
-		return fmt.Errorf("too many entries in slot %d: %d > %d", slot, len(entries), MAX_ENTRIES_PER_SLOT)
+	if len(entries) > MaxEntriesPerSlot {
+		return fmt.Errorf("too many entries in slot %d: %d > %d", slot, len(entries), MaxEntriesPerSlot)
 	}
 
 	cur := prev
@@ -43,12 +43,12 @@ func VerifyEntries(prev [32]byte, entries []Entry, slot uint64) error {
 }
 
 func ValidateEntry(e Entry) error {
-	if e.NumHashes > MAX_NUM_HASHES {
-		return fmt.Errorf("NumHashes too large: %d > %d", e.NumHashes, MAX_NUM_HASHES)
+	if e.NumHashes > MaxNumHashes {
+		return fmt.Errorf("NumHashes too large: %d > %d", e.NumHashes, MaxNumHashes)
 	}
 
-	if len(e.Transactions) > MAX_TRANSACTIONS_PER_ENTRY {
-		return fmt.Errorf("too many transactions: %d > %d", len(e.Transactions), MAX_TRANSACTIONS_PER_ENTRY)
+	if len(e.Transactions) > MaxTransactionsPerEntry {
+		return fmt.Errorf("too many transactions: %d > %d", len(e.Transactions), MaxTransactionsPerEntry)
 	}
 
 	for i, tx := range e.Transactions {
@@ -56,23 +56,23 @@ func ValidateEntry(e Entry) error {
 			return fmt.Errorf("transaction %d is nil", i)
 		}
 
-		if len(tx.Sender) == 0 {
+		if tx.Sender == "" {
 			return fmt.Errorf("transaction %d has empty sender", i)
 		}
 
-		if len(tx.Recipient) == 0 {
+		if tx.Recipient == "" {
 			return fmt.Errorf("transaction %d has empty recipient", i)
 		}
 
 		txSize := len(tx.Bytes())
-		if txSize > MAX_ENTRY_SIZE/MAX_TRANSACTIONS_PER_ENTRY {
+		if txSize > MaxEntrySize/MaxTransactionsPerEntry {
 			return fmt.Errorf("transaction %d too large: %d bytes", i, txSize)
 		}
 	}
 
 	entrySize := estimateEntrySize(e)
-	if entrySize > MAX_ENTRY_SIZE {
-		return fmt.Errorf("entry too large: %d bytes > %d", entrySize, MAX_ENTRY_SIZE)
+	if entrySize > MaxEntrySize {
+		return fmt.Errorf("entry too large: %d bytes > %d", entrySize, MaxEntrySize)
 	}
 
 	return nil

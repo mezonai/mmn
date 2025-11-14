@@ -18,7 +18,7 @@ type PersistentEntry struct {
 	Tick      bool     `json:"tick"`
 }
 
-// Entry with no transactions (e.g. tick-only)
+// NewTickEntry creates a new entry without transactions (e.g. tick-only).
 func NewTickEntry(numHashes uint64, hash [32]byte) Entry {
 	return Entry{
 		NumHashes:    numHashes,
@@ -28,7 +28,7 @@ func NewTickEntry(numHashes uint64, hash [32]byte) Entry {
 	}
 }
 
-// Entry with txs
+// NewTxEntry creates a new entry with transactions.
 func NewTxEntry(numHashes uint64, hash [32]byte, txs []*transaction.Transaction) Entry {
 	return Entry{
 		NumHashes:    numHashes,

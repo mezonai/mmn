@@ -44,13 +44,13 @@ type server struct {
 	healthSvc   interfaces.HealthService
 }
 
-func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, validator *validator.Validator, blockStore store.BlockStore, mempool *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
+func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator.Validator, blockStore store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
 	s := &server{
 		ledger:      ld,
 		selfID:      selfID,
 		blockStore:  blockStore,
-		validator:   validator,
-		mempool:     mempool,
+		validator:   val,
+		mempool:     mp,
 		eventRouter: eventRouter,
 		rateLimiter: rateLimiter,
 		txSvc:       txSvc,
@@ -177,7 +177,7 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 		select {
 		case event := <-eventChan:
 			// Convert event to status update for the specific transaction
-			statusUpdate := s.convertEventToStatusUpdate(event, event.TxHash())
+			statusUpdate := s.convertEventToStatusUpdate(event, event.Transaction().Hash())
 			if statusUpdate != nil {
 				if err := stream.Send(statusUpdate); err != nil {
 					return err
@@ -452,13 +452,13 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 	// Collect ALL transaction hashes from ALL blocks first
 	var allTxHashes []string
 	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
-	errors := make([]string, 0)
+	errs := make([]string, 0)
 
 	for _, slot := range slots {
 		block, exists := blockMap[slot]
 		if !exists {
 			logx.Error("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
-			errors = append(errors, fmt.Sprintf("Block %d not found, skipping", slot))
+			errs = append(errs, fmt.Sprintf("Block %d not found, skipping", slot))
 			continue
 		}
 
@@ -500,7 +500,7 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 
 			if !txExists || !metaExists {
 				logx.Error("GRPC SERVER", fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
-				errors = append(errors, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
+				errs = append(errs, fmt.Sprintf("Transaction or meta not found for tx %s in block %d", txHash, slot))
 				continue
 			}
 
@@ -539,6 +539,6 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 		Blocks:      blocks,
 		TotalBlocks: uint32(len(blocks)),
 		Decimals:    uint32(config.GetDecimalsFactor()),
-		Errors:      errors,
+		Errors:      errs,
 	}, nil
 }

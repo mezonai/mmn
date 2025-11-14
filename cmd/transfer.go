@@ -44,7 +44,7 @@ Examples:
   # Transfer 500 tokens using private key directly
   transfer -t 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY -a 500 -p "your-private-key-here"`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := transferToken(transferConfig); err != nil {
+		if err := transferToken(&transferConfig); err != nil {
 			logx.Error("TRANSFER CLI", err)
 		}
 	},
@@ -62,7 +62,7 @@ func init() {
 	transferCmd.PersistentFlags().BoolVarP(&transferConfig.Verbose, "verbose", "v", false, "verbose output")
 }
 
-func transferToken(transferConfig TransferConfig) error {
+func transferToken(transferConfig *TransferConfig) error {
 	// Parse the amount string to uint256.Int
 	amount, err := uint256.FromDecimal(strings.ReplaceAll(transferConfig.Amount, "_", ""))
 	if err != nil {
@@ -90,7 +90,7 @@ func transferToken(transferConfig TransferConfig) error {
 		return fmt.Errorf("failed to create grpc client: %w", err)
 	}
 	defer func() {
-		err := grpcClient.Close()
+		err = grpcClient.Close()
 		if err != nil {
 			logx.Error("TRANSFER CLI", "Failed to close grpc client: ", err)
 		}
@@ -98,13 +98,12 @@ func transferToken(transferConfig TransferConfig) error {
 
 	// Get sender account info to get current nonce
 	ctx := context.Background()
-	senderAccount, err := grpcClient.GetAccount(ctx, senderAddress)
-	if err != nil {
-		return fmt.Errorf("failed to get sender account: %w", err)
-	}
 
 	// Build and sign transferConfig transaction
-	nonce := senderAccount.Nonce + 1
+	nonce, err := grpcClient.GetCurrentNonce(ctx, senderAddress, "pending")
+	if err != nil {
+		return fmt.Errorf("failed to get nonce: %w", err)
+	}
 	unsigned, err := mmn.BuildTransferTx(
 		mmn.TxTypeFaucet,
 		senderAddress,
@@ -165,7 +164,7 @@ func transferToken(transferConfig TransferConfig) error {
 
 // loadSenderPrivateKey loads the key from config, which is set by command flags
 // the private key is originally in hex format
-func loadSenderPrivateKey(transferConfig TransferConfig) (string, error) {
+func loadSenderPrivateKey(transferConfig *TransferConfig) (string, error) {
 	fmt.Printf("%+v\n", transferConfig)
 	if transferConfig.PrivateKey != "" {
 		return transferConfig.PrivateKey, nil

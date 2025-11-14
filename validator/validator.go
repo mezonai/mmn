@@ -65,7 +65,7 @@ func NewValidator(
 	rec *poh.PohRecorder,
 	svc *poh.PohService,
 	schedule *poh.LeaderSchedule,
-	mempool *mempool.Mempool,
+	mp *mempool.Mempool,
 	leaderBatchLoopInterval time.Duration,
 	roleMonitorLoopInterval time.Duration,
 	leaderTimeout time.Duration,
@@ -73,7 +73,7 @@ func NewValidator(
 	batchSize int,
 	p2pClient *p2p.Libp2pNetwork,
 	blockStore store.BlockStore,
-	ledger *ledger.Ledger,
+	ld *ledger.Ledger,
 	collector *consensus.Collector,
 	dedupService *mempool.DedupService,
 ) *Validator {
@@ -83,7 +83,7 @@ func NewValidator(
 		Recorder:                  rec,
 		Service:                   svc,
 		Schedule:                  schedule,
-		Mempool:                   mempool,
+		Mempool:                   mp,
 		leaderBatchLoopInterval:   leaderBatchLoopInterval,
 		roleMonitorLoopInterval:   roleMonitorLoopInterval,
 		leaderTimeout:             leaderTimeout,
@@ -92,7 +92,7 @@ func NewValidator(
 		netClient:                 p2pClient,
 		p2pClient:                 p2pClient,
 		blockStore:                blockStore,
-		ledger:                    ledger,
+		ledger:                    ld,
 		collector:                 collector,
 		dedupService:              dedupService,
 		leaderStartAtSlot:         NoSlot,
@@ -163,7 +163,7 @@ func (v *Validator) onLeaderSlotEnd() {
 	v.leaderStartAtSlot = NoSlot
 }
 
-func (v *Validator) fastForwardTicks(seenHash [32]byte, fromSlot uint64, toSlot uint64) store.SlotBoundary {
+func (v *Validator) fastForwardTicks(seenHash [32]byte, fromSlot, toSlot uint64) store.SlotBoundary {
 	hash := v.Recorder.FastForward(seenHash, fromSlot, toSlot)
 	return store.SlotBoundary{
 		Slot: toSlot,
