@@ -73,7 +73,7 @@ func NewLogger(config Config) (*Logger, error) {
 		timestamp, config.AccountCount, config.TxPerSecond, durationStr, sanitizedServer)
 
 	// Create logs directory if it doesn't exist
-	logDir := "reports"
+	logDir := "reports/log_reports"
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create logs directory: %v", err)
 	}
@@ -106,7 +106,7 @@ func NewLogger(config Config) (*Logger, error) {
 	combinedLogger.Printf("[RESULT] Fund Amount: %d", config.FundAmount)
 	combinedLogger.Printf("[RESULT] Transfer Amount: %d", config.TransferAmount)
 	combinedLogger.Printf("[RESULT] Duration: %v", config.Duration)
-	combinedLogger.Printf("[RESULT] Run Minutes: %d", config.RunMinutes)
+	combinedLogger.Printf("[RESULT] Total Transactions: %d", config.TotalTransactions)
 	combinedLogger.Printf("[RESULT] Test Start Time: %s", time.Now().Format("2006-01-02 15:04:05"))
 	combinedLogger.Printf("[RESULT] =================================")
 
@@ -256,9 +256,9 @@ func (l *Logger) LogRealTimeMetrics(totalTxs, successTxs, failedTxs int64, testS
 
 	// Show remaining time if using minutes option
 	timeInfo := ""
-	if config.RunMinutes > 0 {
+	if config.Duration > 0 {
 		elapsed := time.Since(testStartTime)
-		remaining := time.Duration(config.RunMinutes)*time.Minute - elapsed
+		remaining := config.Duration - elapsed
 		if remaining > 0 {
 			timeInfo = fmt.Sprintf(" | Time: %v elapsed, %v remaining",
 				elapsed.Round(time.Second), remaining.Round(time.Second))
@@ -281,8 +281,8 @@ func (l *Logger) LogRealTimeMetrics(totalTxs, successTxs, failedTxs int64, testS
 }
 
 // LogFinalStats logs final test statistics
-func (l *Logger) LogFinalStats(totalTxs, successTxs, failedTxs int64, testStartTime time.Time, config Config) {
-	testDuration := time.Since(testStartTime)
+func (l *Logger) LogFinalStats(totalTxs, successTxs, failedTxs int64, testStartTime time.Time, config Config, endTime time.Time) {
+	testDuration := endTime.Sub(testStartTime)
 	actualRate := float64(totalTxs) / testDuration.Seconds()
 	successRate := float64(successTxs) / float64(totalTxs) * 100
 
