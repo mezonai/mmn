@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
@@ -25,6 +26,7 @@ var (
 
 type Ledger struct {
 	mu           sync.RWMutex
+	bStore       store.BlockStore
 	txStore      store.TxStore
 	txMetaStore  store.TxMetaStore
 	accountStore store.AccountStore
@@ -32,8 +34,9 @@ type Ledger struct {
 	txTracker    interfaces.TransactionTrackerInterface
 }
 
-func NewLedger(txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
+func NewLedger(bStore store.BlockStore, txStore store.TxStore, txMetaStore store.TxMetaStore, accountStore store.AccountStore, eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface) *Ledger {
 	return &Ledger{
+		bStore:       bStore,
 		txStore:      txStore,
 		txMetaStore:  txMetaStore,
 		accountStore: accountStore,
@@ -94,7 +97,7 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
+func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
@@ -103,92 +106,88 @@ func (l *Ledger) ApplyBlock(b *block.Block, isListener bool) error {
 		return nil
 	}
 
+	txHashes := make([]string, 0)
+	txMetas := make(map[string]*types.TransactionMeta)
+	accAddrs := make([]string, 0)
+	accAddrsSet := make(map[string]struct{})
+
 	for _, entry := range b.Entries {
-		txs, err := l.txStore.GetBatch(entry.TxHashes)
-		if err != nil {
-			return err
+		if entry.Tick {
+			continue
 		}
-		txMetas := make([]*types.TransactionMeta, 0, len(txs))
+		txHashes = append(txHashes, entry.TxHashes...)
+	}
 
-		for _, tx := range txs {
-			// load account state
-			sender, err := l.accountStore.GetByAddr(tx.Sender)
-			if err != nil {
-				return err
-			}
-			if sender == nil {
-				if sender, err = l.createAccountWithoutLocking(tx.Sender, uint256.NewInt(0)); err != nil {
-					return err
-				}
-			}
-			recipient, err := l.accountStore.GetByAddr(tx.Recipient)
-			if err != nil {
-				return err
-			}
-			if recipient == nil {
-				if recipient, err = l.createAccountWithoutLocking(tx.Recipient, uint256.NewInt(0)); err != nil {
-					return err
-				}
-			}
-			state := map[string]*types.Account{
-				sender.Address:    sender,
-				recipient.Address: recipient,
-			}
+	allTxsInBlock, err := l.txStore.GetBatch(txHashes)
+	if err != nil {
+		return fmt.Errorf("failed to get transactions for block %d: %w", b.Slot, err)
+	}
 
-			// try to apply tx
-			txHash := tx.Hash()
-			if err := applyTx(state, tx); err != nil {
-				// Publish specific transaction failure event
-				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", err))
-					l.eventRouter.PublishTransactionEvent(event)
-					if errors.Is(err, ErrInvalidNonce) {
-						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxInvalidNonce)
-					} else {
-						monitoring.IncreaseFailedTpsCount(err.Error())
-					}
-				}
-				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
-				state[tx.Sender].Nonce++
-				txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error()))
-				// Remove failed transaction from tracker
-				if l.txTracker != nil && !isListener {
-					l.txTracker.RemoveTransaction(txHash)
-				}
-				continue
-			}
-			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
-			txMetas = append(txMetas, types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, ""))
-			// Remove successful transaction from tracker
+	for _, tx := range allTxsInBlock {
+		if _, exists := accAddrsSet[tx.Sender]; !exists {
+			accAddrsSet[tx.Sender] = struct{}{}
+			accAddrs = append(accAddrs, tx.Sender)
+		}
+		if _, exists := accAddrsSet[tx.Recipient]; !exists {
+			accAddrsSet[tx.Recipient] = struct{}{}
+			accAddrs = append(accAddrs, tx.Recipient)
+		}
+	}
+
+	state, err := l.accountStore.GetBatch(accAddrs)
+	if err != nil {
+		return fmt.Errorf("failed to get accounts for block %d: %w", b.Slot, err)
+	}
+
+	for _, tx := range allTxsInBlock {
+		txHash := tx.Hash()
+		if err := applyTx(state, tx); err != nil {
+			logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
+			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+			// Remove failed transaction from tracker
 			if l.txTracker != nil && !isListener {
 				l.txTracker.RemoveTransaction(txHash)
 			}
-
-			// commit the update
-			if err := l.accountStore.StoreBatch([]*types.Account{sender, recipient}); err != nil {
-				if l.eventRouter != nil {
-					event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
-					l.eventRouter.PublishTransactionEvent(event)
-					switch {
-					case errors.Is(err, store.ErrFailedMarshalAccount):
-						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedMarshalAccount)
-					case errors.Is(err, store.ErrFaliedWriteAccount):
-						monitoring.IncreaseFailedTpsCount(monitoring.FailedTxFailedWriteAccount)
-					default:
-						monitoring.IncreaseFailedTpsCount(err.Error())
-					}
-				}
-				return err
-			}
-			logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s => sender: %+v, recipient: %+v\n", tx.Hash(), sender, recipient))
+			continue
 		}
-		if len(txMetas) > 0 {
-			err := l.txMetaStore.StoreBatch(txMetas)
-			if err != nil {
-				logx.Error("LEDGER", fmt.Sprintf("Failed to store tx metas for block=%d, len=%d: %v", b.Slot, len(txMetas), err))
-				return err
+		logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+		txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+		// Remove successful transaction from tracker
+		if l.txTracker != nil && !isListener {
+			l.txTracker.RemoveTransaction(txHash)
+		}
+	}
+
+	if err := l.bStore.FinalizeBlock(b, txMetas, state); err != nil {
+		if l.eventRouter != nil {
+			for _, tx := range allTxsInBlock {
+				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+				l.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFailedTpsCount(err.Error())
 			}
-			logx.Info("LEDGER", fmt.Sprintf("Stored tx metas for block=%d, len=%d", b.Slot, len(txMetas)))
+		}
+		return fmt.Errorf("finalized block error: %w", err)
+	}
+
+	if l.eventRouter != nil {
+		blockHashHex := b.HashString()
+		now := time.Now()
+		for _, tx := range allTxsInBlock {
+			if meta, exists := txMetas[tx.Hash()]; exists && meta.Status == types.TxStatusFailed {
+				// Publish specific transaction failure event
+				event := events.NewTransactionFailed(tx, fmt.Sprintf("transaction application failed: %v", meta.Error))
+				l.eventRouter.PublishTransactionEvent(event)
+				monitoring.IncreaseFailedTpsCount(meta.Error)
+				continue
+			}
+
+			// Record metrics
+			txTimestamp := time.UnixMilli(int64(tx.Timestamp))
+			monitoring.RecordTimeToFinality(now.Sub(txTimestamp))
+
+			event := events.NewTransactionFinalized(tx, b.Slot, blockHashHex)
+			l.eventRouter.PublishTransactionEvent(event)
+			monitoring.IncreaseFinalizedTpsCount()
 		}
 	}
 

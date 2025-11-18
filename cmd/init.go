@@ -10,6 +10,8 @@ import (
 	"strconv"
 
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/types"
+	"github.com/mezonai/mmn/utils"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
@@ -204,7 +206,7 @@ func initializeNode() {
 	defer as.MustClose()
 
 	// Initialize ledger
-	ld := ledger.NewLedger(ts, tms, as, nil, nil)
+	ld := ledger.NewLedger(bs, ts, tms, as, nil, nil)
 
 	// Check if genesis block already exists then skip creation
 	if bs.HasCompleteBlock(0) {
@@ -227,10 +229,12 @@ func initializeNode() {
 			return
 		}
 
-		// Mark genesis block as finalized
-		err = bs.MarkFinalized(genesisBlock.Slot)
+		// Finalizegenesis block
+		txMeta := map[string]*types.TransactionMeta{}
+		addrAccount := map[string]*types.Account{}
+		err = bs.FinalizeBlock(utils.BroadcastedBlockToBlock(genesisBlock), txMeta, addrAccount)
 		if err != nil {
-			logx.Error("INIT", "Failed to mark genesis block as finalized:", err.Error())
+			logx.Error("INIT", "Failed to finalize genesis block :", err.Error())
 			return
 		}
 
@@ -260,7 +264,7 @@ func initializeBlockchainWithGenesis(cfg *config.GenesisConfig, ld *ledger.Ledge
 	genesisBlock := block.AssembleBlock(
 		0,                         // slot 0 for genesis
 		genesisHash,               // previous hash is zero for genesis
-		ZeroAddress,              // use alloc address as leader for genesis
+		ZeroAddress,               // use alloc address as leader for genesis
 		[]poh.Entry{genesisEntry}, // genesis entry
 	)
 
