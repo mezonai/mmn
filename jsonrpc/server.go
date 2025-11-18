@@ -176,31 +176,6 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-type limitedResponseWriter struct {
-	http.ResponseWriter
-	limit   int64
-	written int64
-	blocked bool
-}
-
-func (lw *limitedResponseWriter) Write(b []byte) (int, error) {
-	if lw.blocked {
-		return 0, nil
-	}
-	next := lw.written + int64(len(b))
-	if next > lw.limit {
-		lw.blocked = true
-		if lw.written == 0 {
-			http.Error(lw.ResponseWriter, "response too large", http.StatusInternalServerError)
-		}
-		logx.Warn("JSONRPC SERVER", "response exceeded limit", "limit", lw.limit)
-		return 0, nil
-	}
-	n, err := lw.ResponseWriter.Write(b)
-	lw.written += int64(n)
-	return n, err
-}
-
 func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *Server {
 	return &Server{
 		addr:      addr,
@@ -237,7 +212,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			}
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySize)
+		r.Body = http.MaxBytesReader(w, r.Body, validation.DefaultRequestBodyLimit)
 
 		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
@@ -263,8 +238,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 				s.rateLimiter.TrackIPRequest(clientIP)
 			})
 		}
-		lw := &limitedResponseWriter{ResponseWriter: w, limit: int64(validation.MaxResponseBodySize)}
-		jh.ServeHTTP(lw, r)
+		jh.ServeHTTP(w, r)
 	})
 	return h
 }
@@ -355,17 +329,17 @@ func (s *Server) buildMethodMap() handler.Map {
 
 func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
 	shortFields := map[string]string{
-		"sender":    p.TxMsg.Sender,
-		"recipient": p.TxMsg.Recipient,
-		"amount":    p.TxMsg.Amount,
+		validation.SenderField:    p.TxMsg.Sender,
+		validation.RecipientField: p.TxMsg.Recipient,
+		validation.AmountField:    p.TxMsg.Amount,
 	}
 
 	longFields := map[string]string{
-		"text_data":  p.TxMsg.TextData,
-		"extra_info": p.TxMsg.ExtraInfo,
-		"zk_proof":   p.TxMsg.ZkProof,
-		"zk_pub":     p.TxMsg.ZkPub,
-		"signature":  p.Signature,
+		validation.TextDataField:  p.TxMsg.TextData,
+		validation.ExtraInfoField: p.TxMsg.ExtraInfo,
+		validation.ZkProofField:   p.TxMsg.ZkProof,
+		validation.ZkPubField:     p.TxMsg.ZkPub,
+		validation.SignatureField: p.Signature,
 	}
 
 	for fieldName, fieldValue := range shortFields {
@@ -458,7 +432,7 @@ func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
 
 func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
 	accAddr := p.Address
-	if err := validation.ValidateShortTextLength("address", accAddr); err != nil {
+	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
 		return nil, &rpcError{Code: -32602, Message: err.Error()}
 	}
 
@@ -473,10 +447,7 @@ func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpc
 	accAddr := p.Address
 	tag := p.Tag
 
-	if err := validation.ValidateShortTextLength("address", accAddr); err != nil {
-		return nil, &rpcError{Code: -32602, Message: err.Error()}
-	}
-	if err := validation.ValidateShortTextLength("tag", tag); err != nil {
+	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
 		return nil, &rpcError{Code: -32602, Message: err.Error()}
 	}
 

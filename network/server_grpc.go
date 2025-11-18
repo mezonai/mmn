@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/events"
@@ -62,6 +63,7 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator
 	// Initialize shared services
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
+		limitRequestSizeUnaryInterceptor(validation.DefaultRequestBodyLimit, validation.LargeRequestBodyLimit, validation.LargeRequestMethods),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
@@ -78,8 +80,6 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator
 	grpcSrv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
-		grpc.MaxRecvMsgSize(validation.MaxRequestBodySize),
-		grpc.MaxSendMsgSize(validation.MaxResponseBodySize),
 	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
@@ -147,18 +147,45 @@ func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnarySer
 	}
 }
 
+// Interceptor to enforce per-method max request size limits
+func limitRequestSizeUnaryInterceptor(defaultLimit, extendedLimit int, specialMethods map[string]struct{}) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		msg, ok := req.(proto.Message)
+		if !ok {
+			return nil, status.Error(codes.Internal, "cannot cast request to proto.Message")
+		}
+
+		size := proto.Size(msg)
+
+		max := defaultLimit
+		if _, ok := specialMethods[info.FullMethod]; ok {
+			max = extendedLimit
+		}
+
+		if size > max {
+			return nil, status.Errorf(
+				codes.ResourceExhausted,
+				"request too large: %d bytes (max %d)",
+				size, max,
+			)
+		}
+
+		return handler(ctx, req)
+	}
+}
+
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
 	shortFields := map[string]string{
-		"sender":    in.TxMsg.Sender,
-		"recipient": in.TxMsg.Recipient,
-		"amount":    in.TxMsg.Amount,
+		validation.SenderField:    in.TxMsg.Sender,
+		validation.RecipientField: in.TxMsg.Recipient,
+		validation.AmountField:    in.TxMsg.Amount,
 	}
 	longFields := map[string]string{
-		"text_data":  in.TxMsg.TextData,
-		"extra_info": in.TxMsg.ExtraInfo,
-		"zk_proof":   in.TxMsg.ZkProof,
-		"zk_pub":     in.TxMsg.ZkPub,
-		"signature":  in.Signature,
+		validation.TextDataField:  in.TxMsg.TextData,
+		validation.ExtraInfoField: in.TxMsg.ExtraInfo,
+		validation.ZkProofField:   in.TxMsg.ZkProof,
+		validation.ZkPubField:     in.TxMsg.ZkPub,
+		validation.SignatureField: in.Signature,
 	}
 
 	for name, val := range shortFields {
@@ -176,7 +203,7 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 }
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
-	if err := validation.ValidateShortTextLength("address", in.Address); err != nil {
+	if err := validation.ValidateShortTextLength(validation.AddressField, in.Address); err != nil {
 		return nil, err
 	}
 
@@ -184,15 +211,16 @@ func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.
 }
 
 func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
-	if err := validation.ValidateShortTextLength("address", in.Address); err != nil {
+	accAddr := in.Address
+	tag := in.Tag
+
+	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
 		return nil, err
 	}
 
-	tag := in.GetTag()
-	if err := validation.ValidateShortTextLength("tag", tag); err != nil {
-		return nil, err
+	if tag != "latest" && tag != "pending" {
+		return nil, fmt.Errorf("invalid tag: must be 'latest' or 'pending'")
 	}
-
 	return s.acctSvc.GetCurrentNonce(ctx, in)
 }
 
