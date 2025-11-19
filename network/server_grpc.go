@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/mezonai/mmn/config"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/events"
@@ -16,6 +17,7 @@ import (
 	"github.com/mezonai/mmn/mempool"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/types"
@@ -61,6 +63,7 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator
 	// Initialize shared services
 	unaryInterceptors := []grpc.UnaryServerInterceptor{
 		defaultDeadlineUnaryInterceptor(GRPCDefaultDeadline),
+		limitRequestSizeUnaryInterceptor(validation.DefaultRequestBodyLimit, validation.LargeRequestBodyLimit, validation.LargeRequestMethods),
 	}
 	streamInterceptors := []grpc.StreamServerInterceptor{}
 
@@ -77,8 +80,6 @@ func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator
 	grpcSrv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 		grpc.ChainStreamInterceptor(streamInterceptors...),
-		grpc.MaxRecvMsgSize(GRPCMaxRecvMsgSize),
-		grpc.MaxSendMsgSize(GRPCMaxSendMsgSize),
 	)
 	pb.RegisterBlockServiceServer(grpcSrv, s)
 	pb.RegisterTxServiceServer(grpcSrv, s)
@@ -146,19 +147,88 @@ func defaultDeadlineUnaryInterceptor(defaultTimeout time.Duration) grpc.UnarySer
 	}
 }
 
+// Interceptor to enforce per-method max request size limits
+func limitRequestSizeUnaryInterceptor(defaultLimit, extendedLimit int, specialMethods map[string]struct{}) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		msg, ok := req.(proto.Message)
+		if !ok {
+			return nil, status.Error(codes.Internal, "cannot cast request to proto.Message")
+		}
+
+		size := proto.Size(msg)
+
+		max := defaultLimit
+		if _, ok := specialMethods[info.FullMethod]; ok {
+			max = extendedLimit
+		}
+
+		if size > max {
+			return nil, status.Errorf(
+				codes.ResourceExhausted,
+				"request too large: %d bytes (max %d)",
+				size, max,
+			)
+		}
+
+		return handler(ctx, req)
+	}
+}
+
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
+	shortFields := map[string]string{
+		validation.SenderField:    in.TxMsg.Sender,
+		validation.RecipientField: in.TxMsg.Recipient,
+		validation.AmountField:    in.TxMsg.Amount,
+	}
+	longFields := map[string]string{
+		validation.TextDataField:  in.TxMsg.TextData,
+		validation.ExtraInfoField: in.TxMsg.ExtraInfo,
+		validation.ZkProofField:   in.TxMsg.ZkProof,
+		validation.ZkPubField:     in.TxMsg.ZkPub,
+		validation.SignatureField: in.Signature,
+	}
+
+	for name, val := range shortFields {
+		if err := validation.ValidateShortTextLength(name, val); err != nil {
+			return nil, err
+		}
+	}
+	for name, val := range longFields {
+		if err := validation.ValidateLongTextLength(name, val); err != nil {
+			return nil, err
+		}
+	}
+
 	return s.txSvc.AddTx(ctx, in)
 }
 
 func (s *server) GetAccount(ctx context.Context, in *pb.GetAccountRequest) (*pb.GetAccountResponse, error) {
+	if err := validation.ValidateShortTextLength(validation.AddressField, in.Address); err != nil {
+		return nil, err
+	}
+
 	return s.acctSvc.GetAccount(ctx, in)
 }
 
 func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequest) (*pb.GetCurrentNonceResponse, error) {
+	accAddr := in.Address
+	tag := in.Tag
+
+	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
+		return nil, err
+	}
+
+	if tag != "latest" && tag != "pending" {
+		return nil, fmt.Errorf("invalid tag: must be 'latest' or 'pending'")
+	}
 	return s.acctSvc.GetCurrentNonce(ctx, in)
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
+	if err := validation.ValidateShortTextLength("tx_hash", in.TxHash); err != nil {
+		return nil, err
+	}
+
 	return s.txSvc.GetTxByHash(ctx, in)
 }
 
