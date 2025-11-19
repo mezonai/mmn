@@ -31,9 +31,6 @@ var LargeRequestMethods = map[string]struct{}{
 
 var InjectionPatterns = []string{
 	"${{", "{{", "}}", "${", "#{", "{%", "%}", "{{{", // templates/SSTI
-	"$(", "||", "&&", ";", "--", "/*", "*/", // shell / sql comment / separators
-	"'", "\"", // quotes
-	"../", "..\\", "..", // path traversal
 	"%0a", "%0d", "%0a%0d", "%00", "%27", "%22", "%3c", "%3e", // encoded attacks (decode first)
 	"${jndi:", "ldap://", "ldaps://", // JNDI/ldap
 	"eval(", "exec(", "system(", "popen(", // dangerous funcs
