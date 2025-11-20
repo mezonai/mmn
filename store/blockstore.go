@@ -434,7 +434,7 @@ func (s *GenericBlockStore) FinalizeBlock(blk *block.Block, txMetas map[string]*
 	defer batch.Close()
 
 	// Mark block as finalized
-	blk.BlockCore.Status = block.BlockFinalized
+	blk.Status = block.BlockFinalized
 	blkKey := slotToBlockKey(slot)
 	blkValue, err := jsonx.Marshal(blk)
 	if err != nil {

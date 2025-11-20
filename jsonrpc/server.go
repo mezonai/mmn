@@ -378,7 +378,7 @@ func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
 
 func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
 	txHash := p.TxHash
-	if err := validation.ValidateShortTextLength("tx_hash", txHash); err != nil {
+	if err := validation.ValidateShortTextLength(validation.TxHashField, txHash); err != nil {
 		return nil, &rpcError{Code: -32602, Message: err.Error()}
 	}
 
