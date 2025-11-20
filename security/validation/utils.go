@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var AllowedTextRegexp = regexp.MustCompile(AllowedTextPattern)
 var InjectionRegexp = BuildInjectionPatterns()
 
 // BuildInjectionPatterns builds regexp for injection detection (case-insensitive)
@@ -42,11 +41,6 @@ func ValidateLongTextLength(fieldName string, fieldValue string) error {
 	if utf8.RuneCountInString(normalized) > MaxLongTextLength {
 		return status.Errorf(codes.InvalidArgument,
 			"field %s: long text length exceeds maximum of %d", fieldName, MaxLongTextLength)
-	}
-
-	if !AllowedTextRegexp.MatchString(normalized) {
-		return status.Errorf(codes.InvalidArgument,
-			"field %s: contains disallowed characters", fieldName)
 	}
 
 	if InjectionRegexp.MatchString(normalized) {
