@@ -7,8 +7,6 @@ const (
 	DefaultRequestBodyLimit = 128 * 1024      // 128 KB
 	LargeRequestBodyLimit   = 8 * 1024 * 1024 // 8 MB
 
-	AllowedTextPattern = `^[A-Za-z0-9 !"#$%&'()*+,\-./:;=?@\[\\\]_{}|]+$` // Allowed characters in text fields (excepting <, >, ^, ~)
-
 	// Short text fields:
 	SenderField    = "sender"
 	RecipientField = "recipient"
@@ -34,5 +32,4 @@ var InjectionPatterns = []string{
 	"%0a", "%0d", "%0a%0d", "%00", "%27", "%22", "%3c", "%3e", // encoded attacks (decode first)
 	"${jndi:", "ldap://", "ldaps://", // JNDI/ldap
 	"eval(", "exec(", "system(", "popen(", // dangerous funcs
-	"UNION", "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "EXEC", "xp_", // SQL
 }
