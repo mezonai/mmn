@@ -13,7 +13,6 @@ import (
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
 
-	"github.com/mezonai/mmn/transaction"
 	"github.com/mezonai/mmn/utils"
 
 	"github.com/mezonai/mmn/block"
@@ -38,7 +37,7 @@ type BlockStore interface {
 	GetLatestFinalizedSlot() uint64
 	GetLatestStoreSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
-	MarkFinalized(slot uint64) error
+	FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
@@ -55,13 +54,14 @@ type GenericBlockStore struct {
 	// Slot-specific lock: Key: slot number, Value: *sync.RWMutex
 	slotLocks sync.Map
 
+	accStore    AccountStore
 	txStore     TxStore
 	txMetaStore TxMetaStore
 	eventRouter *events.EventRouter
 }
 
 // NewGenericBlockStore creates a new generic block store with the given provider
-func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore TxMetaStore, eventRouter *events.EventRouter) (BlockStore, error) {
+func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore TxMetaStore, accStore AccountStore, eventRouter *events.EventRouter) (BlockStore, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("provider cannot be nil")
 	}
@@ -71,6 +71,7 @@ func NewGenericBlockStore(provider db.DatabaseProvider, ts TxStore, txMetaStore 
 		txStore:     ts,
 		eventRouter: eventRouter,
 		txMetaStore: txMetaStore,
+		accStore:    accStore,
 	}
 
 	// Load existing metadata
@@ -288,22 +289,6 @@ func (s *GenericBlockStore) GetLatestStoreSlot() uint64 {
 	return s.latestStore.Load()
 }
 
-func (s *GenericBlockStore) updateLatestStoreSlot(slot uint64) error {
-	if slot <= s.latestStore.Load() {
-		logx.Warn("BLOCKSTORE", fmt.Sprintf("Latest store is already at %d", slot))
-		return nil
-	}
-	s.latestStore.Store(slot)
-	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestStore)
-	metaValue := make([]byte, 8)
-	binary.BigEndian.PutUint64(metaValue, slot)
-	if err := s.provider.Put(metaKey, metaValue); err != nil {
-		return fmt.Errorf("failed to update latest store: %w", err)
-	}
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Updated latest store to %d", slot))
-	return nil
-}
-
 // LastEntryInfoAtSlot returns the slot boundary information for the given slot
 func (s *GenericBlockStore) LastEntryInfoAtSlot(slot uint64) (SlotBoundary, bool) {
 	blk := s.Block(slot)
@@ -323,14 +308,15 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	if b == nil {
 		return fmt.Errorf("block cannot be nil")
 	}
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Adding pending block at slot %d", b.Slot))
+	slot := b.Slot
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Adding pending block at slot %d", slot))
 
-	slotLock := s.getSlotLock(b.Slot)
+	slotLock := s.getSlotLock(slot)
 	slotLock.Lock()
 	defer slotLock.Unlock()
-	logx.Debug("BLOCKSTORE", fmt.Sprintf("Acquired lock for adding pending block at slot %d", b.Slot))
+	logx.Debug("BLOCKSTORE", fmt.Sprintf("Acquired lock for adding pending block at slot %d", slot))
 
-	key := slotToBlockKey(b.Slot)
+	key := slotToBlockKey(slot)
 
 	// Check if block already exists
 	exists, err := s.provider.Has(key)
@@ -339,67 +325,83 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 	}
 
 	if exists {
-		return fmt.Errorf("block at slot %d already exists", b.Slot)
+		return fmt.Errorf("block at slot %d already exists", slot)
 	}
-	logx.Debug("BLOCKSTORE", fmt.Sprintf("OK, block does not exist at slot %d", b.Slot))
+	logx.Debug("BLOCKSTORE", fmt.Sprintf("OK, block does not exist at slot %d", slot))
+
+	// Get batch from provider
+	batch := s.provider.Batch()
+	defer batch.Close()
 
 	// Store block
 	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
 	if err != nil {
 		return fmt.Errorf("failed to marshal block: %w", err)
 	}
-	if err := s.provider.Put(key, value); err != nil {
-		return fmt.Errorf("failed to store block: %w", err)
-	}
-
-	logx.Debug("BLOCKSTORE", fmt.Sprintf("Monitoring block size bytes at slot %d", b.Slot))
-	monitoring.RecordBlockSizeBytes(len(value))
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored block at slot %d", b.Slot))
+	batch.Put(key, value)
 
 	// Update latest store slot if the block slot is greater than the latest store slot
-	if b.Slot > s.latestStore.Load() {
-		if err := s.updateLatestStoreSlot(b.Slot); err != nil {
-			return fmt.Errorf("failed to update latest store: %w", err)
-		}
+	if slot > s.latestStore.Load() {
+		s.latestStore.Store(slot)
+		metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestStore)
+		metaValue := make([]byte, 8)
+		binary.BigEndian.PutUint64(metaValue, slot)
+		batch.Put(metaKey, metaValue)
 	}
 
-	// Store block tsx
-	// TODO: storing block & its tsx should be atomic operation. Consider use batch or db transaction (if supported)
-	txs := make([]*transaction.Transaction, 0)
+	count := 0
+	// Store transactions and transaction metas
 	for _, entry := range b.Entries {
-		txs = append(txs, entry.Transactions...)
-	}
-	monitoring.RecordTxInBlock(len(txs))
-	if err := s.txStore.StoreBatch(txs); err != nil {
-		return fmt.Errorf("failed to store txs: %w", err)
-	}
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored txs at slot %d", b.Slot))
-	// Store block txs meta
-	txsMeta := make([]*types.TransactionMeta, 0)
-	for _, entry := range b.Entries {
-		for _, tx := range entry.Transactions {
-			txsMeta = append(txsMeta, types.NewTxMeta(tx, b.Slot, b.HashString(), types.TxStatusProcessed, ""))
+		if entry.Tick {
+			continue
 		}
+		for _, tx := range entry.Transactions {
+			// Store block transaction
+			txData, err := jsonx.Marshal(tx)
+			if err != nil {
+				return fmt.Errorf("failed to marshal transaction: %w", err)
+			}
+			batch.Put(s.txStore.GetDBKey(tx.Hash()), txData)
+
+			// Store block transaction meta
+			txMeta := types.NewTxMeta(tx, slot, b.HashString(), types.TxStatusProcessed, "")
+			data, err := jsonx.Marshal(txMeta)
+			if err != nil {
+				return fmt.Errorf("failed to marshal transaction meta: %w", err)
+			}
+			batch.Put(s.txMetaStore.GetDBKey(tx.Hash()), data)
+		}
+		count += len(entry.Transactions)
 	}
-	if err := s.txMetaStore.StoreBatch(txsMeta); err != nil {
-		return fmt.Errorf("failed to store txs meta: %w", err)
+
+	// Batch write all changes
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to batch write to database: %w", err)
 	}
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Stored txs meta at slot %d", b.Slot))
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Batch stored block, txs, txs meta at slot %d", slot))
+
+	logx.Debug("BLOCKSTORE", fmt.Sprintf("Monitoring block size bytes at slot %d", slot))
+	monitoring.RecordBlockSizeBytes(len(value))
+	monitoring.RecordTxInBlock(count)
+
 	// Publish transaction inclusion events if event router is provided
 	if s.eventRouter != nil {
 		blockHashHex := b.HashString()
 
 		// Publish TransactionIncludedInBlock events for each transaction in the block
 		for _, entry := range b.Entries {
+			if entry.Tick {
+				continue
+			}
 			for _, tx := range entry.Transactions {
-				event := events.NewTransactionIncludedInBlock(tx, b.Slot, blockHashHex)
+				event := events.NewTransactionIncludedInBlock(tx, slot, blockHashHex)
 				s.eventRouter.PublishTransactionEvent(event)
 				monitoring.IncreaseExecutedTpsCount()
 			}
 		}
 	}
 
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Added pending block at slot %d", b.Slot))
+	logx.Info("BLOCKSTORE", fmt.Sprintf("Added pending block at slot %d", slot))
 
 	return nil
 }
@@ -417,73 +419,67 @@ func (s *GenericBlockStore) IsApplied(slot uint64) bool {
 	return exists
 }
 
-// MarkFinalized marks a block as finalized and updates metadata
-func (s *GenericBlockStore) MarkFinalized(slot uint64) error {
+// FinalizeBlock stores transaction metas and account states, marking the block as finalized
+func (s *GenericBlockStore) FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error {
+	slot := blk.Slot
 	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
-	}
-
-	// Get block data only if event router is provided
-	var blk *block.Block
-	if s.eventRouter != nil {
-		blk = s.Block(slot)
-		if blk == nil {
-			return fmt.Errorf("failed to get block data for slot %d", slot)
-		}
 	}
 
 	slotLock := s.getSlotLock(slot)
 	slotLock.Lock()
 	defer slotLock.Unlock()
 
-	// Publish transaction finalization events if event router is provided
-	if s.eventRouter != nil && blk != nil {
-		blockHashHex := blk.HashString()
-		now := time.Now()
+	batch := s.provider.Batch()
+	defer batch.Close()
 
-		for _, entry := range blk.Entries {
-			txs, err := s.txStore.GetBatch(entry.TxHashes)
-			if err != nil {
-				logx.Warn("BLOCKSTORE", "Failed to get transactions for finalization event", "slot", slot, "error", err)
-				continue
-			}
-			for _, tx := range txs {
-				// Record metrics
-				txTimestamp := time.UnixMilli(int64(tx.Timestamp))
-				monitoring.RecordTimeToFinality(now.Sub(txTimestamp))
+	// Mark block as finalized
+	blk.Status = block.BlockFinalized
+	blkKey := slotToBlockKey(slot)
+	blkValue, err := jsonx.Marshal(blk)
+	if err != nil {
+		return fmt.Errorf("failed to marshal block: %w", err)
+	}
+	batch.Put(blkKey, blkValue)
 
-				event := events.NewTransactionFinalized(tx, slot, blockHashHex)
-				s.eventRouter.PublishTransactionEvent(event)
-				monitoring.IncreaseFinalizedTpsCount()
-			}
+	// Store batch of tx metas
+	for _, txMeta := range txMetas {
+		data, err := jsonx.Marshal(txMeta)
+		if err != nil {
+			return fmt.Errorf("failed to marshal transaction meta: %w", err)
 		}
+		batch.Put(s.txMetaStore.GetDBKey(txMeta.TxHash), data)
+	}
+
+	// Store batch of accounts
+	for _, account := range addrAccount {
+		accountData, err := jsonx.Marshal(account)
+		if err != nil {
+			return fmt.Errorf("failed to marshal account: %w", err)
+		}
+		batch.Put(s.accStore.GetDBKey(account.Address), accountData)
 	}
 
 	// Mark this specific slot as finalized
 	finalizedKey := slotToFinalizedKey(slot)
 	finalizedValue := []byte{1} // Simple marker value
-	if err := s.provider.Put(finalizedKey, finalizedValue); err != nil {
-		return fmt.Errorf("failed to mark slot as finalized: %w", err)
-	}
+	batch.Put(finalizedKey, finalizedValue)
 
 	currentLatest := s.latestFinalized.Load()
 	if slot > currentLatest {
-		s.latestFinalized.Store(slot)
-
-		// Store updated metadata
 		metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
 		metaValue := make([]byte, 8)
 		binary.BigEndian.PutUint64(metaValue, slot)
-
-		if err := s.provider.Put(metaKey, metaValue); err != nil {
-			return fmt.Errorf("failed to update latest finalized: %w", err)
-		}
-
-		// Update block height metric
-		monitoring.SetBlockHeight(slot)
+		batch.Put(metaKey, metaValue)
 	}
 
-	logx.Info("BLOCKSTORE", fmt.Sprintf("Marked block as finalized at slot %d", slot))
+	// Batch write all changes
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to write batch: %w", err)
+	}
+	s.latestFinalized.Store(slot)
+	// Update block height metric
+	monitoring.SetBlockHeight(slot)
 
 	return nil
 }

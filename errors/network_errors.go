@@ -64,6 +64,10 @@ const (
 	ErrMsgDuplicateTransaction = "This transaction already exists"
 	ErrMsgInternal             = "Server error, please try again"
 	ErrMsgRateLimited          = "Too many requests, please slow down"
+	ErrMsgRequestBodyTooLarge  = "Request body exceeds maximum allowed size (%d bytes)"
+	ErrMsgShortTextTooLong     = "Short text length exceeds maximum (%d) for field '%s'"
+	ErrMsgLongTextTooLong      = "Long text length exceeds maximum (%d) for field '%s'"
+	ErrMsgInvalidCharacters    = "Field '%s' contains invalid characters"
 )
 
 // NewError creates a new NetworkError and returns it as error interface

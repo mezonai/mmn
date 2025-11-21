@@ -22,6 +22,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
+	"github.com/mezonai/mmn/security/validation"
 )
 
 // --- Error type used by handlers ---
@@ -203,6 +204,16 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			return
 		}
 
+		if r.Method == http.MethodPost {
+			ct := r.Header.Get("Content-Type")
+			if !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+				http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
+				return
+			}
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, validation.DefaultRequestBodyLimit)
+
 		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -317,6 +328,32 @@ func (s *Server) buildMethodMap() handler.Map {
 // --- Implementations ---
 
 func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
+	shortFields := map[string]string{
+		validation.SenderField:    p.TxMsg.Sender,
+		validation.RecipientField: p.TxMsg.Recipient,
+		validation.AmountField:    p.TxMsg.Amount,
+	}
+
+	longFields := map[string]string{
+		validation.TextDataField:  p.TxMsg.TextData,
+		validation.ExtraInfoField: p.TxMsg.ExtraInfo,
+		validation.ZkProofField:   p.TxMsg.ZkProof,
+		validation.ZkPubField:     p.TxMsg.ZkPub,
+		validation.SignatureField: p.Signature,
+	}
+
+	for fieldName, fieldValue := range shortFields {
+		if err := validation.ValidateShortTextLength(fieldName, fieldValue); err != nil {
+			return &addTxResponse{Ok: false, Error: err.Error()}
+		}
+	}
+
+	for fieldName, fieldValue := range longFields {
+		if err := validation.ValidateLongTextLength(fieldName, fieldValue); err != nil {
+			return &addTxResponse{Ok: false, Error: err.Error()}
+		}
+	}
+
 	pbSigned := &pb.SignedTxMsg{
 		TxMsg: &pb.TxMsg{
 			Type:      p.TxMsg.Type,
@@ -340,7 +377,12 @@ func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
 }
 
 func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
-	resp, err := s.txSvc.GetTxByHash(context.Background(), &pb.GetTxByHashRequest{TxHash: p.TxHash})
+	txHash := p.TxHash
+	if err := validation.ValidateShortTextLength(validation.TxHashField, txHash); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
+	resp, err := s.txSvc.GetTxByHash(context.Background(), &pb.GetTxByHashRequest{TxHash: txHash})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
@@ -389,7 +431,12 @@ func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
 }
 
 func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
-	resp, err := s.acctSvc.GetAccount(context.Background(), &pb.GetAccountRequest{Address: p.Address})
+	accAddr := p.Address
+	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
+	resp, err := s.acctSvc.GetAccount(context.Background(), &pb.GetAccountRequest{Address: accAddr})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
@@ -397,10 +444,17 @@ func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
 }
 
 func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpcError) {
-	if p.Tag != "latest" && p.Tag != "pending" {
-		return &getCurrentNonceResponse{Address: p.Address, Nonce: 0, Tag: p.Tag, Error: "invalid tag: must be 'latest' or 'pending'"}, nil
+	accAddr := p.Address
+	tag := p.Tag
+
+	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
 	}
-	resp, err := s.acctSvc.GetCurrentNonce(context.Background(), &pb.GetCurrentNonceRequest{Address: p.Address, Tag: p.Tag})
+
+	if tag != "latest" && tag != "pending" {
+		return &getCurrentNonceResponse{Address: accAddr, Nonce: 0, Tag: tag, Error: "invalid tag: must be 'latest' or 'pending'"}, nil
+	}
+	resp, err := s.acctSvc.GetCurrentNonce(context.Background(), &pb.GetCurrentNonceRequest{Address: accAddr, Tag: tag})
 	if err != nil {
 		return nil, &rpcError{Code: -32000, Message: err.Error()}
 	}
