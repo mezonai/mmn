@@ -157,17 +157,17 @@ func limitRequestSizeUnaryInterceptor(defaultLimit, extendedLimit int, specialMe
 
 		size := proto.Size(msg)
 
-		max := defaultLimit
+		maxSize := defaultLimit
 		if _, ok := specialMethods[info.FullMethod]; ok {
-			max = extendedLimit
+			maxSize = extendedLimit
 		}
 
-		if size > max {
-			return nil, status.Errorf(
-				codes.ResourceExhausted,
-				"request too large: %d bytes (max %d)",
-				size, max,
-			)
+		if size > maxSize {
+			return nil,
+				errors.NewError(
+					errors.ErrCodeInvalidRequest,
+					fmt.Sprintf(errors.ErrMsgRequestBodyTooLarge, maxSize),
+				)
 		}
 
 		return handler(ctx, req)
@@ -190,12 +190,12 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 
 	for name, val := range shortFields {
 		if err := validation.ValidateShortTextLength(name, val); err != nil {
-			return nil, err
+			return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 		}
 	}
 	for name, val := range longFields {
 		if err := validation.ValidateLongTextLength(name, val); err != nil {
-			return nil, err
+			return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
 		}
 	}
 
@@ -225,7 +225,7 @@ func (s *server) GetCurrentNonce(ctx context.Context, in *pb.GetCurrentNonceRequ
 }
 
 func (s *server) GetTxByHash(ctx context.Context, in *pb.GetTxByHashRequest) (*pb.GetTxByHashResponse, error) {
-	if err := validation.ValidateShortTextLength("tx_hash", in.TxHash); err != nil {
+	if err := validation.ValidateShortTextLength(validation.TxHashField, in.TxHash); err != nil {
 		return nil, err
 	}
 

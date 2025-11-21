@@ -12,6 +12,7 @@ const (
 	RecipientField = "recipient"
 	AmountField    = "amount"
 	AddressField   = "address"
+	TxHashField    = "tx_hash"
 
 	// Long text fields:
 	TextDataField  = "text_data"
@@ -21,7 +22,7 @@ const (
 	SignatureField = "signature"
 )
 
-// Methods that are allowed to have large request bodies
+// LargeRequestMethods - set of gRPC methods that allow large request body
 // Format: /<package>.<Service>/<Method>
 var LargeRequestMethods = map[string]struct{}{
 	"/mmn.BlockService/GetBlockByNumber": {},

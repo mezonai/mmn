@@ -1,13 +1,13 @@
 package validation
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/mezonai/mmn/errors"
 	"golang.org/x/text/unicode/norm"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 var InjectionRegexp = BuildInjectionPatterns()
@@ -24,28 +24,34 @@ func BuildInjectionPatterns() *regexp.Regexp {
 }
 
 // ValidateShortTextLength validates short text field length
-func ValidateShortTextLength(fieldName string, fieldValue string) error {
+func ValidateShortTextLength(fieldName, fieldValue string) error {
 	normalized := norm.NFC.String(fieldValue)
 
 	if utf8.RuneCountInString(normalized) > MaxShortTextLength {
-		return status.Errorf(codes.InvalidArgument,
-			"field %s: short text length exceeds maximum of %d", fieldName, MaxShortTextLength)
+		return errors.NewError(
+			errors.ErrCodeInvalidRequest,
+			fmt.Sprintf(errors.ErrMsgShortTextTooLong, MaxShortTextLength, fieldName),
+		)
 	}
 	return nil
 }
 
 // ValidateLongTextLength validates long text field length
-func ValidateLongTextLength(fieldName string, fieldValue string) error {
+func ValidateLongTextLength(fieldName, fieldValue string) error {
 	normalized := norm.NFC.String(fieldValue)
 
 	if utf8.RuneCountInString(normalized) > MaxLongTextLength {
-		return status.Errorf(codes.InvalidArgument,
-			"field %s: long text length exceeds maximum of %d", fieldName, MaxLongTextLength)
+		return errors.NewError(
+			errors.ErrCodeInvalidRequest,
+			fmt.Sprintf(errors.ErrMsgLongTextTooLong, MaxLongTextLength, fieldName),
+		)
 	}
 
 	if InjectionRegexp.MatchString(normalized) {
-		return status.Errorf(codes.InvalidArgument,
-			"field %s: contains injection pattern", fieldName)
+		return errors.NewError(
+			errors.ErrCodeInvalidRequest,
+			fmt.Sprintf(errors.ErrMsgInvalidCharacters, fieldName),
+		)
 	}
 
 	return nil
