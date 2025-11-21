@@ -16,6 +16,7 @@ type TxMetaStore interface {
 	StoreBatch(txMetas []*types.TransactionMeta) error
 	GetByHash(txHash string) (*types.TransactionMeta, error)
 	GetBatch(txHashes []string) (map[string]*types.TransactionMeta, error)
+	GetDBKey(txHash string) []byte
 	MustClose()
 }
 
@@ -57,7 +58,7 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 			return fmt.Errorf("failed to marshal transaction meta: %w", err)
 		}
 
-		batch.Put(tms.getDBKey(txMeta.TxHash), data)
+		batch.Put(tms.GetDBKey(txMeta.TxHash), data)
 	}
 
 	err := batch.Write()
@@ -71,7 +72,7 @@ func (tms *GenericTxMetaStore) StoreBatch(txMetas []*types.TransactionMeta) erro
 
 // GetByHash retrieves a transaction meta by its transaction hash
 func (tms *GenericTxMetaStore) GetByHash(txHash string) (*types.TransactionMeta, error) {
-	data, err := tms.dbProvider.Get(tms.getDBKey(txHash))
+	data, err := tms.dbProvider.Get(tms.GetDBKey(txHash))
 	if err != nil {
 		return nil, fmt.Errorf("could not get transaction meta %s from db: %w", txHash, err)
 	}
@@ -96,7 +97,7 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 	// Prepare keys for batch operation
 	keys := make([][]byte, len(txHashes))
 	for i, txHash := range txHashes {
-		keys[i] = tms.getDBKey(txHash)
+		keys[i] = tms.GetDBKey(txHash)
 	}
 
 	// Use true batch read - single CGO call!
@@ -108,7 +109,7 @@ func (tms *GenericTxMetaStore) GetBatch(txHashes []string) (map[string]*types.Tr
 	txMetas := make(map[string]*types.TransactionMeta, len(txHashes))
 
 	for _, txHash := range txHashes {
-		key := tms.getDBKey(txHash)
+		key := tms.GetDBKey(txHash)
 		data, exists := dataMap[string(key)]
 
 		if !exists {
@@ -138,6 +139,6 @@ func (tms *GenericTxMetaStore) MustClose() {
 	}
 }
 
-func (tms *GenericTxMetaStore) getDBKey(txHash string) []byte {
+func (tms *GenericTxMetaStore) GetDBKey(txHash string) []byte {
 	return []byte(PrefixTxMeta + txHash)
 }

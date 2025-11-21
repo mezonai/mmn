@@ -615,7 +615,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	receiver := &lt.accounts[receiverIdx]
 	amount := uint256.NewInt(lt.config.TransferAmount)
 	timestamp := uint64(time.Now().Unix())
-	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, timestamp)
+	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, rand.Intn(1000000000000000000))
 	extraInfo := map[string]string{"type": "transfer"}
 
 	mu := lt.getAccountMutex(senderIdx)
