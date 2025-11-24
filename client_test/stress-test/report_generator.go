@@ -34,6 +34,10 @@ type TestConfig struct {
 	TransferAmount    uint64 `json:"transfer_amount"`
 	DurationSeconds   int64  `json:"duration_seconds"`
 	TotalTransactions int64  `json:"total_transactions"`
+	ErrDuplicate      int    `json:"err_duplicate"`
+	ErrBalance        int    `json:"err_balance"`
+	ErrNonce          int    `json:"err_nonce"`
+	ErrRequest        int    `json:"err_request"`
 }
 
 type TestSummary struct {
@@ -95,6 +99,10 @@ func GenerateAndSaveReports(
 				TransferAmount:    config.TransferAmount,
 				DurationSeconds:   config.Duration.Milliseconds() / 1000,
 				TotalTransactions: config.TotalTransactions,
+				ErrDuplicate:      config.ErrDuplicate,
+				ErrBalance:        config.ErrBalance,
+				ErrNonce:          config.ErrNonce,
+				ErrRequest:        config.ErrRequest,
 			},
 		},
 		Summary: TestSummary{

@@ -30,6 +30,16 @@ import (
 	"github.com/mezonai/mmn/client"
 )
 
+type ErrType int
+
+const (
+	NoneErr ErrType = iota
+	DuplicateErr
+	BalanceErr
+	NonceErr
+	RequestErr
+)
+
 const (
 	CLIENT_ERR_CODE  = "client_error"
 	UNKNOWN_ERR_CODE = "unknown_error"
@@ -37,14 +47,19 @@ const (
 
 // Configuration
 type Config struct {
-	ServerAddress     string
-	AccountCount      int
-	TxPerSecond       int
-	FundAmount        uint64
-	TransferAmount    uint64
-	Duration          time.Duration
-	RunMinutes        int   // Run for specified minutes, then stop
-	TotalTransactions int64 // Total transactions to send, then stop (priority over time)
+	ServerAddress        string
+	AccountCount         int
+	TxPerSecond          int
+	FundAmount           uint64
+	TransferAmount       uint64
+	Duration             time.Duration
+	RunMinutes           int   // Run for specified minutes, then stop
+	TotalTransactions    int64 // Total transactions to send, then stop (priority over time)
+	TransferByPrivateKey bool
+	ErrDuplicate         int
+	ErrBalance           int
+	ErrNonce             int
+	ErrRequest           int
 }
 
 // Account represents a test account
@@ -214,8 +229,22 @@ func parseFlags() Config {
 	flag.DurationVar(&config.Duration, "duration", 0, "Test duration (0 = run indefinitely)")
 	flag.IntVar(&config.RunMinutes, "minutes", 0, "Run for specified minutes, then stop (0 = run indefinitely)")
 	flag.Int64Var(&config.TotalTransactions, "total_txs", 0, "Total transactions to send, then stop (0 = run indefinitely, priority over time limits)")
+	flag.BoolVar(&config.TransferByPrivateKey, "use-key", false, "Use private key for transfers instead of zk proof")
+	flag.IntVar(&config.ErrBalance, "err-balance", 0, "Number of balance error txs per second")
+	flag.IntVar(&config.ErrNonce, "err-nonce", 0, "Number of nonce error txs per second")
+	flag.IntVar(&config.ErrDuplicate, "err-duplicate", 0, "Number of duplicate error txs per second")
+	flag.IntVar(&config.ErrRequest, "err-request", 0, "Number of invalid request error txs per second")
 
 	flag.Parse()
+
+	// Validate error flags
+	totalErrors := config.ErrBalance + config.ErrNonce + config.ErrDuplicate + config.ErrRequest
+	if totalErrors > config.TxPerSecond {
+		log.Fatalf("Total error transactions per second (%d) exceed total TPS (%d)", totalErrors, config.TxPerSecond)
+	}
+	if config.ErrDuplicate > (config.TxPerSecond - 1) {
+		log.Fatalf("Duplicate error transactions per second (%d) exceed limit (%d)", config.ErrDuplicate, config.TxPerSecond-1)
+	}
 
 	// Priority: total transactions > time limits
 	if config.TotalTransactions > 0 {
@@ -303,16 +332,21 @@ func (lt *LoadTester) generateAccounts() error {
 			return fmt.Errorf("failed to generate key pair for account %d: %v", i, err)
 		}
 
-		userId := int64(rand.Intn(100000000))
-		address := client.GenerateAddress(strconv.FormatInt(userId, 10))
-		jwt := generateJwt(userId)
 		publicKeyHex := base58.Encode(publicKey)
-		proofRes, err := generateZkProof(strconv.FormatInt(userId, 10), address, publicKeyHex, jwt)
-		if err != nil {
-			return fmt.Errorf("failed to generate zk proof for account %d: %v", i, err)
+		address := publicKeyHex
+
+		var zkPub, zkProof string
+		if !lt.config.TransferByPrivateKey {
+			userId := int64(rand.Intn(100000000))
+			address = client.GenerateAddress(strconv.FormatInt(userId, 10))
+			jwt := generateJwt(userId)
+			proofRes, err := generateZkProof(strconv.FormatInt(userId, 10), address, publicKeyHex, jwt)
+			if err != nil {
+				return fmt.Errorf("failed to generate zk proof for account %d: %v", i, err)
+			}
+			zkPub = proofRes.Data.PublicInput
+			zkProof = proofRes.Data.Proof
 		}
-		zkPub := proofRes.Data.PublicInput
-		zkProof := proofRes.Data.Proof
 
 		lt.accounts[i] = Account{
 			PublicKey:  publicKeyHex,
@@ -585,6 +619,14 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 	accountCount := lt.config.AccountCount
 	targetTPS := lt.config.TxPerSecond
 
+	errDuplicateCount := lt.config.ErrDuplicate
+	if errDuplicateCount > 0 {
+		errDuplicateCount++ // Need at least one non-duplicate tx
+	}
+	errBalanceCount := lt.config.ErrBalance
+	errNonceCount := lt.config.ErrNonce
+	errRequestCount := lt.config.ErrRequest
+
 	sent := 0
 	offset := 1
 
@@ -592,8 +634,31 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 		for i := 0; i < accountCount && sent < targetTPS; i++ {
 			sender := i
 			receiver := (i + offset) % accountCount
+			var txErr ErrType
 
-			go lt.sendTransaction(sender, receiver, nonce)
+			switch {
+			case errDuplicateCount > 0:
+				txErr = DuplicateErr
+				errDuplicateCount--
+
+			case errBalanceCount > 0:
+				txErr = BalanceErr
+				errBalanceCount--
+
+			case errNonceCount > 0:
+				txErr = NonceErr
+				errNonceCount--
+
+			case errRequestCount > 0:
+				txErr = RequestErr
+				errRequestCount--
+
+			default:
+				txErr = NoneErr
+
+			}
+
+			go lt.sendTransaction(sender, receiver, nonce, txErr)
 			sent++
 		}
 		offset++
@@ -604,7 +669,7 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 }
 
 // Send a transfer transaction from sender to receiver
-func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) {
+func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, errType ErrType) {
 	select {
 	case <-lt.ctx.Done():
 		return
@@ -617,6 +682,29 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	timestamp := uint64(time.Now().Unix())
 	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, rand.Intn(1000000000000000000))
 	extraInfo := map[string]string{"type": "transfer"}
+	transferType := client.TxTypeTransfer
+	if lt.config.TransferByPrivateKey {
+		transferType = client.TxTypeFaucet
+	}
+
+	switch errType {
+	case DuplicateErr:
+		senderIdx = 0
+		receiverIdx = 1
+		sender = &lt.accounts[senderIdx]
+		receiver = &lt.accounts[receiverIdx]
+		textData = "Duplicate transaction test"
+
+	case BalanceErr:
+		amount = uint256.NewInt(lt.config.FundAmount * 2)
+
+	case NonceErr:
+		nonce -= 200
+
+	case RequestErr:
+		textData = "Injection payload eval(1)  {{ console.log('hacked'); }}"
+
+	}
 
 	mu := lt.getAccountMutex(senderIdx)
 	mu.Lock()
@@ -636,7 +724,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	mu.Unlock()
 
 	unsigned, err := client.BuildTransferTx(
-		client.TxTypeTransfer,
+		transferType,
 		sender.Address,
 		receiver.Address,
 		amount,

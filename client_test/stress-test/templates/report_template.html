@@ -333,6 +333,22 @@
             <span style="color: var(--accent)">Total Transactions:</span>
             <span id="configTotalTransactionsInfo">—</span>
           </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Duplicate:</span>
+            <span id="configErrDuplicateInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Balance:</span>
+            <span id="configErrBalanceInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Nonce:</span>
+            <span id="configErrNonceInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Request:</span>
+            <span id="configErrRequestInfo">—</span>
+          </div>
         </div>
       </div>
 
@@ -612,6 +628,18 @@
 
         document.getElementById("configTotalTransactionsInfo").textContent =
           config.total_transactions || "—";
+
+        document.getElementById("configErrDuplicateInfo").textContent =
+          config.err_duplicate || "—";
+
+        document.getElementById("configErrBalanceInfo").textContent =
+          config.err_balance || "—";
+
+        document.getElementById("configErrNonceInfo").textContent =
+          config.err_nonce || "—";
+
+        document.getElementById("configErrRequestInfo").textContent =
+          config.err_request || "—";
 
         document.getElementById("totalSnapshots").textContent =
           snapshots.length + " snapshots";

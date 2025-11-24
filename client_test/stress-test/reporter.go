@@ -101,12 +101,18 @@ func NewLogger(config Config) (*Logger, error) {
 	// Write initial configuration to combined report
 	combinedLogger.Printf("[RESULT] === STRESS TEST CONFIGURATION ===")
 	combinedLogger.Printf("[RESULT] Server Address: %s", config.ServerAddress)
+	combinedLogger.Printf("[RESULT] Use Private Key for Transfers: %t", config.TransferByPrivateKey)
 	combinedLogger.Printf("[RESULT] Account Count: %d", config.AccountCount)
 	combinedLogger.Printf("[RESULT] Transactions Per Second: %d", config.TxPerSecond)
 	combinedLogger.Printf("[RESULT] Fund Amount: %d", config.FundAmount)
 	combinedLogger.Printf("[RESULT] Transfer Amount: %d", config.TransferAmount)
 	combinedLogger.Printf("[RESULT] Duration: %v", config.Duration)
 	combinedLogger.Printf("[RESULT] Total Transactions: %d", config.TotalTransactions)
+	combinedLogger.Printf("[RESULT] Transactions Err Per Second: %d", config.ErrBalance+config.ErrNonce+config.ErrDuplicate+config.ErrRequest)
+	combinedLogger.Printf("[RESULT] Duplicate Err Per Second: %d", config.ErrDuplicate)
+	combinedLogger.Printf("[RESULT] Balance Err Per Second: %d", config.ErrBalance)
+	combinedLogger.Printf("[RESULT] Nonce Err Per Second: %d", config.ErrNonce)
+	combinedLogger.Printf("[RESULT] Request Err Per Second: %d", config.ErrRequest)
 	combinedLogger.Printf("[RESULT] Test Start Time: %s", time.Now().Format("2006-01-02 15:04:05"))
 	combinedLogger.Printf("[RESULT] =================================")
 

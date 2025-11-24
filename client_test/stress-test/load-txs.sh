@@ -21,6 +21,9 @@ LOG_FILE="logs/load_test_${TIMESTAMP}.log"
 
 echo "Starting load test in background..."
 echo "Parameters: accounts=$ACCOUNTS, rate=$RATE, fund=$FUND, amount=$AMOUNT, duration=${DURATION}s, minutes=$MINUTES, total_txs=$TOTAL_TXS"
+if [ $# -ge 8 ]; then
+    echo "Extra Flags: ${@:8}"
+fi
 echo "Log file: $LOG_FILE"
 
 # Run in background with nohup
@@ -32,6 +35,7 @@ nohup go run . \
   -duration ${DURATION}s \
   -minutes ${MINUTES} \
   -total_txs $TOTAL_TXS \
+  "${@:8}" \
   > $LOG_FILE 2>&1 &
 
 # Get the process ID
