@@ -41,8 +41,9 @@ const (
 )
 
 const (
-	CLIENT_ERR_CODE  = "client_error"
-	UNKNOWN_ERR_CODE = "unknown_error"
+	clientErrCode          = "client_error"
+	unknownErrCode         = "unknown_error"
+	deduplicateNonceWindow = 200
 )
 
 // Configuration
@@ -699,7 +700,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 		amount = uint256.NewInt(lt.config.FundAmount * 2)
 
 	case NonceErr:
-		nonce -= 200
+		nonce -= deduplicateNonceWindow
 
 	case RequestErr:
 		textData = "Injection payload eval(1)  {{ console.log('hacked'); }}"
@@ -716,7 +717,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 			lt.logger.LogError("Refill failed for account %d: %v", senderIdx, err)
 			lt.incrementAndCheckTotalSent()
 			atomic.AddInt64(&lt.totalTxsFailed, 1)
-			lt.trackError(CLIENT_ERR_CODE)
+			lt.trackError(clientErrCode)
 			return
 		}
 		sender.Balance += lt.config.FundAmount
@@ -739,7 +740,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 		lt.logger.LogError("Build tx failed: %v", err)
 		lt.incrementAndCheckTotalSent()
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
-		lt.trackError(CLIENT_ERR_CODE)
+		lt.trackError(clientErrCode)
 		return
 	}
 
@@ -749,7 +750,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 		lt.logger.LogError("Sign tx failed: %v", err)
 		lt.incrementAndCheckTotalSent()
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
-		lt.trackError(CLIENT_ERR_CODE)
+		lt.trackError(clientErrCode)
 		return
 	}
 
@@ -924,7 +925,7 @@ func extractErrorCode(errorMsg string) string {
 	if len(match) == 2 {
 		return match[1]
 	}
-	return UNKNOWN_ERR_CODE
+	return unknownErrCode
 }
 
 // generateReport creates and saves the JSON and HTML reports
