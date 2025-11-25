@@ -230,7 +230,7 @@ func parseFlags() Config {
 	flag.DurationVar(&config.Duration, "duration", 0, "Test duration (0 = run indefinitely)")
 	flag.IntVar(&config.RunMinutes, "minutes", 0, "Run for specified minutes, then stop (0 = run indefinitely)")
 	flag.Int64Var(&config.TotalTransactions, "total_txs", 0, "Total transactions to send, then stop (0 = run indefinitely, priority over time limits)")
-	flag.BoolVar(&config.TransferByPrivateKey, "use-key", false, "Use private key for transfers instead of zk proof")
+	flag.BoolVar(&config.TransferByPrivateKey, "use-key", true, "Use private key for transfers instead of zk proof")
 	flag.IntVar(&config.ErrBalance, "err-balance", 0, "Number of balance error txs per second")
 	flag.IntVar(&config.ErrNonce, "err-nonce", 0, "Number of nonce error txs per second")
 	flag.IntVar(&config.ErrDuplicate, "err-duplicate", 0, "Number of duplicate error txs per second")
