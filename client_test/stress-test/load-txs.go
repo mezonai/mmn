@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -29,15 +30,37 @@ import (
 	"github.com/mezonai/mmn/client"
 )
 
+type ErrType int
+
+const (
+	NoneErr ErrType = iota
+	DuplicateErr
+	BalanceErr
+	NonceErr
+	RequestErr
+)
+
+const (
+	clientErrCode          = "client_error"
+	unknownErrCode         = "unknown_error"
+	deduplicateNonceWindow = 200
+)
+
 // Configuration
 type Config struct {
-	ServerAddress  string
-	AccountCount   int
-	TxPerSecond    int
-	FundAmount     uint64
-	TransferAmount uint64
-	Duration       time.Duration
-	RunMinutes     int // Run for specified minutes, then stop
+	ServerAddress        string
+	AccountCount         int
+	TxPerSecond          int
+	FundAmount           uint64
+	TransferAmount       uint64
+	Duration             time.Duration
+	RunMinutes           int   // Run for specified minutes, then stop
+	TotalTransactions    int64 // Total transactions to send, then stop (priority over time)
+	TransferByPrivateKey bool
+	ErrDuplicate         int
+	ErrBalance           int
+	ErrNonce             int
+	ErrRequest           int
 }
 
 // Account represents a test account
@@ -82,6 +105,13 @@ type LoadTester struct {
 	// Global nonce
 	globalNonce uint64
 	nonceMu     sync.RWMutex
+
+	// JSON Report tracking
+	snapshots      []Snapshot
+	snapshotsMutex sync.Mutex
+	tpsHistory     [][]int64
+	errorCounts    map[string]int64
+	errorMutex     sync.Mutex
 }
 
 type SessionTokenClaims struct {
@@ -114,6 +144,15 @@ type ProveResponse struct {
 	Message string    `json:"message"`
 }
 
+type Snapshot struct {
+	Ts          int64   `json:"ts"`
+	TotalSent   int64   `json:"total_sent"`
+	SuccessTxs  int64   `json:"success_txs"`
+	FailedTxs   int64   `json:"failed_txs"`
+	TPS         int64   `json:"tps"`
+	SuccessRate float64 `json:"success_rate"`
+}
+
 // Faucet private key from genesis (same as in TypeScript tests)
 const (
 	FaucetPrivateKeyHex = "302e020100300506032b6570042204208e92cf392cef0388e9855e3375c608b5eb0a71f074827c3d8368fac7d73c30ee"
@@ -130,6 +169,9 @@ func (lt *LoadTester) logRealTimeMetrics() {
 
 	// Use logger to write real-time metrics
 	lt.logger.LogRealTimeMetrics(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
+
+	// Create snapshot
+	lt.captureSnapshot(totalTxs, successTxs, failedTxs, false, time.Time{})
 }
 
 func main() {
@@ -162,11 +204,19 @@ func main() {
 		tester.logger.LogInfo("Load test completed")
 	}
 
+	endTime := time.Now()
+
 	// Give goroutines time to finish gracefully
 	time.Sleep(2 * time.Second)
 
+	// Last snapshot
+	totalTxs := atomic.LoadInt64(&tester.totalTxsSent)
+	successTxs := atomic.LoadInt64(&tester.totalTxsSuccess)
+	failedTxs := atomic.LoadInt64(&tester.totalTxsFailed)
+	tester.captureSnapshot(totalTxs, successTxs, failedTxs, true, endTime)
+
 	// Print final statistics
-	tester.PrintStats()
+	tester.PrintStats(endTime)
 }
 
 func parseFlags() Config {
@@ -179,12 +229,30 @@ func parseFlags() Config {
 	flag.Uint64Var(&config.TransferAmount, "amount", 100, "Amount per transfer transaction")
 	flag.DurationVar(&config.Duration, "duration", 0, "Test duration (0 = run indefinitely)")
 	flag.IntVar(&config.RunMinutes, "minutes", 0, "Run for specified minutes, then stop (0 = run indefinitely)")
+	flag.Int64Var(&config.TotalTransactions, "total_txs", 0, "Total transactions to send, then stop (0 = run indefinitely, priority over time limits)")
+	flag.BoolVar(&config.TransferByPrivateKey, "use-key", true, "Use private key for transfers instead of zk proof")
+	flag.IntVar(&config.ErrBalance, "err-balance", 0, "Number of balance error txs per second")
+	flag.IntVar(&config.ErrNonce, "err-nonce", 0, "Number of nonce error txs per second")
+	flag.IntVar(&config.ErrDuplicate, "err-duplicate", 0, "Number of duplicate error txs per second")
+	flag.IntVar(&config.ErrRequest, "err-request", 0, "Number of invalid request error txs per second")
 
 	flag.Parse()
 
-	// If minutes is specified, convert to duration and override duration
-	if config.RunMinutes > 0 {
-		config.Duration = time.Duration(config.RunMinutes) * time.Minute
+	// Validate error flags
+	totalErrors := config.ErrBalance + config.ErrNonce + config.ErrDuplicate + config.ErrRequest
+	if totalErrors > config.TxPerSecond {
+		log.Fatalf("Total error transactions per second (%d) exceed total TPS (%d)", totalErrors, config.TxPerSecond)
+	}
+	if config.ErrDuplicate > (config.TxPerSecond - 1) {
+		log.Fatalf("Duplicate error transactions per second (%d) exceed limit (%d)", config.ErrDuplicate, config.TxPerSecond-1)
+	}
+
+	// Priority: total transactions > time limits
+	if config.TotalTransactions > 0 {
+		config.Duration = 0
+		config.RunMinutes = 0
+	} else if config.RunMinutes > 0 {
+		config.Duration += time.Duration(config.RunMinutes) * time.Minute
 	}
 
 	return config
@@ -219,6 +287,9 @@ func NewLoadTester(config Config) (*LoadTester, error) {
 		faucetPrivateKey: faucetPrivateKey,
 		faucetPublicKey:  faucetPublicKey,
 		fundingStartTime: time.Now(),
+		snapshots:        make([]Snapshot, 0),
+		tpsHistory:       make([][]int64, 0),
+		errorCounts:      make(map[string]int64),
 	}
 
 	// Connect to gRPC server
@@ -262,16 +333,21 @@ func (lt *LoadTester) generateAccounts() error {
 			return fmt.Errorf("failed to generate key pair for account %d: %v", i, err)
 		}
 
-		userId := int64(rand.Intn(100000000))
-		address := client.GenerateAddress(strconv.FormatInt(userId, 10))
-		jwt := generateJwt(userId)
 		publicKeyHex := base58.Encode(publicKey)
-		proofRes, err := generateZkProof(strconv.FormatInt(userId, 10), address, publicKeyHex, jwt)
-		if err != nil {
-			return fmt.Errorf("failed to generate zk proof for account %d: %v", i, err)
+		address := publicKeyHex
+
+		var zkPub, zkProof string
+		if !lt.config.TransferByPrivateKey {
+			userId := int64(rand.Intn(100000000))
+			address = client.GenerateAddress(strconv.FormatInt(userId, 10))
+			jwt := generateJwt(userId)
+			proofRes, err := generateZkProof(strconv.FormatInt(userId, 10), address, publicKeyHex, jwt)
+			if err != nil {
+				return fmt.Errorf("failed to generate zk proof for account %d: %v", i, err)
+			}
+			zkPub = proofRes.Data.PublicInput
+			zkProof = proofRes.Data.Proof
 		}
-		zkPub := proofRes.Data.PublicInput
-		zkProof := proofRes.Data.Proof
 
 		lt.accounts[i] = Account{
 			PublicKey:  publicKeyHex,
@@ -482,7 +558,17 @@ func (lt *LoadTester) refillAccount(accountIndex int, globalNonce uint64) error 
 }
 
 func (lt *LoadTester) Run() error {
-	lt.logger.LogInfo("Starting load test: %d accounts, target %d tx/s", lt.config.AccountCount, lt.config.TxPerSecond)
+	var timeout <-chan time.Time
+	if lt.config.TotalTransactions > 0 {
+		lt.logger.LogInfo("Starting load test: %d accounts, target %d tx/s, total transactions: %d",
+			lt.config.AccountCount, lt.config.TxPerSecond, lt.config.TotalTransactions)
+	} else if lt.config.Duration > 0 {
+		timeout = time.After(lt.config.Duration)
+		lt.logger.LogInfo("Starting load test: %d accounts, target %d tx/s, duration: %s", lt.config.AccountCount, lt.config.TxPerSecond, lt.config.Duration)
+	} else {
+		lt.logger.LogInfo("Starting load test: %d accounts, target %d tx/s", lt.config.AccountCount, lt.config.TxPerSecond)
+	}
+
 	lt.testStartTime = time.Now()
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -490,12 +576,6 @@ func (lt *LoadTester) Run() error {
 
 	lt.metricsTicker = time.NewTicker(10 * time.Second)
 	defer lt.metricsTicker.Stop()
-
-	// Setup timeout if duration is specified
-	var timeout <-chan time.Time
-	if lt.config.Duration > 0 {
-		timeout = time.After(lt.config.Duration)
-	}
 
 	for {
 		select {
@@ -510,7 +590,7 @@ func (lt *LoadTester) Run() error {
 				lt.logger.LogInfo("Test duration completed")
 			}
 			// Stop gracefully by cancelling context
-			lt.cancel()
+			lt.Stop()
 			return nil
 
 		case <-lt.metricsTicker.C:
@@ -540,6 +620,14 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 	accountCount := lt.config.AccountCount
 	targetTPS := lt.config.TxPerSecond
 
+	errDuplicateCount := lt.config.ErrDuplicate
+	if errDuplicateCount > 0 {
+		errDuplicateCount++ // Need at least one non-duplicate tx
+	}
+	errBalanceCount := lt.config.ErrBalance
+	errNonceCount := lt.config.ErrNonce
+	errRequestCount := lt.config.ErrRequest
+
 	sent := 0
 	offset := 1
 
@@ -547,8 +635,31 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 		for i := 0; i < accountCount && sent < targetTPS; i++ {
 			sender := i
 			receiver := (i + offset) % accountCount
+			var txErr ErrType
 
-			go lt.sendTransaction(sender, receiver, nonce)
+			switch {
+			case errDuplicateCount > 0:
+				txErr = DuplicateErr
+				errDuplicateCount--
+
+			case errBalanceCount > 0:
+				txErr = BalanceErr
+				errBalanceCount--
+
+			case errNonceCount > 0:
+				txErr = NonceErr
+				errNonceCount--
+
+			case errRequestCount > 0:
+				txErr = RequestErr
+				errRequestCount--
+
+			default:
+				txErr = NoneErr
+
+			}
+
+			go lt.sendTransaction(sender, receiver, nonce, txErr)
 			sent++
 		}
 		offset++
@@ -559,7 +670,7 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 }
 
 // Send a transfer transaction from sender to receiver
-func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) {
+func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, errType ErrType) {
 	select {
 	case <-lt.ctx.Done():
 		return
@@ -572,6 +683,29 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	timestamp := uint64(time.Now().Unix())
 	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, rand.Intn(1000000000000000000))
 	extraInfo := map[string]string{"type": "transfer"}
+	transferType := client.TxTypeTransfer
+	if lt.config.TransferByPrivateKey {
+		transferType = client.TxTypeFaucet
+	}
+
+	switch errType {
+	case DuplicateErr:
+		senderIdx = 0
+		receiverIdx = 1
+		sender = &lt.accounts[senderIdx]
+		receiver = &lt.accounts[receiverIdx]
+		textData = "Duplicate transaction test"
+
+	case BalanceErr:
+		amount = uint256.NewInt(lt.config.FundAmount * 2)
+
+	case NonceErr:
+		nonce -= deduplicateNonceWindow
+
+	case RequestErr:
+		textData = "Injection payload eval(1)  {{ console.log('hacked'); }}"
+
+	}
 
 	mu := lt.getAccountMutex(senderIdx)
 	mu.Lock()
@@ -581,8 +715,9 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 
 		if err := lt.refillAccount(senderIdx, nonce); err != nil {
 			lt.logger.LogError("Refill failed for account %d: %v", senderIdx, err)
-			atomic.AddInt64(&lt.totalTxsSent, 1)
+			lt.incrementAndCheckTotalSent()
 			atomic.AddInt64(&lt.totalTxsFailed, 1)
+			lt.trackError(clientErrCode)
 			return
 		}
 		sender.Balance += lt.config.FundAmount
@@ -590,7 +725,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	mu.Unlock()
 
 	unsigned, err := client.BuildTransferTx(
-		client.TxTypeTransfer,
+		transferType,
 		sender.Address,
 		receiver.Address,
 		amount,
@@ -603,8 +738,9 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	)
 	if err != nil {
 		lt.logger.LogError("Build tx failed: %v", err)
-		atomic.AddInt64(&lt.totalTxsSent, 1)
+		lt.incrementAndCheckTotalSent()
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		lt.trackError(clientErrCode)
 		return
 	}
 
@@ -612,8 +748,9 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	signedRaw, err := client.SignTx(unsigned, pubKey, sender.PrivateKey.Seed())
 	if err != nil {
 		lt.logger.LogError("Sign tx failed: %v", err)
-		atomic.AddInt64(&lt.totalTxsSent, 1)
+		lt.incrementAndCheckTotalSent()
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		lt.trackError(clientErrCode)
 		return
 	}
 
@@ -621,11 +758,12 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	sender.Balance -= lt.config.TransferAmount
 	mu.Unlock()
 
-	atomic.AddInt64(&lt.totalTxsSent, 1)
+	lt.incrementAndCheckTotalSent()
 	resp, err := lt.client.AddTx(lt.ctx, signedRaw)
 	if err != nil {
 		lt.logger.LogError("Send tx failed: %v", err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		lt.trackError(extractErrorCode(err.Error()))
 		mu.Lock()
 		sender.Balance += lt.config.TransferAmount
 		mu.Unlock()
@@ -637,6 +775,8 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64) 
 	} else {
 		lt.logger.LogError("Tx failed for %d->%d: %s", senderIdx, receiverIdx, resp.Error)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
+		lt.trackError(extractErrorCode(resp.Error))
+
 		mu.Lock()
 		sender.Balance += lt.config.TransferAmount
 		mu.Unlock()
@@ -656,13 +796,16 @@ func (lt *LoadTester) Close() {
 	}
 }
 
-func (lt *LoadTester) PrintStats() {
+func (lt *LoadTester) PrintStats(endTime time.Time) {
 	totalTxs := atomic.LoadInt64(&lt.totalTxsSent)
 	successTxs := atomic.LoadInt64(&lt.totalTxsSuccess)
 	failedTxs := atomic.LoadInt64(&lt.totalTxsFailed)
 
 	// Use logger to write final stats
-	lt.logger.LogFinalStats(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config)
+	lt.logger.LogFinalStats(totalTxs, successTxs, failedTxs, lt.testStartTime, lt.config, endTime)
+
+	// Generate JSON report and HTML
+	lt.generateReport(totalTxs, successTxs, failedTxs, endTime)
 }
 
 func contains(s, sub string) bool {
@@ -723,4 +866,80 @@ func (lt *LoadTester) refreshGlobalNonce() (uint64, error) {
 	}
 	lt.globalNonce = nonce
 	return lt.globalNonce, nil
+}
+
+// Increment and check total sent transactions
+func (lt *LoadTester) incrementAndCheckTotalSent() {
+	total := atomic.AddInt64(&lt.totalTxsSent, 1)
+	if lt.config.TotalTransactions > 0 && total >= lt.config.TotalTransactions {
+		lt.logger.LogInfo("Reached total transactions limit: %d", lt.config.TotalTransactions)
+		lt.Stop()
+	}
+}
+
+// captureSnapshot creates a snapshot of current test state
+func (lt *LoadTester) captureSnapshot(totalTxs int64, successTxs int64, failedTxs int64, isLastCapture bool, endTime time.Time) {
+	lt.snapshotsMutex.Lock()
+	defer lt.snapshotsMutex.Unlock()
+
+	now := time.Now()
+	if isLastCapture {
+		now = endTime
+	}
+	ts := now.Unix()
+
+	testDuration := now.Sub(lt.testStartTime)
+	actualRate := float64(totalTxs) / testDuration.Seconds()
+	currentTPS := int64(actualRate)
+
+	successRate := float64(0)
+	if totalTxs > 0 {
+		successRate = float64(successTxs) / float64(totalTxs) * 100
+	}
+
+	snapshot := Snapshot{
+		Ts:          ts,
+		TotalSent:   totalTxs,
+		SuccessTxs:  successTxs,
+		FailedTxs:   failedTxs,
+		TPS:         currentTPS,
+		SuccessRate: successRate,
+	}
+
+	lt.snapshots = append(lt.snapshots, snapshot)
+	lt.tpsHistory = append(lt.tpsHistory, []int64{ts, currentTPS})
+}
+
+// trackError increments error count for a given error type
+func (lt *LoadTester) trackError(errType string) {
+	lt.errorMutex.Lock()
+	defer lt.errorMutex.Unlock()
+
+	lt.errorCounts[errType]++
+}
+
+var codeRegex = regexp.MustCompile(`"code"\s*:\s*"([^"]+)"`)
+
+func extractErrorCode(errorMsg string) string {
+	match := codeRegex.FindStringSubmatch(errorMsg)
+	if len(match) == 2 {
+		return match[1]
+	}
+	return unknownErrCode
+}
+
+// generateReport creates and saves the JSON and HTML reports
+func (lt *LoadTester) generateReport(totalTxs, successTxs, failedTxs int64, endTime time.Time) {
+	GenerateAndSaveReports(
+		lt.config,
+		lt.testStartTime,
+		endTime,
+		totalTxs,
+		successTxs,
+		failedTxs,
+		lt.tpsHistory,
+		lt.errorCounts,
+		lt.snapshots,
+		lt.logger,
+	)
 }
