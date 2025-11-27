@@ -88,12 +88,14 @@ func (mp *Mempool) AddTx(tx *transaction.Transaction, broadcast bool) (string, e
 	mp.txOrder = append(mp.txOrder, txHash)
 	mp.dedupTxHashSet[txDedupHash] = struct{}{}
 
-	// Add to sender total amount
-	sender := tx.Sender
-	if _, exists := mp.senderTotalAmount[sender]; !exists {
-		mp.senderTotalAmount[sender] = new(uint256.Int)
+	// Add to sender total amount if transaction is not donation campaign feed
+	if tx.Type != transaction.TxTypeDonationCampaignFeed {
+		sender := tx.Sender
+		if _, exists := mp.senderTotalAmount[sender]; !exists {
+			mp.senderTotalAmount[sender] = new(uint256.Int)
+		}
+		mp.senderTotalAmount[sender].Add(mp.senderTotalAmount[sender], tx.Amount)
 	}
-	mp.senderTotalAmount[sender].Add(mp.senderTotalAmount[sender], tx.Amount)
 	mp.mu.Unlock()
 
 	monitoring.SetMempoolSize(mp.Size())
@@ -186,7 +188,7 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 // Cheap validate before acquire write lock
 func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
 	// Validate amount
-	if tx.Amount == nil || tx.Amount.IsZero() {
+	if (tx.Amount == nil || tx.Amount.IsZero()) && (tx.Type != transaction.TxTypeDonationCampaignFeed) {
 		monitoring.RecordRejectedTx(monitoring.TxRejectedUnknown)
 		return errors.NewError(errors.ErrCodeInvalidAmount, errors.ErrMsgInvalidAmount)
 	}
@@ -234,6 +236,11 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 	if err := mp.validateDuplicateTxs([]*transaction.Transaction{tx}); err != nil {
 		monitoring.RecordRejectedTx(monitoring.TxDuplicated)
 		return err
+	}
+
+	// Skip balance check for donation campaign feed
+	if tx.Type == transaction.TxTypeDonationCampaignFeed {
+		return nil
 	}
 
 	// Validate balance accounting

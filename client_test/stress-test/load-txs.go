@@ -458,7 +458,7 @@ func (lt *LoadTester) fundAccount(accountIndex int) error {
 		}
 		nonce := lt.getGlobalNonce()
 
-		unsigned, err := client.BuildTransferTx(client.TxTypeFaucet, lt.faucetPublicKey, account.Address, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
+		unsigned, err := client.BuildTransferTx(client.TxTypeTransferByKey, lt.faucetPublicKey, account.Address, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
 		if err != nil {
 			return fmt.Errorf("failed to build transfer tx: %v", err)
 		}
@@ -519,7 +519,7 @@ func (lt *LoadTester) refillAccount(accountIndex int, globalNonce uint64) error 
 		"type": "refilling",
 	}
 
-	unsigned, err := client.BuildTransferTx(client.TxTypeFaucet, lt.faucetPublicKey, account.Address, amount, globalNonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
+	unsigned, err := client.BuildTransferTx(client.TxTypeTransferByKey, lt.faucetPublicKey, account.Address, amount, globalNonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
 	if err != nil {
 		return fmt.Errorf("failed to build refill transaction: %v", err)
 	}
@@ -683,9 +683,9 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 	timestamp := uint64(time.Now().Unix())
 	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, rand.Intn(1000000000000000000))
 	extraInfo := map[string]string{"type": "transfer"}
-	transferType := client.TxTypeTransfer
+	transferType := client.TxTypeTransferByZk
 	if lt.config.TransferByPrivateKey {
-		transferType = client.TxTypeFaucet
+		transferType = client.TxTypeTransferByKey
 	}
 
 	switch errType {
