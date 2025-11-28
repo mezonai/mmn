@@ -124,6 +124,9 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	}
 
 	for _, tx := range allTxsInBlock {
+		if tx.Type == transaction.TxTypeDonationCampaignFeed {
+			continue
+		}
 		if _, exists := accAddrsSet[tx.Sender]; !exists {
 			accAddrsSet[tx.Sender] = struct{}{}
 			accAddrs = append(accAddrs, tx.Sender)
@@ -141,17 +144,19 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 
 	for _, tx := range allTxsInBlock {
 		txHash := tx.Hash()
-		if err := applyTx(state, tx); err != nil {
-			logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
-			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
-			// Remove failed transaction from tracker
-			if l.txTracker != nil && !isListener {
-				l.txTracker.RemoveTransaction(txHash)
+
+		if tx.Type == transaction.TxTypeDonationCampaignFeed {
+			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+		} else {
+			if err := applyTx(state, tx); err != nil {
+				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
+				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+			} else {
+				logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
+				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
 			}
-			continue
 		}
-		logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
-		txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+
 		// Remove successful transaction from tracker
 		if l.txTracker != nil && !isListener {
 			l.txTracker.RemoveTransaction(txHash)
