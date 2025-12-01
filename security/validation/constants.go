@@ -1,9 +1,8 @@
 package validation
 
 const (
-	MaxShortTextLength    = 128
-	MaxLongTextLength     = 512
-	MaxExtendedTextLength = 1024
+	MaxShortTextLength = 128
+	MaxLongTextLength  = 1024
 
 	DefaultRequestBodyLimit = 128 * 1024      // 128 KB
 	LargeRequestBodyLimit   = 8 * 1024 * 1024 // 8 MB
@@ -27,10 +26,6 @@ const (
 // Format: /<package>.<Service>/<Method>
 var LargeRequestMethods = map[string]struct{}{
 	"/mmn.BlockService/GetBlockByNumber": {},
-}
-
-var ExtendedTextFields = map[string]struct{}{
-	ExtraInfoField: {},
 }
 
 var InjectionPatterns = []string{

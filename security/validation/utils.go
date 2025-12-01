@@ -40,15 +40,10 @@ func ValidateShortTextLength(fieldName, fieldValue string) error {
 func ValidateLongTextLength(fieldName, fieldValue string) error {
 	normalized := norm.NFC.String(fieldValue)
 
-	maxLength := MaxLongTextLength
-	if _, ok := ExtendedTextFields[fieldName]; ok {
-		maxLength = MaxExtendedTextLength
-	}
-
-	if utf8.RuneCountInString(normalized) > maxLength {
+	if utf8.RuneCountInString(normalized) > MaxLongTextLength {
 		return errors.NewError(
 			errors.ErrCodeInvalidRequest,
-			fmt.Sprintf(errors.ErrMsgLongTextTooLong, maxLength, fieldName),
+			fmt.Sprintf(errors.ErrMsgLongTextTooLong, MaxLongTextLength, fieldName),
 		)
 	}
 
