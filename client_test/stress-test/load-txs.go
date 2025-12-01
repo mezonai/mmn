@@ -681,7 +681,7 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 	receiver := &lt.accounts[receiverIdx]
 	amount := uint256.NewInt(lt.config.TransferAmount)
 	timestamp := uint64(time.Now().Unix())
-	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, rand.Intn(1000000000000000000))
+	textData := fmt.Sprintf("Transfer from account %d to %d at %d", senderIdx, receiverIdx, rand.Int63n(1_000_000_000_000_000_000))
 	extraInfo := map[string]string{"type": "transfer"}
 	transferType := client.TxTypeTransferByZk
 	if lt.config.TransferByPrivateKey {
