@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MMN Stress Test Report - Performance Analysis</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <style>
+      :root {
+        --bg: #0f1720;
+        --card: #0b1220;
+        --muted: #9aa6b2;
+        --accent: #22c1b6;
+        --danger: #ff6b6b;
+        --warn: #ffb86b;
+        --success: #51cf66;
+        --info: #339af0;
+        --glass: rgba(255, 255, 255, 0.03);
+        --border: rgba(255, 255, 255, 0.08);
+        --gradient-accent: linear-gradient(135deg, #22c1b6, #4bc1ff);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: linear-gradient(180deg, #07101a 0%, #0b151c 100%);
+        color: #e6eef3;
+      }
+
+      .wrap {
+        max-width: 1400px;
+        margin: 20px auto;
+        padding: 20px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 20px;
+        background: var(--card);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 8px 32px rgba(2, 6, 23, 0.4);
+      }
+
+      .logo {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        background: var(--gradient-accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        color: #fff;
+        font-size: 18px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+        background: linear-gradient(135deg, #fff, #e6eef3);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .meta {
+        margin-left: auto;
+        text-align: right;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .card {
+        grid-column: span 3;
+        background: var(--card);
+        padding: 18px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 6px 18px rgba(2, 6, 23, 0.6);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(2, 6, 23, 0.7);
+      }
+
+      .card.wide {
+        grid-column: span 6;
+      }
+
+      .card.xwide {
+        grid-column: span 12;
+      }
+
+      .kpi {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 4px;
+        background: var(--gradient-accent);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .kpi-sub {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 500;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .status-success {
+        background: rgba(81, 207, 102, 0.2);
+        color: var(--success);
+      }
+
+      .status-danger {
+        background: rgba(255, 107, 107, 0.2);
+        color: var(--danger);
+      }
+
+      .status-warning {
+        background: rgba(255, 184, 107, 0.2);
+        color: var(--warn);
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      button {
+        background: var(--glass);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--accent);
+        padding: 10px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+
+      button:hover {
+        background: rgba(34, 193, 182, 0.1);
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+
+      input[type="file"] {
+        display: none;
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      table th,
+      table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        text-align: center;
+        font-size: 13px;
+      }
+
+      table th {
+        background: rgba(255, 255, 255, 0.02);
+        font-weight: 600;
+        color: var(--accent);
+      }
+
+      table tr:hover {
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .footer {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .config-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .config-item {
+        background: rgba(255, 255, 255, 0.02);
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+      }
+
+      .config-label {
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+      }
+
+      .config-value {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--accent);
+      }
+
+      @media (max-width: 900px) {
+        .card {
+          grid-column: span 12;
+        }
+
+        .card.wide {
+          grid-column: span 12;
+        }
+
+        .card.xwide {
+          grid-column: span 12;
+        }
+
+        .config-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="logo">MMN</div>
+        <div>
+          <h1>MMN Stress Test Report</h1>
+          <div class="muted">
+            Blockchain Performance Analysis · Real-time Metrics Dashboard
+          </div>
+        </div>
+        <div class="meta" id="runMeta">No data loaded</div>
+      </header>
+
+      <div
+        style="display: flex; gap: 10px; align-items: center; margin-top: 12px"
+      >
+        <div class="controls">
+          <label for="fileInput"
+            ><button id="btnLoad">Load result.json</button></label
+          >
+          <input id="fileInput" type="file" accept="application/json" />
+          <button id="btnInline">Embed JSON into HTML</button>
+          <button id="btnDownload">Download JSON</button>
+        </div>
+      </div>
+
+      <!-- Test Configuration Info -->
+      <div
+        style="
+          margin-top: 12px;
+          padding: 12px 20px;
+          background: var(--card);
+          border-radius: 8px;
+          border: 1px solid var(--border);
+        "
+      >
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            font-size: 13px;
+          "
+        >
+          <div style="color: var(--muted)">
+            <strong style="color: var(--accent)">Test config:</strong>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Server:</span>
+            <span id="configServerInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Accounts:</span>
+            <span id="configAccountsInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Target TPS:</span>
+            <span id="configTargetTpsInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Fund:</span>
+            <span id="configFundInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Transfer:</span>
+            <span id="configTransferInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Duration:</span>
+            <span id="configDurationInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Total Transactions:</span>
+            <span id="configTotalTransactionsInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Duplicate:</span>
+            <span id="configErrDuplicateInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Balance:</span>
+            <span id="configErrBalanceInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Nonce:</span>
+            <span id="configErrNonceInfo">—</span>
+          </div>
+          <div style="color: var(--muted)">
+            <span style="color: var(--accent)">Error Request:</span>
+            <span id="configErrRequestInfo">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 18px">
+        <!-- KPI Cards -->
+        <div class="card">
+          <div class="kpi" id="kpiTotal">—</div>
+          <div class="kpi-sub">Total Transactions</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiSuccess">—</div>
+          <div class="kpi-sub">Successful</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiFailed">—</div>
+          <div class="kpi-sub">Failed</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiTps">—</div>
+          <div class="kpi-sub">Average TPS</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiSuccessRate">—</div>
+          <div class="kpi-sub">Success Rate (%)</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiErrorRate">—</div>
+          <div class="kpi-sub">Error Rate (%)</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiDuration">—</div>
+          <div class="kpi-sub">Duration (seconds)</div>
+        </div>
+        <div class="card">
+          <div class="kpi" id="kpiTargetTps">—</div>
+          <div class="kpi-sub">Target TPS</div>
+        </div>
+
+        <!-- Charts -->
+        <div class="card wide">
+          <h3 style="margin: 0 0 10px 0; color: var(--accent)">
+            TPS Over Time
+          </h3>
+          <canvas id="tpsChart" height="120"></canvas>
+        </div>
+
+        <div class="card">
+          <h3 style="margin: 0 0 10px 0; color: var(--accent)">
+            Success vs Failed
+          </h3>
+          <canvas id="passPie" height="120"></canvas>
+        </div>
+
+        <div class="card">
+          <h3 style="margin: 0 0 10px 0; color: var(--accent)">Error Types</h3>
+          <canvas id="errBar" height="120"></canvas>
+        </div>
+
+        <!-- Snapshot Data Table -->
+        <div class="card xwide">
+          <h3
+            style="
+              margin: 0 0 15px 0;
+              color: var(--accent);
+              display: flex;
+              align-items: center;
+              gap: 10px;
+            "
+          >
+            <span>📈</span> Performance Snapshots (10s intervals)
+            <span class="status-badge status-success" id="totalSnapshots"
+              >0 snapshots</span
+            >
+          </h3>
+          <div
+            style="
+              max-height: 340px;
+              overflow: auto;
+              background: rgba(255, 255, 255, 0.01);
+              padding: 12px;
+              border-radius: 8px;
+              border: 1px solid var(--border);
+            "
+          >
+            <table class="table" id="snapshotTable">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Total Sent</th>
+                  <th>Success Txs</th>
+                  <th>Failed Txs</th>
+                  <th>TPS</th>
+                  <th>Success Rate (%)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer" id="footerMeta"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+      // Globals
+      let rawData = null;
+      const defaultFn = "result.json";
+
+      // 📊 EMBEDDED DATA PLACEHOLDER (will be replaced by generator)
+      window.__EMBEDDED_REPORT = {}; // {{EMBEDDED_DATA}}
+
+      async function tryLoadDefault() {
+        // 1. Try embedded data first
+        if (
+          window.__EMBEDDED_REPORT &&
+          Object.keys(window.__EMBEDDED_REPORT).length > 0
+        ) {
+          rawData = window.__EMBEDDED_REPORT;
+          renderFromData(rawData);
+          console.log("✅ Using embedded data");
+          return;
+        }
+
+        // 2. Fallback to fetching result.json
+        try {
+          const resp = await fetch(defaultFn);
+          if (!resp.ok) throw new Error("no file");
+          rawData = await resp.json();
+          renderFromData(rawData);
+          console.log("✅ Loaded external JSON");
+        } catch (err) {
+          console.warn(
+            "No data available. Please load a JSON file or embed data."
+          );
+        }
+      }
+
+      document
+        .getElementById("btnLoad")
+        .addEventListener("click", () =>
+          document.getElementById("fileInput").click()
+        );
+      document.getElementById("fileInput").addEventListener("change", (ev) => {
+        const f = ev.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            rawData = JSON.parse(e.target.result);
+            renderFromData(rawData);
+          } catch (err) {
+            alert("Invalid JSON");
+          }
+        };
+        reader.readAsText(f);
+      });
+
+      document.getElementById("btnInline").addEventListener("click", () => {
+        if (!rawData) return alert("No JSON loaded yet");
+
+        // Get the current HTML content
+        const currentHTML = document.documentElement.outerHTML;
+
+        // Replace the embedded data with the current rawData
+        const embeddedData = JSON.stringify(rawData, null, 2);
+        const newHTML = currentHTML.replace(
+          /window\.__EMBEDDED_REPORT = \{[\s\S]*?\}; \/\/ \{\{EMBEDDED_DATA\}\}/,
+          `window.__EMBEDDED_REPORT = ${embeddedData}; // {{EMBEDDED_DATA}}`
+        );
+
+        // Create blob and download
+        const blob = new Blob([newHTML], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+
+        // Generate filename with timestamp
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/[:.]/g, "-").slice(0, -5);
+        const filename = `report_stress_test_${timestamp}.html`;
+
+        // Create download link
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+
+        // Also open in new tab for preview
+        setTimeout(() => {
+          window.open(url, "_blank");
+          URL.revokeObjectURL(url);
+        }, 100);
+      });
+
+      document.getElementById("btnDownload").addEventListener("click", () => {
+        if (!rawData) return alert("No JSON loaded yet");
+        const b = new Blob([JSON.stringify(rawData, null, 2)], {
+          type: "application/json",
+        });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(b);
+        a.download = "report_stress_test.json";
+        a.click();
+      });
+
+      // Format timestamp with timezone
+      function formatTimeWithTZ(ts) {
+        if (!ts) return "—";
+
+        const match = ts.match(/(.*)([+-]\d{2}:\d{2})$/);
+        let datePart, tzPart;
+        if (match) {
+          datePart = match[1];
+          tzPart = match[2];
+        } else {
+          datePart = ts;
+          tzPart = "";
+        }
+
+        const date = new Date(datePart);
+        const formatted = date.toLocaleString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+
+        return `[${tzPart}] ${formatted}`;
+      }
+
+      function renderFromData(d) {
+        const s = d.summary || {};
+        const series = d.series || {};
+        const snapshots = d.snapshot || [];
+        const meta = d.meta || {};
+        const config = meta.config || {};
+
+        // Populate KPIs
+        document.getElementById("kpiTotal").textContent = s.total_sent || 0;
+        document.getElementById("kpiSuccess").textContent = s.success || 0;
+        document.getElementById("kpiFailed").textContent = s.failed || 0;
+        document.getElementById("kpiTps").textContent = s.avg_tps
+          ? s.avg_tps.toFixed(2)
+          : "—";
+        document.getElementById("kpiSuccessRate").textContent = s.success_rate
+          ? s.success_rate.toFixed(2)
+          : "—";
+        document.getElementById("kpiErrorRate").textContent =
+          s.failed && s.total_sent
+            ? ((s.failed / s.total_sent) * 100).toFixed(2)
+            : "—";
+        document.getElementById("kpiDuration").textContent =
+          meta.duration_seconds || "—";
+        document.getElementById("kpiTargetTps").textContent =
+          config.target_tps || "—";
+
+        // Populate configuration
+        document.getElementById("configServerInfo").textContent =
+          config.server_address || "—";
+        document.getElementById("configAccountsInfo").textContent =
+          config.account_count || "—";
+        document.getElementById("configTargetTpsInfo").textContent =
+          config.target_tps || "—";
+        document.getElementById("configTransferInfo").textContent =
+          config.transfer_amount || "—";
+        document.getElementById("configFundInfo").textContent =
+          config.fund_amount
+            ? config.fund_amount >= 1000000000
+              ? config.fund_amount / 1000000000 + "B"
+              : config.fund_amount
+            : "—";
+
+        document.getElementById("configDurationInfo").textContent =
+          config.duration_seconds || "—";
+
+        document.getElementById("configTotalTransactionsInfo").textContent =
+          config.total_transactions || "—";
+
+        document.getElementById("configErrDuplicateInfo").textContent =
+          config.err_duplicate || "—";
+
+        document.getElementById("configErrBalanceInfo").textContent =
+          config.err_balance || "—";
+
+        document.getElementById("configErrNonceInfo").textContent =
+          config.err_nonce || "—";
+
+        document.getElementById("configErrRequestInfo").textContent =
+          config.err_request || "—";
+
+        document.getElementById("totalSnapshots").textContent =
+          snapshots.length + " snapshots";
+
+        document.getElementById("runMeta").textContent =
+          (formatTimeWithTZ(meta.start_time) || "—") +
+          " → " +
+          (formatTimeWithTZ(meta.end_time) || "—") +
+          " · Duration: " +
+          (meta.duration_seconds ? meta.duration_seconds + "s" : "—");
+
+        document.getElementById("footerMeta").textContent =
+          "Runner: " +
+          (meta.runner || "—") +
+          " · Test: " +
+          (meta.test_name || "MMN Load Test") +
+          " · Generated: " +
+          new Date().toLocaleString();
+
+        buildTpsChart(series.tps || []);
+        buildPassPie(s.success || 0, s.failed || 0);
+        buildErrBar(series.errors || {});
+        populateSnapshots(snapshots);
+      }
+
+      function buildTpsChart(series) {
+        const ctx = document.getElementById("tpsChart").getContext("2d");
+        const labels = series.map((p) =>
+          new Date(p[0] * 1000).toLocaleTimeString()
+        );
+        const data = series.map((p) => p[1]);
+        if (window._tpsChart) window._tpsChart.destroy();
+
+        // Custom crosshair plugin
+        const crosshairPlugin = {
+          id: "crosshair",
+          afterDatasetsDraw(chart, args, options) {
+            const { ctx, chartArea, scales } = chart;
+            const canvasPosition = Chart.helpers.getRelativePosition(
+              chart._active?.[0]?.element || {},
+              chart
+            );
+
+            if (chart._active && chart._active.length > 0) {
+              const activeElement = chart._active[0];
+              const x = activeElement.element.x;
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = "rgba(34, 193, 182, 0.8)";
+              ctx.setLineDash([5, 5]);
+              ctx.moveTo(x, chartArea.top);
+              ctx.lineTo(x, chartArea.bottom);
+              ctx.stroke();
+              ctx.restore();
+            }
+          },
+        };
+
+        window._tpsChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              {
+                label: "TPS",
+                data,
+                tension: 0.4,
+                borderWidth: 3,
+                borderColor: "#22c1b6",
+                backgroundColor: "rgba(34, 193, 182, 0.1)",
+                fill: true,
+                pointBackgroundColor: "#22c1b6",
+                pointBorderWidth: 0,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+            hover: {
+              mode: "index",
+              intersect: false,
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(255,255,255,0.1)" },
+                ticks: { color: "#9aa6b2" },
+              },
+              y: {
+                grid: { color: "rgba(255,255,255,0.1)" },
+                ticks: { color: "#9aa6b2" },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "rgba(15, 23, 32, 0.9)",
+                titleColor: "#22c1b6",
+                bodyColor: "#e6eef3",
+                borderColor: "#22c1b6",
+                borderWidth: 1,
+                cornerRadius: 8,
+                displayColors: false,
+                callbacks: {
+                  title: function (context) {
+                    return "Time: " + context[0].label;
+                  },
+                  label: function (context) {
+                    return "TPS: " + context.parsed.y.toLocaleString();
+                  },
+                },
+              },
+            },
+          },
+          plugins: [crosshairPlugin],
+        });
+      }
+
+      function buildPassPie(success, failed) {
+        const ctx = document.getElementById("passPie").getContext("2d");
+        if (window._passPie) window._passPie.destroy();
+        window._passPie = new Chart(ctx, {
+          type: "doughnut",
+          data: {
+            labels: ["Success", "Failed"],
+            datasets: [
+              {
+                data: [success || 0, failed || 0],
+                backgroundColor: ["#51cf66", "#ff6b6b"],
+                borderWidth: 0,
+                hoverBorderWidth: 2,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            cutout: "60%",
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: { color: "#9aa6b2", usePointStyle: true },
+              },
+            },
+          },
+        });
+      }
+
+      function buildErrBar(errMap) {
+        const ctx = document.getElementById("errBar").getContext("2d");
+        const keys = Object.keys(errMap || {});
+        const vals = keys.map((k) => errMap[k]);
+        if (window._errBar) window._errBar.destroy();
+
+        // Custom crosshair plugin for error bar chart
+        const crosshairPlugin = {
+          id: "crosshair",
+          afterDatasetsDraw(chart, args, options) {
+            const { ctx, chartArea, scales } = chart;
+            const canvasPosition = Chart.helpers.getRelativePosition(
+              chart._active?.[0]?.element || {},
+              chart
+            );
+
+            if (chart._active && chart._active.length > 0) {
+              const activeElement = chart._active[0];
+              const x = activeElement.element.x;
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = "rgba(255, 184, 107, 0.8)";
+              ctx.setLineDash([5, 5]);
+              ctx.moveTo(x, chartArea.top);
+              ctx.lineTo(x, chartArea.bottom);
+              ctx.stroke();
+              ctx.restore();
+            }
+          },
+        };
+
+        window._errBar = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: keys,
+            datasets: [
+              {
+                label: "Count",
+                data: vals,
+                backgroundColor: "#ffb86b",
+                borderColor: "#fd7e14",
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+            hover: {
+              mode: "index",
+              intersect: false,
+            },
+            scales: {
+              x: {
+                grid: { color: "rgba(255,255,255,0.1)" },
+                ticks: { color: "#9aa6b2" },
+              },
+              y: {
+                grid: { color: "rgba(255,255,255,0.1)" },
+                ticks: { color: "#9aa6b2" },
+              },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: "rgba(15, 23, 32, 0.9)",
+                titleColor: "#ffb86b",
+                bodyColor: "#e6eef3",
+                borderColor: "#ffb86b",
+                borderWidth: 1,
+                cornerRadius: 8,
+                displayColors: false,
+                callbacks: {
+                  title: function (context) {
+                    return context[0].label;
+                  },
+                  label: function (context) {
+                    return "Count: " + context.parsed.y.toLocaleString();
+                  },
+                },
+              },
+            },
+          },
+          plugins: [crosshairPlugin],
+        });
+      }
+
+      function populateSnapshots(snapshots) {
+        const tbody = document.querySelector("#snapshotTable tbody");
+        tbody.innerHTML = "";
+
+        snapshots.forEach((snapshot, i) => {
+          const tr = document.createElement("tr");
+
+          const timestamp = snapshot.ts
+            ? new Date(snapshot.ts * 1000).toLocaleTimeString()
+            : "—";
+
+          const successRate = snapshot.success_rate
+            ? snapshot.success_rate.toFixed(2)
+            : "—";
+          const successRateClass =
+            snapshot.success_rate >= 95
+              ? "status-success"
+              : snapshot.success_rate >= 80
+              ? "status-warning"
+              : "status-danger";
+
+          tr.innerHTML = `
+            <td style="font-size: 11px;">${timestamp}</td>
+            <td style="color: #22c1b6; font-weight: 500;">${
+              snapshot.total_sent || 0
+            }</td>
+            <td style="color: #51cf66;">${snapshot.success_txs || 0}</td>
+            <td style="color: #ff6b6b;">${snapshot.failed_txs || 0}</td>
+            <td style="color: #339af0; font-weight: 600;">${
+              snapshot.tps || "—"
+            }</td>
+            <td><span class="status-badge ${successRateClass}">${successRate}%</span></td>
+          `;
+
+          tbody.appendChild(tr);
+        });
+      }
+
+      // Try default fetch
+      tryLoadDefault();
+    </script>
+  </body>
+</html>
