@@ -22,6 +22,7 @@ message TransactionData {
   TransactionStatus status = 7;
   string text_data = 8;
   string extra_info = 9;
+  int32 transaction_type = 10;
 }
 
 message TxMsg { 

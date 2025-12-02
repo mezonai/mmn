@@ -105,7 +105,7 @@ func transferToken(transferConfig *TransferConfig) error {
 		return fmt.Errorf("failed to get nonce: %w", err)
 	}
 	unsigned, err := mmn.BuildTransferTx(
-		mmn.TxTypeFaucet,
+		mmn.TxTypeTransferByKey,
 		senderAddress,
 		transferConfig.To,
 		amount,
