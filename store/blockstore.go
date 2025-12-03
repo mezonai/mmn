@@ -41,6 +41,9 @@ type BlockStore interface {
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
+	ForceAddBlockPendingOnly(b *block.BroadcastedBlock) error
+	ForceMarkBlockAsFinalized(blk *block.Block) error
+	RemoveBlocks(slots []uint64) error
 }
 
 // GenericBlockStore is a database-agnostic implementation that uses DatabaseProvider
@@ -501,4 +504,94 @@ func (s *GenericBlockStore) GetConfirmations(blockSlot uint64) uint64 {
 		return latest - blockSlot + 1
 	}
 	return 1 // Confirmed but not yet finalized
+}
+
+// ForceAddBlockPendingOnly adds a pending block to the store, only use for truncate cmd
+func (s *GenericBlockStore) ForceAddBlockPendingOnly(b *block.BroadcastedBlock) error {
+	if b == nil {
+		return fmt.Errorf("block cannot be nil")
+	}
+	slot := b.Slot
+	logx.Info("BLOCKSTORE", fmt.Sprintf("ForceAddBlockPendingOnly: adding pending block at slot %d", slot))
+
+	batch := s.provider.Batch()
+	defer batch.Close()
+
+	key := slotToBlockKey(slot)
+	// Store block
+	value, err := jsonx.Marshal(utils.BroadcastedBlockToBlock(b))
+	if err != nil {
+		return fmt.Errorf("failed to marshal block: %w", err)
+	}
+	batch.Put(key, value)
+
+	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestStore)
+	metaValue := make([]byte, 8)
+	binary.BigEndian.PutUint64(metaValue, slot)
+	batch.Put(metaKey, metaValue)
+
+	// Batch write all changes
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to batch write to database: %w", err)
+	}
+	logx.Info("BLOCKSTORE", fmt.Sprintf("ForceAddBlockPendingOnly: added pending block at slot %d", slot))
+	return nil
+}
+
+// ForceMarkBlockAsFinalized marks a block as finalized, only use for truncate cmd
+func (s *GenericBlockStore) ForceMarkBlockAsFinalized(blk *block.Block) error {
+	batch := s.provider.Batch()
+	defer batch.Close()
+
+	// Mark block as finalized
+	blk.Status = block.BlockFinalized
+	blkKey := slotToBlockKey(blk.Slot)
+	blkValue, err := jsonx.Marshal(blk)
+	if err != nil {
+		return fmt.Errorf("failed to marshal block: %w", err)
+	}
+	batch.Put(blkKey, blkValue)
+
+	// Mark this specific slot as finalized
+	finalizedKey := slotToFinalizedKey(blk.Slot)
+	finalizedValue := []byte{1} // Simple marker value
+	batch.Put(finalizedKey, finalizedValue)
+
+	// Force update latest finalized slot meta data
+	metaKey := []byte(PrefixBlockMeta + BlockMetaKeyLatestFinalized)
+	metaValue := make([]byte, 8)
+	binary.BigEndian.PutUint64(metaValue, blk.Slot)
+	batch.Put(metaKey, metaValue)
+
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to write batch: %w", err)
+	}
+
+	logx.Info("BLOCKSTORE", fmt.Sprintf("ForceMarkBlockAsFinalized: marked block at slot %d as finalized", blk.Slot))
+	return nil
+}
+
+// RemoveBlocks removes blocks from the store, only use for truncate cmd
+func (s *GenericBlockStore) RemoveBlocks(slots []uint64) error {
+	if len(slots) == 0 {
+		logx.Info("BLOCKSTORE", "RemoveBlocks: no slots provided")
+		return nil
+	}
+
+	batch := s.provider.Batch()
+	defer batch.Close()
+
+	for _, slot := range slots {
+		key := slotToBlockKey(slot)
+		batch.Delete(key)
+	}
+
+	if err := batch.Write(); err != nil {
+		logx.Error("BLOCKSTORE", fmt.Sprintf("RemoveBlocks: failed to batch remove blocks: %v", err))
+		return fmt.Errorf("failed to batch remove blocks: %w", err)
+	}
+
+	logx.Info("BLOCKSTORE", fmt.Sprintf("RemoveBlocks: removed %d blocks", len(slots)))
+
+	return nil
 }
