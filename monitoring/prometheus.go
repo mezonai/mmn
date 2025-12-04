@@ -13,14 +13,15 @@ import (
 type TxRejectedReason string
 
 var (
-	TxInvalidSignature    TxRejectedReason = "invalid_signature"
-	TxSenderNotExist      TxRejectedReason = "sender_not_exist"
-	TxInvalidNonce        TxRejectedReason = "invalid_nonce"
-	TxTooManyPending      TxRejectedReason = "too_many_pending"
-	TxInsufficientBalance TxRejectedReason = "insufficient_balance"
-	TxMempoolFull         TxRejectedReason = "mempool_full"
-	TxDuplicated          TxRejectedReason = "duplicated"
-	TxRejectedUnknown     TxRejectedReason = "other"
+	TxInvalidSignature            TxRejectedReason = "invalid_signature"
+	TxInvalidDonationCampaignFeed TxRejectedReason = "invalid_donation_campaign_feed"
+	TxSenderNotExist              TxRejectedReason = "sender_not_exist"
+	TxInvalidNonce                TxRejectedReason = "invalid_nonce"
+	TxTooManyPending              TxRejectedReason = "too_many_pending"
+	TxInsufficientBalance         TxRejectedReason = "insufficient_balance"
+	TxMempoolFull                 TxRejectedReason = "mempool_full"
+	TxDuplicated                  TxRejectedReason = "duplicated"
+	TxRejectedUnknown             TxRejectedReason = "other"
 )
 
 var (

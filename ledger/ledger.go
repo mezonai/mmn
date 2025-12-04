@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -110,6 +111,9 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	txMetas := make(map[string]*types.TransactionMeta)
 	accAddrs := make([]string, 0)
 	accAddrsSet := make(map[string]struct{})
+	parentFeedHashes := make([]string, 0)
+	rootFeedHashes := make(map[string]struct{})
+	txFeeds := make([]*transaction.Transaction, 0)
 
 	for _, entry := range b.Entries {
 		if entry.Tick {
@@ -146,9 +150,22 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		txHash := tx.Hash()
 
 		if tx.Type == transaction.TxTypeDonationCampaignFeed {
-			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+			var feed types.DonationCampaignFeed
+			if err = json.Unmarshal([]byte(tx.ExtraInfo), &feed); err != nil {
+				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, "Donation campaign feed data is invalid")
+				continue
+			}
+
+			txFeeds = append(txFeeds, tx)
+			if feed.ParentHash != "" {
+				parentFeedHashes = append(parentFeedHashes, feed.ParentHash)
+			}
+			if feed.RootHash != "" {
+				rootFeedHashes[feed.RootHash] = struct{}{}
+			}
+			continue
 		} else {
-			if err := applyTx(state, tx); err != nil {
+			if err = applyTx(state, tx); err != nil {
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
 			} else {
@@ -163,7 +180,30 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		}
 	}
 
-	if err := l.bStore.FinalizeBlock(b, txMetas, state); err != nil {
+	parentFeedTxs, err := l.txStore.GetBatch(parentFeedHashes)
+	if err != nil {
+		return fmt.Errorf("failed to get parent transaction feeds for block %d: %w", b.Slot, err)
+	}
+	parentFeedTxMap := make(map[string]*transaction.Transaction)
+	for _, tx := range parentFeedTxs {
+		txHash := tx.Hash()
+		parentFeedTxMap[txHash] = tx
+	}
+
+	latestVersionFeedHashMap, err := l.txStore.GetBatchLatestVersionFeedHash(rootFeedHashes)
+	if err != nil {
+		return fmt.Errorf("failed to get latest version feed hashes for block %d: %w", b.Slot, err)
+	}
+
+	for _, feed := range txFeeds {
+		if err := l.validateDonationCampaignFeed(feed, parentFeedTxMap, latestVersionFeedHashMap); err != nil {
+			txMetas[feed.Hash()] = types.NewTxMeta(feed, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+			continue
+		}
+		txMetas[feed.Hash()] = types.NewTxMeta(feed, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+	}
+
+	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionFeedHashMap); err != nil {
 		if l.eventRouter != nil {
 			for _, tx := range allTxsInBlock {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -236,6 +276,44 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
 	sender.Nonce = tx.Nonce
+	return nil
+}
+
+// Validate transaction feed
+func (l *Ledger) validateDonationCampaignFeed(tx *transaction.Transaction, parentFeedTxMap map[string]*transaction.Transaction, latestVersionFeedHashMap map[string]string) error {
+	var feed types.DonationCampaignFeed
+	_ = json.Unmarshal([]byte(tx.ExtraInfo), &feed)
+
+	if feed.ParentHash == "" && feed.RootHash == "" {
+		latestVersionFeedHashMap[tx.Hash()] = tx.Hash()
+		return nil
+	}
+
+	if feed.ParentHash == "" || feed.RootHash == "" {
+		return fmt.Errorf("donation campaign feed data is invalid")
+	}
+
+	parentTxFeed, exists := parentFeedTxMap[feed.ParentHash]
+	if !exists {
+		return fmt.Errorf("parent donation campaign feed not found")
+	}
+
+	if parentTxFeed.Type != transaction.TxTypeDonationCampaignFeed ||
+		parentTxFeed.Sender != tx.Sender ||
+		parentTxFeed.Recipient != tx.Recipient {
+		return fmt.Errorf("donation campaign feed data is invalid")
+	}
+
+	latestVersionFeedHash, exists := latestVersionFeedHashMap[feed.RootHash]
+	if !exists {
+		return fmt.Errorf("latest version donation campaign feed not found")
+	}
+
+	if latestVersionFeedHash != feed.ParentHash {
+		return fmt.Errorf("parent donation campaign feed is not the latest version")
+	}
+
+	latestVersionFeedHashMap[feed.RootHash] = tx.Hash()
 	return nil
 }
 

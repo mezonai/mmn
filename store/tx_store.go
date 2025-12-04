@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/mezonai/mmn/db"
@@ -17,6 +18,9 @@ type TxStore interface {
 	GetByHash(txHash string) (*transaction.Transaction, error)
 	GetBatch(txHashes []string) ([]*transaction.Transaction, error)
 	GetDBKey(txHash string) []byte
+	GetLatestVersionFeedKey(rootHash string) []byte
+	GetLatestVersionFeedHash(rootHash string) (string, error)
+	GetBatchLatestVersionFeedHash(rootHashes map[string]struct{}) (map[string]string, error)
 	MustClose()
 }
 
@@ -133,6 +137,47 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 	return transactions, nil
 }
 
+// GetLatestVersionFeedHash retrieves the latest version feed hash for a given root hash
+func (ts *GenericTxStore) GetLatestVersionFeedHash(rootHash string) (string, error) {
+	data, err := ts.dbProvider.Get(ts.GetLatestVersionFeedKey(rootHash))
+	if err != nil {
+		return "", fmt.Errorf("could not get latest version feed for root hash %s: %w", rootHash, err)
+	}
+	return hex.EncodeToString(data), nil
+}
+
+// GetBatchLatestVersionFeedHash retrieves the latest version feed hashes for multiple root hashes using true batch operation
+func (ts *GenericTxStore) GetBatchLatestVersionFeedHash(rootHashes map[string]struct{}) (map[string]string, error) {
+	if len(rootHashes) == 0 {
+		logx.Info("TX_STORE", "GetBatchLatestVersionFeedHash: no root hashes provided")
+		return map[string]string{}, nil
+	}
+
+	// Prepare keys for batch operation
+	keys := make([][]byte, 0)
+	for rootHash := range rootHashes {
+		keys = append(keys, ts.GetLatestVersionFeedKey(rootHash))
+	}
+
+	// Use true batch read - single CGO call!
+	dataMap, err := ts.dbProvider.GetBatch(keys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get latest version feed hashes: %w", err)
+	}
+
+	result := make(map[string]string)
+	for rootHash := range rootHashes {
+		key := ts.GetLatestVersionFeedKey(rootHash)
+		data, exists := dataMap[string(key)]
+		if !exists {
+			logx.Warn("TX_STORE", fmt.Sprintf("Latest version feed for root hash %s not found in batch result", rootHash))
+			continue
+		}
+		result[rootHash] = hex.EncodeToString(data)
+	}
+	return result, nil
+}
+
 // MustClose closes the transaction store and related resources
 func (ts *GenericTxStore) MustClose() {
 	err := ts.dbProvider.Close()
@@ -143,4 +188,8 @@ func (ts *GenericTxStore) MustClose() {
 
 func (ts *GenericTxStore) GetDBKey(txHash string) []byte {
 	return []byte(PrefixTx + txHash)
+}
+
+func (ts *GenericTxStore) GetLatestVersionFeedKey(rootHash string) []byte {
+	return []byte(PrefixLatestVersionFeed + rootHash)
 }
