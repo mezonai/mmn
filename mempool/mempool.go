@@ -2,6 +2,7 @@ package mempool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,8 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
@@ -39,10 +42,11 @@ type Mempool struct {
 	eventRouter  *events.EventRouter                    // Event router for transaction status updates
 	txTracker    interfaces.TransactionTrackerInterface // Transaction state tracker
 	zkVerify     *zkverify.ZkVerify                     // Zk verify for zk transactions
+	txStore      store.TxStore
 }
 
 func NewMempool(maxSize int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
-	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
+	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify, txStore store.TxStore) *Mempool {
 	return &Mempool{
 		txs:               make(map[string]*transaction.Transaction, maxSize),
 		txOrder:           make([]string, 0, maxSize),
@@ -57,6 +61,7 @@ func NewMempool(maxSize int, broadcaster interfaces.Broadcaster, ledger interfac
 		eventRouter:  eventRouter,
 		txTracker:    txTracker,
 		zkVerify:     zkVerify,
+		txStore:      txStore,
 	}
 }
 
@@ -185,6 +190,45 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	return nil
 }
 
+func (mp *Mempool) validateDonationCampaignFeed(tx *transaction.Transaction) error {
+	var feed types.DonationCampaignFeed
+	if err := json.Unmarshal([]byte(tx.ExtraInfo), &feed); err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidDonationCampaignFeed)
+	}
+
+	// If feed is root => don't need to validate further
+	if feed.ParentHash == "" && feed.RootHash == "" {
+		return nil
+	}
+
+	// If not root => parentHash and rootHash must be present
+	if feed.ParentHash == "" || feed.RootHash == "" {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidDonationCampaignFeed)
+	}
+
+	parentTx, err := mp.txStore.GetByHash(feed.ParentHash)
+	if err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgDonationCampaignFeedParentNotFound)
+	}
+
+	if parentTx.Type != transaction.TxTypeDonationCampaignFeed ||
+		parentTx.Sender != tx.Sender ||
+		parentTx.Recipient != tx.Recipient {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidDonationCampaignFeed)
+	}
+
+	latest, err := mp.txStore.GetLatestVersionFeedHash(feed.RootHash)
+	if err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgDonationCampaignFeedRootNotFound)
+	}
+
+	if latest != feed.ParentHash {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgDonationCampaignFeedVersionConflict)
+	}
+
+	return nil
+}
+
 // Cheap validate before acquire write lock
 func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
 	// Validate amount
@@ -238,8 +282,12 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return err
 	}
 
-	// Skip balance check for donation campaign feed
+	// Validate donation campaign feed and skip balance check
 	if tx.Type == transaction.TxTypeDonationCampaignFeed {
+		if err := mp.validateDonationCampaignFeed(tx); err != nil {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidDonationCampaignFeed)
+			return err
+		}
 		return nil
 	}
 
