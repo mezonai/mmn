@@ -156,13 +156,14 @@ func (s *TxServiceImpl) GetPendingTransactions(ctx context.Context, in *pb.GetPe
 
 		// Create pending transaction info
 		pendingTx := &pb.TransactionData{
-			TxHash:    txHash,
-			Sender:    tx.Sender,
-			Recipient: tx.Recipient,
-			Amount:    utils.Uint256ToString(tx.Amount),
-			Nonce:     tx.Nonce,
-			Timestamp: tx.Timestamp,
-			Status:    pb.TransactionStatus_PENDING,
+			TxHash:          txHash,
+			Sender:          tx.Sender,
+			Recipient:       tx.Recipient,
+			Amount:          utils.Uint256ToString(tx.Amount),
+			Nonce:           tx.Nonce,
+			Timestamp:       tx.Timestamp,
+			Status:          pb.TransactionStatus_PENDING,
+			TransactionType: tx.Type,
 		}
 
 		pendingTxs = append(pendingTxs, pendingTx)
