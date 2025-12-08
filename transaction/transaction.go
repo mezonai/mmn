@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	TxTypeTransferByZk         = 0
-	TxTypeTransferByKey        = 1
-	TxTypeDonationCampaignFeed = 2
+	TxTypeTransferByZk  = 0
+	TxTypeTransferByKey = 1
+	TxTypeUserContent   = 2
 )
 
 type Transaction struct {

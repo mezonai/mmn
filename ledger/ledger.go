@@ -124,7 +124,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	}
 
 	for _, tx := range allTxsInBlock {
-		if tx.Type == transaction.TxTypeDonationCampaignFeed {
+		if tx.Type == transaction.TxTypeUserContent {
 			continue
 		}
 		if _, exists := accAddrsSet[tx.Sender]; !exists {
@@ -145,7 +145,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	for _, tx := range allTxsInBlock {
 		txHash := tx.Hash()
 
-		if tx.Type == transaction.TxTypeDonationCampaignFeed {
+		if tx.Type == transaction.TxTypeUserContent {
 			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
 		} else {
 			if err := applyTx(state, tx); err != nil {
