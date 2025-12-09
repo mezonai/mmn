@@ -128,7 +128,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	}
 
 	for _, tx := range allTxsInBlock {
-		if tx.Type == transaction.TxTypeDonationCampaignFeed {
+		if tx.Type == transaction.TxTypeUserContent {
 			continue
 		}
 		if _, exists := accAddrsSet[tx.Sender]; !exists {
@@ -149,7 +149,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	for _, tx := range allTxsInBlock {
 		txHash := tx.Hash()
 
-		if tx.Type == transaction.TxTypeDonationCampaignFeed {
+		if tx.Type == transaction.TxTypeUserContent {
 			var feed types.DonationCampaignFeed
 			if err = json.Unmarshal([]byte(tx.ExtraInfo), &feed); err != nil {
 				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, "Donation campaign feed data is invalid")
@@ -298,7 +298,7 @@ func (l *Ledger) validateDonationCampaignFeed(tx *transaction.Transaction, paren
 		return fmt.Errorf("parent donation campaign feed not found")
 	}
 
-	if parentTxFeed.Type != transaction.TxTypeDonationCampaignFeed ||
+	if parentTxFeed.Type != transaction.TxTypeUserContent ||
 		parentTxFeed.Sender != tx.Sender ||
 		parentTxFeed.Recipient != tx.Recipient {
 		return fmt.Errorf("donation campaign feed data is invalid")
