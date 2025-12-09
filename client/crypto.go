@@ -28,7 +28,7 @@ func SignTx(tx *Tx, pubKey, privKey []byte) (SignedTx, error) {
 
 	txHash := Serialize(tx)
 	signature := ed25519.Sign(privKey, txHash)
-	if tx.Type == TxTypeFaucet {
+	if tx.Type == TxTypeTransferByKey {
 		return SignedTx{
 			Tx:  tx,
 			Sig: base58.Encode(signature),
@@ -52,7 +52,7 @@ func SignTx(tx *Tx, pubKey, privKey []byte) (SignedTx, error) {
 
 func Verify(tx *Tx, sig string) bool {
 	txHash := Serialize(tx)
-	if tx.Type == TxTypeFaucet {
+	if tx.Type == TxTypeTransferByKey {
 		decoded, err := base58.Decode(tx.Sender)
 		if err != nil {
 			return false

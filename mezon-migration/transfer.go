@@ -23,7 +23,7 @@ func NewMmnClient(endpoint string) (*clt.MmnClient, error) {
 }
 
 func TransferTokens(client *clt.MmnClient, ctx context.Context, faucetAddress, toAddress string, amount *uint256.Int, faucetPrivateKey ed25519.PrivateKey, nonce uint64, textData string) error {
-	unsigned, err := clt.BuildTransferTx(clt.TxTypeFaucet, faucetAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, map[string]string{}, "", "")
+	unsigned, err := clt.BuildTransferTx(clt.TxTypeTransferByKey, faucetAddress, toAddress, amount, nonce, uint64(time.Now().Unix()), textData, map[string]string{}, "", "")
 	if err != nil {
 		return fmt.Errorf("failed to build transfer transaction: %v", err)
 	}

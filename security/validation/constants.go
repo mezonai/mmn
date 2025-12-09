@@ -2,7 +2,7 @@ package validation
 
 const (
 	MaxShortTextLength = 128
-	MaxLongTextLength  = 512
+	MaxLongTextLength  = 5120
 
 	DefaultRequestBodyLimit = 128 * 1024      // 128 KB
 	LargeRequestBodyLimit   = 8 * 1024 * 1024 // 8 MB

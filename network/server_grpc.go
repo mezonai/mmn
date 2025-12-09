@@ -454,15 +454,16 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
-				TxHash:    txHash,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Amount:    utils.Uint256ToString(tx.Amount),
-				Nonce:     tx.Nonce,
-				Timestamp: tx.Timestamp,
-				Status:    txStatus,
-				TextData:  tx.TextData,
-				ExtraInfo: tx.ExtraInfo,
+				TxHash:          txHash,
+				Sender:          tx.Sender,
+				Recipient:       tx.Recipient,
+				Amount:          utils.Uint256ToString(tx.Amount),
+				Nonce:           tx.Nonce,
+				Timestamp:       tx.Timestamp,
+				Status:          txStatus,
+				TextData:        tx.TextData,
+				ExtraInfo:       tx.ExtraInfo,
+				TransactionType: tx.Type,
 			})
 		}
 
@@ -576,15 +577,16 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 
 			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
-				TxHash:    txHash,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Amount:    utils.Uint256ToString(tx.Amount),
-				Nonce:     tx.Nonce,
-				Timestamp: tx.Timestamp,
-				Status:    txStatus,
-				TextData:  tx.TextData,
-				ExtraInfo: tx.ExtraInfo,
+				TxHash:          txHash,
+				Sender:          tx.Sender,
+				Recipient:       tx.Recipient,
+				Amount:          utils.Uint256ToString(tx.Amount),
+				Nonce:           tx.Nonce,
+				Timestamp:       tx.Timestamp,
+				Status:          txStatus,
+				TextData:        tx.TextData,
+				ExtraInfo:       tx.ExtraInfo,
+				TransactionType: tx.Type,
 			})
 		}
 
