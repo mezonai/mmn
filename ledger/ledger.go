@@ -2,8 +2,10 @@ package ledger
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,6 +112,9 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	txMetas := make(map[string]*types.TransactionMeta)
 	accAddrs := make([]string, 0)
 	accAddrsSet := make(map[string]struct{})
+	parentContentHashes := make([]string, 0)
+	rootContentHashes := make(map[string]struct{})
+	txContents := make([]*transaction.Transaction, 0)
 
 	for _, entry := range b.Entries {
 		if entry.Tick {
@@ -146,9 +151,22 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		txHash := tx.Hash()
 
 		if tx.Type == transaction.TxTypeUserContent {
-			txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+			var content types.UserContent
+			if err = json.Unmarshal([]byte(tx.ExtraInfo), &content); err != nil {
+				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, "User content data is invalid")
+				continue
+			}
+
+			txContents = append(txContents, tx)
+			if content.ParentHash != "" {
+				parentContentHashes = append(parentContentHashes, content.ParentHash)
+			}
+			if content.RootHash != "" {
+				rootContentHashes[content.RootHash] = struct{}{}
+			}
+			continue
 		} else {
-			if err := applyTx(state, tx); err != nil {
+			if err = applyTx(state, tx); err != nil {
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
 				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
 			} else {
@@ -163,7 +181,30 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		}
 	}
 
-	if err := l.bStore.FinalizeBlock(b, txMetas, state); err != nil {
+	parentContentTxs, err := l.txStore.GetBatch(parentContentHashes)
+	if err != nil {
+		return fmt.Errorf("failed to get parent transaction contents for block %d: %w", b.Slot, err)
+	}
+	parentContentTxMap := make(map[string]*transaction.Transaction)
+	for _, tx := range parentContentTxs {
+		txHash := tx.Hash()
+		parentContentTxMap[txHash] = tx
+	}
+
+	latestVersionContentHashMap, err := l.txStore.GetBatchLatestVersionContentHash(rootContentHashes)
+	if err != nil {
+		return fmt.Errorf("failed to get latest version content hashes for block %d: %w", b.Slot, err)
+	}
+
+	for _, content := range txContents {
+		if err := l.validateUserContent(content, parentContentTxMap, latestVersionContentHashMap); err != nil {
+			txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+			continue
+		}
+		txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+	}
+
+	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionContentHashMap); err != nil {
 		if l.eventRouter != nil {
 			for _, tx := range allTxsInBlock {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -236,6 +277,50 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	sender.Balance.Sub(sender.Balance, tx.Amount)
 	recipient.Balance.Add(recipient.Balance, tx.Amount)
 	sender.Nonce = tx.Nonce
+	return nil
+}
+
+// Validate transaction content
+func (l *Ledger) validateUserContent(tx *transaction.Transaction, parentContentTxMap map[string]*transaction.Transaction, latestVersionContentHashMap map[string]string) error {
+	var content types.UserContent
+	_ = json.Unmarshal([]byte(tx.ExtraInfo), &content)
+
+	if strings.TrimSpace(content.Type) == "" ||
+		strings.TrimSpace(content.Title) == "" ||
+		strings.TrimSpace(content.Description) == "" {
+		return fmt.Errorf("user content required fields are missing")
+	}
+
+	if content.ParentHash == "" && content.RootHash == "" {
+		latestVersionContentHashMap[tx.Hash()] = tx.Hash()
+		return nil
+	}
+
+	if content.ParentHash == "" || content.RootHash == "" {
+		return fmt.Errorf("user content data is invalid")
+	}
+
+	parentContentTx, exists := parentContentTxMap[content.ParentHash]
+	if !exists {
+		return fmt.Errorf("parent user content not found")
+	}
+
+	if parentContentTx.Type != transaction.TxTypeUserContent ||
+		parentContentTx.Sender != tx.Sender ||
+		parentContentTx.Recipient != tx.Recipient {
+		return fmt.Errorf("user content data is invalid")
+	}
+
+	latestVersionContentHash, exists := latestVersionContentHashMap[content.RootHash]
+	if !exists {
+		return fmt.Errorf("latest version user content not found")
+	}
+
+	if latestVersionContentHash != content.ParentHash {
+		return fmt.Errorf("parent user content is not the latest version")
+	}
+
+	latestVersionContentHashMap[content.RootHash] = tx.Hash()
 	return nil
 }
 
