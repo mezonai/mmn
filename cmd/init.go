@@ -232,8 +232,8 @@ func initializeNode() {
 		// Finalizegenesis block
 		txMeta := map[string]*types.TransactionMeta{}
 		addrAccount := map[string]*types.Account{}
-		latestVersionFeedHashMap := map[string]string{}
-		err = bs.FinalizeBlock(utils.BroadcastedBlockToBlock(genesisBlock), txMeta, addrAccount, latestVersionFeedHashMap)
+		latestVersionContentHashMap := map[string]string{}
+		err = bs.FinalizeBlock(utils.BroadcastedBlockToBlock(genesisBlock), txMeta, addrAccount, latestVersionContentHashMap)
 		if err != nil {
 			logx.Error("INIT", "Failed to finalize genesis block :", err.Error())
 			return

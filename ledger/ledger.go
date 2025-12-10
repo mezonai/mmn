@@ -111,9 +111,9 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	txMetas := make(map[string]*types.TransactionMeta)
 	accAddrs := make([]string, 0)
 	accAddrsSet := make(map[string]struct{})
-	parentFeedHashes := make([]string, 0)
-	rootFeedHashes := make(map[string]struct{})
-	txFeeds := make([]*transaction.Transaction, 0)
+	parentContentHashes := make([]string, 0)
+	rootContentHashes := make(map[string]struct{})
+	txContents := make([]*transaction.Transaction, 0)
 
 	for _, entry := range b.Entries {
 		if entry.Tick {
@@ -150,18 +150,18 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		txHash := tx.Hash()
 
 		if tx.Type == transaction.TxTypeUserContent {
-			var feed types.DonationCampaignFeed
-			if err = json.Unmarshal([]byte(tx.ExtraInfo), &feed); err != nil {
-				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, "Donation campaign feed data is invalid")
+			var content types.UserContent
+			if err = json.Unmarshal([]byte(tx.ExtraInfo), &content); err != nil {
+				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, "User content data is invalid")
 				continue
 			}
 
-			txFeeds = append(txFeeds, tx)
-			if feed.ParentHash != "" {
-				parentFeedHashes = append(parentFeedHashes, feed.ParentHash)
+			txContents = append(txContents, tx)
+			if content.ParentHash != "" {
+				parentContentHashes = append(parentContentHashes, content.ParentHash)
 			}
-			if feed.RootHash != "" {
-				rootFeedHashes[feed.RootHash] = struct{}{}
+			if content.RootHash != "" {
+				rootContentHashes[content.RootHash] = struct{}{}
 			}
 			continue
 		} else {
@@ -180,30 +180,30 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		}
 	}
 
-	parentFeedTxs, err := l.txStore.GetBatch(parentFeedHashes)
+	parentContentTxs, err := l.txStore.GetBatch(parentContentHashes)
 	if err != nil {
-		return fmt.Errorf("failed to get parent transaction feeds for block %d: %w", b.Slot, err)
+		return fmt.Errorf("failed to get parent transaction contents for block %d: %w", b.Slot, err)
 	}
-	parentFeedTxMap := make(map[string]*transaction.Transaction)
-	for _, tx := range parentFeedTxs {
+	parentContentTxMap := make(map[string]*transaction.Transaction)
+	for _, tx := range parentContentTxs {
 		txHash := tx.Hash()
-		parentFeedTxMap[txHash] = tx
+		parentContentTxMap[txHash] = tx
 	}
 
-	latestVersionFeedHashMap, err := l.txStore.GetBatchLatestVersionFeedHash(rootFeedHashes)
+	latestVersionContentHashMap, err := l.txStore.GetBatchLatestVersionContentHash(rootContentHashes)
 	if err != nil {
-		return fmt.Errorf("failed to get latest version feed hashes for block %d: %w", b.Slot, err)
+		return fmt.Errorf("failed to get latest version content hashes for block %d: %w", b.Slot, err)
 	}
 
-	for _, feed := range txFeeds {
-		if err := l.validateDonationCampaignFeed(feed, parentFeedTxMap, latestVersionFeedHashMap); err != nil {
-			txMetas[feed.Hash()] = types.NewTxMeta(feed, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+	for _, content := range txContents {
+		if err := l.validateUserContent(content, parentContentTxMap, latestVersionContentHashMap); err != nil {
+			txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
 			continue
 		}
-		txMetas[feed.Hash()] = types.NewTxMeta(feed, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+		txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
 	}
 
-	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionFeedHashMap); err != nil {
+	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionContentHashMap); err != nil {
 		if l.eventRouter != nil {
 			for _, tx := range allTxsInBlock {
 				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
@@ -279,41 +279,41 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 	return nil
 }
 
-// Validate transaction feed
-func (l *Ledger) validateDonationCampaignFeed(tx *transaction.Transaction, parentFeedTxMap map[string]*transaction.Transaction, latestVersionFeedHashMap map[string]string) error {
-	var feed types.DonationCampaignFeed
-	_ = json.Unmarshal([]byte(tx.ExtraInfo), &feed)
+// Validate transaction content
+func (l *Ledger) validateUserContent(tx *transaction.Transaction, parentContentTxMap map[string]*transaction.Transaction, latestVersionContentHashMap map[string]string) error {
+	var content types.UserContent
+	_ = json.Unmarshal([]byte(tx.ExtraInfo), &content)
 
-	if feed.ParentHash == "" && feed.RootHash == "" {
-		latestVersionFeedHashMap[tx.Hash()] = tx.Hash()
+	if content.ParentHash == "" && content.RootHash == "" {
+		latestVersionContentHashMap[tx.Hash()] = tx.Hash()
 		return nil
 	}
 
-	if feed.ParentHash == "" || feed.RootHash == "" {
-		return fmt.Errorf("donation campaign feed data is invalid")
+	if content.ParentHash == "" || content.RootHash == "" {
+		return fmt.Errorf("user content data is invalid")
 	}
 
-	parentTxFeed, exists := parentFeedTxMap[feed.ParentHash]
+	parentContentTx, exists := parentContentTxMap[content.ParentHash]
 	if !exists {
-		return fmt.Errorf("parent donation campaign feed not found")
+		return fmt.Errorf("parent user content not found")
 	}
 
-	if parentTxFeed.Type != transaction.TxTypeUserContent ||
-		parentTxFeed.Sender != tx.Sender ||
-		parentTxFeed.Recipient != tx.Recipient {
-		return fmt.Errorf("donation campaign feed data is invalid")
+	if parentContentTx.Type != transaction.TxTypeUserContent ||
+		parentContentTx.Sender != tx.Sender ||
+		parentContentTx.Recipient != tx.Recipient {
+		return fmt.Errorf("user content data is invalid")
 	}
 
-	latestVersionFeedHash, exists := latestVersionFeedHashMap[feed.RootHash]
+	latestVersionContentHash, exists := latestVersionContentHashMap[content.RootHash]
 	if !exists {
-		return fmt.Errorf("latest version donation campaign feed not found")
+		return fmt.Errorf("latest version user content not found")
 	}
 
-	if latestVersionFeedHash != feed.ParentHash {
-		return fmt.Errorf("parent donation campaign feed is not the latest version")
+	if latestVersionContentHash != content.ParentHash {
+		return fmt.Errorf("parent user content is not the latest version")
 	}
 
-	latestVersionFeedHashMap[feed.RootHash] = tx.Hash()
+	latestVersionContentHashMap[content.RootHash] = tx.Hash()
 	return nil
 }
 

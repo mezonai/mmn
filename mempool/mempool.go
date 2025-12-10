@@ -190,40 +190,40 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	return nil
 }
 
-func (mp *Mempool) validateDonationCampaignFeed(tx *transaction.Transaction) error {
-	var feed types.DonationCampaignFeed
-	if err := json.Unmarshal([]byte(tx.ExtraInfo), &feed); err != nil {
-		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidDonationCampaignFeed)
+func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
+	var content types.UserContent
+	if err := json.Unmarshal([]byte(tx.ExtraInfo), &content); err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
 	}
 
-	// If feed is root => don't need to validate further
-	if feed.ParentHash == "" && feed.RootHash == "" {
+	// If content is root => don't need to validate further
+	if content.ParentHash == "" && content.RootHash == "" {
 		return nil
 	}
 
 	// If not root => parentHash and rootHash must be present
-	if feed.ParentHash == "" || feed.RootHash == "" {
-		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidDonationCampaignFeed)
+	if content.ParentHash == "" || content.RootHash == "" {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
 	}
 
-	parentTx, err := mp.txStore.GetByHash(feed.ParentHash)
+	parentTx, err := mp.txStore.GetByHash(content.ParentHash)
 	if err != nil {
-		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgDonationCampaignFeedParentNotFound)
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentParentNotFound)
 	}
 
 	if parentTx.Type != transaction.TxTypeUserContent ||
 		parentTx.Sender != tx.Sender ||
 		parentTx.Recipient != tx.Recipient {
-		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidDonationCampaignFeed)
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
 	}
 
-	latest, err := mp.txStore.GetLatestVersionFeedHash(feed.RootHash)
+	latest, err := mp.txStore.GetLatestVersionContentHash(content.RootHash)
 	if err != nil {
-		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgDonationCampaignFeedRootNotFound)
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentRootNotFound)
 	}
 
-	if latest != feed.ParentHash {
-		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgDonationCampaignFeedVersionConflict)
+	if latest != content.ParentHash {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentVersionConflict)
 	}
 
 	return nil
@@ -282,10 +282,10 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return err
 	}
 
-	// Validate donation campaign feed and skip balance check
+	// Validate user content and skip balance check
 	if tx.Type == transaction.TxTypeUserContent {
-		if err := mp.validateDonationCampaignFeed(tx); err != nil {
-			monitoring.RecordRejectedTx(monitoring.TxInvalidDonationCampaignFeed)
+		if err := mp.validateUserContent(tx); err != nil {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidUserContent)
 			return err
 		}
 		return nil

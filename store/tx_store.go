@@ -18,9 +18,9 @@ type TxStore interface {
 	GetByHash(txHash string) (*transaction.Transaction, error)
 	GetBatch(txHashes []string) ([]*transaction.Transaction, error)
 	GetDBKey(txHash string) []byte
-	GetLatestVersionFeedKey(rootHash string) []byte
-	GetLatestVersionFeedHash(rootHash string) (string, error)
-	GetBatchLatestVersionFeedHash(rootHashes map[string]struct{}) (map[string]string, error)
+	GetLatestVersionContentKey(rootHash string) []byte
+	GetLatestVersionContentHash(rootHash string) (string, error)
+	GetBatchLatestVersionContentHash(rootHashes map[string]struct{}) (map[string]string, error)
 	MustClose()
 }
 
@@ -137,40 +137,40 @@ func (ts *GenericTxStore) GetBatch(txHashes []string) ([]*transaction.Transactio
 	return transactions, nil
 }
 
-// GetLatestVersionFeedHash retrieves the latest version feed hash for a given root hash
-func (ts *GenericTxStore) GetLatestVersionFeedHash(rootHash string) (string, error) {
-	data, err := ts.dbProvider.Get(ts.GetLatestVersionFeedKey(rootHash))
+// GetLatestVersionContentHash retrieves the latest version content hash for a given root hash
+func (ts *GenericTxStore) GetLatestVersionContentHash(rootHash string) (string, error) {
+	data, err := ts.dbProvider.Get(ts.GetLatestVersionContentKey(rootHash))
 	if err != nil {
-		return "", fmt.Errorf("could not get latest version feed for root hash %s: %w", rootHash, err)
+		return "", fmt.Errorf("could not get latest version content for root hash %s: %w", rootHash, err)
 	}
 	return hex.EncodeToString(data), nil
 }
 
-// GetBatchLatestVersionFeedHash retrieves the latest version feed hashes for multiple root hashes using true batch operation
-func (ts *GenericTxStore) GetBatchLatestVersionFeedHash(rootHashes map[string]struct{}) (map[string]string, error) {
+// GetBatchLatestVersionContentHash retrieves the latest version content hashes for multiple root hashes using true batch operation
+func (ts *GenericTxStore) GetBatchLatestVersionContentHash(rootHashes map[string]struct{}) (map[string]string, error) {
 	if len(rootHashes) == 0 {
-		logx.Info("TX_STORE", "GetBatchLatestVersionFeedHash: no root hashes provided")
+		logx.Info("TX_STORE", "GetBatchLatestVersionContentHash: no root hashes provided")
 		return map[string]string{}, nil
 	}
 
 	// Prepare keys for batch operation
 	keys := make([][]byte, 0)
 	for rootHash := range rootHashes {
-		keys = append(keys, ts.GetLatestVersionFeedKey(rootHash))
+		keys = append(keys, ts.GetLatestVersionContentKey(rootHash))
 	}
 
 	// Use true batch read - single CGO call!
 	dataMap, err := ts.dbProvider.GetBatch(keys)
 	if err != nil {
-		return nil, fmt.Errorf("failed to batch get latest version feed hashes: %w", err)
+		return nil, fmt.Errorf("failed to batch get latest version content hashes: %w", err)
 	}
 
 	result := make(map[string]string)
 	for rootHash := range rootHashes {
-		key := ts.GetLatestVersionFeedKey(rootHash)
+		key := ts.GetLatestVersionContentKey(rootHash)
 		data, exists := dataMap[string(key)]
 		if !exists {
-			logx.Warn("TX_STORE", fmt.Sprintf("Latest version feed for root hash %s not found in batch result", rootHash))
+			logx.Warn("TX_STORE", fmt.Sprintf("Latest version content for root hash %s not found in batch result", rootHash))
 			continue
 		}
 		result[rootHash] = hex.EncodeToString(data)
@@ -190,6 +190,6 @@ func (ts *GenericTxStore) GetDBKey(txHash string) []byte {
 	return []byte(PrefixTx + txHash)
 }
 
-func (ts *GenericTxStore) GetLatestVersionFeedKey(rootHash string) []byte {
-	return []byte(PrefixLatestVersionFeed + rootHash)
+func (ts *GenericTxStore) GetLatestVersionContentKey(rootHash string) []byte {
+	return []byte(PrefixLatestVersionContent + rootHash)
 }

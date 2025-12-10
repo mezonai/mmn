@@ -13,5 +13,5 @@ const (
 	PrefixTx     = "tx:"
 	PrefixTxMeta = "tx_meta:"
 
-	PrefixLatestVersionFeed = "latest_version_feed:"
+	PrefixLatestVersionContent = "latest_version_content:"
 )

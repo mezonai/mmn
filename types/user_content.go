@@ -1,9 +1,9 @@
 package types
 
-type DonationCampaignFeed struct {
+type UserContent struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
-	Cids        []string `json:"cids"`
+	ImageCIDs   []string `json:"image_cids"`
 	ParentHash  string   `json:"parent_hash"`
 	RootHash    string   `json:"root_hash"`
 }
