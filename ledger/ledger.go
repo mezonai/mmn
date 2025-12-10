@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -283,6 +284,12 @@ func applyTx(state map[string]*types.Account, tx *transaction.Transaction) error
 func (l *Ledger) validateUserContent(tx *transaction.Transaction, parentContentTxMap map[string]*transaction.Transaction, latestVersionContentHashMap map[string]string) error {
 	var content types.UserContent
 	_ = json.Unmarshal([]byte(tx.ExtraInfo), &content)
+
+	if strings.TrimSpace(content.Type) == "" ||
+		strings.TrimSpace(content.Title) == "" ||
+		strings.TrimSpace(content.Description) == "" {
+		return fmt.Errorf("user content required fields are missing")
+	}
 
 	if content.ParentHash == "" && content.RootHash == "" {
 		latestVersionContentHashMap[tx.Hash()] = tx.Hash()

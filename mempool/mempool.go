@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -194,6 +195,13 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 	var content types.UserContent
 	if err := json.Unmarshal([]byte(tx.ExtraInfo), &content); err != nil {
 		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+	}
+
+	// Check required fields
+	if strings.TrimSpace(content.Type) == "" ||
+		strings.TrimSpace(content.Title) == "" ||
+		strings.TrimSpace(content.Description) == "" {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentMissingRequiredFields)
 	}
 
 	// If content is root => don't need to validate further
