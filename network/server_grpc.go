@@ -262,6 +262,11 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 
 // convertEventToStatusUpdate converts blockchain events to transaction status updates
 func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash string) *pb.TransactionStatusInfo {
+	// If event transaction is "user_content", ignore events
+	if event.Transaction() != nil && event.Transaction().Type == transaction.TxTypeUserContent {
+		return nil
+	}
+
 	switch e := event.(type) {
 	case *events.TransactionAddedToMempool:
 		return &pb.TransactionStatusInfo{
