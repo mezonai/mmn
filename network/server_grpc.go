@@ -246,6 +246,10 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 	for {
 		select {
 		case event := <-eventChan:
+			if !shouldSendEvent(event) {
+				continue
+			}
+
 			// Convert event to status update for the specific transaction
 			statusUpdate := s.convertEventToStatusUpdate(event, event.Transaction().Hash())
 			if statusUpdate != nil {
@@ -258,6 +262,15 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 			return stream.Context().Err()
 		}
 	}
+}
+
+// shouldSendEvent determines if an event should be sent based on its transaction type
+func shouldSendEvent(event events.BlockchainEvent) bool {
+	if event.Transaction() != nil {
+		_, skip := validation.SkipSendEventTxTypes[event.Transaction().Type]
+		return !skip
+	}
+	return true
 }
 
 // convertEventToStatusUpdate converts blockchain events to transaction status updates

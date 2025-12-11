@@ -1,5 +1,7 @@
 package validation
 
+import "github.com/mezonai/mmn/transaction"
+
 const (
 	MaxShortTextLength = 128
 	MaxLongTextLength  = 5120
@@ -33,4 +35,9 @@ var InjectionPatterns = []string{
 	"%0a", "%0d", "%0a%0d", "%00", "%27", "%22", "%3c", "%3e", // encoded attacks (decode first)
 	"${jndi:", "ldap://", "ldaps://", // JNDI/ldap
 	"eval(", "exec(", "system(", "popen(", // dangerous funcs
+}
+
+// SkipSendEventTxTypes is a set of transaction types for which events should be skipped
+var SkipSendEventTxTypes = map[int32]struct{}{
+	transaction.TxTypeUserContent: {},
 }
