@@ -246,6 +246,10 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 	for {
 		select {
 		case event := <-eventChan:
+			if !shouldSendEvent(event) {
+				continue
+			}
+
 			// Convert event to status update for the specific transaction
 			statusUpdate := s.convertEventToStatusUpdate(event, event.Transaction().Hash())
 			if statusUpdate != nil {
@@ -258,6 +262,15 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 			return stream.Context().Err()
 		}
 	}
+}
+
+// shouldSendEvent determines if an event should be sent based on its transaction type
+func shouldSendEvent(event events.BlockchainEvent) bool {
+	if event.Transaction() != nil {
+		_, skip := validation.SkipSendEventTxTypes[event.Transaction().Type]
+		return !skip
+	}
+	return true
 }
 
 // convertEventToStatusUpdate converts blockchain events to transaction status updates
@@ -454,15 +467,16 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
-				TxHash:    txHash,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Amount:    utils.Uint256ToString(tx.Amount),
-				Nonce:     tx.Nonce,
-				Timestamp: tx.Timestamp,
-				Status:    txStatus,
-				TextData:  tx.TextData,
-				ExtraInfo: tx.ExtraInfo,
+				TxHash:          txHash,
+				Sender:          tx.Sender,
+				Recipient:       tx.Recipient,
+				Amount:          utils.Uint256ToString(tx.Amount),
+				Nonce:           tx.Nonce,
+				Timestamp:       tx.Timestamp,
+				Status:          txStatus,
+				TextData:        tx.TextData,
+				ExtraInfo:       tx.ExtraInfo,
+				TransactionType: tx.Type,
 			})
 		}
 
@@ -576,15 +590,16 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 
 			txStatus := utils.TxMetaStatusToProtoTxStatus(txMeta.Status)
 			blockTxs = append(blockTxs, &pb.TransactionData{
-				TxHash:    txHash,
-				Sender:    tx.Sender,
-				Recipient: tx.Recipient,
-				Amount:    utils.Uint256ToString(tx.Amount),
-				Nonce:     tx.Nonce,
-				Timestamp: tx.Timestamp,
-				Status:    txStatus,
-				TextData:  tx.TextData,
-				ExtraInfo: tx.ExtraInfo,
+				TxHash:          txHash,
+				Sender:          tx.Sender,
+				Recipient:       tx.Recipient,
+				Amount:          utils.Uint256ToString(tx.Amount),
+				Nonce:           tx.Nonce,
+				Timestamp:       tx.Timestamp,
+				Status:          txStatus,
+				TextData:        tx.TextData,
+				ExtraInfo:       tx.ExtraInfo,
+				TransactionType: tx.Type,
 			})
 		}
 

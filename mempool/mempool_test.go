@@ -247,7 +247,7 @@ func TestNewMempool_BASIC(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(100, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(100, mb, ledger, dedup, nil, nil, nil, nil)
 	if mp == nil {
 		t.Fatal("NewMempool returned nil")
 	}
@@ -260,7 +260,7 @@ func TestAddTx_SuccessAndDuplicate(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil, nil)
 
 	// set slot such that minNonce = 1 (netCurrentSlot < NonceWindow)
 	mp.SetCurrentSlot(100)
@@ -295,7 +295,7 @@ func TestAddTx_FullMempool(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(1, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(1, mb, ledger, dedup, nil, nil, nil, nil)
 
 	_, s1 := getOrCreateKeyPair("s1")
 	_, s2 := getOrCreateKeyPair("s2")
@@ -319,7 +319,7 @@ func TestPullBatch_and_DedupServiceAdd(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil, nil)
 
 	mp.SetCurrentSlot(100)
 
@@ -364,7 +364,7 @@ func TestValidateNonceWindow(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil, nil)
 
 	// set current slot 200 -> minNonce = 200 - NonceWindow (150) = 50
 	mp.SetCurrentSlot(200)
@@ -395,7 +395,7 @@ func TestBlockCleanupAndVerifyBlockTransactions(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(10, mb, ledger, dedup, nil, nil, nil, nil)
 
 	mp.SetCurrentSlot(100)
 
@@ -448,7 +448,7 @@ func TestConcurrentAddTxDifferentSenders(t *testing.T) {
 	mb := &MockBroadcaster{}
 	ledger := NewMockLedger()
 	dedup := NewTestDedupService()
-	mp := NewMempool(200, mb, ledger, dedup, nil, nil, nil)
+	mp := NewMempool(200, mb, ledger, dedup, nil, nil, nil, nil)
 
 	mp.SetCurrentSlot(100)
 

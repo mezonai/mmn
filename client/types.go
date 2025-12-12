@@ -12,8 +12,9 @@ import (
 const NativeDecimal = 6
 const addressDecodedExpectedLength = 32
 const (
-	TxTypeTransfer = 0
-	TxTypeFaucet   = 1
+	TxTypeTransferByZk  = 0
+	TxTypeTransferByKey = 1
+	TxTypeUserContent   = 2
 )
 
 var (
@@ -60,7 +61,7 @@ func BuildTransferTx(txType int, sender, recipient string, amount *uint256.Int, 
 	if err := ValidateAddress(recipient); err != nil {
 		return nil, fmt.Errorf("recipient: %w", err)
 	}
-	if amount == nil || amount.IsZero() {
+	if (amount == nil || amount.IsZero()) && (txType != TxTypeUserContent) {
 		return nil, ErrInvalidAmount
 	}
 

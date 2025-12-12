@@ -12,4 +12,6 @@ const (
 
 	PrefixTx     = "tx:"
 	PrefixTxMeta = "tx_meta:"
+
+	PrefixLatestVersionContent = "latest_version_content:"
 )

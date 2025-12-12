@@ -23,7 +23,7 @@ func TestEventBus(t *testing.T) {
 	// Test publishing event
 	extraInfo := "extra_info"
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -69,7 +69,7 @@ func TestEventBus(t *testing.T) {
 func TestBlockchainEvents(t *testing.T) {
 	// Test TransactionAddedToMempool
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -136,7 +136,7 @@ func TestMultipleSubscribers(t *testing.T) {
 
 	// Test publishing event
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -184,7 +184,7 @@ func TestMultipleSubscribers(t *testing.T) {
 
 func TestNewTransactionFailed(t *testing.T) {
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -228,7 +228,7 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 
 	// Create and publish a failed transaction event
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -267,7 +267,7 @@ func TestEventRouterPublishTransactionFailed(t *testing.T) {
 
 func TestTransactionAddedToMempool(t *testing.T) {
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender-address",
 		Recipient: "recipient-address",
 		Amount:    uint256.NewInt(1000),
@@ -302,7 +302,7 @@ func TestTransactionAddedToMempool(t *testing.T) {
 
 func TestTransactionIncludedInBlock(t *testing.T) {
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -343,7 +343,7 @@ func TestTransactionIncludedInBlock(t *testing.T) {
 
 func TestTransactionFinalized(t *testing.T) {
 	tx := &transaction.Transaction{
-		Type:      transaction.TxTypeTransfer,
+		Type:      transaction.TxTypeTransferByZk,
 		Sender:    "sender",
 		Recipient: "recipient",
 		Amount:    uint256.NewInt(100),
@@ -393,7 +393,7 @@ func TestEventBusConcurrentPublishing(t *testing.T) {
 
 	for i := 0; i < numEvents; i++ {
 		tx := &transaction.Transaction{
-			Type:      transaction.TxTypeTransfer,
+			Type:      transaction.TxTypeTransferByZk,
 			Sender:    fmt.Sprintf("sender-%d", i),
 			Recipient: fmt.Sprintf("recipient-%d", i),
 			Amount:    uint256.NewInt(100),

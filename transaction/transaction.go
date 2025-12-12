@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	TxTypeTransfer = 0
-	TxTypeFaucet   = 1
+	TxTypeTransferByZk  = 0
+	TxTypeTransferByKey = 1
+	TxTypeUserContent   = 2
 )
 
 type Transaction struct {
@@ -81,7 +82,7 @@ func (tx *Transaction) Verify(zkVerify *zkverify.ZkVerify) bool {
 
 	serialized := tx.Serialize()
 
-	if tx.Type == TxTypeFaucet {
+	if tx.Type == TxTypeTransferByKey {
 		pub, err := base58ToEd25519(tx.Sender)
 		if err != nil {
 			logx.Error("TransactionVerify", "failed to decode sender", err)

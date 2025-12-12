@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -37,7 +38,7 @@ type BlockStore interface {
 	GetLatestFinalizedSlot() uint64
 	GetLatestStoreSlot() uint64
 	AddBlockPending(b *block.BroadcastedBlock) error
-	FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error
+	FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account, latestVersionContentHashMap map[string]string) error
 	GetConfirmations(blockSlot uint64) uint64
 	MustClose()
 	IsApplied(slot uint64) bool
@@ -420,7 +421,7 @@ func (s *GenericBlockStore) IsApplied(slot uint64) bool {
 }
 
 // FinalizeBlock stores transaction metas and account states, marking the block as finalized
-func (s *GenericBlockStore) FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account) error {
+func (s *GenericBlockStore) FinalizeBlock(blk *block.Block, txMetas map[string]*types.TransactionMeta, addrAccount map[string]*types.Account, latestVersionContentHashMap map[string]string) error {
 	slot := blk.Slot
 	if !s.HasCompleteBlock(slot) {
 		return fmt.Errorf("block at slot %d does not exist", slot)
@@ -458,6 +459,15 @@ func (s *GenericBlockStore) FinalizeBlock(blk *block.Block, txMetas map[string]*
 			return fmt.Errorf("failed to marshal account: %w", err)
 		}
 		batch.Put(s.accStore.GetDBKey(account.Address), accountData)
+	}
+
+	// Store latest version contents
+	for rootHash, txHash := range latestVersionContentHashMap {
+		data, err := hex.DecodeString(txHash)
+		if err != nil {
+			return fmt.Errorf("failed to decode txHash %s: %w", txHash, err)
+		}
+		batch.Put(s.txStore.GetLatestVersionContentKey(rootHash), data)
 	}
 
 	// Mark this specific slot as finalized
