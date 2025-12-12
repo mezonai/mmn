@@ -166,3 +166,27 @@ type TxInfo struct {
 func (i *TxInfo) DeserializedExtraInfo() (map[string]string, error) {
 	return DeserializeTxExtraInfo(i.ExtraInfo)
 }
+
+const (
+	TransactionExtraInfoDongGiveCoffee       = "dong-give-coffee"
+	TransactionExtraInfoGiveCoffee           = "give-coffee"
+	TransactionExtraInfoDonationCampaign     = "donation-campaign"
+	TransactionExtraInfoWithdrawCampaign     = "withdraw-campaign"
+	TransactionExtraInfoLuckyMoney           = "lucky-money"
+	TransactionExtraInfoTokenTransfer        = "token-transfer"
+	TransactionExtraInfoDonationCampaignFeed = "donation-campaign-feed"
+)
+
+var txExtraInfoTypeNeedValidateAddress = map[string]struct{}{
+	TransactionExtraInfoDonationCampaignFeed: {},
+}
+
+// UserContent represents user-generated content stored on the network
+type UserContent struct {
+	Type        string   `json:"type"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	ImageCIDs   []string `json:"image_cids"`
+	ParentHash  string   `json:"parent_hash"`
+	RootHash    string   `json:"root_hash"`
+}
