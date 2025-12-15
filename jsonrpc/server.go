@@ -23,6 +23,11 @@ import (
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/security/validation"
+	"github.com/mezonai/mmn/transaction"
+)
+
+const (
+	clientIPKey = "clientIP"
 )
 
 // --- Error type used by handlers ---
@@ -160,13 +165,14 @@ type HealthCheckResponse struct {
 // --- Server ---
 
 type Server struct {
-	addr            string
-	txSvc           interfaces.TxService
-	acctSvc         interfaces.AccountService
-	healthSvc       interfaces.HealthService
-	corsConfig      CORSConfig
-	enableRateLimit bool
-	rateLimiter     *ratelimit.GlobalRateLimiter
+	addr                   string
+	txSvc                  interfaces.TxService
+	acctSvc                interfaces.AccountService
+	healthSvc              interfaces.HealthService
+	corsConfig             CORSConfig
+	enableRateLimit        bool
+	rateLimiter            *ratelimit.GlobalRateLimiter
+	userContentRateLimiter *ratelimit.RateLimiter
 }
 
 type CORSConfig struct {
@@ -176,7 +182,8 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool) *Server {
+func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService,
+	rateLimiter *ratelimit.GlobalRateLimiter, userContentRateLimiter *ratelimit.RateLimiter, enableRateLimit bool) *Server {
 	return &Server{
 		addr:      addr,
 		txSvc:     txSvc,
@@ -188,8 +195,9 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 			AllowedHeaders: []string{},
 			MaxAge:         0,
 		},
-		rateLimiter:     rateLimiter,
-		enableRateLimit: enableRateLimit,
+		rateLimiter:            rateLimiter,
+		userContentRateLimiter: userContentRateLimiter,
+		enableRateLimit:        enableRateLimit,
 	}
 }
 
@@ -223,6 +231,8 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 			clientIP := extractClientIPFromRequest(r)
+			ctx := context.WithValue(r.Context(), clientIPKey, clientIP)
+			r = r.WithContext(ctx)
 			req := parseJSONRPCRequest(bodyBytes)
 			if req == nil {
 				http.Error(w, "invalid request", http.StatusBadRequest)
@@ -264,7 +274,8 @@ func (s *Server) SetCORSConfig(config *CORSConfig) {
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
 		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			res := s.rpcAddTx(&p)
+			clientIP, _ := ctx.Value(clientIPKey).(string)
+			res := s.rpcAddTx(&p, clientIP)
 			if res == nil {
 				return nil, nil
 			}
@@ -327,7 +338,7 @@ func (s *Server) buildMethodMap() handler.Map {
 
 // --- Implementations ---
 
-func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
+func (s *Server) rpcAddTx(p *signedTxParams, clientIP string) interface{} {
 	shortFields := map[string]string{
 		validation.SenderField:    p.TxMsg.Sender,
 		validation.RecipientField: p.TxMsg.Recipient,
@@ -351,6 +362,13 @@ func (s *Server) rpcAddTx(p *signedTxParams) interface{} {
 	for fieldName, fieldValue := range longFields {
 		if err := validation.ValidateLongTextLength(fieldName, fieldValue); err != nil {
 			return &addTxResponse{Ok: false, Error: err.Error()}
+		}
+	}
+
+	if p.TxMsg.Type == transaction.TxTypeUserContent {
+		if !s.userContentRateLimiter.IsAllowed(clientIP) {
+			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
+			return &addTxResponse{Ok: false, Error: "Too many requests for user content transactions"}
 		}
 	}
 
