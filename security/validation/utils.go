@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"crypto/ed25519"
+
 	"filippo.io/edwards25519"
 	"github.com/mezonai/mmn/errors"
 	"github.com/mr-tron/base58"
@@ -65,7 +67,7 @@ func ValidateTxAddress(addr string) bool {
 		return false
 	}
 
-	if len(pubKey) != addressDecodedExpectedLength {
+	if len(pubKey) != ed25519.PublicKeySize {
 		return false
 	}
 

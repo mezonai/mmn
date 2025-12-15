@@ -22,9 +22,6 @@ const (
 	ZkProofField   = "zk_proof"
 	ZkPubField     = "zk_pub"
 	SignatureField = "signature"
-
-	// Decoded address expected length in bytes
-	addressDecodedExpectedLength = 32
 )
 
 // LargeRequestMethods - set of gRPC methods that allow large request body
