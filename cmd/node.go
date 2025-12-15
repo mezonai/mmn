@@ -212,7 +212,7 @@ func runNode() {
 	dedupService := mempool.NewDedupService(bs, ts)
 
 	// Initialize mempool
-	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify)
+	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify, ts)
 	if err != nil {
 		log.Printf("Failed to initialize mempool: %v", err)
 		return
@@ -337,13 +337,13 @@ func initializeNetwork(self *config.NodeConfig, bs store.BlockStore, ts store.Tx
 
 // initializeMempool initializes the mempool
 func initializeMempool(p2pClient *p2p.Libp2pNetwork, ld *ledger.Ledger, genesisPath string, dedupService *mempool.DedupService,
-	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) (*mempool.Mempool, error) {
+	eventRouter *events.EventRouter, txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify, txStore store.TxStore) (*mempool.Mempool, error) {
 	mempoolCfg, err := config.LoadMempoolConfig(genesisPath)
 	if err != nil {
 		return nil, fmt.Errorf("load mempool config: %w", err)
 	}
 
-	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, dedupService, eventRouter, txTracker, zkVerify)
+	mp := mempool.NewMempool(mempoolCfg.MaxTxs, p2pClient, ld, dedupService, eventRouter, txTracker, zkVerify, txStore)
 	return mp, nil
 }
 

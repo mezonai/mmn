@@ -2,7 +2,9 @@ package mempool
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,6 +12,8 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/store"
+	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/holiman/uint256"
@@ -39,10 +43,11 @@ type Mempool struct {
 	eventRouter  *events.EventRouter                    // Event router for transaction status updates
 	txTracker    interfaces.TransactionTrackerInterface // Transaction state tracker
 	zkVerify     *zkverify.ZkVerify                     // Zk verify for zk transactions
+	txStore      store.TxStore
 }
 
 func NewMempool(maxSize int, broadcaster interfaces.Broadcaster, ledger interfaces.Ledger, dedupService *DedupService, eventRouter *events.EventRouter,
-	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify) *Mempool {
+	txTracker interfaces.TransactionTrackerInterface, zkVerify *zkverify.ZkVerify, txStore store.TxStore) *Mempool {
 	return &Mempool{
 		txs:               make(map[string]*transaction.Transaction, maxSize),
 		txOrder:           make([]string, 0, maxSize),
@@ -57,6 +62,7 @@ func NewMempool(maxSize int, broadcaster interfaces.Broadcaster, ledger interfac
 		eventRouter:  eventRouter,
 		txTracker:    txTracker,
 		zkVerify:     zkVerify,
+		txStore:      txStore,
 	}
 }
 
@@ -185,6 +191,52 @@ func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	return nil
 }
 
+func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
+	var content types.UserContent
+	if err := json.Unmarshal([]byte(tx.ExtraInfo), &content); err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+	}
+
+	// Check required fields
+	if strings.TrimSpace(content.Type) == "" ||
+		strings.TrimSpace(content.Title) == "" ||
+		strings.TrimSpace(content.Description) == "" {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentMissingRequiredFields)
+	}
+
+	// If content is root => don't need to validate further
+	if content.ParentHash == "" && content.RootHash == "" {
+		return nil
+	}
+
+	// If not root => parentHash and rootHash must be present
+	if content.ParentHash == "" || content.RootHash == "" {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+	}
+
+	parentTx, err := mp.txStore.GetByHash(content.ParentHash)
+	if err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentParentNotFound)
+	}
+
+	if parentTx.Type != transaction.TxTypeUserContent ||
+		parentTx.Sender != tx.Sender ||
+		parentTx.Recipient != tx.Recipient {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+	}
+
+	latest, err := mp.txStore.GetLatestVersionContentHash(content.RootHash)
+	if err != nil {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentRootNotFound)
+	}
+
+	if latest != content.ParentHash {
+		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentVersionConflict)
+	}
+
+	return nil
+}
+
 // Cheap validate before acquire write lock
 func (mp *Mempool) cheapValidateTransaction(tx *transaction.Transaction) error {
 	// Validate amount
@@ -238,8 +290,12 @@ func (mp *Mempool) validateTransaction(tx *transaction.Transaction) error {
 		return err
 	}
 
-	// Skip balance check for user content
+	// Validate user content and skip balance check
 	if tx.Type == transaction.TxTypeUserContent {
+		if err := mp.validateUserContent(tx); err != nil {
+			monitoring.RecordRejectedTx(monitoring.TxInvalidUserContent)
+			return err
+		}
 		return nil
 	}
 

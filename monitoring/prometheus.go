@@ -14,6 +14,7 @@ type TxRejectedReason string
 
 var (
 	TxInvalidSignature    TxRejectedReason = "invalid_signature"
+	TxInvalidUserContent  TxRejectedReason = "invalid_user_content"
 	TxSenderNotExist      TxRejectedReason = "sender_not_exist"
 	TxInvalidNonce        TxRejectedReason = "invalid_nonce"
 	TxTooManyPending      TxRejectedReason = "too_many_pending"
