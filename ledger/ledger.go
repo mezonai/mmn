@@ -164,7 +164,6 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 			if content.RootHash != "" {
 				rootContentHashes[content.RootHash] = struct{}{}
 			}
-			continue
 		} else {
 			if err = applyTx(state, tx); err != nil {
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
@@ -202,11 +201,6 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 			continue
 		}
 		txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
-
-		// Remove transaction from tracker
-		if l.txTracker != nil && !isListener {
-			l.txTracker.RemoveTransaction(content.Hash())
-		}
 	}
 
 	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionContentHashMap); err != nil {
