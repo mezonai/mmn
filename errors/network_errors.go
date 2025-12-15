@@ -51,6 +51,7 @@ func (e *NetworkError) Error() string {
 const (
 	ErrMsgInvalidRequest                   = "Request format is invalid"
 	ErrMsgInvalidTransaction               = "Transaction data is invalid"
+	ErrMsgInvalidTransactionAddress        = "Transaction address is invalid"
 	ErrMsgInvalidSignature                 = "Transaction signature is invalid"
 	ErrMsgInvalidAddress                   = "Wallet address is invalid"
 	ErrMsgInvalidAmount                    = "Amount is invalid or zero"

@@ -1,10 +1,12 @@
 package validation
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"testing"
 
 	"github.com/mezonai/mmn/errors"
+	"github.com/mr-tron/base58"
 )
 
 func TestValidateShortTextLength(t *testing.T) {
@@ -146,6 +148,55 @@ func TestValidateLongTextLength(t *testing.T) {
 
 			if netErr.Message != tt.wantMsg {
 				t.Fatalf("expected message %q, got %q", tt.wantMsg, netErr.Message)
+			}
+		})
+	}
+}
+
+func TestValidateTxAddress(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    bool
+	}{
+		{
+			name: "valid ed25519 public key",
+			address: func() string {
+				pub, _, _ := ed25519.GenerateKey(nil)
+				return base58.Encode(pub)
+			}(),
+			want: true,
+		},
+		{
+			name:    "invalid base58 string",
+			address: "%%%not-base58%%%",
+			want:    false,
+		},
+		{
+			name: "invalid curve point",
+			address: func() string {
+				invalid := make([]byte, 32)
+				for i := 0; i < 32; i++ {
+					invalid[i] = byte(i*7 + 3)
+				}
+				return base58.Encode(invalid)
+			}(),
+			want: false,
+		},
+		{
+			name: "wrong length (not 32 bytes)",
+			address: func() string {
+				return base58.Encode([]byte{1, 2, 3})
+			}(),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ValidateTxAddress(tt.address)
+			if got != tt.want {
+				t.Fatalf("ValidateTxAddress(%q) = %v, want %v", tt.address, got, tt.want)
 			}
 		})
 	}

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"filippo.io/edwards25519"
 	"github.com/mezonai/mmn/errors"
+	"github.com/mr-tron/base58"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -55,4 +57,26 @@ func ValidateLongTextLength(fieldName, fieldValue string) error {
 	}
 
 	return nil
+}
+
+func ValidateTxAddress(addr string) bool {
+	pubKey, err := base58.Decode(addr)
+	if err != nil {
+		return false
+	}
+
+	if len(pubKey) != addressDecodedExpectedLength {
+		return false
+	}
+
+	if _, err = new(edwards25519.Point).SetBytes(pubKey); err != nil {
+		return false
+	}
+
+	return true
+}
+
+func ShouldValidateAddress(extraInfoType string) bool {
+	_, needValidate := TxExtraInfoTypeNeedValidateAddress[extraInfoType]
+	return needValidate
 }
