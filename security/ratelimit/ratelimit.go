@@ -25,7 +25,6 @@ func DefaultConfig() *RateLimiterConfig {
 }
 
 type RateLimiterData struct {
-	mu       sync.Mutex
 	limiter  *rate.Limiter
 	lastSeen time.Time
 }
@@ -60,6 +59,8 @@ func (rl *RateLimiter) IsAllowed(key string) bool {
 	now := time.Now()
 
 	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
 	data, exists := rl.requests[key]
 	if !exists {
 		limiter := rate.NewLimiter(rate.Every(rl.config.WindowSize/time.Duration(rl.config.MaxRequests)), rl.config.MaxRequests)
@@ -69,10 +70,7 @@ func (rl *RateLimiter) IsAllowed(key string) bool {
 		}
 		rl.requests[key] = data
 	}
-	rl.mu.Unlock()
 
-	data.mu.Lock()
-	defer data.mu.Unlock()
 	data.lastSeen = now
 	return data.limiter.Allow()
 }
@@ -100,11 +98,7 @@ func (rl *RateLimiter) cleanup() {
 	defer rl.mu.Unlock()
 
 	for key, data := range rl.requests {
-		data.mu.Lock()
-		expired := data.lastSeen.Before(cutoff)
-		data.mu.Unlock()
-
-		if expired {
+		if data.lastSeen.Before(cutoff) {
 			delete(rl.requests, key)
 		}
 	}
