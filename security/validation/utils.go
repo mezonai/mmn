@@ -56,3 +56,14 @@ func ValidateLongTextLength(fieldName, fieldValue string) error {
 
 	return nil
 }
+
+func HasDuplicateStrings(arr []string) bool {
+	seen := make(map[string]struct{})
+	for _, str := range arr {
+		if _, exists := seen[str]; exists {
+			return true
+		}
+		seen[str] = struct{}{}
+	}
+	return false
+}
