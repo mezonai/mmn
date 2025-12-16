@@ -341,12 +341,7 @@ func (l *Ledger) validateUserContent(tx *transaction.Transaction, hashRelatedCon
 		}
 
 		for _, refTxHash := range content.ReferenceTxHashes {
-			refContentTx, exists := hashRelatedContentTx[refTxHash]
-			if !exists {
-				return fmt.Errorf("user content data is invalid")
-			}
-
-			if refContentTx.Sender != tx.Recipient && refContentTx.Recipient != tx.Recipient {
+			if _, exists := hashRelatedContentTx[refTxHash]; !exists {
 				return fmt.Errorf("user content data is invalid")
 			}
 		}

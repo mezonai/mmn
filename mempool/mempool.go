@@ -248,12 +248,6 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 		if len(referenceTxs) != len(referenceTxHashes) {
 			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
 		}
-
-		for _, referenceTx := range referenceTxs {
-			if referenceTx.Sender != tx.Recipient && referenceTx.Recipient != tx.Recipient {
-				return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
-			}
-		}
 	}
 
 	return nil
