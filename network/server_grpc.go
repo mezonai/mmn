@@ -178,6 +178,14 @@ func limitRequestSizeUnaryInterceptor(defaultLimit, extendedLimit int, specialMe
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
+	if in.TxMsg.Type == transaction.TxTypeUserContent {
+		clientIP := extractClientIP(ctx)
+		if !s.userContentRateLimiter.IsAllowed(clientIP) {
+			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
+			return &pb.AddTxResponse{Ok: false, Error: "Too many requests for user content transactions"}, nil
+		}
+	}
+
 	shortFields := map[string]string{
 		validation.SenderField:    in.TxMsg.Sender,
 		validation.RecipientField: in.TxMsg.Recipient,
@@ -199,14 +207,6 @@ func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxRespon
 	for name, val := range longFields {
 		if err := validation.ValidateLongTextLength(name, val); err != nil {
 			return &pb.AddTxResponse{Ok: false, Error: err.Error()}, nil
-		}
-	}
-
-	if in.TxMsg.Type == transaction.TxTypeUserContent {
-		clientIP := extractClientIP(ctx)
-		if !s.userContentRateLimiter.IsAllowed(clientIP) {
-			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
-			return &pb.AddTxResponse{Ok: false, Error: "Too many requests for user content transactions"}, nil
 		}
 	}
 

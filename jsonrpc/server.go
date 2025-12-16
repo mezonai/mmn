@@ -26,10 +26,6 @@ import (
 	"github.com/mezonai/mmn/transaction"
 )
 
-const (
-	clientIPKey = "clientIP"
-)
-
 // --- Error type used by handlers ---
 
 type jsonRPCRequest struct {
@@ -231,7 +227,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 			clientIP := extractClientIPFromRequest(r)
-			ctx := context.WithValue(r.Context(), clientIPKey, clientIP)
+			ctx := context.WithValue(r.Context(), validation.ClientIPKey, clientIP)
 			r = r.WithContext(ctx)
 			req := parseJSONRPCRequest(bodyBytes)
 			if req == nil {
@@ -274,7 +270,7 @@ func (s *Server) SetCORSConfig(config *CORSConfig) {
 func (s *Server) buildMethodMap() handler.Map {
 	return handler.Map{
 		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			clientIP, _ := ctx.Value(clientIPKey).(string)
+			clientIP, _ := ctx.Value(validation.ClientIPKey).(string)
 			res := s.rpcAddTx(&p, clientIP)
 			if res == nil {
 				return nil, nil
@@ -339,6 +335,13 @@ func (s *Server) buildMethodMap() handler.Map {
 // --- Implementations ---
 
 func (s *Server) rpcAddTx(p *signedTxParams, clientIP string) interface{} {
+	if p.TxMsg.Type == transaction.TxTypeUserContent {
+		if !s.userContentRateLimiter.IsAllowed(clientIP) {
+			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
+			return &addTxResponse{Ok: false, Error: "Too many requests for user content transactions"}
+		}
+	}
+
 	shortFields := map[string]string{
 		validation.SenderField:    p.TxMsg.Sender,
 		validation.RecipientField: p.TxMsg.Recipient,
@@ -362,13 +365,6 @@ func (s *Server) rpcAddTx(p *signedTxParams, clientIP string) interface{} {
 	for fieldName, fieldValue := range longFields {
 		if err := validation.ValidateLongTextLength(fieldName, fieldValue); err != nil {
 			return &addTxResponse{Ok: false, Error: err.Error()}
-		}
-	}
-
-	if p.TxMsg.Type == transaction.TxTypeUserContent {
-		if !s.userContentRateLimiter.IsAllowed(clientIP) {
-			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
-			return &addTxResponse{Ok: false, Error: "Too many requests for user content transactions"}
 		}
 	}
 
