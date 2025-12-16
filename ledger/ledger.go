@@ -190,7 +190,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 			}
 		}
 
-		// Remove successful transaction from tracker
+		// Remove transaction from tracker
 		if l.txTracker != nil && !isListener {
 			l.txTracker.RemoveTransaction(txHash)
 		}
