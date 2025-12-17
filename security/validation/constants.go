@@ -23,6 +23,8 @@ const (
 	ZkPubField     = "zk_pub"
 	SignatureField = "signature"
 
+	// Max ReferenceTxHashes in UserContent transaction
+	MaxReferenceTxs = 10
 	ClientIPKey = "clientIP"
 )
 
