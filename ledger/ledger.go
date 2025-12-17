@@ -306,6 +306,12 @@ func (l *Ledger) validateUserContent(tx *transaction.Transaction, hashRelatedCon
 		return fmt.Errorf("user content required fields are missing")
 	}
 
+	if validation.ShouldValidateAddress(content.Type) {
+		if !validation.ValidateTxAddress(tx.Recipient) {
+			return fmt.Errorf("transaction address is invalid")
+		}
+	}
+
 	if content.ParentHash == "" && content.RootHash == "" {
 		latestVersionContentHashMap[tx.Hash()] = tx.Hash()
 		return nil

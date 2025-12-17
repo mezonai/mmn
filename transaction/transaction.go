@@ -16,6 +16,16 @@ import (
 )
 
 const (
+	TransactionExtraInfoDongGiveCoffee       = "dong-give-coffee"
+	TransactionExtraInfoGiveCoffee           = "give-coffee"
+	TransactionExtraInfoDonationCampaign     = "donation-campaign"
+	TransactionExtraInfoWithdrawCampaign     = "withdraw-campaign"
+	TransactionExtraInfoLuckyMoney           = "lucky-money"
+	TransactionExtraInfoTokenTransfer        = "token-transfer"
+	TransactionExtraInfoDonationCampaignFeed = "donation-campaign-feed"
+)
+
+const (
 	TxTypeTransferByZk  = 0
 	TxTypeTransferByKey = 1
 	TxTypeUserContent   = 2

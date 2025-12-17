@@ -205,6 +205,13 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentMissingRequiredFields)
 	}
 
+	// Validate address if needed
+	if validation.ShouldValidateAddress(content.Type) {
+		if !validation.ValidateTxAddress(tx.Recipient) {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidTransactionAddress)
+		}
+	}
+
 	// If content is root => don't need to validate further
 	if content.ParentHash == "" && content.RootHash == "" {
 		return nil
