@@ -390,6 +390,14 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	rateLimiter := ratelimit.NewGlobalRateLimiterWithAbuseDetector(rateLimiterConfig, abuseDetector)
 	defer rateLimiter.Stop()
 
+	userContentRateLimiterCfg := &ratelimit.RateLimiterConfig{
+		MaxRequests:     1,
+		WindowSize:      time.Second,
+		CleanupInterval: 5 * time.Minute,
+	}
+	userContentRateLimiter := ratelimit.NewRateLimiter(userContentRateLimiterCfg)
+	defer userContentRateLimiter.Stop()
+
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
 	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
 	acctSvc := service.NewAccountService(ld, bs, txTracker)
@@ -405,6 +413,7 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 		mp,
 		eventRouter,
 		rateLimiter,
+		userContentRateLimiter,
 		enableRateLimit,
 		txSvc,
 		acctSvc,
@@ -412,7 +421,7 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	)
 	_ = grpcSrv // Keep server running
 
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, enableRateLimit)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, userContentRateLimiter, enableRateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {
