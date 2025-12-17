@@ -336,7 +336,7 @@ func (l *Ledger) validateUserContent(tx *transaction.Transaction, hashRelatedCon
 	}
 
 	if len(content.ReferenceTxHashes) > 0 {
-		if validation.HasDuplicateStrings(content.ReferenceTxHashes) {
+		if len(content.ReferenceTxHashes) > validation.MaxReferenceTxs {
 			return fmt.Errorf("user content data is invalid")
 		}
 

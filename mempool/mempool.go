@@ -237,7 +237,7 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 
 	if len(content.ReferenceTxHashes) > 0 {
 		referenceTxHashes := content.ReferenceTxHashes
-		if validation.HasDuplicateStrings(referenceTxHashes) {
+		if len(referenceTxHashes) > validation.MaxReferenceTxs {
 			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
 		}
 

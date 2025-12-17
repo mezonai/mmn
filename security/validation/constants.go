@@ -22,6 +22,9 @@ const (
 	ZkProofField   = "zk_proof"
 	ZkPubField     = "zk_pub"
 	SignatureField = "signature"
+
+	// Max ReferenceTxHashes in UserContent transaction
+	MaxReferenceTxs = 10
 )
 
 // LargeRequestMethods - set of gRPC methods that allow large request body
