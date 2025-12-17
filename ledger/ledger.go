@@ -12,6 +12,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/store"
 
 	"github.com/mezonai/mmn/block"
@@ -288,6 +289,12 @@ func (l *Ledger) validateUserContent(tx *transaction.Transaction, parentContentT
 		strings.TrimSpace(content.Title) == "" ||
 		strings.TrimSpace(content.Description) == "" {
 		return fmt.Errorf("user content required fields are missing")
+	}
+
+	if validation.ShouldValidateAddress(content.Type) {
+		if !validation.ValidateTxAddress(tx.Recipient) {
+			return fmt.Errorf("transaction address is invalid")
+		}
 	}
 
 	if content.ParentHash == "" && content.RootHash == "" {

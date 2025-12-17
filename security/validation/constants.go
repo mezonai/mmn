@@ -41,3 +41,7 @@ var InjectionPatterns = []string{
 var SkipSendEventTxTypes = map[int32]struct{}{
 	transaction.TxTypeUserContent: {},
 }
+
+var TxExtraInfoTypeNeedValidateAddress = map[string]struct{}{
+	transaction.TransactionExtraInfoDonationCampaignFeed: {},
+}

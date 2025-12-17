@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"filippo.io/edwards25519"
+
 	"github.com/mr-tron/base58"
 )
 
@@ -94,7 +96,44 @@ func Verify(tx *Tx, sig string) bool {
 	return ed25519.Verify(pubKey, txHash, userSig.Sig)
 }
 
+func ValidateTxAddresses(tx *Tx) bool {
+	// Only validate address for user content transactions
+	if tx.Type != TxTypeUserContent {
+		return true
+	}
+
+	var content UserContent
+	if err := json.Unmarshal([]byte(tx.ExtraInfo), &content); err != nil {
+		return false
+	}
+
+	// Only validate address for specific content types
+	if !shouldValidateAddress(content.Type) {
+		return true
+	}
+
+	recipientPK, err := base58.Decode(tx.Recipient)
+	if err != nil {
+		return false
+	}
+
+	if len(recipientPK) != addressDecodedExpectedLength {
+		return false
+	}
+
+	if _, err = new(edwards25519.Point).SetBytes(recipientPK); err != nil {
+		return false
+	}
+
+	return true
+}
+
 func GenerateAddress(input string) string {
 	sum := sha256.Sum256([]byte(input))
 	return base58.Encode(sum[:])
+}
+
+func shouldValidateAddress(txExtraInfoType string) bool {
+	_, exists := txExtraInfoTypeNeedValidateAddress[txExtraInfoType]
+	return exists
 }
