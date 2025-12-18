@@ -179,7 +179,11 @@ func runNode() {
 		Mode:               mode,
 	}
 
-	txTracker := transaction.NewTransactionTracker()
+	txTracker, err := transaction.NewTransactionTracker()
+	if err != nil {
+		log.Printf("Failed to initialize transaction tracker: %v", err)
+		return
+	}
 
 	ld := ledger.NewLedger(bs, ts, tms, as, eventRouter, txTracker)
 
@@ -206,10 +210,18 @@ func runNode() {
 	}
 
 	// Initialize zk verify
-	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
+	zkVerify, err := zkverify.NewZkVerify(zkVerifyPath)
+	if err != nil {
+		log.Printf("Failed to initialize zk verify: %v", err)
+		return
+	}
 
 	// Initialize dedup service
-	dedupService := mempool.NewDedupService(bs, ts)
+	dedupService, err := mempool.NewDedupService(bs, ts)
+	if err != nil {
+		log.Printf("Failed to initialize dedup service: %v", err)
+		return
+	}
 
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify, ts)

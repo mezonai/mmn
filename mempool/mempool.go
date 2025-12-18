@@ -185,7 +185,12 @@ func (mp *Mempool) validateNonce(txs []*transaction.Transaction) error {
 
 func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	for _, tx := range txs {
-		if mp.dedupService.IsDuplicate(tx.DedupHash()) {
+		exists, err := mp.dedupService.IsDuplicate(tx.DedupHash())
+		if err != nil {
+			logx.Error("MEMPOOL", fmt.Sprintf("Error checking duplicate tx: %v", err))
+			return err
+		}
+		if exists {
 			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 		}
 	}
@@ -368,7 +373,7 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 	mp.mu.Unlock()
 
 	monitoring.SetMempoolSize(mp.Size())
-	mp.dedupService.Add(slot, dedupTxHashes)
+	mp.dedupService.Add(dedupTxHashes)
 
 	if mp.txTracker != nil && len(result) > 0 {
 		for _, tx := range result {

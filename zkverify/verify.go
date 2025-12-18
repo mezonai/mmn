@@ -3,73 +3,62 @@ package zkverify
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/allegro/bigcache"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
-	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 )
 
-const (
-	CacheExpiryDuration   = 30 * time.Minute
-	CleanerInterval       = 10 * time.Minute
-)
-
-type CacheEntry struct {
-	value    bool
-	expireAt time.Time
-}
-
 type ZkVerify struct {
-	vk    groth16.VerifyingKey
-	cache sync.Map // map[string]CacheEntry
+	vk      groth16.VerifyingKey
+	zkCache *bigcache.BigCache
 }
 
-func NewZkVerify(keyPath string) *ZkVerify {
+func NewZkVerify(keyPath string) (*ZkVerify, error) {
 	vkB64, err := os.ReadFile(keyPath)
 	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to read zk verifying key: %v", err))
-		return nil
+		return nil, err
 	}
 	vkBytes, err := base64.StdEncoding.DecodeString(string(vkB64))
 	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to decode zk verifying key: %v", err))
-		return nil
+		return nil, err
 	}
 	vk := groth16.NewVerifyingKey(ecc.BN254)
 	if _, err := vk.ReadFrom(bytes.NewReader(vkBytes)); err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to read set verifying key: %v", err))
-		return nil
+		return nil, err
 	}
 
-	zv := &ZkVerify{vk: vk}
-	exception.SafeGoWithPanic("ZkVerifyCleaner", func() {
-		zv.cleaner()
-	})
-	return zv
-}
-
-func (v *ZkVerify) cleaner() {
-	ticker := time.NewTicker(CleanerInterval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		now := time.Now()
-		v.cache.Range(func(key, value interface{}) bool {
-			entry := value.(CacheEntry)
-			if now.After(entry.expireAt) {
-				v.cache.Delete(key)
-			}
-			return true
-		})
+	cacheConfig := bigcache.Config{
+		Shards:           128,
+		LifeWindow:       30 * time.Minute,
+		CleanWindow:      10 * time.Minute,
+		MaxEntrySize:     64,
+		Verbose:          false,
+		HardMaxCacheSize: 0,
 	}
+	zkCache, err := bigcache.NewBigCache(cacheConfig)
+	if err != nil {
+		logx.Error("ZkVerify", fmt.Sprintf("Failed to create bigcache: %v", err))
+		return nil, err
+	}
+
+	zv := &ZkVerify{
+		vk:      vk,
+		zkCache: zkCache,
+	}
+
+	return zv, nil
 }
 
 func makeCacheKey(sender, pubKey, proofB64, pubB64 string) string {
@@ -79,17 +68,18 @@ func makeCacheKey(sender, pubKey, proofB64, pubB64 string) string {
 func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
 	cacheKey := makeCacheKey(sender, pubKey, proofB64, pubB64)
 
-	if val, ok := v.cache.Load(cacheKey); ok {
-		entry := val.(CacheEntry)
-		return entry.value
+	cacheBytes, err := v.zkCache.Get(cacheKey)
+	if err == nil {
+		var cacheResult bool
+		if err := json.Unmarshal(cacheBytes, &cacheResult); err == nil {
+			return cacheResult
+		}
 	}
 
 	result := v.verifyInternal(sender, pubKey, proofB64, pubB64)
 
-	v.cache.Store(cacheKey, CacheEntry{
-		value:    result,
-		expireAt: time.Now().Add(CacheExpiryDuration),
-	})
+	resultBytes, _ := json.Marshal(result)
+	v.zkCache.Set(cacheKey, resultBytes)
 
 	return result
 }
@@ -101,7 +91,7 @@ func (v *ZkVerify) verifyInternal(sender, pubKey, proofB64, pubB64 string) bool 
 		return false
 	}
 	proof := groth16.NewProof(ecc.BN254)
-	_, err = proof.ReadFrom(bytes.NewReader(proofBytes));
+	_, err = proof.ReadFrom(bytes.NewReader(proofBytes))
 	if err != nil {
 		logx.Error("ZkVerify", fmt.Sprintf("Failed to read proof: %v", err))
 		return false
