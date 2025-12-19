@@ -12,6 +12,7 @@ import (
 	"github.com/mezonai/mmn/errors"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/monitoring"
+	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/types"
 	"github.com/mezonai/mmn/zkverify"
@@ -204,6 +205,13 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentMissingRequiredFields)
 	}
 
+	// Validate address if needed
+	if validation.ShouldValidateAddress(content.Type) {
+		if !validation.ValidateTxAddress(tx.Recipient) {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidTransactionAddress)
+		}
+	}
+
 	// If content is root => don't need to validate further
 	if content.ParentHash == "" && content.RootHash == "" {
 		return nil
@@ -232,6 +240,21 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 
 	if latest != content.ParentHash {
 		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentVersionConflict)
+	}
+
+	if len(content.ReferenceTxHashes) > 0 {
+		referenceTxHashes := content.ReferenceTxHashes
+		if len(referenceTxHashes) > validation.MaxReferenceTxs {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+		}
+
+		referenceTxs, err := mp.txStore.GetBatch(referenceTxHashes)
+		if err != nil {
+			return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
+		}
+		if len(referenceTxs) != len(referenceTxHashes) {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+		}
 	}
 
 	return nil

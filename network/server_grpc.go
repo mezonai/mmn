@@ -34,30 +34,33 @@ type server struct {
 	pb.UnimplementedTxServiceServer
 	pb.UnimplementedAccountServiceServer
 	pb.UnimplementedHealthServiceServer
-	ledger      *ledger.Ledger
-	selfID      string
-	validator   *validator.Validator
-	blockStore  store.BlockStore
-	mempool     *mempool.Mempool
-	eventRouter *events.EventRouter          // Event router for complex event logic
-	rateLimiter *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
-	txSvc       interfaces.TxService
-	acctSvc     interfaces.AccountService
-	healthSvc   interfaces.HealthService
+	ledger                 *ledger.Ledger
+	selfID                 string
+	validator              *validator.Validator
+	blockStore             store.BlockStore
+	mempool                *mempool.Mempool
+	eventRouter            *events.EventRouter          // Event router for complex event logic
+	rateLimiter            *ratelimit.GlobalRateLimiter // Rate limiter for transaction submission protection
+	userContentRateLimiter *ratelimit.RateLimiter
+	txSvc                  interfaces.TxService
+	acctSvc                interfaces.AccountService
+	healthSvc              interfaces.HealthService
 }
 
-func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator.Validator, blockStore store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter, rateLimiter *ratelimit.GlobalRateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
+func NewGRPCServer(addr string, ld *ledger.Ledger, selfID string, val *validator.Validator, blockStore store.BlockStore, mp *mempool.Mempool, eventRouter *events.EventRouter,
+	rateLimiter *ratelimit.GlobalRateLimiter, userContentRateLimiter *ratelimit.RateLimiter, enableRateLimit bool, txSvc interfaces.TxService, acctSvc interfaces.AccountService, healthSvc interfaces.HealthService) *grpc.Server {
 	s := &server{
-		ledger:      ld,
-		selfID:      selfID,
-		blockStore:  blockStore,
-		validator:   val,
-		mempool:     mp,
-		eventRouter: eventRouter,
-		rateLimiter: rateLimiter,
-		txSvc:       txSvc,
-		acctSvc:     acctSvc,
-		healthSvc:   healthSvc,
+		ledger:                 ld,
+		selfID:                 selfID,
+		blockStore:             blockStore,
+		validator:              val,
+		mempool:                mp,
+		eventRouter:            eventRouter,
+		rateLimiter:            rateLimiter,
+		userContentRateLimiter: userContentRateLimiter,
+		txSvc:                  txSvc,
+		acctSvc:                acctSvc,
+		healthSvc:              healthSvc,
 	}
 
 	// Initialize shared services
@@ -175,6 +178,14 @@ func limitRequestSizeUnaryInterceptor(defaultLimit, extendedLimit int, specialMe
 }
 
 func (s *server) AddTx(ctx context.Context, in *pb.SignedTxMsg) (*pb.AddTxResponse, error) {
+	if in.TxMsg.Type == transaction.TxTypeUserContent {
+		clientIP := extractClientIP(ctx)
+		if !s.userContentRateLimiter.IsAllowed(clientIP) {
+			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
+			return &pb.AddTxResponse{Ok: false, Error: "Too many requests for user content transactions"}, nil
+		}
+	}
+
 	shortFields := map[string]string{
 		validation.SenderField:    in.TxMsg.Sender,
 		validation.RecipientField: in.TxMsg.Recipient,

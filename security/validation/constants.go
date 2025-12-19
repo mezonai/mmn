@@ -22,6 +22,10 @@ const (
 	ZkProofField   = "zk_proof"
 	ZkPubField     = "zk_pub"
 	SignatureField = "signature"
+
+	// Max ReferenceTxHashes in UserContent transaction
+	MaxReferenceTxs = 10
+	ClientIPKey = "clientIP"
 )
 
 // LargeRequestMethods - set of gRPC methods that allow large request body
@@ -40,4 +44,8 @@ var InjectionPatterns = []string{
 // SkipSendEventTxTypes is a set of transaction types for which events should be skipped
 var SkipSendEventTxTypes = map[int32]struct{}{
 	transaction.TxTypeUserContent: {},
+}
+
+var TxExtraInfoTypeNeedValidateAddress = map[string]struct{}{
+	transaction.TransactionExtraInfoDonationCampaignFeed: {},
 }
