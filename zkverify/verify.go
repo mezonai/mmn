@@ -79,7 +79,10 @@ func (v *ZkVerify) Verify(sender, pubKey, proofB64, pubB64 string) bool {
 	result := v.verifyInternal(sender, pubKey, proofB64, pubB64)
 
 	resultBytes, _ := json.Marshal(result)
-	v.zkCache.Set(cacheKey, resultBytes)
+	err = v.zkCache.Set(cacheKey, resultBytes)
+	if err != nil {
+		logx.Error("ZkVerify", fmt.Sprintf("Failed to set cache: %v", err))
+	}
 
 	return result
 }

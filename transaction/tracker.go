@@ -60,6 +60,8 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 	if _, err := t.removedTxCache.Get(txHash); err == nil {
 		t.removedTxCache.Delete(txHash)
 		return
+	} else if err != bigcache.ErrEntryNotFound {
+		logx.Error("TRACKER", fmt.Sprintf("Failed to get removedTxCache for transaction %s: %v", txHash, err))
 	}
 
 	_, loadedProcessing := t.processingTxs.LoadOrStore(txHash, tx)
@@ -76,7 +78,10 @@ func (t *TransactionTracker) TrackProcessingTransaction(tx *Transaction) {
 func (t *TransactionTracker) RemoveTransaction(txHash string) {
 	txInterface, exists := t.processingTxs.LoadAndDelete(txHash)
 	if !exists {
-		t.removedTxCache.Set(txHash, []byte{1})
+		err := t.removedTxCache.Set(txHash, []byte{1})
+		if err != nil {
+			logx.Error("TRACKER", fmt.Sprintf("Failed to set removedTxCache for transaction %s: %v", txHash, err))
+		}
 		logx.Warn("TRACKER", fmt.Sprintf("Transaction %s does not exist in processingTxs", txHash))
 		return
 	}

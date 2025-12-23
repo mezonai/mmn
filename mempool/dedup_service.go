@@ -90,12 +90,16 @@ func (ds *DedupService) IsDuplicate(txDedupHash string) (bool, error) {
 	case bigcache.ErrEntryNotFound:
 		return false, nil
 	default:
+		logx.Error("DEDUP SERVICE:IS DUPLICATE", "Error: ", err)
 		return false, err
 	}
 }
 
 func (ds *DedupService) Add(txDedupHashes []string) {
 	for _, txDedupHash := range txDedupHashes {
-		ds.txDedupHashesCache.Set(txDedupHash, []byte{1})
+		err := ds.txDedupHashesCache.Set(txDedupHash, []byte{1})
+		if err != nil {
+			logx.Error("DEDUP SERVICE:ADD", "Error: ", err)
+		}
 	}
 }
