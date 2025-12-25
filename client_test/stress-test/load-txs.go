@@ -692,12 +692,6 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 
 // Send a transfer transaction from sender to receiver
 func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, errType ErrType) {
-	select {
-	case <-lt.ctx.Done():
-		return
-	default:
-	}
-
 	sender := &lt.accounts[senderIdx]
 	receiver := &lt.accounts[receiverIdx]
 	amount := uint256.NewInt(lt.config.TransferAmount)
@@ -725,7 +719,6 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 
 	case RequestErr:
 		textData = "Injection payload eval(1)  {{ console.log('hacked'); }}"
-
 	}
 
 	mu := lt.getAccountMutex(senderIdx)
