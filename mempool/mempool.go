@@ -217,6 +217,22 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 		}
 	}
 
+	// If there are referenceTxHashes, validate them
+	if len(content.ReferenceTxHashes) > 0 {
+		referenceTxHashes := content.ReferenceTxHashes
+		if len(referenceTxHashes) > validation.MaxReferenceTxs {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+		}
+
+		referenceTxs, err := mp.txStore.GetBatch(referenceTxHashes)
+		if err != nil {
+			return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
+		}
+		if len(referenceTxs) != len(referenceTxHashes) {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+		}
+	}
+
 	// If content is root => don't need to validate further
 	if content.ParentHash == "" && content.RootHash == "" {
 		return nil
@@ -245,21 +261,6 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 
 	if latest != content.ParentHash {
 		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentVersionConflict)
-	}
-
-	if len(content.ReferenceTxHashes) > 0 {
-		referenceTxHashes := content.ReferenceTxHashes
-		if len(referenceTxHashes) > validation.MaxReferenceTxs {
-			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
-		}
-
-		referenceTxs, err := mp.txStore.GetBatch(referenceTxHashes)
-		if err != nil {
-			return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
-		}
-		if len(referenceTxs) != len(referenceTxHashes) {
-			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
-		}
 	}
 
 	return nil
