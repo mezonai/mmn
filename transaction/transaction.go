@@ -23,6 +23,7 @@ const (
 	TransactionExtraInfoLuckyMoney           = "lucky-money"
 	TransactionExtraInfoTransferToken        = "transfer_token"
 	TransactionExtraInfoDonationCampaignFeed = "donation-campaign-feed"
+	TransactionExtraInfoUnlockItem           = "unlock_item"
 )
 
 const (

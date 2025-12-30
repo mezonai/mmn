@@ -367,7 +367,7 @@ func convertExtraInfoToEvent(extraInfo string) string {
 	}
 
 	switch extraInfoMap["type"] {
-	case transaction.TransactionExtraInfoGiveCoffee:
+	case transaction.TransactionExtraInfoGiveCoffee, transaction.TransactionExtraInfoUnlockItem:
 		return extraInfo
 	default:
 		extraInfoMap["type"] = transaction.TransactionExtraInfoTransferToken
