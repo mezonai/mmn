@@ -2,9 +2,9 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -359,11 +359,20 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 }
 
 func convertExtraInfoToEvent(extraInfo string) string {
-	switch {
-	case strings.Contains(extraInfo, transaction.TransactionExtraInfoGiveCoffee):
-		return fmt.Sprintf("{\"type\":\"%s\"}", transaction.MezonTransactionExtraInfoGiveCoffee)
+	var extraInfoMap map[string]string
+
+	err := json.Unmarshal([]byte(extraInfo), &extraInfoMap)
+	if err != nil {
+		return extraInfo
+	}
+
+	switch extraInfoMap["type"] {
+	case transaction.TransactionExtraInfoGiveCoffee:
+		return extraInfo
 	default:
-		return fmt.Sprintf("{\"type\":\"%s\"}", transaction.MezonTransactionExtraInfoTransferToken)
+		extraInfoMap["type"] = transaction.TransactionExtraInfoTransferToken
+		updatedInfo, _ := json.Marshal(extraInfoMap)
+		return string(updatedInfo)
 	}
 }
 
