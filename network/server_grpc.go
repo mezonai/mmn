@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -293,7 +294,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.Transaction().ExtraInfo,
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -309,7 +310,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.TxExtraInfo(),
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -325,7 +326,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.TxExtraInfo(),
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -337,7 +338,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ErrorMessage:  e.ErrorMessage(),
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.TxExtraInfo(),
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -355,6 +356,15 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 	}
 
 	return nil
+}
+
+func convertExtraInfoToEvent(extraInfo string) string {
+	switch {
+	case strings.Contains(extraInfo, transaction.TransactionExtraInfoGiveCoffee):
+		return fmt.Sprintf("{\"type\":\"%s\"}", transaction.MezonTransactionExtraInfoGiveCoffee)
+	default:
+		return fmt.Sprintf("{\"type\":\"%s\"}", transaction.MezonTransactionExtraInfoTransferToken)
+	}
 }
 
 // Health check methods

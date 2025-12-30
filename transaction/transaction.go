@@ -26,6 +26,11 @@ const (
 )
 
 const (
+	MezonTransactionExtraInfoGiveCoffee    = "give_coffee"
+	MezonTransactionExtraInfoTransferToken = "transfer_token"
+)
+
+const (
 	TxTypeTransferByZk  = 0
 	TxTypeTransferByKey = 1
 	TxTypeUserContent   = 2
