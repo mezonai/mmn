@@ -17,12 +17,13 @@ import (
 
 const (
 	TransactionExtraInfoDongGiveCoffee       = "dong-give-coffee"
-	TransactionExtraInfoGiveCoffee           = "give-coffee"
+	TransactionExtraInfoGiveCoffee           = "give_coffee"
 	TransactionExtraInfoDonationCampaign     = "donation-campaign"
 	TransactionExtraInfoWithdrawCampaign     = "withdraw-campaign"
 	TransactionExtraInfoLuckyMoney           = "lucky-money"
-	TransactionExtraInfoTokenTransfer        = "token-transfer"
+	TransactionExtraInfoTransferToken        = "transfer_token"
 	TransactionExtraInfoDonationCampaignFeed = "donation-campaign-feed"
+	TransactionExtraInfoUnlockItem           = "unlock_item"
 )
 
 const (
