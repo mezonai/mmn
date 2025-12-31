@@ -312,6 +312,20 @@ func (l *Ledger) validateUserContent(tx *transaction.Transaction, hashRelatedCon
 		}
 	}
 
+	// Validate reference transactions
+	if len(content.ReferenceTxHashes) > 0 {
+		if len(content.ReferenceTxHashes) > validation.MaxReferenceTxs {
+			return fmt.Errorf("user content data is invalid")
+		}
+
+		for _, refTxHash := range content.ReferenceTxHashes {
+			if _, exists := hashRelatedContentTx[refTxHash]; !exists {
+				return fmt.Errorf("user content data is invalid")
+			}
+		}
+	}
+
+	// Validate parent and root hashes
 	if content.ParentHash == "" && content.RootHash == "" {
 		latestVersionContentHashMap[tx.Hash()] = tx.Hash()
 		return nil
@@ -339,18 +353,6 @@ func (l *Ledger) validateUserContent(tx *transaction.Transaction, hashRelatedCon
 
 	if latestVersionContentHash != content.ParentHash {
 		return fmt.Errorf("parent user content is not the latest version")
-	}
-
-	if len(content.ReferenceTxHashes) > 0 {
-		if len(content.ReferenceTxHashes) > validation.MaxReferenceTxs {
-			return fmt.Errorf("user content data is invalid")
-		}
-
-		for _, refTxHash := range content.ReferenceTxHashes {
-			if _, exists := hashRelatedContentTx[refTxHash]; !exists {
-				return fmt.Errorf("user content data is invalid")
-			}
-		}
 	}
 
 	latestVersionContentHashMap[content.RootHash] = tx.Hash()

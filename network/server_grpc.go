@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"time"
@@ -293,7 +294,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			Status:        pb.TransactionStatus_PENDING,
 			Confirmations: 0, // No confirmations for mempool transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.Transaction().ExtraInfo,
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -309,7 +310,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.TxExtraInfo(),
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -325,7 +326,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			BlockHash:     e.BlockHash(),
 			Confirmations: confirmations,
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.TxExtraInfo(),
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -337,7 +338,7 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 			ErrorMessage:  e.ErrorMessage(),
 			Confirmations: 0, // No confirmations for failed transactions
 			Timestamp:     uint64(e.Timestamp().Unix()),
-			ExtraInfo:     e.TxExtraInfo(),
+			ExtraInfo:     convertExtraInfoToEvent(e.TxExtraInfo()),
 			Amount:        utils.Uint256ToString(e.Transaction().Amount),
 			TextData:      e.Transaction().TextData,
 		}
@@ -355,6 +356,24 @@ func (s *server) convertEventToStatusUpdate(event events.BlockchainEvent, txHash
 	}
 
 	return nil
+}
+
+func convertExtraInfoToEvent(extraInfo string) string {
+	var extraInfoMap map[string]string
+
+	err := json.Unmarshal([]byte(extraInfo), &extraInfoMap)
+	if err != nil {
+		return extraInfo
+	}
+
+	switch extraInfoMap["type"] {
+	case transaction.TransactionExtraInfoGiveCoffee, transaction.TransactionExtraInfoUnlockItem:
+		return extraInfo
+	default:
+		extraInfoMap["type"] = transaction.TransactionExtraInfoTransferToken
+		updatedInfo, _ := json.Marshal(extraInfoMap)
+		return string(updatedInfo)
+	}
 }
 
 // Health check methods

@@ -185,7 +185,12 @@ func (mp *Mempool) validateNonce(txs []*transaction.Transaction) error {
 
 func (mp *Mempool) validateDuplicateTxs(txs []*transaction.Transaction) error {
 	for _, tx := range txs {
-		if mp.dedupService.IsDuplicate(tx.DedupHash()) {
+		exists, err := mp.dedupService.IsDuplicate(tx.DedupHash())
+		if err != nil {
+			logx.Error("MEMPOOL", fmt.Sprintf("Error checking duplicate tx: %v", err))
+			return err
+		}
+		if exists {
 			return errors.NewError(errors.ErrCodeDuplicateTransaction, errors.ErrMsgDuplicateTransaction)
 		}
 	}
@@ -209,6 +214,22 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 	if validation.ShouldValidateAddress(content.Type) {
 		if !validation.ValidateTxAddress(tx.Recipient) {
 			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidTransactionAddress)
+		}
+	}
+
+	// If there are referenceTxHashes, validate them
+	if len(content.ReferenceTxHashes) > 0 {
+		referenceTxHashes := content.ReferenceTxHashes
+		if len(referenceTxHashes) > validation.MaxReferenceTxs {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
+		}
+
+		referenceTxs, err := mp.txStore.GetBatch(referenceTxHashes)
+		if err != nil {
+			return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
+		}
+		if len(referenceTxs) != len(referenceTxHashes) {
+			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
 		}
 	}
 
@@ -240,21 +261,6 @@ func (mp *Mempool) validateUserContent(tx *transaction.Transaction) error {
 
 	if latest != content.ParentHash {
 		return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgUserContentVersionConflict)
-	}
-
-	if len(content.ReferenceTxHashes) > 0 {
-		referenceTxHashes := content.ReferenceTxHashes
-		if len(referenceTxHashes) > validation.MaxReferenceTxs {
-			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
-		}
-
-		referenceTxs, err := mp.txStore.GetBatch(referenceTxHashes)
-		if err != nil {
-			return errors.NewError(errors.ErrCodeInternal, errors.ErrMsgInternal)
-		}
-		if len(referenceTxs) != len(referenceTxHashes) {
-			return errors.NewError(errors.ErrCodeInvalidRequest, errors.ErrMsgInvalidUserContent)
-		}
 	}
 
 	return nil
@@ -368,7 +374,7 @@ func (mp *Mempool) PullBatch(slot uint64, batchSize int) []*transaction.Transact
 	mp.mu.Unlock()
 
 	monitoring.SetMempoolSize(mp.Size())
-	mp.dedupService.Add(slot, dedupTxHashes)
+	mp.dedupService.Add(dedupTxHashes)
 
 	if mp.txTracker != nil && len(result) > 0 {
 		for _, tx := range result {
