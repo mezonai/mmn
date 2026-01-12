@@ -25,10 +25,16 @@ import (
 	"github.com/mezonai/mmn/utils"
 	"github.com/mezonai/mmn/validator"
 
+	vtgrpc "github.com/planetscale/vtprotobuf/codec/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/status"
 )
+
+func init() {
+	encoding.RegisterCodec(vtgrpc.Codec{})
+}
 
 type server struct {
 	pb.UnimplementedBlockServiceServer

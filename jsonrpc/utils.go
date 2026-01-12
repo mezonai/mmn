@@ -1,38 +1,12 @@
 package jsonrpc
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/mezonai/mmn/logx"
 )
-
-// JSON-RPC Method name constants
-const (
-	// Transaction methods
-	MethodTxAddTx                  = "tx.addtx"
-	MethodTxGetTxByHash            = "tx.gettxbyhash"
-	MethodTxGetTransactionStatus   = "tx.gettransactionstatus"
-	MethodTxGetPendingTransactions = "tx.getpendingtransactions"
-
-	// Account methods
-	MethodAccountGetAccount          = "account.getaccount"
-	MethodAccountGetCurrentNonce     = "account.getcurrentnonce"
-	MethodAccountGetAccountByAddress = "account.getaccountbyaddress"
-
-	// Health methods
-	MethodHealthCheck = "health.check"
-)
-
-func parseJSONRPCRequest(body []byte) *jsonRPCRequest {
-	var req jsonRPCRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return nil
-	}
-	return &req
-}
 
 func extractClientIPFromRequest(r *http.Request) string {
 	logx.Debug("Extracting client IP from request headers", "X-Real-IP", r.Header.Get("X-Real-IP"), "X-Forwarded-For", r.Header.Get("X-Forwarded-For"), "RemoteAddr", r.RemoteAddr, "CF-Connecting-IP", r.Header.Get("CF-Connecting-IP"))

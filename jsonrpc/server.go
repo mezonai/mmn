@@ -3,7 +3,6 @@ package jsonrpc
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,151 +11,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/creachadair/jrpc2"
-	"github.com/creachadair/jrpc2/handler"
-	"github.com/creachadair/jrpc2/jhttp"
-	"github.com/mezonai/mmn/errors"
+	"connectrpc.com/connect"
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/interfaces"
-	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/proto/protoconnect"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/transaction"
+	vtgrpc "github.com/planetscale/vtprotobuf/codec/grpc"
 )
-
-// --- Error type used by handlers ---
-
-type jsonRPCRequest struct {
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
-}
-
-type rpcError struct {
-	Code    int         `json:"code"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-}
-
-func toJRPC2Error(e *rpcError) error {
-	if e == nil {
-		return nil
-	}
-	var networkError errors.NetworkError
-	err := jsonx.Unmarshal([]byte(e.Message), &networkError)
-	if err == nil {
-		return jrpc2.Errorf(jrpc2.Code(e.Code), "%s", networkError.Message).WithData(networkError)
-	}
-	return jrpc2.Errorf(jrpc2.Code(e.Code), "%s", e.Message)
-}
-
-// --- Params/Results mirroring proto messages ---
-
-// Tx
-type txMsgParams struct {
-	Type      int32  `json:"type"`
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    string `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce"`
-	ExtraInfo string `json:"extra_info"`
-	ZkProof   string `json:"zk_proof"`
-	ZkPub     string `json:"zk_pub"`
-}
-
-type signedTxParams struct {
-	TxMsg     txMsgParams `json:"tx_msg"`
-	Signature string      `json:"signature"`
-}
-
-type addTxResponse struct {
-	Ok     bool   `json:"ok"`
-	TxHash string `json:"tx_hash"`
-	Error  string `json:"error"`
-}
-
-type getTxByHashRequest struct {
-	TxHash string `json:"tx_hash"`
-}
-
-type txInfo struct {
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    string `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce"`
-	Slot      uint64 `json:"slot"`
-	BlockHash string `json:"blockhash"`
-	Status    int32  `json:"status"`
-	ErrMsg    string `json:"err_msg"`
-	ExtraInfo string `json:"extra_info"`
-	TxHash    string `json:"tx_hash"`
-}
-
-type getTxByHashResponse struct {
-	Error    string  `json:"error"`
-	Tx       *txInfo `json:"tx"`
-	Decimals uint32  `json:"decimals"`
-}
-
-type getPendingTxsResponse struct {
-	TotalCount uint64            `json:"total_count"`
-	PendingTxs []transactionData `json:"pending_txs"`
-	Error      string            `json:"error"`
-}
-
-type transactionData struct {
-	TxHash    string `json:"tx_hash"`
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    string `json:"amount"`
-	Nonce     uint64 `json:"nonce"`
-	Timestamp uint64 `json:"timestamp"`
-	Status    int32  `json:"status"`
-	TextData  string `json:"text_data,omitempty"`
-}
-
-// Account
-type getAccountRequest struct {
-	Address string `json:"address"`
-}
-
-type getAccountResponse struct {
-	Address  string `json:"address"`
-	Balance  string `json:"balance"`
-	Nonce    uint64 `json:"nonce"`
-	Decimals uint32 `json:"decimals"`
-}
-
-type getCurrentNonceRequest struct {
-	Address string `json:"address"`
-	Tag     string `json:"tag"`
-}
-
-type getCurrentNonceResponse struct {
-	Address string `json:"address"`
-	Nonce   uint64 `json:"nonce"`
-	Tag     string `json:"tag"`
-	Error   string `json:"error"`
-}
-
-type HealthCheckResponse struct {
-	Status       int32  `json:"status"`
-	NodeID       string `json:"node_id"`
-	Timestamp    uint64 `json:"timestamp"`
-	CurrentSlot  uint64 `json:"current_slot"`
-	BlockHeight  uint64 `json:"block_height"`
-	MempoolSize  uint64 `json:"mempool_size"`
-	IsLeader     bool   `json:"is_leader"`
-	IsFollower   bool   `json:"is_follower"`
-	Version      string `json:"version"`
-	Uptime       uint64 `json:"uptime"`
-	ErrorMessage string `json:"error_message"`
-}
 
 // --- Server ---
 
@@ -197,10 +62,187 @@ func NewServer(addr string, txSvc interfaces.TxService, acctSvc interfaces.Accou
 	}
 }
 
-func (s *Server) BuildHTTPHandler() http.Handler {
-	methods := s.buildMethodMap()
-	jh := jhttp.NewBridge(methods, &jhttp.BridgeOptions{Server: &jrpc2.ServerOptions{}})
+// TxServiceHandler implements protoconnect.TxServiceHandler
+type TxServiceHandler struct {
+	protoconnect.UnimplementedTxServiceHandler
+	txSvc                  interfaces.TxService
+	userContentRateLimiter *ratelimit.RateLimiter
+}
 
+func NewTxServiceHandler(txSvc interfaces.TxService, userContentRateLimiter *ratelimit.RateLimiter) *TxServiceHandler {
+	return &TxServiceHandler{
+		txSvc:                  txSvc,
+		userContentRateLimiter: userContentRateLimiter,
+	}
+}
+
+func (h *TxServiceHandler) AddTx(ctx context.Context, req *connect.Request[pb.SignedTxMsg]) (*connect.Response[pb.AddTxResponse], error) {
+	p := req.Msg
+	clientIP, _ := ctx.Value(validation.ClientIPKey).(string)
+
+	// Rate limit for user content transactions
+	if p.TxMsg != nil && p.TxMsg.Type == transaction.TxTypeUserContent {
+		if h.userContentRateLimiter != nil && !h.userContentRateLimiter.IsAllowed(clientIP) {
+			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
+			return connect.NewResponse(&pb.AddTxResponse{Ok: false, Error: "Too many requests for user content transactions"}), nil
+		}
+	}
+
+	// Validate fields
+	if p.TxMsg != nil {
+		shortFields := map[string]string{
+			validation.SenderField:    p.TxMsg.Sender,
+			validation.RecipientField: p.TxMsg.Recipient,
+			validation.AmountField:    p.TxMsg.Amount,
+		}
+
+		longFields := map[string]string{
+			validation.TextDataField:  p.TxMsg.TextData,
+			validation.ExtraInfoField: p.TxMsg.ExtraInfo,
+			validation.ZkProofField:   p.TxMsg.ZkProof,
+			validation.ZkPubField:     p.TxMsg.ZkPub,
+			validation.SignatureField: p.Signature,
+		}
+
+		for fieldName, fieldValue := range shortFields {
+			if err := validation.ValidateShortTextLength(fieldName, fieldValue); err != nil {
+				return connect.NewResponse(&pb.AddTxResponse{Ok: false, Error: err.Error()}), nil
+			}
+		}
+
+		for fieldName, fieldValue := range longFields {
+			if err := validation.ValidateLongTextLength(fieldName, fieldValue); err != nil {
+				return connect.NewResponse(&pb.AddTxResponse{Ok: false, Error: err.Error()}), nil
+			}
+		}
+	}
+
+	resp, err := h.txSvc.AddTx(ctx, p)
+	if err != nil {
+		return connect.NewResponse(&pb.AddTxResponse{Ok: false, Error: err.Error()}), nil
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *TxServiceHandler) GetTxByHash(ctx context.Context, req *connect.Request[pb.GetTxByHashRequest]) (*connect.Response[pb.GetTxByHashResponse], error) {
+	txHash := req.Msg.TxHash
+	if err := validation.ValidateShortTextLength(validation.TxHashField, txHash); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	resp, err := h.txSvc.GetTxByHash(ctx, req.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *TxServiceHandler) GetPendingTransactions(ctx context.Context, req *connect.Request[pb.GetPendingTransactionsRequest]) (*connect.Response[pb.GetPendingTransactionsResponse], error) {
+	resp, err := h.txSvc.GetPendingTransactions(ctx, req.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *TxServiceHandler) SubscribeTransactionStatus(ctx context.Context, req *connect.Request[pb.SubscribeTransactionStatusRequest], stream *connect.ServerStream[pb.TransactionStatusInfo]) error {
+	// Not implemented
+	return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("streaming not implemented"))
+}
+
+// AccountServiceHandler implements protoconnect.AccountServiceHandler
+type AccountServiceHandler struct {
+	protoconnect.UnimplementedAccountServiceHandler
+	acctSvc interfaces.AccountService
+}
+
+func NewAccountServiceHandler(acctSvc interfaces.AccountService) *AccountServiceHandler {
+	return &AccountServiceHandler{
+		acctSvc: acctSvc,
+	}
+}
+
+func (h *AccountServiceHandler) GetAccount(ctx context.Context, req *connect.Request[pb.GetAccountRequest]) (*connect.Response[pb.GetAccountResponse], error) {
+	if err := validation.ValidateShortTextLength(validation.AddressField, req.Msg.Address); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	resp, err := h.acctSvc.GetAccount(ctx, req.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *AccountServiceHandler) GetCurrentNonce(ctx context.Context, req *connect.Request[pb.GetCurrentNonceRequest]) (*connect.Response[pb.GetCurrentNonceResponse], error) {
+	if err := validation.ValidateShortTextLength(validation.AddressField, req.Msg.Address); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	tag := req.Msg.Tag
+	if tag != "latest" && tag != "pending" {
+		return connect.NewResponse(&pb.GetCurrentNonceResponse{
+			Address: req.Msg.Address,
+			Nonce:   0,
+			Tag:     tag,
+			Error:   "invalid tag: must be 'latest' or 'pending'",
+		}), nil
+	}
+
+	resp, err := h.acctSvc.GetCurrentNonce(ctx, req.Msg)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// HealthServiceHandler implements protoconnect.HealthServiceHandler
+type HealthServiceHandler struct {
+	protoconnect.UnimplementedHealthServiceHandler
+	healthSvc interfaces.HealthService
+}
+
+func NewHealthServiceHandler(healthSvc interfaces.HealthService) *HealthServiceHandler {
+	return &HealthServiceHandler{
+		healthSvc: healthSvc,
+	}
+}
+
+func (h *HealthServiceHandler) Check(ctx context.Context, req *connect.Request[pb.Empty]) (*connect.Response[pb.HealthCheckResponse], error) {
+	resp, err := h.healthSvc.Check(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (h *HealthServiceHandler) Watch(ctx context.Context, req *connect.Request[pb.Empty], stream *connect.ServerStream[pb.HealthCheckResponse]) error {
+	// Not implemented
+	return connect.NewError(connect.CodeUnimplemented, fmt.Errorf("streaming not implemented"))
+}
+
+func (s *Server) BuildHTTPHandler() http.Handler {
+	mux := http.NewServeMux()
+
+	// Create connect handler options (vtprotobuf codec)
+	opts := []connect.HandlerOption{
+		connect.WithCodec(&vtgrpc.Codec{}),
+	}
+
+	// Register service handlers
+	txHandler := NewTxServiceHandler(s.txSvc, s.userContentRateLimiter)
+	txPath, txHTTPHandler := protoconnect.NewTxServiceHandler(txHandler, opts...)
+	mux.Handle(txPath, txHTTPHandler)
+
+	acctHandler := NewAccountServiceHandler(s.acctSvc)
+	acctPath, acctHTTPHandler := protoconnect.NewAccountServiceHandler(acctHandler, opts...)
+	mux.Handle(acctPath, acctHTTPHandler)
+
+	healthHandler := NewHealthServiceHandler(s.healthSvc)
+	healthPath, healthHTTPHandler := protoconnect.NewHealthServiceHandler(healthHandler, opts...)
+	mux.Handle(healthPath, healthHTTPHandler)
+
+	// Wrap with middleware for CORS, rate limiting, and request size validation
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.setCORSHeaders(w, r)
 		if r.Method == http.MethodOptions {
@@ -208,16 +250,14 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			return
 		}
 
-		if r.Method == http.MethodPost {
-			ct := r.Header.Get("Content-Type")
-			if !strings.HasPrefix(strings.ToLower(ct), "application/json") {
-				http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
-				return
-			}
+		// Determine request body limit based on path
+		bodyLimit := int64(validation.DefaultRequestBodyLimit)
+		if _, ok := validation.LargeRequestMethods[r.URL.Path]; ok {
+			bodyLimit = int64(validation.LargeRequestBodyLimit)
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 
-		r.Body = http.MaxBytesReader(w, r.Body, validation.DefaultRequestBodyLimit)
-
+		// Rate limiting
 		if s.rateLimiter != nil && r.Method == http.MethodPost && s.enableRateLimit {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -229,14 +269,9 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			clientIP := extractClientIPFromRequest(r)
 			ctx := context.WithValue(r.Context(), validation.ClientIPKey, clientIP)
 			r = r.WithContext(ctx)
-			req := parseJSONRPCRequest(bodyBytes)
-			if req == nil {
-				http.Error(w, "invalid request", http.StatusBadRequest)
-				return
-			}
-			logx.Debug("SECURITY", "Client IP:", clientIP, "Method:", req.Method)
+			logx.Debug("SECURITY", "Client IP:", clientIP, "Path:", r.URL.Path)
 			if !s.rateLimiter.IsIPAllowed(clientIP) {
-				logx.Warn("SECURITY", "IP rate limit exceeded:", clientIP, "Method:", req.Method)
+				logx.Warn("SECURITY", "IP rate limit exceeded:", clientIP, "Path:", r.URL.Path)
 				http.Error(w, "Too many requests", http.StatusTooManyRequests)
 				return
 			}
@@ -244,18 +279,20 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 				s.rateLimiter.TrackIPRequest(clientIP)
 			})
 		}
-		jh.ServeHTTP(w, r)
+
+		mux.ServeHTTP(w, r)
 	})
+
 	return h
 }
 
 func (s *Server) Start() {
 	h := s.BuildHTTPHandler()
 	http.Handle("/", h)
-	exception.SafeGoWithPanic("StartJSONRPCServer", func() {
+	exception.SafeGoWithPanic("StartConnectServer", func() {
 		err := http.ListenAndServe(s.addr, nil)
 		if err != nil {
-			logx.Error("JSONRPC SERVER", fmt.Sprintf("Failed to serve JSON-RPC server: %v", err))
+			logx.Error("CONNECT SERVER", fmt.Sprintf("Failed to serve Connect server: %v", err))
 			panic(err)
 		}
 	})
@@ -264,223 +301,6 @@ func (s *Server) Start() {
 // SetCORSConfig allows configuring CORS settings
 func (s *Server) SetCORSConfig(config *CORSConfig) {
 	s.corsConfig = *config
-}
-
-// Build jrpc2 method map
-func (s *Server) buildMethodMap() handler.Map {
-	return handler.Map{
-		MethodTxAddTx: handler.New(func(ctx context.Context, p signedTxParams) (*addTxResponse, error) {
-			clientIP, _ := ctx.Value(validation.ClientIPKey).(string)
-			res := s.rpcAddTx(&p, clientIP)
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*addTxResponse), nil
-		}),
-		MethodTxGetTxByHash: handler.New(func(ctx context.Context, p getTxByHashRequest) (*getTxByHashResponse, error) {
-			res, err := s.rpcGetTxByHash(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*getTxByHashResponse), nil
-		}),
-		MethodTxGetPendingTransactions: handler.New(func(ctx context.Context) (*getPendingTxsResponse, error) {
-			res, err := s.rpcGetPendingTransactions()
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*getPendingTxsResponse), nil
-		}),
-		MethodAccountGetAccount: handler.New(func(ctx context.Context, p getAccountRequest) (*getAccountResponse, error) {
-			res, err := s.rpcGetAccount(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*getAccountResponse), nil
-		}),
-		MethodAccountGetCurrentNonce: handler.New(func(ctx context.Context, p getCurrentNonceRequest) (*getCurrentNonceResponse, error) {
-			res, err := s.rpcGetCurrentNonce(p)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*getCurrentNonceResponse), nil
-		}),
-		MethodHealthCheck: handler.New(func(ctx context.Context) (*HealthCheckResponse, error) {
-			res, err := s.rpcHealthCheck(ctx)
-			if err != nil {
-				return nil, toJRPC2Error(err)
-			}
-			if res == nil {
-				return nil, nil
-			}
-			return res.(*HealthCheckResponse), nil
-		}),
-	}
-}
-
-// Legacy routing removed; jrpc2 handler map is used instead
-
-// --- Implementations ---
-
-func (s *Server) rpcAddTx(p *signedTxParams, clientIP string) interface{} {
-	if p.TxMsg.Type == transaction.TxTypeUserContent {
-		if !s.userContentRateLimiter.IsAllowed(clientIP) {
-			logx.Warn("SECURITY", "User content rate limit exceeded from IP:", clientIP)
-			return &addTxResponse{Ok: false, Error: "Too many requests for user content transactions"}
-		}
-	}
-
-	shortFields := map[string]string{
-		validation.SenderField:    p.TxMsg.Sender,
-		validation.RecipientField: p.TxMsg.Recipient,
-		validation.AmountField:    p.TxMsg.Amount,
-	}
-
-	longFields := map[string]string{
-		validation.TextDataField:  p.TxMsg.TextData,
-		validation.ExtraInfoField: p.TxMsg.ExtraInfo,
-		validation.ZkProofField:   p.TxMsg.ZkProof,
-		validation.ZkPubField:     p.TxMsg.ZkPub,
-		validation.SignatureField: p.Signature,
-	}
-
-	for fieldName, fieldValue := range shortFields {
-		if err := validation.ValidateShortTextLength(fieldName, fieldValue); err != nil {
-			return &addTxResponse{Ok: false, Error: err.Error()}
-		}
-	}
-
-	for fieldName, fieldValue := range longFields {
-		if err := validation.ValidateLongTextLength(fieldName, fieldValue); err != nil {
-			return &addTxResponse{Ok: false, Error: err.Error()}
-		}
-	}
-
-	pbSigned := &pb.SignedTxMsg{
-		TxMsg: &pb.TxMsg{
-			Type:      p.TxMsg.Type,
-			Sender:    p.TxMsg.Sender,
-			Recipient: p.TxMsg.Recipient,
-			Amount:    p.TxMsg.Amount,
-			Timestamp: p.TxMsg.Timestamp,
-			TextData:  p.TxMsg.TextData,
-			Nonce:     p.TxMsg.Nonce,
-			ExtraInfo: p.TxMsg.ExtraInfo,
-			ZkProof:   p.TxMsg.ZkProof,
-			ZkPub:     p.TxMsg.ZkPub,
-		},
-		Signature: p.Signature,
-	}
-	resp, err := s.txSvc.AddTx(context.Background(), pbSigned)
-	if err != nil {
-		return &addTxResponse{Ok: false, Error: err.Error()}
-	}
-	return &addTxResponse{Ok: resp.Ok, TxHash: resp.TxHash, Error: resp.Error}
-}
-
-func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
-	txHash := p.TxHash
-	if err := validation.ValidateShortTextLength(validation.TxHashField, txHash); err != nil {
-		return nil, &rpcError{Code: -32602, Message: err.Error()}
-	}
-
-	resp, err := s.txSvc.GetTxByHash(context.Background(), &pb.GetTxByHashRequest{TxHash: txHash})
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	if resp.Error != "" {
-		return &getTxByHashResponse{Error: resp.Error}, nil
-	}
-	if resp.Tx == nil {
-		return &getTxByHashResponse{Error: "not found"}, nil
-	}
-	info := &txInfo{
-		Sender:    resp.Tx.Sender,
-		Recipient: resp.Tx.Recipient,
-		Amount:    resp.Tx.Amount,
-		Timestamp: resp.Tx.Timestamp,
-		TextData:  resp.Tx.TextData,
-		Nonce:     resp.Tx.Nonce,
-		Slot:      resp.Tx.Slot,
-		BlockHash: resp.Tx.Blockhash,
-		Status:    int32(resp.Tx.Status),
-		ErrMsg:    resp.Tx.ErrMsg,
-		ExtraInfo: resp.Tx.ExtraInfo,
-		TxHash:    resp.Tx.TxHash,
-	}
-	return &getTxByHashResponse{Tx: info, Decimals: resp.Decimals}, nil
-}
-
-func (s *Server) rpcGetPendingTransactions() (interface{}, *rpcError) {
-	resp, err := s.txSvc.GetPendingTransactions(context.Background(), &pb.GetPendingTransactionsRequest{})
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	var out []transactionData
-	for _, t := range resp.PendingTxs {
-		out = append(out, transactionData{
-			TxHash:    t.TxHash,
-			Sender:    t.Sender,
-			Recipient: t.Recipient,
-			Amount:    t.Amount,
-			Nonce:     t.Nonce,
-			Timestamp: t.Timestamp,
-			Status:    int32(t.Status),
-			TextData:  t.TextData,
-		})
-	}
-	return &getPendingTxsResponse{TotalCount: resp.TotalCount, PendingTxs: out, Error: resp.Error}, nil
-}
-
-func (s *Server) rpcGetAccount(p getAccountRequest) (interface{}, *rpcError) {
-	accAddr := p.Address
-	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
-		return nil, &rpcError{Code: -32602, Message: err.Error()}
-	}
-
-	resp, err := s.acctSvc.GetAccount(context.Background(), &pb.GetAccountRequest{Address: accAddr})
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	return &getAccountResponse{Address: resp.Address, Balance: resp.Balance, Nonce: resp.Nonce, Decimals: resp.Decimals}, nil
-}
-
-func (s *Server) rpcGetCurrentNonce(p getCurrentNonceRequest) (interface{}, *rpcError) {
-	accAddr := p.Address
-	tag := p.Tag
-
-	if err := validation.ValidateShortTextLength(validation.AddressField, accAddr); err != nil {
-		return nil, &rpcError{Code: -32602, Message: err.Error()}
-	}
-
-	if tag != "latest" && tag != "pending" {
-		return &getCurrentNonceResponse{Address: accAddr, Nonce: 0, Tag: tag, Error: "invalid tag: must be 'latest' or 'pending'"}, nil
-	}
-	resp, err := s.acctSvc.GetCurrentNonce(context.Background(), &pb.GetCurrentNonceRequest{Address: accAddr, Tag: tag})
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	return &getCurrentNonceResponse{Address: resp.Address, Nonce: resp.Nonce, Tag: resp.Tag, Error: resp.Error}, nil
-}
-
-func (s *Server) rpcHealthCheck(ctx context.Context) (interface{}, *rpcError) {
-	resp, err := s.healthSvc.Check(ctx)
-	if err != nil {
-		return nil, &rpcError{Code: -32000, Message: err.Error()}
-	}
-	return &HealthCheckResponse{Status: int32(resp.Status), NodeID: resp.NodeId, Timestamp: resp.Timestamp, CurrentSlot: resp.CurrentSlot, BlockHeight: resp.BlockHeight, MempoolSize: resp.MempoolSize, IsLeader: resp.IsLeader, IsFollower: resp.IsFollower, Version: resp.Version, Uptime: resp.Uptime, ErrorMessage: resp.ErrorMessage}, nil
 }
 
 // --- Helpers ---
@@ -519,8 +339,6 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Max-Age", fmt.Sprintf("%d", s.corsConfig.MaxAge))
 	}
 }
-
-// Legacy writeError removed
 
 // --- Env helpers ---
 
