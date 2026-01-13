@@ -279,8 +279,24 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 // shouldSendEvent determines if an event should be sent based on its transaction type
 func shouldSendEvent(event events.BlockchainEvent) bool {
 	if event.Transaction() != nil {
-		_, skip := validation.SkipSendEventTxTypes[event.Transaction().Type]
-		return !skip
+		if _, exist := validation.SkipSendEventTxTypes[event.Transaction().Type]; exist {
+			return false
+		}
+
+		extraInfo := event.Transaction().ExtraInfo
+		var extraInfoMap map[string]string
+
+		err := json.Unmarshal([]byte(extraInfo), &extraInfoMap)
+		if err != nil {
+			return false
+		}
+
+		switch extraInfoMap["type"] {
+		case transaction.TransactionExtraInfoTransferToken, transaction.TransactionExtraInfoGiveCoffee, transaction.TransactionExtraInfoUnlockItem:
+			return true
+		default:
+			return false
+		}
 	}
 	return true
 }
