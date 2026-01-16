@@ -1,6 +1,6 @@
 syntax = "proto3";
 package mmn;
-option go_package = "mmn/proto;proto";
+option go_package = "github.com/mezonai/mmn/proto;proto";
 import "tx.proto";
 
 message Entry {
