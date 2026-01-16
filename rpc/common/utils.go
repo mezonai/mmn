@@ -1,4 +1,4 @@
-package jsonrpc
+package common
 
 import (
 	"net"
@@ -8,7 +8,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 )
 
-func extractClientIPFromRequest(r *http.Request) string {
+func ExtractClientIPFromRequest(r *http.Request) string {
 	logx.Debug("Extracting client IP from request headers", "X-Real-IP", r.Header.Get("X-Real-IP"), "X-Forwarded-For", r.Header.Get("X-Forwarded-For"), "RemoteAddr", r.RemoteAddr, "CF-Connecting-IP", r.Header.Get("CF-Connecting-IP"))
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		ip := strings.TrimSpace(xri)

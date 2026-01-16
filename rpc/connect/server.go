@@ -1,4 +1,4 @@
-package jsonrpc
+package connect
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
 	"github.com/mezonai/mmn/proto/protoconnect"
+	"github.com/mezonai/mmn/rpc/common"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/transaction"
@@ -266,7 +267,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-			clientIP := extractClientIPFromRequest(r)
+			clientIP := common.ExtractClientIPFromRequest(r)
 			ctx := context.WithValue(r.Context(), validation.ClientIPKey, clientIP)
 			r = r.WithContext(ctx)
 			logx.Debug("SECURITY", "Client IP:", clientIP, "Path:", r.URL.Path)
@@ -288,9 +289,8 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 
 func (s *Server) Start() {
 	h := s.BuildHTTPHandler()
-	http.Handle("/", h)
 	exception.SafeGoWithPanic("StartConnectServer", func() {
-		err := http.ListenAndServe(s.addr, nil)
+		err := http.ListenAndServe(s.addr, h)
 		if err != nil {
 			logx.Error("CONNECT SERVER", fmt.Sprintf("Failed to serve Connect server: %v", err))
 			panic(err)
