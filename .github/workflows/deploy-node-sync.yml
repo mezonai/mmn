@@ -116,12 +116,12 @@ jobs:
           echo "==> Using binary file at: $BINARY_TO_INSTALL"
 
           echo "==> Deploying and restarting mezon-listener..."
-          SHA=$(date +%s)
+          VERSION="${{ inputs.tag_to_deploy }}"
 
           sudo systemctl stop mezon-listener || true
 
-          sudo install -m 0755 "$BINARY_TO_INSTALL" /opt/mezon/mmn/bin/mmn-${SHA}
-          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+          sudo install -m 0755 "$BINARY_TO_INSTALL" /opt/mezon/mmn/bin/mmn-${VERSION}
+          sudo ln -sfn mmn-${VERSION} /opt/mezon/mmn/bin/mmn
 
           if [ ! -f "/etc/mezon/genesis.yml" ]; then
             echo "--> Generating genesis.yml locally for listener..."
