@@ -152,12 +152,6 @@ jobs:
           CGO_LDFLAGS: "-L$(pwd)/libs -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd -luring"
         run: |
           mkdir -p build
-          TAG_NAME="${{ steps.determine_release_tag.outputs.tag }}"
-          if [ -z "$TAG_NAME" ]; then TAG_NAME="v0.0.0"; fi
-          
-          echo "Building version: $TAG_NAME"
-          echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
-
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o "build/mmn-${{ steps.determine_release_tag.outputs.tag }}" .
 
 
