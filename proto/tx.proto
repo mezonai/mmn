@@ -85,6 +85,8 @@ message TransactionStatusInfo {
   string extra_info = 8;        // Extra info that was attached to transaction on creation
   string amount = 9;            // Transaction amount
   string text_data = 10;        // Transaction text data
+  string sender = 11;           // Sender address
+  string recipient = 12;        // Recipient address
 }
 
 message SubscribeTransactionStatusRequest {}
