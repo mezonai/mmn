@@ -667,6 +667,8 @@ type TransactionStatusInfo struct {
 	ExtraInfo     string                 `protobuf:"bytes,8,opt,name=extra_info,json=extraInfo,proto3" json:"extra_info,omitempty"`          // Extra info that was attached to transaction on creation
 	Amount        string                 `protobuf:"bytes,9,opt,name=amount,proto3" json:"amount,omitempty"`                                 // Transaction amount
 	TextData      string                 `protobuf:"bytes,10,opt,name=text_data,json=textData,proto3" json:"text_data,omitempty"`            // Transaction text data
+	Sender        string                 `protobuf:"bytes,11,opt,name=sender,proto3" json:"sender,omitempty"`                                // Sender address
+	Recipient     string                 `protobuf:"bytes,12,opt,name=recipient,proto3" json:"recipient,omitempty"`                          // Recipient address
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -767,6 +769,20 @@ func (x *TransactionStatusInfo) GetAmount() string {
 func (x *TransactionStatusInfo) GetTextData() string {
 	if x != nil {
 		return x.TextData
+	}
+	return ""
+}
+
+func (x *TransactionStatusInfo) GetSender() string {
+	if x != nil {
+		return x.Sender
+	}
+	return ""
+}
+
+func (x *TransactionStatusInfo) GetRecipient() string {
+	if x != nil {
+		return x.Recipient
 	}
 	return ""
 }
@@ -962,7 +978,7 @@ const file_tx_proto_rawDesc = "" +
 	"\x13GetTxByHashResponse\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\tR\x05error\x12\x1b\n" +
 	"\x02tx\x18\x02 \x01(\v2\v.mmn.TxInfoR\x02tx\x12\x1a\n" +
-	"\bdecimals\x18\x03 \x01(\rR\bdecimals\"\xdb\x02\n" +
+	"\bdecimals\x18\x03 \x01(\rR\bdecimals\"\x91\x03\n" +
 	"\x15TransactionStatusInfo\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12.\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x16.mmn.TransactionStatusR\x06status\x12\x1d\n" +
@@ -977,7 +993,9 @@ const file_tx_proto_rawDesc = "" +
 	"extra_info\x18\b \x01(\tR\textraInfo\x12\x16\n" +
 	"\x06amount\x18\t \x01(\tR\x06amount\x12\x1b\n" +
 	"\ttext_data\x18\n" +
-	" \x01(\tR\btextData\"#\n" +
+	" \x01(\tR\btextData\x12\x16\n" +
+	"\x06sender\x18\v \x01(\tR\x06sender\x12\x1c\n" +
+	"\trecipient\x18\f \x01(\tR\trecipient\"#\n" +
 	"!SubscribeTransactionStatusRequest\"\x1f\n" +
 	"\x1dGetPendingTransactionsRequest\"\x8e\x01\n" +
 	"\x1eGetPendingTransactionsResponse\x12\x1f\n" +
