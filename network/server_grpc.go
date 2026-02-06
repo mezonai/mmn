@@ -264,8 +264,10 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 
 			// Convert event to status update for the specific transaction
 			statusUpdate := s.convertEventToStatusUpdate(event, event.Transaction().Hash())
+			logx.Info("SUBSCRIBE TRANSACTION STATUS", fmt.Sprintf("tx hash: %s", event.Transaction().Hash()))
 			if statusUpdate != nil {
 				if err := stream.Send(statusUpdate); err != nil {
+					logx.Error("SUBSCRIBE TRANSACTION STATUS ERRROR", fmt.Sprintf("failed to send transaction status update: %v", err), fmt.Sprintf("tx hash: %s", event.Transaction().Hash()))
 					return err
 				}
 			}
