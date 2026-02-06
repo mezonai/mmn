@@ -78,11 +78,6 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Get Git Commit SHA
-        if: steps.decide.outputs.skip == 'false'
-        id: get_sha
-        run: echo "sha=$(git rev-parse --short=12 HEAD)" >> $GITHUB_OUTPUT
-
       - name: Setup Go
         if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
@@ -158,7 +153,7 @@ jobs:
         run: |
           mkdir -p build
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o "build/mmn-${{ steps.determine_release_tag.outputs.tag }}" .
-          GIT_SHA=$(git rev-parse --short=12 HEAD)
+
 
       - name: Create Release and Upload Binary
         if: steps.decide.outputs.skip == 'false'
@@ -177,8 +172,6 @@ jobs:
     if: always()
     runs-on: [self-hosted, Linux, mezon-runner]
     environment: ${{ inputs.env }}
-    env:
-      TARGET_HOST: ${{ inputs.env == 'prod' && 'prod-mmn' || 'dev-mmn' }}
     steps:
       - name: Determine Binary Path and Tag
         id: determine_binary
@@ -486,16 +479,18 @@ jobs:
           "
 
       - name: Atomic swap + restart services
+        env:
+          DEPLOY_TAG: ${{ steps.determine_binary.outputs.tag_name }}
         run: |
-          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<'EOF'
+          ssh -i /home/nccsoft/.ssh/mmn_deploy ${{ vars.HOST_ALIAS }} <<EOF
           set -e
-          SHA=$(date +%s)
+          VERSION="$DEPLOY_TAG"
 
           sudo systemctl stop mezon-node1 || true
           sudo systemctl stop mezon-bootnode || true
 
-          sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-${SHA}
-          sudo ln -sfn mmn-${SHA} /opt/mezon/mmn/bin/mmn
+          sudo install -m 0755 /opt/mezon/mmn/staging/mmn_new /opt/mezon/mmn/bin/mmn-\${VERSION}
+          sudo ln -sfn mmn-\${VERSION} /opt/mezon/mmn/bin/mmn
 
           if [ ! -d "/opt/mezon/node-data/node1" ]; then
             set -a
