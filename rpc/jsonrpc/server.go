@@ -21,9 +21,27 @@ import (
 	"github.com/mezonai/mmn/jsonx"
 	"github.com/mezonai/mmn/logx"
 	pb "github.com/mezonai/mmn/proto"
+	"github.com/mezonai/mmn/rpc/common"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/security/validation"
 	"github.com/mezonai/mmn/transaction"
+)
+
+// JSON-RPC Method name constants
+const (
+	// Transaction methods
+	MethodTxAddTx                  = "tx.addtx"
+	MethodTxGetTxByHash            = "tx.gettxbyhash"
+	MethodTxGetTransactionStatus   = "tx.gettransactionstatus"
+	MethodTxGetPendingTransactions = "tx.getpendingtransactions"
+
+	// Account methods
+	MethodAccountGetAccount          = "account.getaccount"
+	MethodAccountGetCurrentNonce     = "account.getcurrentnonce"
+	MethodAccountGetAccountByAddress = "account.getaccountbyaddress"
+
+	// Health methods
+	MethodHealthCheck = "health.check"
 )
 
 // --- Error type used by handlers ---
@@ -226,7 +244,7 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-			clientIP := extractClientIPFromRequest(r)
+			clientIP := common.ExtractClientIPFromRequest(r)
 			ctx := context.WithValue(r.Context(), validation.ClientIPKey, clientIP)
 			r = r.WithContext(ctx)
 			req := parseJSONRPCRequest(bodyBytes)
@@ -251,9 +269,8 @@ func (s *Server) BuildHTTPHandler() http.Handler {
 
 func (s *Server) Start() {
 	h := s.BuildHTTPHandler()
-	http.Handle("/", h)
 	exception.SafeGoWithPanic("StartJSONRPCServer", func() {
-		err := http.ListenAndServe(s.addr, nil)
+		err := http.ListenAndServe(s.addr, h)
 		if err != nil {
 			logx.Error("JSONRPC SERVER", fmt.Sprintf("Failed to serve JSON-RPC server: %v", err))
 			panic(err)
@@ -579,4 +596,12 @@ func splitAndTrim(s string) []string {
 		}
 	}
 	return out
+}
+
+func parseJSONRPCRequest(body []byte) *jsonRPCRequest {
+	var req jsonRPCRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil
+	}
+	return &req
 }

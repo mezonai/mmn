@@ -1014,7 +1014,7 @@ const file_tx_proto_rawDesc = "" +
 	"\x05AddTx\x12\x10.mmn.SignedTxMsg\x1a\x12.mmn.AddTxResponse\x12@\n" +
 	"\vGetTxByHash\x12\x17.mmn.GetTxByHashRequest\x1a\x18.mmn.GetTxByHashResponse\x12b\n" +
 	"\x1aSubscribeTransactionStatus\x12&.mmn.SubscribeTransactionStatusRequest\x1a\x1a.mmn.TransactionStatusInfo0\x01\x12a\n" +
-	"\x16GetPendingTransactions\x12\".mmn.GetPendingTransactionsRequest\x1a#.mmn.GetPendingTransactionsResponseB\x11Z\x0fmmn/proto;protob\x06proto3"
+	"\x16GetPendingTransactions\x12\".mmn.GetPendingTransactionsRequest\x1a#.mmn.GetPendingTransactionsResponseB$Z\"github.com/mezonai/mmn/proto;protob\x06proto3"
 
 var (
 	file_tx_proto_rawDescOnce sync.Once

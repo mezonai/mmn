@@ -10,6 +10,7 @@ type NodeConfig struct {
 	PrivKeyPath        string   `yaml:"privkey_path"`
 	ListenAddr         string   `yaml:"listen_addr"`
 	JSONRPCAddr        string   `yaml:"jsonrpc_addr"`
+	ConnectRPCAddr     string   `yaml:"connectrpc_addr"`
 	Libp2pAddr         string   `yaml:"libp2p_addr"`
 	GRPCAddr           string   `yaml:"grpc_addr"`
 	BootStrapAddresses []string `yaml:"bootstrap_addresses"`

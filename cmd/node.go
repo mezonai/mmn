@@ -18,8 +18,9 @@ import (
 	"github.com/mezonai/mmn/zkverify"
 
 	"github.com/mezonai/mmn/interfaces"
-	"github.com/mezonai/mmn/jsonrpc"
 	"github.com/mezonai/mmn/network"
+	connectrpc "github.com/mezonai/mmn/rpc/connect"
+	jsonrpc "github.com/mezonai/mmn/rpc/jsonrpc"
 	"github.com/mezonai/mmn/security/ratelimit"
 	"github.com/mezonai/mmn/store"
 	"github.com/mezonai/mmn/transaction"
@@ -47,6 +48,7 @@ var (
 	dataDir            string
 	listenAddr         string
 	jsonrpcAddr        string
+	connectrpcAddr     string
 	p2pPort            string
 	bootstrapAddresses []string
 	grpcAddr           string
@@ -74,8 +76,9 @@ func init() {
 	// Run command flags
 	runCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Directory containing node data (private key, genesis block, and blockstore)")
 	runCmd.Flags().StringVar(&listenAddr, "listen-addr", ":8001", "Listen address for API server :<port>")
-	runCmd.Flags().StringVar(&jsonrpcAddr, "jsonrpc-addr", ":8080", "Listen address for JSON-RPC server :<port>")
-	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for Grpc server :<port>")
+	runCmd.Flags().StringVar(&jsonrpcAddr, "jsonrpc-addr", ":8081", "Listen address for JSON-RPC server :<port>")
+	runCmd.Flags().StringVar(&connectrpcAddr, "connectrpc-addr", ":8082", "Listen address for Connect-RPC server :<port>")
+	runCmd.Flags().StringVar(&grpcAddr, "grpc-addr", ":9001", "Listen address for gRPC server :<port>")
 	runCmd.Flags().StringVar(&p2pPort, "p2p-port", "9090", "LibP2P listen port (optional, random free port if not specified)")
 	runCmd.Flags().StringVar(&publicIP, "public-ip", "", "Public IP address for P2P advertising (required)")
 	runCmd.Flags().StringArrayVar(&bootstrapAddresses, "bootstrap-addresses", []string{}, "List of bootstrap peer multiaddresses")
@@ -174,6 +177,7 @@ func runNode() {
 		Libp2pAddr:         fmt.Sprintf("/ip4/0.0.0.0/tcp/%s", p2pPort),
 		ListenAddr:         listenAddr,
 		JSONRPCAddr:        jsonrpcAddr,
+		ConnectRPCAddr:     connectrpcAddr,
 		GRPCAddr:           grpcAddr,
 		BootStrapAddresses: bootstrapAddresses,
 		Mode:               mode,
@@ -433,6 +437,7 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	)
 	_ = grpcSrv // Keep server running
 
+	// Start JSON-RPC server
 	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, userContentRateLimiter, enableRateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
@@ -441,6 +446,17 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	}
 
 	rpcSrv.Start()
+
+	// Start Connect-RPC server (for binary/protobuf format)
+	connectSrv := connectrpc.NewServer(nodeConfig.ConnectRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, userContentRateLimiter, enableRateLimit)
+
+	// Apply CORS from environment variables via connectrpc helper (same as jsonrpc)
+	if corsCfg, ok := connectrpc.CORSFromEnv(); ok {
+		connectSrv.SetCORSConfig(&corsCfg)
+	}
+
+	connectSrv.Start()
+
 	serveMetricsAPI(nodeConfig.ListenAddr)
 }
 

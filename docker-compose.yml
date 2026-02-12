@@ -36,13 +36,14 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/node1" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/key1.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/node1" --listen-addr ":8001" --jsonrpc-addr ":8081" --connectrpc-addr ":8082" --grpc-addr ":9001" --public-ip "127.0.0.1" --p2p-port "9091" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
     ports:
       - "8001:8001"
       - "8081:8081"
+      - "8082:8082"
       - "9001:9001"
       - "9091:9091"
     volumes:
@@ -66,7 +67,7 @@ services:
     command: >
       sh -c '
         ./mmn init --data-dir "./node-data/listener" --genesis "config/genesis.yml" --database "${DB_VENDOR:-rocksdb}" --privkey-path "config/listener.txt" &&
-        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/listener" --listen-addr ":8004" --jsonrpc-addr ":8084" --grpc-addr ":9004" --mode listen --public-ip "127.0.0.1" --p2p-port "9094" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
+        ./mmn node --database ${DB_VENDOR:-rocksdb} --data-dir "./node-data/listener" --listen-addr ":8004" --jsonrpc-addr ":8084" --connectrpc-addr ":8085" --grpc-addr ":9004" --mode listen --public-ip "127.0.0.1" --p2p-port "9094" --bootstrap-addresses "/dns4/bootnode/tcp/9000/p2p/12D3KooWAhZyyZV2KBtfm8zsLaKPvcmVfaYczJ5UdpB8cJU7vKg2"
       '
     depends_on:
       - bootnode
@@ -74,6 +75,7 @@ services:
     ports:
       - "8004:8004"
       - "8084:8084"
+      - "8085:8085"
       - "9004:9004"
       - "9094:9094"
     volumes:
