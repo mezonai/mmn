@@ -83,7 +83,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.23"
-          cache: true
           check-latest: false
 
       - name: Run golangci-lint
