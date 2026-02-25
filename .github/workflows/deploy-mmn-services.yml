@@ -82,7 +82,7 @@ jobs:
         if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22.5"
+          go-version: "1.23"
           cache: true
           check-latest: false
 
@@ -153,7 +153,6 @@ jobs:
         run: |
           mkdir -p build
           GOOS=linux GOARCH=amd64 go build -tags rocksdb -o "build/mmn-${{ steps.determine_release_tag.outputs.tag }}" .
-
 
       - name: Create Release and Upload Binary
         if: steps.decide.outputs.skip == 'false'
