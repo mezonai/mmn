@@ -83,18 +83,19 @@ type getTxByHashRequest struct {
 }
 
 type txInfo struct {
-	Sender    string `json:"sender"`
-	Recipient string `json:"recipient"`
-	Amount    string `json:"amount"`
-	Timestamp uint64 `json:"timestamp"`
-	TextData  string `json:"text_data"`
-	Nonce     uint64 `json:"nonce"`
-	Slot      uint64 `json:"slot"`
-	BlockHash string `json:"blockhash"`
-	Status    int32  `json:"status"`
-	ErrMsg    string `json:"err_msg"`
-	ExtraInfo string `json:"extra_info"`
-	TxHash    string `json:"tx_hash"`
+	Sender      string `json:"sender"`
+	Recipient   string `json:"recipient"`
+	Amount      string `json:"amount"`
+	Timestamp   uint64 `json:"timestamp"`
+	TextData    string `json:"text_data"`
+	Nonce       uint64 `json:"nonce"`
+	Slot        uint64 `json:"slot"`
+	BlockHash   string `json:"block_hash"`
+	Status      int32  `json:"status"`
+	ErrMsg      string `json:"err_msg"`
+	ExtraInfo   string `json:"extra_info"`
+	TxHash      string `json:"tx_hash"`
+	BlockHeight uint64 `json:"block_height"`
 }
 
 type getTxByHashResponse struct {
@@ -407,18 +408,19 @@ func (s *Server) rpcGetTxByHash(p getTxByHashRequest) (interface{}, *rpcError) {
 		return &getTxByHashResponse{Error: "not found"}, nil
 	}
 	info := &txInfo{
-		Sender:    resp.Tx.Sender,
-		Recipient: resp.Tx.Recipient,
-		Amount:    resp.Tx.Amount,
-		Timestamp: resp.Tx.Timestamp,
-		TextData:  resp.Tx.TextData,
-		Nonce:     resp.Tx.Nonce,
-		Slot:      resp.Tx.Slot,
-		BlockHash: resp.Tx.Blockhash,
-		Status:    int32(resp.Tx.Status),
-		ErrMsg:    resp.Tx.ErrMsg,
-		ExtraInfo: resp.Tx.ExtraInfo,
-		TxHash:    resp.Tx.TxHash,
+		Sender:      resp.Tx.Sender,
+		Recipient:   resp.Tx.Recipient,
+		Amount:      resp.Tx.Amount,
+		Timestamp:   resp.Tx.Timestamp,
+		TextData:    resp.Tx.TextData,
+		Nonce:       resp.Tx.Nonce,
+		Slot:        resp.Tx.Slot,
+		BlockHash:   resp.Tx.BlockHash,
+		Status:      int32(resp.Tx.Status),
+		ErrMsg:      resp.Tx.ErrMsg,
+		ExtraInfo:   resp.Tx.ExtraInfo,
+		TxHash:      resp.Tx.TxHash,
+		BlockHeight: resp.Tx.BlockHeight,
 	}
 	return &getTxByHashResponse{Tx: info, Decimals: resp.Decimals}, nil
 }

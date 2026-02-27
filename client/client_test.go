@@ -107,33 +107,25 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	fmt.Println("faucetPublicKey", faucetPublicKey)
 	toAddress := "8BH3ZXoAptWYbAc69221kKDrrPzvc4RaJ248qdbTs6k5" // dummy base58 for test
 
-	// Get current faucet account to get the next nonce
-	faucetAccount, err := client.GetAccount(ctx, faucetPublicKey)
-	if err != nil {
-		t.Fatalf("Failed to get faucet account: %v", err)
-	}
-	nextNonce := faucetAccount.Nonce + 1
-	t.Logf("Faucet account nonce: %d, using next nonce: %d", faucetAccount.Nonce, nextNonce)
-
 	// Extract the seed from the private key (first 32 bytes)
 	faucetPrivateKeySeed := faucetPrivateKey.Seed()
 	transferType := TxTypeTransferByKey
 	fromAddr := faucetPublicKey
-	fromAccount, err := client.GetAccount(ctx, fromAddr)
-	if err != nil {
-		t.Fatalf("Failed to get account: %v", err)
-	}
-
 	toAddr := toAddress
 	amount := uint256.NewInt(1000000000000)
-	nonce := fromAccount.Nonce + 1
+	nonce, err := client.GetCurrentNonce(ctx, fromAddr, "pending")
+	if err != nil {
+		t.Fatalf("Failed to get current nonce: %v", err)
+	}
+	nextNonce := nonce + 1
 	textData := "Integration test transfer"
+	t.Logf("None: %d, Next nonce: %d", nonce, nextNonce)
 
 	extraInfo := map[string]string{
 		"type": "faucet_send_token",
 	}
 
-	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
+	unsigned, err := BuildTransferTx(transferType, fromAddr, toAddr, amount, nextNonce, uint64(time.Now().Unix()), textData, extraInfo, "", "")
 	if err != nil {
 		t.Fatalf("Failed to build transfer tx: %v", err)
 	}
@@ -172,7 +164,7 @@ func TestClient_FaucetSendToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to deserialize tx extra info: %v", err)
 	}
-	if actualTxExtra == nil || actualTxExtra["type"] != "unlock_item" {
+	if actualTxExtra == nil || actualTxExtra["type"] != "faucet_send_token" {
 		t.Errorf("Unmatched tx extra info: expected: %+v, actual: %+v", extraInfo, actualTxExtra)
 	}
 }

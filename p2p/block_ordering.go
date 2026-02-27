@@ -154,10 +154,10 @@ func (ln *Libp2pNetwork) getPrevHashForSlot(slot uint64, bs store.BlockStore, pr
 			return lastProcessedBlock.LastEntryHash()
 		}
 	} else {
-		// First check in block store
-		prevBlock := bs.Block(prevSlot)
-		if prevBlock != nil {
-			return prevBlock.LastEntryHash()
+		// First check in block store using SlotInfo, as the block might be empty
+		slotInfo, err := bs.GetSlot(prevSlot)
+		if err == nil && slotInfo != nil {
+			return slotInfo.LastEntryHash
 		}
 	}
 

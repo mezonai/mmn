@@ -149,18 +149,19 @@ type TxHistoryResponse struct {
 
 // TxInfo represents transaction information returned by GetTxByHash
 type TxInfo struct {
-	Sender    string       `json:"sender"`
-	Recipient string       `json:"recipient"`
-	Amount    *uint256.Int `json:"amount"`
-	Timestamp uint64       `json:"timestamp"`
-	TextData  string       `json:"text_data"`
-	Nonce     uint64       `json:"nonce,omitempty"`
-	Slot      uint64       `json:"slot,omitempty"`
-	Blockhash string       `json:"blockhash,omitempty"`
-	Status    int32        `json:"status,omitempty"`
-	ErrMsg    string       `json:"err_msg,omitempty"`
-	ExtraInfo string       `json:"extra_info,omitempty"`
-	TxHash    string       `json:"tx_hash,omitempty"`
+	Sender      string       `json:"sender"`
+	Recipient   string       `json:"recipient"`
+	Amount      *uint256.Int `json:"amount"`
+	Timestamp   uint64       `json:"timestamp"`
+	TextData    string       `json:"text_data"`
+	Nonce       uint64       `json:"nonce,omitempty"`
+	Slot        uint64       `json:"slot,omitempty"`
+	BlockHash   string       `json:"block_hash,omitempty"`
+	Status      int32        `json:"status,omitempty"`
+	ErrMsg      string       `json:"err_msg,omitempty"`
+	ExtraInfo   string       `json:"extra_info,omitempty"`
+	TxHash      string       `json:"tx_hash,omitempty"`
+	BlockHeight uint64       `json:"block_height,omitempty"`
 }
 
 func (i *TxInfo) DeserializedExtraInfo() (map[string]string, error) {

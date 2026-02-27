@@ -62,11 +62,15 @@ func (s *AccountServiceImpl) GetCurrentNonce(ctx context.Context, in *pb.GetCurr
 	}
 
 	// Get account from blockstore, get the latest finalized slot
-	currentNonce := s.blockStore.GetLatestFinalizedSlot()
+	currentNonce := s.blockStore.GetLatestStoreSlot()
+	nonce := uint64(0)
+	if currentNonce > 0 {
+		nonce = currentNonce - 1
+	}
 
 	return &pb.GetCurrentNonceResponse{
 		Address: addr,
-		Nonce:   currentNonce - 1, // TODO: Temporary fix to get the correct nonce
+		Nonce:   nonce, // TODO: Temporary fix to get the correct nonce
 		Tag:     tag,
 	}, nil
 }

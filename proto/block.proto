@@ -12,6 +12,7 @@ message Entry {
 
 message Block {
   uint64 slot     = 1;
+  uint64 height   = 9;
   bytes prev_hash = 2;
   repeated Entry entries = 3;
   string leader_id = 4;
