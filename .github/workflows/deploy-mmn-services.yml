@@ -78,6 +78,14 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      
       - name: Setup Go
         if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
