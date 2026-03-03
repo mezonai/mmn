@@ -82,7 +82,7 @@ jobs:
         if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.24"
           check-latest: false
 
       - name: Run golangci-lint
