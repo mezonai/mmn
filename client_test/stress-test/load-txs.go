@@ -112,6 +112,9 @@ type LoadTester struct {
 	tpsHistory     [][]int64
 	errorCounts    map[string]int64
 	errorMutex     sync.Mutex
+
+	// Wait group for goroutines
+	wg sync.WaitGroup
 }
 
 type SessionTokenClaims struct {
@@ -188,11 +191,11 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	runFinished := make(chan struct{}, 1)
 	// Start load testing in a goroutine
 	go func() {
-		if err := tester.Run(); err != nil {
-			tester.logger.LogError("Load test error: %v", err)
-		}
+		tester.Run()
+		runFinished <- struct{}{}
 	}()
 
 	// Wait for signal or completion
@@ -201,13 +204,13 @@ func main() {
 		tester.logger.LogInfo("Received shutdown signal, stopping load test...")
 		tester.Stop()
 	case <-tester.ctx.Done():
-		tester.logger.LogInfo("Load test completed")
+		tester.logger.LogInfo("Stopping... waiting for all transactions to finish...")
+	case <-runFinished:
+		tester.logger.LogInfo("Stopping... waiting for all transactions to finish...")
 	}
 
 	endTime := time.Now()
-
-	// Give goroutines time to finish gracefully
-	time.Sleep(2 * time.Second)
+	tester.wg.Wait()
 
 	// Last snapshot
 	totalTxs := atomic.LoadInt64(&tester.totalTxsSent)
@@ -557,7 +560,7 @@ func (lt *LoadTester) refillAccount(accountIndex int, globalNonce uint64) error 
 	return nil
 }
 
-func (lt *LoadTester) Run() error {
+func (lt *LoadTester) Run() {
 	var timeout <-chan time.Time
 	if lt.config.TotalTransactions > 0 {
 		lt.logger.LogInfo("Starting load test: %d accounts, target %d tx/s, total transactions: %d",
@@ -580,8 +583,7 @@ func (lt *LoadTester) Run() error {
 	for {
 		select {
 		case <-lt.ctx.Done():
-			lt.logger.LogInfo("Load test stopped")
-			return nil
+			return
 
 		case <-timeout:
 			if lt.config.RunMinutes > 0 {
@@ -591,7 +593,7 @@ func (lt *LoadTester) Run() error {
 			}
 			// Stop gracefully by cancelling context
 			lt.Stop()
-			return nil
+			return
 
 		case <-lt.metricsTicker.C:
 			// Log real-time metrics every 10 seconds in background
@@ -604,6 +606,16 @@ func (lt *LoadTester) Run() error {
 				continue
 			}
 			lt.logger.LogInfo("Global nonce: %d", globalNonce)
+
+			// Check if total transactions target reached
+			if lt.config.TotalTransactions > 0 {
+				currentSent := atomic.LoadInt64(&lt.totalTxsSent)
+				if currentSent >= lt.config.TotalTransactions {
+					lt.logger.LogInfo("Target reached (%d). Stopping generation loop.", currentSent)
+					return
+				}
+			}
+
 			go lt.runTickWithNonce(globalNonce)
 		}
 	}
@@ -659,7 +671,16 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 
 			}
 
-			go lt.sendTransaction(sender, receiver, nonce, txErr)
+			// Check if we have reached the total transaction limit
+			if !lt.incrementAndCheckLimit() {
+				return
+			}
+
+			lt.wg.Add(1)
+			go func() {
+				defer lt.wg.Done()
+				lt.sendTransaction(sender, receiver, nonce, txErr)
+			}()
 			sent++
 		}
 		offset++
@@ -671,12 +692,6 @@ func (lt *LoadTester) runTickWithNonce(nonce uint64) {
 
 // Send a transfer transaction from sender to receiver
 func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, errType ErrType) {
-	select {
-	case <-lt.ctx.Done():
-		return
-	default:
-	}
-
 	sender := &lt.accounts[senderIdx]
 	receiver := &lt.accounts[receiverIdx]
 	amount := uint256.NewInt(lt.config.TransferAmount)
@@ -704,7 +719,6 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 
 	case RequestErr:
 		textData = "Injection payload eval(1)  {{ console.log('hacked'); }}"
-
 	}
 
 	mu := lt.getAccountMutex(senderIdx)
@@ -715,7 +729,6 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 
 		if err := lt.refillAccount(senderIdx, nonce); err != nil {
 			lt.logger.LogError("Refill failed for account %d: %v", senderIdx, err)
-			lt.incrementAndCheckTotalSent()
 			atomic.AddInt64(&lt.totalTxsFailed, 1)
 			lt.trackError(clientErrCode)
 			return
@@ -738,7 +751,6 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 	)
 	if err != nil {
 		lt.logger.LogError("Build tx failed: %v", err)
-		lt.incrementAndCheckTotalSent()
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		lt.trackError(clientErrCode)
 		return
@@ -748,7 +760,6 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 	signedRaw, err := client.SignTx(unsigned, pubKey, sender.PrivateKey.Seed())
 	if err != nil {
 		lt.logger.LogError("Sign tx failed: %v", err)
-		lt.incrementAndCheckTotalSent()
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		lt.trackError(clientErrCode)
 		return
@@ -758,9 +769,14 @@ func (lt *LoadTester) sendTransaction(senderIdx, receiverIdx int, nonce uint64, 
 	sender.Balance -= lt.config.TransferAmount
 	mu.Unlock()
 
-	lt.incrementAndCheckTotalSent()
 	resp, err := lt.client.AddTx(lt.ctx, signedRaw)
 	if err != nil {
+		// If transaction failed due to context cancellation, do not count it as failed
+		if contains(err.Error(), "context canceled") || lt.ctx.Err() == context.Canceled {
+			atomic.AddInt64(&lt.totalTxsSent, -1)
+			return
+		}
+
 		lt.logger.LogError("Send tx failed: %v", err)
 		atomic.AddInt64(&lt.totalTxsFailed, 1)
 		lt.trackError(extractErrorCode(err.Error()))
@@ -869,12 +885,15 @@ func (lt *LoadTester) refreshGlobalNonce() (uint64, error) {
 }
 
 // Increment and check total sent transactions
-func (lt *LoadTester) incrementAndCheckTotalSent() {
-	total := atomic.AddInt64(&lt.totalTxsSent, 1)
-	if lt.config.TotalTransactions > 0 && total >= lt.config.TotalTransactions {
-		lt.logger.LogInfo("Reached total transactions limit: %d", lt.config.TotalTransactions)
-		lt.Stop()
+func (lt *LoadTester) incrementAndCheckLimit() bool {
+	newTotal := atomic.AddInt64(&lt.totalTxsSent, 1)
+
+	if (lt.config.TotalTransactions > 0) && (newTotal > lt.config.TotalTransactions) {
+		atomic.AddInt64(&lt.totalTxsSent, -1)
+		return false
 	}
+
+	return true
 }
 
 // captureSnapshot creates a snapshot of current test state
