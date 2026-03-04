@@ -282,7 +282,7 @@ func (ln *Libp2pNetwork) startImmediatelyFromLocalLatestSlot() {
 	var seed [32]byte
 	if latest > 0 {
 		if slotInfo, err := ln.blockStore.GetSlot(latest); err == nil && slotInfo != nil {
-			seed = slotInfo.Hash
+			seed = slotInfo.LastEntryHash
 		}
 	}
 	if ln.OnForceResetPOH != nil {
@@ -407,7 +407,7 @@ func (ln *Libp2pNetwork) handlePohResetIfNeeded(localLatestSlot uint64) bool {
 			logx.Info("NETWORK", "Local latest slot is equal to world latest POH slot, forcing reset POH")
 			var seed [32]byte
 			if slotInfo, err := ln.blockStore.GetSlot(localLatestSlot); err == nil && slotInfo != nil {
-				seed = slotInfo.Hash
+				seed = slotInfo.LastEntryHash
 			}
 			if ln.OnForceResetPOH != nil {
 				ln.OnForceResetPOH(seed, localLatestSlot)

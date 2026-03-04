@@ -422,7 +422,6 @@ func (s *GenericBlockStore) AddBlockPending(b *block.BroadcastedBlock) error {
 
 	slotInfo := &block.SlotInfo{
 		Slot:          slot,
-		Hash:          b.Hash,
 		PrevHash:      b.PrevHash,
 		LastEntryHash: b.LastEntryHash(), // newly added field
 		LeaderID:      b.LeaderID,

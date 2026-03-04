@@ -246,7 +246,7 @@ func runNode() {
 		libP2pClient.OnStartPoh = func() { pohService.Start() }
 		libP2pClient.OnStartValidator = func() { val.Run() }
 		libP2pClient.OnStartLoadTxHashes = func() {
-			latestSlot := bs.GetLatestFinalizedSlot()
+			latestSlot := bs.GetLatestStoreSlot()
 			dedupService.LoadTxHashes(latestSlot)
 			mp.SetCurrentSlot(latestSlot)
 		}
@@ -320,7 +320,7 @@ func initializePoH(cfg *config.GenesisConfig, pubKey, genesisPath string, latest
 	if latestSlot > 0 {
 		slotInfo, err := bs.GetSlot(latestSlot)
 		if err == nil && slotInfo != nil {
-			seed = slotInfo.Hash[:]
+			seed = slotInfo.LastEntryHash[:]
 			logx.Info("VALIDATOR", fmt.Sprintf("Force reset POH to latest slot %d with seed %x", latestSlot, seed))
 		} else {
 			logx.Warn("VALIDATOR", fmt.Sprintf("Failed to get slot info for slot %d, using empty seed", latestSlot))
