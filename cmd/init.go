@@ -313,6 +313,7 @@ func initializeFileLogger() {
 		Filename: logFile,
 		MaxSize:  maxSizeMB,
 		MaxAge:   maxAgeDays,
+		Compress: true,
 	}
 
 	logx.InitWithOutput(lumberjackLogger)
