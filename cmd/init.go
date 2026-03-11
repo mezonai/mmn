@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/mezonai/mmn/monitoring"
 	"github.com/mezonai/mmn/types"
@@ -313,8 +317,63 @@ func initializeFileLogger() {
 		Filename: logFile,
 		MaxSize:  maxSizeMB,
 		MaxAge:   maxAgeDays,
-		Compress: true,
+		Compress: false,
 	}
 
 	logx.InitWithOutput(lumberjackLogger)
+	go startLogCompressor("./logs", maxAgeDays)
+}
+
+func startLogCompressor(logDir string, maxAgeDays int) {
+	ticker := time.NewTicker(1 * time.Minute)
+	for range ticker.C {
+		files, err := os.ReadDir(logDir)
+		if err != nil { continue }
+		
+		for _, f := range files {
+			if f.IsDir() { continue }
+
+			filePath := filepath.Join(logDir, f.Name())
+			info, err := f.Info()
+			if err != nil { continue }
+
+			if strings.HasSuffix(f.Name(), ".log") && f.Name() != "node1.log" && f.Name() != "mmn-bootnode.log" {
+				if time.Since(info.ModTime()) > 30 *time.Minute {
+					compressLogFile(filePath)
+				}
+			}
+
+			// Remove old compressed files
+			if strings.HasSuffix(f.Name(), ".gz") {
+				if time.Since(info.ModTime()) > time.Duration(maxAgeDays)*24*time.Hour {
+					os.Remove(filePath)
+					logx.Info("LOG_COMPRESSOR", "Deleted expired archive:", f.Name())
+				}
+			}
+		}
+	}
+}
+
+func compressLogFile(filePath string) {
+	// Implementation for compressing log file to gzip
+	fr, err := os.Open(filePath)
+	if err != nil { return }
+	defer fr.Close()
+
+	fw, err := os.Create(filePath + ".gz")
+	if err != nil { return }
+	defer fw.Close()
+
+	gw := gzip.NewWriter(fw)
+	if _, err := io.Copy(gw, fr); err != nil {
+        gw.Close()
+        return 
+    }
+    
+    gw.Close()
+    fr.Close()
+
+	if err := os.Remove(filePath); err == nil {
+        logx.Info("LOG_COMPRESSOR", "Compressed log file successfully:", filepath.Base(filePath))
+    }
 }
