@@ -52,6 +52,7 @@ func BroadcastedBlockToBlock(b *block.BroadcastedBlock) *block.Block {
 	blk := &block.Block{
 		BlockCore: block.BlockCore{
 			Slot:       b.Slot,
+			Height:     b.Height,
 			Status:     block.BlockPending,
 			PrevHash:   b.PrevHash,
 			LeaderID:   b.LeaderID,
@@ -91,6 +92,7 @@ func FromProtoBlock(pbBlk *pb.Block) (*block.BroadcastedBlock, error) {
 	return &block.BroadcastedBlock{
 		BlockCore: block.BlockCore{
 			Slot:      pbBlk.Slot,
+			Height:    pbBlk.Height,
 			PrevHash:  prev,
 			LeaderID:  pbBlk.LeaderId,
 			Timestamp: pbBlk.Timestamp,
@@ -108,6 +110,7 @@ func ToProtoBlock(blk *block.BroadcastedBlock) (*pb.Block, error) {
 	}
 	return &pb.Block{
 		Slot:      blk.Slot,
+		Height:    blk.Height,
 		PrevHash:  blk.PrevHash[:],
 		Entries:   entries,
 		LeaderId:  blk.LeaderID,

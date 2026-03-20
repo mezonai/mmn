@@ -61,11 +61,12 @@ message TxInfo {
   string text_data = 5;
   uint64 nonce = 6;
   uint64 slot = 7;
-  string blockhash = 8;
+  string block_hash = 8;
   TransactionStatus status = 9;
   string err_msg = 10;
   string extra_info = 11;
   string tx_hash = 12;
+  uint64 block_height = 13;
 }
 
 message GetTxByHashResponse {

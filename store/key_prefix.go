@@ -6,9 +6,13 @@ const (
 
 	PrefixBlockMeta             = "blk_meta:"
 	PrefixBlock                 = "blk:"
-	PrefixBlockFinalized        = "blk_finalized:"
 	BlockMetaKeyLatestFinalized = "latest_finalized"
 	BlockMetaKeyLatestStore     = "latest_store"
+	BlockMetaKeyLatestHeight    = "latest_height"
+
+	PrefixSlot          = "slot:"
+	PrefixSlotFinalized = "slot_finalized:"
+	PrefixHeightToSlot  = "height_to_slot:"
 
 	PrefixTx     = "tx:"
 	PrefixTxMeta = "tx_meta:"

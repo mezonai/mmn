@@ -267,7 +267,7 @@ func (s *server) SubscribeTransactionStatus(in *pb.SubscribeTransactionStatusReq
 			logx.Info("SUBSCRIBE TRANSACTION STATUS", fmt.Sprintf("tx hash: %s", event.Transaction().Hash()))
 			if statusUpdate != nil {
 				if err := stream.Send(statusUpdate); err != nil {
-					logx.Error("SUBSCRIBE TRANSACTION STATUS ERRROR", fmt.Sprintf("failed to send transaction status update: %v", err), fmt.Sprintf("tx hash: %s", event.Transaction().Hash()))
+					logx.Error("SUBSCRIBE TRANSACTION STATUS ERROR", fmt.Sprintf("failed to send transaction status update: %v", err), fmt.Sprintf("tx hash: %s", event.Transaction().Hash()))
 					return err
 				}
 			}
@@ -425,7 +425,7 @@ func (s *server) GetBlockNumber(ctx context.Context, in *pb.EmptyParams) (*pb.Ge
 	currentBlock := uint64(0)
 
 	if s.blockStore != nil {
-		currentBlock = s.blockStore.GetLatestFinalizedSlot()
+		currentBlock = s.blockStore.GetLatestHeight()
 	}
 
 	return &pb.GetBlockNumberResponse{
@@ -444,8 +444,29 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 		}, nil
 	}
 
-	// Use batch operation to get all blocks - single CGO call!
-	blockMap, err := s.blockStore.GetBatch(in.BlockNumbers)
+	// 1. Map requested heights to slot numbers
+	heightToSlot, err := s.blockStore.GetSlotsByHeights(in.BlockNumbers)
+	if err != nil {
+		logx.Error("GRPC SERVER", fmt.Sprintf("failed to batch get slots by heights: %v", err))
+		return nil, status.Errorf(codes.Internal, "failed to batch get slots by heights: %v", err)
+	}
+
+	var slots []uint64
+	for _, height := range in.BlockNumbers {
+		if slot, ok := heightToSlot[height]; ok {
+			slots = append(slots, slot)
+		}
+	}
+
+	if len(slots) == 0 {
+		return &pb.GetBlockByNumberResponse{
+			Blocks:   []*pb.Block{},
+			Decimals: uint32(config.GetDecimalsFactor()),
+		}, nil
+	}
+
+	// 2. Use batch operation to get all blocks - single CGO call!
+	blockMap, err := s.blockStore.GetBatch(slots)
 	if err != nil {
 		logx.Error("GRPC SERVER", fmt.Sprintf("failed to batch get blocks: %v", err))
 		return nil, status.Errorf(codes.Internal, "failed to batch get blocks: %v", err)
@@ -455,11 +476,17 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 	var allTxHashes []string
 	blockTxMap := make(map[uint64][]string) // Map slot to its tx hashes
 
-	for _, slot := range in.BlockNumbers {
+	for _, height := range in.BlockNumbers {
+		slot, exists := heightToSlot[height]
+		if !exists {
+			logx.Error("GRPC SERVER", fmt.Sprintf("height %d not found in mapping", height))
+			return nil, status.Errorf(codes.NotFound, "height %d not found", height)
+		}
+
 		block, exists := blockMap[slot]
 		if !exists {
-			logx.Error("GRPC SERVER", fmt.Sprintf("block %d not found", slot))
-			return nil, status.Errorf(codes.NotFound, "block %d not found", slot)
+			logx.Error("GRPC SERVER", fmt.Sprintf("block %d at slot %d not found", height, slot))
+			return nil, status.Errorf(codes.NotFound, "block %d not found", height)
 		}
 
 		var blockTxHashes []string
@@ -490,7 +517,11 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 	// Build response blocks in the same order as requested
 	blocks := make([]*pb.Block, 0, len(in.BlockNumbers))
-	for _, slot := range in.BlockNumbers {
+	for _, height := range in.BlockNumbers {
+		slot, exists := heightToSlot[height]
+		if !exists {
+			continue // Already logged error above, or gracefully skip
+		}
 		block := blockMap[slot]
 		blockTxHashes := blockTxMap[slot]
 
@@ -522,6 +553,7 @@ func (s *server) GetBlockByNumber(ctx context.Context, in *pb.GetBlockByNumberRe
 
 		pbBlock := &pb.Block{
 			Slot:            block.Slot,
+			Height:          height, // Include the requested height
 			PrevHash:        block.PrevHash[:],
 			Entries:         []*pb.Entry{}, // Empty as requested - indexer doesn't use this
 			LeaderId:        block.LeaderID,
@@ -581,8 +613,7 @@ func (s *server) GetBlockByRange(ctx context.Context, in *pb.GetBlockByRangeRequ
 	for _, slot := range slots {
 		block, exists := blockMap[slot]
 		if !exists {
-			logx.Error("GRPC SERVER", fmt.Sprintf("Block %d not found, skipping", slot))
-			errs = append(errs, fmt.Sprintf("Block %d not found, skipping", slot))
+			// This is normal for empty blocks, just skip gracefully without logging an error.
 			continue
 		}
 

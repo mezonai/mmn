@@ -50,10 +50,8 @@ func (hs *HealthServiceImpl) Check(ctx context.Context) (*pb.HealthCheckResponse
 	}
 
 	if hs.blockStore != nil {
-		// Get the latest finalized block height
-		// For now, we'll use a simple approach to get block height
-		// In a real implementation, you might want to track this separately
-		blockHeight = currentSlot // Use current slot as approximation
+		// Get the latest block height (number of blocks actually containing transactions)
+		blockHeight = hs.blockStore.GetLatestHeight()
 	}
 
 	// Get mempool size

@@ -173,6 +173,6 @@ func (ln *Libp2pNetwork) RequestBlockSyncFromLatest(ctx context.Context) error {
 	if err != nil {
 		logx.Error("NETWORK:SYNC BLOCK", "Failed to request latest slot from peers:", err)
 	}
-	localLatestSlot := ln.blockStore.GetLatestFinalizedSlot()
+	localLatestSlot := ln.blockStore.GetLatestStoreSlot()
 	return ln.RequestBlockSync(ctx, localLatestSlot+1)
 }

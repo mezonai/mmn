@@ -5,6 +5,8 @@ go 1.24.0
 toolchain go1.24.5
 
 require (
+	filippo.io/edwards25519 v1.1.0
+	github.com/allegro/bigcache v1.2.1
 	github.com/consensys/gnark v0.14.0
 	github.com/consensys/gnark-crypto v0.19.2
 	github.com/creachadair/jrpc2 v1.3.2
@@ -28,9 +30,7 @@ require (
 )
 
 require (
-	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
-	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.24.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
@@ -171,7 +171,7 @@ require (
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/text v0.31.0
-	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/time v0.14.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )

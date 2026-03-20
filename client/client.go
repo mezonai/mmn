@@ -108,18 +108,19 @@ func (c *MmnClient) GetTxByHash(ctx context.Context, txHash string) (TxInfo, err
 	}
 
 	return TxInfo{
-		Sender:    res.Tx.Sender,
-		Recipient: res.Tx.Recipient,
-		Amount:    utils.Uint256FromString(res.Tx.Amount),
-		Timestamp: res.Tx.Timestamp,
-		TextData:  res.Tx.TextData,
-		Nonce:     res.Tx.Nonce,
-		Slot:      res.Tx.Slot,
-		Blockhash: res.Tx.Blockhash,
-		Status:    int32(res.Tx.Status),
-		ErrMsg:    res.Tx.ErrMsg,
-		ExtraInfo: res.Tx.ExtraInfo,
-		TxHash:    res.Tx.TxHash,
+		Sender:      res.Tx.Sender,
+		Recipient:   res.Tx.Recipient,
+		Amount:      utils.Uint256FromString(res.Tx.Amount),
+		Timestamp:   res.Tx.Timestamp,
+		TextData:    res.Tx.TextData,
+		Nonce:       res.Tx.Nonce,
+		Slot:        res.Tx.Slot,
+		BlockHash:   res.Tx.BlockHash,
+		Status:      int32(res.Tx.Status),
+		ErrMsg:      res.Tx.ErrMsg,
+		ExtraInfo:   res.Tx.ExtraInfo,
+		TxHash:      res.Tx.TxHash,
+		BlockHeight: res.Tx.BlockHeight,
 	}, nil
 }
 

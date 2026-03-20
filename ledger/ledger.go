@@ -100,12 +100,22 @@ func (l *Ledger) Balance(addr string) (*uint256.Int, error) {
 	return acc.Balance, nil
 }
 
-func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
+func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool, optSlot ...uint64) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", b.Slot))
-	if b.InvalidPoH {
-		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", b.Slot))
+
+	var slot uint64
+	if b != nil {
+		slot = b.Slot
+	} else if len(optSlot) > 0 {
+		slot = optSlot[0]
+	} else {
+		return fmt.Errorf("block is nil and slot is not provided")
+	}
+
+	logx.Info("LEDGER", fmt.Sprintf("Applying block %d", slot))
+	if b != nil && b.InvalidPoH {
+		logx.Warn("LEDGER", fmt.Sprintf("Block %d processed as InvalidPoH", slot))
 		return nil
 	}
 
@@ -118,16 +128,18 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 	rootContentHashes := make(map[string]struct{})
 	txContents := make([]*transaction.Transaction, 0)
 
-	for _, entry := range b.Entries {
-		if entry.Tick {
-			continue
+	if b != nil {
+		for _, entry := range b.Entries {
+			if entry.Tick {
+				continue
+			}
+			txHashes = append(txHashes, entry.TxHashes...)
 		}
-		txHashes = append(txHashes, entry.TxHashes...)
 	}
 
 	allTxsInBlock, err := l.txStore.GetBatch(txHashes)
 	if err != nil {
-		return fmt.Errorf("failed to get transactions for block %d: %w", b.Slot, err)
+		return fmt.Errorf("failed to get transactions for block %d: %w", slot, err)
 	}
 
 	for _, tx := range allTxsInBlock {
@@ -146,7 +158,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 
 	state, err := l.accountStore.GetBatch(accAddrs)
 	if err != nil {
-		return fmt.Errorf("failed to get accounts for block %d: %w", b.Slot, err)
+		return fmt.Errorf("failed to get accounts for block %d: %w", slot, err)
 	}
 
 	for _, tx := range allTxsInBlock {
@@ -183,10 +195,10 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		default:
 			if err = applyTx(state, tx); err != nil {
 				logx.Warn("LEDGER", fmt.Sprintf("Apply fail: %v", err))
-				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+				txMetas[txHash] = types.NewTxMeta(tx, slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
 			} else {
 				logx.Debug("LEDGER", fmt.Sprintf("Applied tx %s", txHash))
-				txMetas[txHash] = types.NewTxMeta(tx, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+				txMetas[txHash] = types.NewTxMeta(tx, slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
 			}
 		}
 
@@ -198,7 +210,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 
 	relatedContentTxs, err := l.txStore.GetBatch(relatedContentHashes)
 	if err != nil {
-		return fmt.Errorf("failed to get parent transaction contents for block %d: %w", b.Slot, err)
+		return fmt.Errorf("failed to get parent transaction contents for block %d: %w", slot, err)
 	}
 	hashRelatedContentTx := make(map[string]*transaction.Transaction)
 	for _, tx := range relatedContentTxs {
@@ -208,21 +220,22 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 
 	latestVersionContentHashMap, err := l.txStore.GetBatchLatestVersionContentHash(rootContentHashes)
 	if err != nil {
-		return fmt.Errorf("failed to get latest version content hashes for block %d: %w", b.Slot, err)
+		return fmt.Errorf("failed to get latest version content hashes for block %d: %w", slot, err)
 	}
 
 	for _, content := range txContents {
 		if err := l.validateUserContent(content, hashRelatedContentTx, latestVersionContentHashMap); err != nil {
-			txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
+			txMetas[content.Hash()] = types.NewTxMeta(content, slot, hex.EncodeToString(b.Hash[:]), types.TxStatusFailed, err.Error())
 			continue
 		}
-		txMetas[content.Hash()] = types.NewTxMeta(content, b.Slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
+		txMetas[content.Hash()] = types.NewTxMeta(content, slot, hex.EncodeToString(b.Hash[:]), types.TxStatusSuccess, "")
 	}
 
-	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionContentHashMap); err != nil {
+	// We still need to pass 'nil' to bStore.FinalizeBlock if b is nil. It must support nil block / slot.
+	if err := l.bStore.FinalizeBlock(b, txMetas, state, latestVersionContentHashMap, slot); err != nil {
 		if l.eventRouter != nil {
 			for _, tx := range allTxsInBlock {
-				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", b.Slot, err))
+				event := events.NewTransactionFailed(tx, fmt.Sprintf("WAL write failed for block %d: %v", slot, err))
 				l.eventRouter.PublishTransactionEvent(event)
 				monitoring.IncreaseFailedTpsCount(err.Error())
 			}
@@ -230,7 +243,7 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 		return fmt.Errorf("finalized block error: %w", err)
 	}
 
-	if l.eventRouter != nil {
+	if l.eventRouter != nil && b != nil {
 		blockHashHex := b.HashString()
 		now := time.Now()
 		for _, tx := range allTxsInBlock {
@@ -246,13 +259,13 @@ func (l *Ledger) FinalizeBlock(b *block.Block, isListener bool) error {
 			txTimestamp := time.UnixMilli(int64(tx.Timestamp))
 			monitoring.RecordTimeToFinality(now.Sub(txTimestamp))
 
-			event := events.NewTransactionFinalized(tx, b.Slot, blockHashHex)
+			event := events.NewTransactionFinalized(tx, slot, blockHashHex)
 			l.eventRouter.PublishTransactionEvent(event)
 			monitoring.IncreaseFinalizedTpsCount()
 		}
 	}
 
-	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", b.Slot))
+	logx.Info("LEDGER", fmt.Sprintf("Block %d applied", slot))
 	return nil
 }
 

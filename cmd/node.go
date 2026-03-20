@@ -188,8 +188,8 @@ func runNode() {
 	ld := ledger.NewLedger(bs, ts, tms, as, eventRouter, txTracker)
 
 	// Initialize PoH components
-	latestSlot := bs.GetLatestFinalizedSlot()
-	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot)
+	latestSlot := bs.GetLatestStoreSlot()
+	_, pohService, recorder, err := initializePoH(cfg, pubKey, genesisPath, latestSlot, bs)
 	if err != nil {
 		log.Printf("Failed to initialize PoH: %v", err)
 		return
@@ -246,7 +246,7 @@ func runNode() {
 		libP2pClient.OnStartPoh = func() { pohService.Start() }
 		libP2pClient.OnStartValidator = func() { val.Run() }
 		libP2pClient.OnStartLoadTxHashes = func() {
-			latestSlot := bs.GetLatestFinalizedSlot()
+			latestSlot := bs.GetLatestStoreSlot()
 			dedupService.LoadTxHashes(latestSlot)
 			mp.SetCurrentSlot(latestSlot)
 		}
@@ -303,7 +303,7 @@ func initializeDBStore(dataDir, backend string, eventRouter *events.EventRouter)
 }
 
 // initializePoH initializes Proof of History components
-func initializePoH(cfg *config.GenesisConfig, pubKey, genesisPath string, latestSlot uint64) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
+func initializePoH(cfg *config.GenesisConfig, pubKey, genesisPath string, latestSlot uint64, bs store.BlockStore) (*poh.Poh, *poh.PohService, *poh.PohRecorder, error) {
 	pohCfg, err := config.LoadPohConfig(genesisPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load PoH config: %w", err)
@@ -316,8 +316,18 @@ func initializePoH(cfg *config.GenesisConfig, pubKey, genesisPath string, latest
 
 	log.Printf("PoH config: tickInterval=%v, autoHashInterval=%v", tickInterval, pohAutoHashInterval)
 
-	emptySeed := []byte("")
-	pohEngine := poh.NewPoh(emptySeed, &hashesPerTick, pohAutoHashInterval)
+	seed := []byte("")
+	if latestSlot > 0 {
+		slotInfo, err := bs.GetSlot(latestSlot)
+		if err == nil && slotInfo != nil {
+			seed = slotInfo.LastEntryHash[:]
+			logx.Info("VALIDATOR", fmt.Sprintf("Force reset POH to latest slot %d with seed %x", latestSlot, seed))
+		} else {
+			logx.Warn("VALIDATOR", fmt.Sprintf("Failed to get slot info for slot %d, using empty seed", latestSlot))
+		}
+	}
+
+	pohEngine := poh.NewPoh(seed, &hashesPerTick, pohAutoHashInterval)
 	pohEngine.Run()
 
 	pohSchedule := config.ConvertLeaderSchedule(cfg.LeaderSchedule)

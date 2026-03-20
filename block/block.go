@@ -23,6 +23,7 @@ const (
 
 type BlockCore struct {
 	Slot       uint64
+	Height     uint64   // sequential block height based on transactions
 	PrevHash   [32]byte // hash of the last entry in the previous block
 	LeaderID   string
 	Timestamp  uint64 // unix nanos
@@ -73,6 +74,7 @@ func AssembleBlock(
 	b := &BroadcastedBlock{
 		BlockCore: BlockCore{
 			Slot:      slot,
+			Height:    0, // Height is assigned when saved to DB if it has TXs
 			PrevHash:  prevHash,
 			LeaderID:  leaderID,
 			Timestamp: uint64(time.Now().UnixNano()),
@@ -94,6 +96,9 @@ func (b *BroadcastedBlock) computeHash() [32]byte {
 	// Slot
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, b.Slot)
+	h.Write(buf)
+	// Height
+	binary.BigEndian.PutUint64(buf, b.Height)
 	h.Write(buf)
 	// PrevHash
 	h.Write(b.PrevHash[:])
