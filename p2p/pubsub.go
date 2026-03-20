@@ -227,8 +227,6 @@ func (ln *Libp2pNetwork) applyDataToBlock(vote *consensus.Vote, bs store.BlockSt
 		logx.Info("VOTE", "Empty block committed: slot=", vote.Slot)
 	}
 
-	mp.SetCurrentSlot(vote.Slot)
-
 	if err := ld.FinalizeBlock(b, ln.isListener); err != nil {
 		return fmt.Errorf("failed to finalize block at slot %d: %w", vote.Slot, err)
 	}

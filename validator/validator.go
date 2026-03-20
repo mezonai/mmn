@@ -188,13 +188,12 @@ func (v *Validator) ReadyToStart(slot uint64) bool {
 // handleEntry buffers entries and assembles a block at slot boundary.
 func (v *Validator) handleEntry(entries []poh.Entry) {
 	currentSlot := v.Recorder.CurrentSlot()
-	v.Mempool.SetCurrentSlot(currentSlot)
 	lastSlot := currentSlot - 1
 	lastEntry := entries[len(entries)-1]
 
 	// When we are at the last tick of the slot, assemble block for lastSlot if we were leader
 	if v.Recorder.IsLastTickOfSlot() && v.IsLeader(lastSlot) &&
-		lastEntry.Tick {
+		lastEntry.Tick && len(v.collectedEntries) > 0 {
 		// Buffer entries
 		v.collectedEntries = append(v.collectedEntries, entries...)
 		copyCollectedEntries := make([]poh.Entry, len(v.collectedEntries))
