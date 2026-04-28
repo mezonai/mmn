@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -272,5 +273,53 @@ func TestClient_SubscribeTransactionStatus(t *testing.T) {
 			t.Fatalf("Failed to receive transaction status: %v", err)
 		}
 		t.Logf("Transaction hash: %s, status: %s, timestamp: %d, amount: %s, text data: %s", update.TxHash, update.Status, update.Timestamp, update.Amount, update.TextData)
+	}
+}
+
+func TestValidateTxAddress_Valid(t *testing.T) {
+	// Generate valid Ed25519 keypair
+	pub, _, _ := ed25519.GenerateKey(nil)
+
+	recipient := base58.Encode(pub)
+
+	// ExtraInfo content that requires address validation
+	content := UserContent{
+		Type: TransactionExtraInfoDonationCampaignFeed,
+	}
+	extra, _ := json.Marshal(content)
+
+	tx := &Tx{
+		Type:      TxTypeUserContent,
+		Recipient: recipient,
+		ExtraInfo: string(extra),
+	}
+
+	if !ValidateTxAddresses(tx) {
+		t.Fatalf("expected valid address to pass ValidateTxAddress")
+	}
+}
+
+func TestValidateTxAddress_InvalidCurvePoint(t *testing.T) {
+	// Create 32 bytes that are almost certainly NOT a valid point on curve
+	invalid := make([]byte, 32)
+	for i := 0; i < 32; i++ {
+		invalid[i] = byte(i*3 + 7)
+	}
+
+	recipient := base58.Encode(invalid)
+
+	content := UserContent{
+		Type: TransactionExtraInfoDonationCampaignFeed,
+	}
+	extra, _ := json.Marshal(content)
+
+	tx := &Tx{
+		Type:      TxTypeUserContent,
+		Recipient: recipient,
+		ExtraInfo: string(extra),
+	}
+
+	if ValidateTxAddresses(tx) {
+		t.Fatalf("expected invalid curve point to fail ValidateTxAddress")
 	}
 }

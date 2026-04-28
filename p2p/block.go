@@ -224,7 +224,7 @@ func (ln *Libp2pNetwork) sendBlockBatchStream(batch []*block.BroadcastedBlock, s
 	if err != nil {
 		return fmt.Errorf("failed to marshal batch: %w", err)
 	}
-	err = s.SetWriteDeadline(time.Now().Add(30 * time.Second))	
+	err = s.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if err != nil {
 		logx.Warn("NETWORK:SYNC BLOCK", "Failed to set write deadline:", err)
 	}
@@ -511,8 +511,6 @@ func (ln *Libp2pNetwork) BroadcastBlock(ctx context.Context, blk *block.Broadcas
 }
 
 func (ln *Libp2pNetwork) ProcessBlockBeforeBroadcast(blk *block.BroadcastedBlock, ld *ledger.Ledger, mp *mempool.Mempool, collector *consensus.Collector, dedupService *mempool.DedupService) error {
-	dedupService.CleanUpOldSlotTxHashes(blk.Slot)
-
 	if err := ln.blockStore.AddBlockPending(blk); err != nil {
 		logx.Error("BLOCK:PROCESS:BEFORE:BROADCAST", "Failed to store block:", err)
 		return err

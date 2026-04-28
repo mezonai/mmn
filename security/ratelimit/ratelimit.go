@@ -7,6 +7,7 @@ import (
 	"github.com/mezonai/mmn/exception"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/security/abuse"
+	"golang.org/x/time/rate"
 )
 
 type RateLimiterConfig struct {
@@ -23,15 +24,9 @@ func DefaultConfig() *RateLimiterConfig {
 	}
 }
 
-type RequestEntry struct {
-	Timestamp time.Time
-}
-
 type RateLimiterData struct {
-	mu           sync.RWMutex
-	currentCount int
-	windowStart  time.Time
-	lastClean    time.Time
+	limiter  *rate.Limiter
+	lastSeen time.Time
 }
 
 type RateLimiter struct {
@@ -60,7 +55,7 @@ func NewRateLimiter(config *RateLimiterConfig) *RateLimiter {
 }
 
 // AllowWithContext checks if a request from the given key is allowed with context
-func (rl *RateLimiter) isAllowed(key string) bool {
+func (rl *RateLimiter) IsAllowed(key string) bool {
 	now := time.Now()
 
 	rl.mu.Lock()
@@ -68,27 +63,16 @@ func (rl *RateLimiter) isAllowed(key string) bool {
 
 	data, exists := rl.requests[key]
 	if !exists {
+		limiter := rate.NewLimiter(rate.Every(rl.config.WindowSize/time.Duration(rl.config.MaxRequests)), rl.config.MaxRequests)
 		data = &RateLimiterData{
-			windowStart: now,
-			lastClean:   now,
+			limiter:  limiter,
+			lastSeen: now,
 		}
 		rl.requests[key] = data
 	}
 
-	data.mu.Lock()
-	defer data.mu.Unlock()
-
-	if now.Sub(data.windowStart) >= rl.config.WindowSize {
-		data.currentCount = 0
-		data.windowStart = now
-	}
-
-	if data.currentCount >= rl.config.MaxRequests {
-		return false
-	}
-
-	data.currentCount++
-	return true
+	data.lastSeen = now
+	return data.limiter.Allow()
 }
 
 func (rl *RateLimiter) cleanupExpiredEntries() {
@@ -107,28 +91,17 @@ func (rl *RateLimiter) cleanupExpiredEntries() {
 
 func (rl *RateLimiter) cleanup() {
 	now := time.Now()
-	cutoff := now.Add(-rl.config.WindowSize)
+	ttl := rl.config.WindowSize * 3
+	cutoff := now.Add(-ttl)
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	for key, data := range rl.requests {
-		if rl.cleanupData(data, cutoff) {
+		if data.lastSeen.Before(cutoff) {
 			delete(rl.requests, key)
 		}
 	}
-}
-
-func (rl *RateLimiter) cleanupData(data *RateLimiterData, cutoff time.Time) bool {
-	data.mu.Lock()
-	defer data.mu.Unlock()
-
-	if data.currentCount == 0 {
-		return data.lastClean.Before(cutoff)
-	}
-
-	data.lastClean = time.Now()
-	return false
 }
 
 func (rl *RateLimiter) Stop() {
@@ -173,7 +146,7 @@ func (grl *GlobalRateLimiter) IsIPAllowed(ip string) bool {
 		logx.Warn("SECURITY", "Alert abuse spam from IP:", ip)
 	}
 
-	return grl.ipLimiter.isAllowed(ip)
+	return grl.ipLimiter.IsAllowed(ip)
 }
 
 func (grl *GlobalRateLimiter) TrackIPRequest(ip string) {

@@ -179,7 +179,11 @@ func runNode() {
 		Mode:               mode,
 	}
 
-	txTracker := transaction.NewTransactionTracker()
+	txTracker, err := transaction.NewTransactionTracker()
+	if err != nil {
+		log.Printf("Failed to initialize transaction tracker: %v", err)
+		return
+	}
 
 	ld := ledger.NewLedger(bs, ts, tms, as, eventRouter, txTracker)
 
@@ -206,10 +210,18 @@ func runNode() {
 	}
 
 	// Initialize zk verify
-	zkVerify := zkverify.NewZkVerify(zkVerifyPath)
+	zkVerify, err := zkverify.NewZkVerify(zkVerifyPath)
+	if err != nil {
+		log.Printf("Failed to initialize zk verify: %v", err)
+		return
+	}
 
 	// Initialize dedup service
-	dedupService := mempool.NewDedupService(bs, ts)
+	dedupService, err := mempool.NewDedupService(bs, ts)
+	if err != nil {
+		log.Printf("Failed to initialize dedup service: %v", err)
+		return
+	}
 
 	// Initialize mempool
 	mp, err := initializeMempool(libP2pClient, ld, genesisPath, dedupService, eventRouter, txTracker, zkVerify, ts)
@@ -390,6 +402,14 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	rateLimiter := ratelimit.NewGlobalRateLimiterWithAbuseDetector(rateLimiterConfig, abuseDetector)
 	defer rateLimiter.Stop()
 
+	userContentRateLimiterCfg := &ratelimit.RateLimiterConfig{
+		MaxRequests:     1,
+		WindowSize:      time.Second,
+		CleanupInterval: 5 * time.Minute,
+	}
+	userContentRateLimiter := ratelimit.NewRateLimiter(userContentRateLimiterCfg)
+	defer userContentRateLimiter.Stop()
+
 	// Start JSON-RPC server on dedicated JSON-RPC address using shared services with protection
 	txSvc := service.NewTxService(ld, mp, bs, txTracker, rateLimiter)
 	acctSvc := service.NewAccountService(ld, bs, txTracker)
@@ -405,6 +425,7 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 		mp,
 		eventRouter,
 		rateLimiter,
+		userContentRateLimiter,
 		enableRateLimit,
 		txSvc,
 		acctSvc,
@@ -412,7 +433,7 @@ func startServices(nodeConfig *config.NodeConfig, ld *ledger.Ledger,
 	)
 	_ = grpcSrv // Keep server running
 
-	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, enableRateLimit)
+	rpcSrv := jsonrpc.NewServer(nodeConfig.JSONRPCAddr, txSvc, acctSvc, healthSvc, rateLimiter, userContentRateLimiter, enableRateLimit)
 
 	// Apply CORS from environment variables via jsonrpc helper (default denies all)
 	if corsCfg, ok := jsonrpc.CORSFromEnv(); ok {

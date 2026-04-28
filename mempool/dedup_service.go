@@ -1,48 +1,44 @@
 package mempool
 
 import (
-	"hash/fnv"
-	"sync"
+	"time"
 
+	"github.com/allegro/bigcache"
 	"github.com/mezonai/mmn/logx"
 	"github.com/mezonai/mmn/store"
 )
 
 const (
 	DedupSlotGap = 200
-	NumShards     = 128
 )
 
-type slotEntry struct {
-	mu            sync.Mutex
-	txDedupHashes []string
-}
-
-type dedupShard struct {
-	mu             sync.RWMutex
-	txDedupHashSet map[string]struct{}
-}
-
 type DedupService struct {
-	txShards  [NumShards]*dedupShard
-	slotEntry sync.Map // map[uint64]*slotEntry
-	bs        store.BlockStore
-	ts        store.TxStore
+	txDedupHashesCache *bigcache.BigCache
+	bs                 store.BlockStore
+	ts                 store.TxStore
 }
 
-func NewDedupService(bs store.BlockStore, ts store.TxStore) *DedupService {
+func NewDedupService(bs store.BlockStore, ts store.TxStore) (*DedupService, error) {
+	cacheConfig := bigcache.Config{
+		Shards:           128,
+		LifeWindow:       5 * time.Minute,
+		CleanWindow:      10 * time.Minute,
+		MaxEntrySize:     10,
+		Verbose:          false,
+		HardMaxCacheSize: 0,
+	}
+
+	cache, err := bigcache.NewBigCache(cacheConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	ds := &DedupService{
-		bs: bs,
-		ts: ts,
+		txDedupHashesCache: cache,
+		bs:                 bs,
+		ts:                 ts,
 	}
-
-	for i := 0; i < NumShards; i++ {
-		ds.txShards[i] = &dedupShard{
-			txDedupHashSet: make(map[string]struct{}),
-		}
-	}
-
-	return ds
+	return ds, nil
 }
 
 func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
@@ -66,8 +62,8 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 		return
 	}
 
-	for slot, block := range mapSlotBlock {
-		var txDedupHashes []string
+	var txDedupHashes []string
+	for _, block := range mapSlotBlock {
 		var txHashes []string
 		for _, entry := range block.Entries {
 			txHashes = append(txHashes, entry.TxHashes...)
@@ -81,64 +77,29 @@ func (ds *DedupService) LoadTxHashes(latestSlot uint64) {
 		for _, tx := range txs {
 			txDedupHashes = append(txDedupHashes, tx.DedupHash())
 		}
+	}
 
-		ds.Add(slot, txDedupHashes)
+	ds.Add(txDedupHashes)
+}
+
+func (ds *DedupService) IsDuplicate(txDedupHash string) (bool, error) {
+	_, err := ds.txDedupHashesCache.Get(txDedupHash)
+	switch err {
+	case nil:
+		return true, nil
+	case bigcache.ErrEntryNotFound:
+		return false, nil
+	default:
+		logx.Error("DEDUP SERVICE:IS DUPLICATE", "Error: ", err)
+		return false, err
 	}
 }
 
-func (ds *DedupService) IsDuplicate(txDedupHash string) bool {
-	shardIndex := getShardIndex(txDedupHash)
-	shard := ds.txShards[shardIndex]
-	shard.mu.RLock()
-	_, exists := shard.txDedupHashSet[txDedupHash]
-	shard.mu.RUnlock()
-	return exists
-}
-
-func (ds *DedupService) Add(slot uint64, txDedupHashes []string) {
-	v, _ := ds.slotEntry.LoadOrStore(slot, &slotEntry{})
-
-	se := v.(*slotEntry)
-	se.mu.Lock()
-	se.txDedupHashes = append(se.txDedupHashes, txDedupHashes...)
-	se.mu.Unlock()
-
+func (ds *DedupService) Add(txDedupHashes []string) {
 	for _, txDedupHash := range txDedupHashes {
-		shardIndex := getShardIndex(txDedupHash)
-		shard := ds.txShards[shardIndex]
-		shard.mu.Lock()
-		shard.txDedupHashSet[txDedupHash] = struct{}{}
-		shard.mu.Unlock()
+		err := ds.txDedupHashesCache.Set(txDedupHash, []byte{1})
+		if err != nil {
+			logx.Error("DEDUP SERVICE:ADD", "Error: ", err)
+		}
 	}
-}
-
-func (ds *DedupService) CleanUpOldSlotTxHashes(slot uint64) {
-	if slot <= DedupSlotGap {
-		return
-	}
-	oldSlot := slot - DedupSlotGap
-
-	v, ok := ds.slotEntry.LoadAndDelete(oldSlot)
-	if !ok {
-		return
-	}
-
-	se := v.(*slotEntry)
-	se.mu.Lock()
-	txDedupHashes := se.txDedupHashes
-	se.mu.Unlock()
-
-	for _, txDedupHash := range txDedupHashes {
-		shardIndex := getShardIndex(txDedupHash)
-		shard := ds.txShards[shardIndex]
-		shard.mu.Lock()
-		delete(shard.txDedupHashSet, txDedupHash)
-		shard.mu.Unlock()
-	}
-}
-
-func getShardIndex(key string) uint {
-	h := fnv.New32a()
-	h.Write([]byte(key))
-	return uint(h.Sum32() % NumShards)
 }
