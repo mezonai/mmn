@@ -68,7 +68,7 @@ func (p *Poh) Stop() {
 	close(p.stopCh)
 }
 
-func (p *Poh) hashOnce(hash []byte) {
+func (p *Poh) HashOnce(hash []byte) {
 	p.Hash = sha256.Sum256(hash)
 	p.NumHashes++
 	p.RemainingHashes--
@@ -82,7 +82,7 @@ func (p *Poh) Record(mixin [32]byte) *PohEntry {
 		return nil
 	}
 
-	p.hashOnce(append(p.Hash[:], mixin[:]...))
+	p.HashOnce(append(p.Hash[:], mixin[:]...))
 
 	entry := &PohEntry{
 		NumHashes: p.NumHashes,
@@ -102,7 +102,7 @@ func (p *Poh) Tick() *PohEntry {
 		return nil
 	}
 
-	p.hashOnce(p.Hash[:])
+	p.HashOnce(p.Hash[:])
 
 	entry := &PohEntry{
 		NumHashes: p.NumHashes,
@@ -146,7 +146,7 @@ func (p *Poh) AutoHash() {
 		case <-ticker.C:
 			p.mu.Lock()
 			if p.RemainingHashes > 1 {
-				p.hashOnce(p.Hash[:])
+				p.HashOnce(p.Hash[:])
 			}
 			p.mu.Unlock()
 		}
