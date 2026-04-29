@@ -82,7 +82,8 @@ jobs:
         if: steps.decide.outputs.skip == 'false'
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.24.5"
+          cache: true
           check-latest: false
           cache: false
 
