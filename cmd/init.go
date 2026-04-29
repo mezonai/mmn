@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,8 @@ var initCmd = &cobra.Command{
 		initializeNode()
 	},
 }
+
+var rotatedLogPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}(?:-\d{2}(?:\.\d+)?)?\.log$`)
 
 func init() {
 	// Add init command to root
@@ -325,29 +328,51 @@ func initializeFileLogger() {
 }
 
 func startLogCompressor(logDir string, maxAgeDays int) {
-	ticker := time.NewTicker(1 * time.Minute)
+	const rotatedLogCompressDelay = 24 * time.Hour
+	const logCompressorInterval = 30 * time.Minute
+
+	ticker := time.NewTicker(logCompressorInterval)
+	defer ticker.Stop()
+
 	for range ticker.C {
 		files, err := os.ReadDir(logDir)
-		if err != nil { continue }
-		
+		if err != nil {
+			logx.Error("LOG_COMPRESSOR", "Failed to read log directory:", err.Error())
+			continue
+		}
+
 		for _, f := range files {
-			if f.IsDir() { continue }
-
-			filePath := filepath.Join(logDir, f.Name())
-			info, err := f.Info()
-			if err != nil { continue }
-
-			if strings.HasSuffix(f.Name(), ".log") && f.Name() != "node1.log" && f.Name() != "mmn-bootnode.log" {
-				if time.Since(info.ModTime()) > 30 *time.Minute {
-					compressLogFile(filePath)
-				}
+			if f.IsDir() {
+				continue
 			}
 
-			// Remove old compressed files
-			if strings.HasSuffix(f.Name(), ".gz") {
+			name := f.Name()
+			filePath := filepath.Join(logDir, name)
+
+			info, err := f.Info()
+			if err != nil {
+				logx.Error("LOG_COMPRESSOR", "Failed to get file info for:", name)
+				continue
+			}
+
+			// Only compress rotated .log files after they have been idle for 1 day.
+			// Do not compress active files like mmn.log, node1.log, etc.
+			if rotatedLogPattern.MatchString(name) {
+				if time.Since(info.ModTime()) > rotatedLogCompressDelay {
+					compressLogFile(filePath)
+				}
+				continue
+			}
+
+			// Remove old compressed archives
+			if strings.HasSuffix(name, ".gz") {
 				if time.Since(info.ModTime()) > time.Duration(maxAgeDays)*24*time.Hour {
-					os.Remove(filePath)
-					logx.Info("LOG_COMPRESSOR", "Deleted expired archive:", f.Name())
+					if err := os.Remove(filePath); err == nil {
+						logx.Info("LOG_COMPRESSOR", "Deleted expired archive:", name)
+					} else {
+						logx.Error("LOG_COMPRESSOR", "Failed to delete expired archive:", name, err.Error())
+						continue
+					}
 				}
 			}
 		}
@@ -355,25 +380,39 @@ func startLogCompressor(logDir string, maxAgeDays int) {
 }
 
 func compressLogFile(filePath string) {
+	gzPath := filePath + ".gz"
+
 	// Implementation for compressing log file to gzip
 	fr, err := os.Open(filePath)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 	defer fr.Close()
 
-	fw, err := os.Create(filePath + ".gz")
-	if err != nil { return }
+	fw, err := os.Create(gzPath)
+	if err != nil {
+		return
+	}
 	defer fw.Close()
 
 	gw := gzip.NewWriter(fw)
+
 	if _, err := io.Copy(gw, fr); err != nil {
-        gw.Close()
-        return 
-    }
-    
-    gw.Close()
-    fr.Close()
+		gw.Close()
+		os.Remove(gzPath)
+		logx.Error("LOG_COMPRESSOR", "Failed to compress log file:", filePath, err.Error())
+		return
+	}
+
+	if err := gw.Close(); err != nil {
+		os.Remove(gzPath)
+		logx.Error("LOG_COMPRESSOR", "Failed to finalize compressed log file:", filePath, err.Error())
+		return
+	}
 
 	if err := os.Remove(filePath); err == nil {
-        logx.Info("LOG_COMPRESSOR", "Compressed log file successfully:", filepath.Base(filePath))
-    }
+		logx.Info("LOG_COMPRESSOR", "Compressed log file successfully:", filepath.Base(filePath))
+	} else {
+		logx.Error("LOG_COMPRESSOR", "Log compressed but failed to remove original file:", filePath, err.Error())
+	}
 }
